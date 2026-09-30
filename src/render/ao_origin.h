@@ -23,6 +23,9 @@ namespace lss::render::ao_origin {
 /// Verifies the three call sites and their targets and redirects them. False (logged) if anything differs.
 bool Install(const platform::GameImage& image) noexcept;
 
+/// True once installed.
+bool Installed() noexcept;
+
 /// On by default; off passes every value through (for A/B checks). Any thread.
 void SetEnabled(bool enabled) noexcept;
 bool Enabled() noexcept;

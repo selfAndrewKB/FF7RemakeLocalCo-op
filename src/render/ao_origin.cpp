@@ -30,6 +30,7 @@ platform::CallRedirect g_tapsCallB;
 SetParametersFn        g_setParameters = nullptr;
 SetVec4Fn              g_setVec4       = nullptr;
 
+std::atomic<bool> g_installed{false};
 std::atomic<bool> g_enabled{true};
 std::atomic<bool> g_loggedShift{false};
 
@@ -96,7 +97,14 @@ bool Install(const platform::GameImage& image) noexcept
         platform::Log(L"AO origin: a call site is not the call the research read; player 2's half keeps the AO ghost");
         return false;
     }
+    g_installed.store(true);
+    platform::Log(L"AO origin: installed; player 2's AO downsample will read its own rows");
     return true;
+}
+
+bool Installed() noexcept
+{
+    return g_installed.load();
 }
 
 void SetEnabled(bool enabled) noexcept

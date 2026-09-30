@@ -434,7 +434,7 @@ void PhaseHook(void* world, void* context, std::int32_t phase, bool start)
 }
 
 template <class Fn>
-bool Resolve(const platform::GameImage& image, const platform::FunctionFact& fact, Fn& out) noexcept
+bool FindInto(const platform::GameImage& image, const platform::FunctionFact& fact, Fn& out) noexcept
 {
     const auto address = platform::FindFunction(image, fact);
     out                = address ? reinterpret_cast<Fn>(*address) : nullptr;
@@ -463,9 +463,9 @@ bool Install(const platform::GameImage& image) noexcept
         !Global(image, facts::kOperatorCorrections, g_corrections) || !Global(image, facts::kNameNoneIndex, g_nameNone) ||
         !Global(image, facts::kObjectArrayObjects, g_objects) || !Global(image, facts::kObjectArrayCount, g_objectCount) ||
         !Global(image, facts::kSquareInputOwnerGlobal, g_squareInput) || !array ||
-        !Resolve(image, facts::kSpawnActor, g_spawnActor) || !Resolve(image, facts::kOperatorStaticClass, g_staticClass) ||
-        !Resolve(image, facts::kSetOwnerChara, g_setOwnerChara) || !Resolve(image, facts::kGetPlayerActor, g_getPlayerActor) ||
-        !Resolve(image, facts::kAllocateSerialNumber, g_allocateSerial))
+        !FindInto(image, facts::kSpawnActor, g_spawnActor) || !FindInto(image, facts::kOperatorStaticClass, g_staticClass) ||
+        !FindInto(image, facts::kSetOwnerChara, g_setOwnerChara) || !FindInto(image, facts::kGetPlayerActor, g_getPlayerActor) ||
+        !FindInto(image, facts::kAllocateSerialNumber, g_allocateSerial))
     {
         platform::Log(L"player 2's camera: an engine check failed; player 2 keeps a still camera");
         return false;
@@ -503,7 +503,7 @@ bool Install(const platform::GameImage& image) noexcept
     }
     // Optional: without it player 2's right stick does nothing, and everything else still works.
     if (!Global(image, facts::kWorldTickPhaseHookGlobal, g_phaseHookPointer) ||
-        !Resolve(image, facts::kWorldTickPhaseHook, g_phaseHook) || !Resolve(image, facts::kTickPlayerInput, g_tickPlayerInput))
+        !FindInto(image, facts::kWorldTickPhaseHook, g_phaseHook) || !FindInto(image, facts::kTickPlayerInput, g_tickPlayerInput))
     {
         g_phaseHookPointer = nullptr;
         platform::Log(L"player 2's input: the game's input tick could not be verified; player 2's right stick stays unused");

@@ -16,11 +16,13 @@
 // original for views that do not start at (0,0):
 //   - the two level-0 binder calls are redirected to note the pass's view for the length of the call (render thread);
 //   - the pipeline-state call inside each binder is redirected: when the noted view does not start at (0,0) and the
-//     pipeline's pixel shader is the original (checked by its DXBC checksum), the call gets a copy of the pipeline
-//     description with the corrected shader in it. The engine's pipeline cache keys on that description, so the
-//     corrected pipeline is built once and cached like any other. Constants, textures and draws stay the game's.
-// D3D12 only for now: its shader object keeps the original's code blob, which the copy is spliced into. On D3D11 no
-// copy exists in memory, so the fix stands aside there (logged) until the blob's framing is baked in.
+//     pipeline's pixel shader is the original (checked by the engine's own shader hash, which both RHIs keep), the
+//     call gets a copy of the pipeline description with the corrected shader in it. The engine's pipeline cache keys
+//     on that description, so the corrected pipeline is built once and cached like any other. Constants, textures
+//     and draws stay the game's.
+// The corrected shader's code blob is the corrected DXBC in the engine's framing of the original's (resource tables
+// before it, optional data and footer after it, read once from the D3D12 shader object's copy of the code), so the
+// same bytes serve D3D12 and D3D11.
 
 namespace lss::platform {
 class GameImage;
@@ -29,7 +31,7 @@ class GameImage;
 namespace lss::render::bloom_origin {
 
 /// Verifies the four call sites, their targets and the RHI, and redirects the sites. False (logged) if anything
-/// differs or the RHI is not D3D12; bloom must then stay off in split (show-flag bit 0x2).
+/// differs or the RHI is neither D3D12 nor D3D11; bloom must then stay off in split (show-flag bit 0x2).
 bool Install(const platform::GameImage& image) noexcept;
 
 /// True once installed: player 2's bloom reads its own rows, so the split rule's bloom bit may be forced on.

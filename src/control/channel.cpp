@@ -225,7 +225,7 @@ ParsedLine ParseLine(std::wstring_view line)
         }
         Command command;
         command.kind  = verb == L"ao-origin" ? CommandKind::AoOrigin : CommandKind::BloomOrigin;
-        command.ticks = words[1] == L"on" ? 1u : 0u;
+        command.on    = words[1] == L"on";
         return {command, {}};
     }
     if (verb == L"showflags")
@@ -273,8 +273,8 @@ std::wstring Describe(const Command& command)
                            command.axes[3], command.ticks);
     case CommandKind::Console: return L"console " + command.text;
     case CommandKind::ShowFlags: return std::format(L"showflags {:X}", command.ticks);
-    case CommandKind::AoOrigin: return command.ticks != 0 ? L"ao-origin on" : L"ao-origin off";
-    case CommandKind::BloomOrigin: return command.ticks != 0 ? L"bloom-origin on" : L"bloom-origin off";
+    case CommandKind::AoOrigin: return command.on ? L"ao-origin on" : L"ao-origin off";
+    case CommandKind::BloomOrigin: return command.on ? L"bloom-origin on" : L"bloom-origin off";
     case CommandKind::Note: return L"note " + command.text;
     }
     return L"?";
@@ -457,8 +457,8 @@ void CommandChannel::Step(Target& target)
         case CommandKind::Quit: outcome = target.Quit(); break;
         case CommandKind::Console: outcome = target.Console(command.text); break;
         case CommandKind::ShowFlags: outcome = target.ShowFlags(command.ticks); break;
-        case CommandKind::AoOrigin: outcome = target.AoOrigin(command.ticks != 0); break;
-        case CommandKind::BloomOrigin: outcome = target.BloomOrigin(command.ticks != 0); break;
+        case CommandKind::AoOrigin: outcome = target.AoOrigin(command.on); break;
+        case CommandKind::BloomOrigin: outcome = target.BloomOrigin(command.on); break;
         case CommandKind::Note: Log(L"control note: {}", command.text); break;
         case CommandKind::Stick:
             outcome = target.HoldStick(command.player, command.axes);

@@ -87,7 +87,8 @@ struct Command
     CommandKind   kind    = CommandKind::Note;
     std::int32_t  player  = 0;   // stick: 1 or 2
     float         axes[4] = {};  // stick: LX, LY, RX, RY
-    std::uint32_t ticks   = 0;   // stick, wait; showflags: the mask; ao-/bloom-origin: 1 on, 0 off
+    std::uint32_t ticks   = 0;   // stick, wait; showflags: the mask
+    bool          on      = false;  // ao-origin, bloom-origin
     std::wstring  text;          // console, note
 };
 

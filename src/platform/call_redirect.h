@@ -17,8 +17,8 @@
 //     replacement's own unwind information covers it.
 // The thunk needs no unwind data of its own: it is a single jump that touches neither the stack
 // nor any register the call relies on. The thunk jumps into our DLL, so Install pins the DLL
-// (platform/module_pin.h). The thunk
-// page is never freed and the destructor does not restore; only Restore() removes the redirect.
+// (platform/module_pin.h). The thunk page is never freed and the destructor does not restore;
+// only Restore() removes the redirect.
 
 #include "platform/near_code.h"
 

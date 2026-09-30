@@ -2,7 +2,8 @@
 
 // Every engine address and offset the mod relies on, as read in IDA (image base 0x140000000) for
 // ff7remake_.exe SHA-256 25B54C34...6635, with the research document that established it
-// (Remake/Documentation/research/). Each one is checked against the running game before use.
+// (Remake/Documentation/research/). Functions and vtable slots are checked against the running game
+// (entry bytes) before use, and redirected calls against their call bytes; plain offsets are not.
 
 #include "platform/verified_code.h"
 
@@ -173,20 +174,36 @@ inline constexpr std::uintptr_t kGDynamicRHI              = 0x14582C478;  // FDy
 inline constexpr std::uintptr_t kGRHICommandListImmediate = 0x14593F4D8;  // FRHICommandListImmediate (object)
 inline constexpr std::uintptr_t kVtblD3D12DynamicRHI      = 0x144D3B3B0;
 inline constexpr std::uintptr_t kVtblD3D11DynamicRHI      = 0x144D39718;
-inline constexpr std::uintptr_t kVtblD3D12PixelShader     = 0x144D3B278;
+inline constexpr std::uintptr_t kVtblD3D12PixelShader     = 0x144D3B278;  // FD3D12PixelShader (200 bytes)
+inline constexpr std::uintptr_t kVtblD3D11PixelShader     = 0x144D39000;  // FD3D11PixelShader (168 bytes)
 /// FDynamicRHI slot 144, CreatePixelShader_RenderThread(rhi, FPixelShaderRHIRef* out, FRHICommandListImmediate*,
-/// const TArray<uint8>* code): the engine's own render-thread creation (D3D12: the base 0x1426E47C0, which stalls
-/// the RHI thread around slot 12). `*out` comes back holding one reference.
+/// const TArray<uint8>* code): the engine's own render-thread creation. D3D12 uses the base, which stalls the RHI
+/// thread around slot 12; D3D11 overrides it and creates at once (its device is free-threaded). `*out` comes back
+/// holding one reference.
 inline constexpr std::uint32_t  kRhiSlotCreatePixelShaderRT = 144;
 inline constexpr std::array<std::uint8_t, 16> kCreatePixelShaderRTEntry{
     0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x6C, 0x24, 0x10, 0x48, 0x89, 0x74, 0x24, 0x18, 0x57};
 inline constexpr platform::FunctionFact kD3D12CreatePixelShaderRT{L"FDynamicRHI::CreatePixelShader_RenderThread",
                                                                   0x1426E47C0, kCreatePixelShaderRTEntry};
-// FD3D12PixelShader: a full copy of the code blob it was made from
-// ([resource tables][DXBC][optional data][int32 footer]), and where the DXBC lies inside it.
-inline constexpr std::uint32_t kD3D12PsBytecode    = 0x48;  // const uint8*
-inline constexpr std::uint32_t kD3D12PsBytecodeLen = 0x50;  // size_t
-inline constexpr std::uint32_t kD3D12PsCode        = 0x58;  // TArray<uint8>: Data, Num (+0x60), Max (+0x64)
+inline constexpr std::array<std::uint8_t, 16> kD3D11CreatePixelShaderRTEntry{
+    0x40, 0x53, 0x48, 0x83, 0xEC, 0x20, 0x4D, 0x8B, 0xC1, 0x48, 0x8B, 0xDA, 0xE8, 0xFF, 0xFC, 0xFF};
+inline constexpr platform::FunctionFact kD3D11CreatePixelShaderRT{
+    L"FD3D11DynamicRHI::CreatePixelShader_RenderThread", 0x141F3EAF0, kD3D11CreatePixelShaderRTEntry};
+/// FRHIShader::Hash: the shader compiler's OutputHash (SHA-1 of the code and parameter map), written after creation
+/// by RHICreatePixelShader_LibraryOrCode 0x141EFE440 on either RHI.
+inline constexpr std::uint32_t kRhiShaderHash = 0x18;
+
+/// The original level-0 reduce shader's OutputHash, read from the running game (D3D12, 2026-09-30,
+/// tools/bloom_shader/find_live_hash.py). It identifies the shader on both RHIs; D3D11 keeps no copy of the code.
+inline constexpr std::array<std::uint8_t, 20> kBloomL0ShaderHash{
+    0x8E, 0x8D, 0x85, 0xC6, 0x4A, 0x88, 0x3B, 0x86, 0x8A, 0x69, 0x96, 0xB8, 0xCF, 0xDC, 0xBA, 0xB2, 0x0B, 0x5F, 0x6D, 0x9C};
+// The engine's framing of that shader's code blob, around the DXBC ([resource tables][DXBC][optional data][footer]),
+// as logged from the D3D12 shader object's code copy (2026-09-30): empty resource tables; optional data 'p' (packed
+// resource counts 01 01 01 01 00) and 'u' (size 4, zero); footer 23 = the optional data's size, footer included.
+inline constexpr std::array<std::uint8_t, 24> kBloomL0CodePrefix{};
+inline constexpr std::array<std::uint8_t, 23> kBloomL0CodeTrailer{
+    0x70, 0x05, 0x00, 0x00, 0x00, 0x01, 0x01, 0x01, 0x01, 0x00, 0x75, 0x04,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x17, 0x00, 0x00, 0x00};
 
 // --- The game's own input tick (RE-input-p2.md §1) ------------------------------------------------
 // AEndPlayerController's constructor turns off the stock per-controller input tick in PlayerTick for gameplay;

@@ -1,6 +1,6 @@
 #pragma once
 
-// The two memory operations the mod's code changes share (code_redirect.h, call_redirect.h):
+// The two memory operations the mod's code changes need (call_redirect.h):
 //   - a page of our own within a rel32 instruction's reach of the game's code;
 //   - an atomic swap of one aligned 16-byte block of the game's code, so a thread running that
 //     code sees either the old bytes or the new ones, never a mix.

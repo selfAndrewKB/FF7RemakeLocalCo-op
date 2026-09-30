@@ -9,13 +9,13 @@
 #include "render/bloom_reduce_shader.h"
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cstdint>
 #include <cstring>
 #include <format>
 #include <mutex>
 #include <string>
-#include <vector>
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -25,8 +25,6 @@
 namespace lss::render::bloom_origin {
 
 namespace {
-
-namespace shader = bloom_reduce_shader;
 
 using BindFn           = void* (*)(void* context, void* vertexShaderOut, const float* sourceRect, const float* destRect);
 using GetPipelineFn    = void* (*)(void* commandList, const void* initializer, std::uint32_t applyFlags);
@@ -40,16 +38,31 @@ struct ByteArray
     std::int32_t        max;
 };
 
+/// The corrected shader's code blob in the engine's framing: the original's resource tables, the corrected DXBC,
+/// the original's optional data and footer (the bindings are the original's, so is everything around the DXBC).
+constexpr auto kFixedCode = [] {
+    const auto& dxbc = bloom_reduce_shader::kBloomReduceL0Fixed;
+    std::array<std::uint8_t, facts::kBloomL0CodePrefix.size() + bloom_reduce_shader::kBloomReduceL0Fixed.size() +
+                                 facts::kBloomL0CodeTrailer.size()>
+        code{};
+    auto out = std::copy(facts::kBloomL0CodePrefix.begin(), facts::kBloomL0CodePrefix.end(), code.begin());
+    out      = std::copy(dxbc.begin(), dxbc.end(), out);
+    std::copy(facts::kBloomL0CodeTrailer.begin(), facts::kBloomL0CodeTrailer.end(), out);
+    return code;
+}();
+
 // Set once at install, on the game thread, before any redirect is live; read on the render thread afterwards.
 // The redirects' atomic 16-byte code swaps order the writes before any read (x64).
 platform::CallRedirect g_bindCall;
 platform::CallRedirect g_bindExactCall;
 platform::CallRedirect g_pipelineCall;
 platform::CallRedirect g_pipelineExactCall;
-GetPipelineFn          g_getPipeline      = nullptr;
-std::uintptr_t         g_rhiGlobal        = 0;  // &GDynamicRHI
-std::uintptr_t         g_immediateList    = 0;  // &GRHICommandList_Immediate
-std::uintptr_t         g_d3d12PixelVtable = 0;
+GetPipelineFn          g_getPipeline   = nullptr;
+CreatePsRenderFn       g_createShader  = nullptr;  // the running RHI's slot 144
+void*                  g_rhi           = nullptr;  // GDynamicRHI
+std::uintptr_t         g_immediateList = 0;        // &GRHICommandList_Immediate
+std::uintptr_t         g_pixelVtable   = 0;        // the running RHI's pixel-shader class
+const wchar_t*         g_rhiName       = L"";
 
 std::atomic<bool> g_installed{false};
 std::atomic<bool> g_enabled{true};
@@ -71,9 +84,9 @@ void* Bind(const platform::CallRedirect& call, void* context, void* vertexShader
 {
     const std::uint8_t* view = nullptr;
     platform::CopyGuarded(&view, static_cast<const std::uint8_t*>(context) + facts::kPassContextView, sizeof(view));
-    t_view            = view;
+    t_view             = view;
     void* const result = reinterpret_cast<BindFn>(call.Original())(context, vertexShaderOut, sourceRect, destRect);
-    t_view            = nullptr;
+    t_view             = nullptr;
     return result;
 }
 
@@ -87,46 +100,15 @@ void* BindFirstExact(void* context, void* vertexShaderOut, const float* sourceRe
     return Bind(g_bindExactCall, context, vertexShaderOut, sourceRect, destRect);
 }
 
-/// Where the original shader's DXBC lies in the code blob its D3D12 shader object keeps.
-struct OriginalCode
+/// True if `pixelShader` is the running RHI's pixel shader carrying the original level-0 reduce shader's hash.
+/// `hash` receives whatever hash it carries, when readable.
+bool IsOriginal(const std::uint8_t* pixelShader, std::array<std::uint8_t, 20>& hash) noexcept
 {
-    const std::uint8_t* blob   = nullptr;
-    std::size_t         size   = 0;
-    std::size_t         offset = 0;  // of the DXBC
-    std::size_t         length = 0;  // of the DXBC
-};
-
-/// The D3D12 shader object's code blob if `pixelShader` is the original level-0 reduce shader (by its DXBC
-/// checksum). `checksum` receives the DXBC checksum of whatever shader it is, when readable.
-bool ReadOriginal(const std::uint8_t* pixelShader, OriginalCode& code, std::uint8_t (&checksum)[16]) noexcept
-{
-    std::uintptr_t      vtable   = 0;
-    const std::uint8_t* bytecode = nullptr;
-    std::size_t         length   = 0;
-    ByteArray           blob{};
-    char                magic[4]{};
-    std::uint32_t       containerSize = 0;
-    if (pixelShader == nullptr || !platform::CopyGuarded(&vtable, pixelShader, sizeof(vtable)) ||
-        vtable != g_d3d12PixelVtable ||
-        !platform::CopyGuarded(&bytecode, pixelShader + facts::kD3D12PsBytecode, sizeof(bytecode)) ||
-        !platform::CopyGuarded(&length, pixelShader + facts::kD3D12PsBytecodeLen, sizeof(length)) ||
-        !platform::CopyGuarded(&blob, pixelShader + facts::kD3D12PsCode, sizeof(blob)) || bytecode == nullptr ||
-        !platform::CopyGuarded(magic, bytecode, sizeof(magic)) || !platform::CopyGuarded(checksum, bytecode + 4, 16) ||
-        !platform::CopyGuarded(&containerSize, bytecode + 24, sizeof(containerSize)))
-    {
-        return false;
-    }
-    const bool isOriginal = std::memcmp(magic, "DXBC", 4) == 0 &&
-                            std::equal(std::begin(checksum), std::end(checksum), shader::kOriginalChecksumBytes.begin()) &&
-                            length == shader::kOriginalSize && containerSize == shader::kOriginalSize;
-    // The DXBC must lie inside the blob the shader object keeps.
-    if (!isOriginal || blob.data == nullptr || blob.num <= 0 || bytecode < blob.data ||
-        static_cast<std::size_t>(bytecode - blob.data) + length > static_cast<std::size_t>(blob.num))
-    {
-        return false;
-    }
-    code = {blob.data, static_cast<std::size_t>(blob.num), static_cast<std::size_t>(bytecode - blob.data), length};
-    return true;
+    std::uintptr_t vtable = 0;
+    return pixelShader != nullptr && platform::CopyGuarded(&vtable, pixelShader, sizeof(vtable)) &&
+           vtable == g_pixelVtable &&
+           platform::CopyGuarded(hash.data(), pixelShader + facts::kRhiShaderHash, hash.size()) &&
+           hash == facts::kBloomL0ShaderHash;
 }
 
 /// Bytes as hex for the log (empty if out of memory: this runs inside engine calls, where nothing may throw).
@@ -137,7 +119,7 @@ std::wstring Hex(const std::uint8_t* bytes, std::size_t count) noexcept
     {
         for (std::size_t i = 0; i < count; ++i)
         {
-            text += std::format(L"{:02X} ", bytes[i]);
+            text += std::format(L"{:02X}", bytes[i]);
         }
     }
     catch (...)
@@ -147,56 +129,16 @@ std::wstring Hex(const std::uint8_t* bytes, std::size_t count) noexcept
     return text;
 }
 
-/// The original's blob with the corrected DXBC in place of its own: the resource tables before the DXBC and the
-/// optional data after it (packed resource counts, footer) stay the original's, as the shader's bindings do.
-bool SpliceCode(const OriginalCode& original, std::vector<std::uint8_t>& code) noexcept
-{
-    try
-    {
-        std::vector<std::uint8_t> copy(original.size);
-        if (!platform::CopyGuarded(copy.data(), original.blob, original.size))
-        {
-            return false;
-        }
-        const std::size_t trailer = original.size - original.offset - original.length;
-        code.assign(copy.begin(), copy.begin() + static_cast<std::ptrdiff_t>(original.offset));
-        code.insert(code.end(), shader::kBloomReduceL0Fixed.begin(), shader::kBloomReduceL0Fixed.end());
-        code.insert(code.end(), copy.end() - static_cast<std::ptrdiff_t>(trailer), copy.end());
-        // For baking the same framing on D3D11, which keeps no copy (RE-impl-facts-bloom-swap.md §4.3).
-        platform::Log(L"bloom origin: original code blob {} bytes; before the DXBC ({} bytes): {}; after it ({} bytes): {}",
-                      original.size, original.offset, Hex(copy.data(), original.offset), trailer,
-                      Hex(copy.data() + original.offset + original.length, trailer));
-        return true;
-    }
-    catch (...)
-    {
-        return false;
-    }
-}
-
 /// Creates the corrected shader through the engine's own render-thread creation, once. Render thread; the caller
 /// holds g_createMutex and has seen neither a shader nor a failure.
-void CreateFixed(const OriginalCode& original) noexcept
+void CreateFixed() noexcept
 {
-    std::vector<std::uint8_t> code;
-    void*                     rhi = nullptr;
-    void*                     vtable = nullptr;
-    CreatePsRenderFn          create = nullptr;
-    if (!SpliceCode(original, code) || code.size() > INT32_MAX ||
-        !platform::CopyGuarded(&rhi, reinterpret_cast<const void*>(g_rhiGlobal), sizeof(rhi)) || rhi == nullptr ||
-        !platform::CopyGuarded(&vtable, rhi, sizeof(vtable)) ||
-        !platform::CopyGuarded(&create, static_cast<const std::uint8_t*>(vtable) + facts::kRhiSlotCreatePixelShaderRT * 8,
-                               sizeof(create)))
-    {
-        g_createFailed.store(true);
-        platform::Log(L"bloom origin: the corrected shader's code could not be put together; player 2's bloom keeps player 1's rows");
-        return;
-    }
-    const ByteArray array{code.data(), static_cast<std::int32_t>(code.size()), static_cast<std::int32_t>(code.size())};
+    const ByteArray code{kFixedCode.data(), static_cast<std::int32_t>(kFixedCode.size()),
+                         static_cast<std::int32_t>(kFixedCode.size())};
     void*           shaderRef = nullptr;
     void**          returned  = nullptr;  // the engine returns `out` itself; the shader is what it wrote there
-    if (!platform::CallGuarded(create, returned, rhi, &shaderRef, reinterpret_cast<void*>(g_immediateList),
-                               static_cast<const void*>(&array)) ||
+    if (!platform::CallGuarded(g_createShader, returned, g_rhi, &shaderRef, reinterpret_cast<void*>(g_immediateList),
+                               static_cast<const void*>(&code)) ||
         shaderRef == nullptr)
     {
         g_createFailed.store(true);
@@ -204,8 +146,8 @@ void CreateFixed(const OriginalCode& original) noexcept
         return;
     }
     g_fixedShader.store(shaderRef);  // the creation's reference: kept, since pipeline-cache keys hold the raw pointer
-    platform::Log(L"bloom origin: corrected level-0 bloom shader created ({} bytes of code, thread {})", code.size(),
-                  GetCurrentThreadId());
+    platform::Log(L"bloom origin: corrected level-0 bloom shader created ({}, {} bytes of code, thread {})", g_rhiName,
+                  kFixedCode.size(), GetCurrentThreadId());
 }
 
 /// Both level-0 pipeline calls: a view that does not start at (0,0) gets the corrected shader in a copy of the
@@ -222,17 +164,16 @@ void* Pipeline(void* commandList, const std::uint8_t* initializer, std::uint32_t
     {
         return g_getPipeline(commandList, initializer, applyFlags);
     }
-    const std::uint8_t* pixelShader = nullptr;
-    OriginalCode        original;
-    std::uint8_t        checksum[16]{};
+    const std::uint8_t*          pixelShader = nullptr;
+    std::array<std::uint8_t, 20> hash{};
     platform::CopyGuarded(&pixelShader, initializer + facts::kPsoInitPixelShader, sizeof(pixelShader));
-    if (!ReadOriginal(pixelShader, original, checksum))
+    if (!IsOriginal(pixelShader, hash))
     {
         if (offset && !g_loggedOther.exchange(true))
         {
             platform::Log(L"bloom origin: a level-0 reduce for a view at ({}, {}) uses a shader this fix has no copy of "
-                          L"(DXBC checksum {}); left as it is",
-                          min[0], min[1], Hex(checksum, sizeof(checksum)));
+                          L"(hash {}); left as it is",
+                          min[0], min[1], Hex(hash.data(), hash.size()));
         }
         return g_getPipeline(commandList, initializer, applyFlags);
     }
@@ -241,7 +182,7 @@ void* Pipeline(void* commandList, const std::uint8_t* initializer, std::uint32_t
         const std::lock_guard lock(g_createMutex);
         if (g_fixedShader.load() == nullptr && !g_createFailed.load())
         {
-            CreateFixed(original);
+            CreateFixed();
         }
     }
     void* const fixedShader = g_fixedShader.load();
@@ -268,6 +209,54 @@ void* Pipeline(void* commandList, const std::uint8_t* initializer, std::uint32_t
     return g_getPipeline(commandList, copy, applyFlags);
 }
 
+/// The running RHI: its slot-144 creation (verified) and its pixel-shader class. False (logged) for any other RHI.
+bool ResolveRhi(const platform::GameImage& image, std::uintptr_t rhiGlobal) noexcept
+{
+    struct Known
+    {
+        const wchar_t*                  name;
+        std::uintptr_t                  rhiVtable;
+        std::uintptr_t                  pixelVtable;
+        const platform::FunctionFact&   create;
+    };
+    const Known known[]{
+        {L"D3D12", facts::kVtblD3D12DynamicRHI, facts::kVtblD3D12PixelShader, facts::kD3D12CreatePixelShaderRT},
+        {L"D3D11", facts::kVtblD3D11DynamicRHI, facts::kVtblD3D11PixelShader, facts::kD3D11CreatePixelShaderRT},
+    };
+    void*          rhi       = nullptr;
+    std::uintptr_t rhiVtable = 0;
+    if (!platform::CopyGuarded(&rhi, reinterpret_cast<const void*>(rhiGlobal), sizeof(rhi)) || rhi == nullptr ||
+        !platform::CopyGuarded(&rhiVtable, rhi, sizeof(rhiVtable)))
+    {
+        platform::Log(L"bloom origin: the renderer is not up yet; bloom stays off in split screen");
+        return false;
+    }
+    for (const Known& rhiKind : known)
+    {
+        const auto vtable      = image.Rebase(rhiKind.rhiVtable);
+        const auto pixelVtable = image.Rebase(rhiKind.pixelVtable);
+        if (!vtable || *vtable != rhiVtable || !pixelVtable)
+        {
+            continue;
+        }
+        const auto slot   = image.ReadPointer(rhiKind.rhiVtable + facts::kRhiSlotCreatePixelShaderRT * 8);
+        const auto create = platform::FindFunction(image, rhiKind.create);
+        if (!slot || !create || *slot != *create)
+        {
+            platform::Log(L"bloom origin: {}'s shader creation is not the one the research read; bloom stays off in split screen",
+                          rhiKind.name);
+            return false;
+        }
+        g_rhi          = rhi;
+        g_createShader = reinterpret_cast<CreatePsRenderFn>(*create);
+        g_pixelVtable  = *pixelVtable;
+        g_rhiName      = rhiKind.name;
+        return true;
+    }
+    platform::Log(L"bloom origin: the renderer is neither D3D12 nor D3D11; bloom stays off in split screen");
+    return false;
+}
+
 }  // namespace
 
 bool Install(const platform::GameImage& image) noexcept
@@ -281,31 +270,18 @@ bool Install(const platform::GameImage& image) noexcept
     const auto pipelineExact = image.Rebase(facts::kBloomL0ExactPipelineCall, 5);
     const auto rhiGlobal     = image.Rebase(facts::kGDynamicRHI, sizeof(void*));
     const auto immediateList = image.Rebase(facts::kGRHICommandListImmediate);
-    const auto d3d12Vtable   = image.Rebase(facts::kVtblD3D12DynamicRHI);
-    const auto d3d11Vtable   = image.Rebase(facts::kVtblD3D11DynamicRHI);
-    const auto pixelVtable   = image.Rebase(facts::kVtblD3D12PixelShader);
-    const auto createSlot    = image.ReadPointer(facts::kVtblD3D12DynamicRHI + facts::kRhiSlotCreatePixelShaderRT * 8);
-    const auto createRender  = platform::FindFunction(image, facts::kD3D12CreatePixelShaderRT);
     if (!getPipeline || !bind || !bindExact || !bindCall || !bindExactCall || !pipeline || !pipelineExact ||
-        !rhiGlobal || !immediateList || !d3d12Vtable || !d3d11Vtable || !pixelVtable || !createSlot || !createRender ||
-        *createSlot != *createRender)
+        !rhiGlobal || !immediateList)
     {
         platform::Log(L"bloom origin: an engine check failed; bloom stays off in split screen");
         return false;
     }
-    const std::uint8_t* rhi       = nullptr;
-    std::uintptr_t      rhiVtable = 0;
-    if (!platform::CopyGuarded(&rhi, reinterpret_cast<const void*>(*rhiGlobal), sizeof(rhi)) || rhi == nullptr ||
-        !platform::CopyGuarded(&rhiVtable, rhi, sizeof(rhiVtable)) || rhiVtable != *d3d12Vtable)
+    if (!ResolveRhi(image, *rhiGlobal))
     {
-        platform::Log(L"bloom origin: the renderer is {} (the fix needs D3D12's copy of the shader code); bloom stays off in split screen",
-                      rhi == nullptr ? L"not up yet" : rhiVtable == *d3d11Vtable ? L"D3D11" : L"unknown");
         return false;
     }
-    g_getPipeline      = reinterpret_cast<GetPipelineFn>(*getPipeline);
-    g_rhiGlobal        = *rhiGlobal;
-    g_immediateList    = *immediateList;
-    g_d3d12PixelVtable = *pixelVtable;
+    g_getPipeline   = reinterpret_cast<GetPipelineFn>(*getPipeline);
+    g_immediateList = *immediateList;
     // The pipeline calls first: until a binder call is redirected no view is noted, so they pass straight through.
     // The two binder calls share one code block: the second install swaps in the block the first one left.
     const bool installed =
@@ -323,7 +299,7 @@ bool Install(const platform::GameImage& image) noexcept
         return false;
     }
     g_installed.store(true);
-    platform::Log(L"bloom origin: installed (D3D12); player 2's bloom will read its own rows");
+    platform::Log(L"bloom origin: installed ({}); player 2's bloom will read its own rows", g_rhiName);
     return true;
 }
 
@@ -335,6 +311,8 @@ bool Installed() noexcept
 void SetEnabled(bool enabled) noexcept
 {
     g_enabled.store(enabled, std::memory_order_relaxed);
+    g_loggedSwap.store(false);
+    g_loggedOther.store(false);
 }
 
 bool Enabled() noexcept

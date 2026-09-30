@@ -35,7 +35,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.7.0-bloom-origin";
+constexpr const wchar_t* kVersion = L"0.7.1-bloom-d3d11";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
@@ -114,6 +114,10 @@ public:
     }
     Outcome AoOrigin(bool on) override
     {
+        if (!lss::render::ao_origin::Installed())
+        {
+            return {false, L"the AO origin fix is not installed (see the log at startup)"};
+        }
         lss::render::ao_origin::SetEnabled(on);
         Log(L"control: AO origin fix {}", on ? L"on" : L"off");
         return {};
@@ -152,7 +156,7 @@ public:
     LocalSplitScreenMod()
     {
         ModName        = STR("LocalSplitScreen");
-        ModVersion     = STR("0.7.0-bloom-origin");
+        ModVersion     = kVersion;
         ModDescription = STR("Two-player split-screen for FF7 Remake");
         ModAuthors     = STR("Andrew");
     }
