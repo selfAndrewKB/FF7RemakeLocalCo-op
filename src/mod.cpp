@@ -18,6 +18,7 @@
 #include "players/player_two_camera.h"
 #include "players/session.h"
 #include "players/split_render.h"
+#include "render/ao_origin.h"
 
 #include <cstdint>
 #include <optional>
@@ -32,7 +33,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.5.0-player-two-input";
+constexpr const wchar_t* kVersion = L"0.6.0-ao-origin";
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
@@ -109,6 +110,12 @@ public:
         lss::players::split_render::SetMask(mask, session_.HasPlayerTwo());
         return {};
     }
+    Outcome AoOrigin(bool on) override
+    {
+        lss::render::ao_origin::SetEnabled(on);
+        Log(L"control: AO origin fix {}", on ? L"on" : L"off");
+        return {};
+    }
     Outcome Status() override
     {
         session_.Status();
@@ -133,7 +140,7 @@ public:
     LocalSplitScreenMod()
     {
         ModName        = STR("LocalSplitScreen");
-        ModVersion     = STR("0.5.0-player-two-input");
+        ModVersion     = STR("0.6.0-ao-origin");
         ModDescription = STR("Two-player split-screen for FF7 Remake");
         ModAuthors     = STR("Andrew");
     }
@@ -163,6 +170,7 @@ public:
             return;
         }
         installed_ = true;
+        lss::render::ao_origin::Install(*image);  // optional: without it player 2's half keeps the AO ghost
         channel_.Open();
         const Hook::FCallbackOptions options{false, false, STR("LocalSplitScreen"), STR("player intent")};
         tickCallback_ = Hook::RegisterEngineTickPreCallback(

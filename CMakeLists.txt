@@ -24,10 +24,12 @@ add_subdirectory("${UE4SS_ROOT}" "${CMAKE_BINARY_DIR}/RE-UE4SS")
 add_library(LocalSplitScreen SHARED
     src/mod.cpp
     src/control/channel.cpp
+    src/platform/call_redirect.cpp
     src/platform/guarded.cpp
     src/platform/image.cpp
     src/platform/log.cpp
     src/platform/module_pin.cpp
+    src/platform/near_code.cpp
     src/platform/verified_code.cpp
     src/platform/vtable_entry.cpp
     src/players/own_controller.cpp
@@ -35,6 +37,7 @@ add_library(LocalSplitScreen SHARED
     src/players/player_two_camera.cpp
     src/players/session.cpp
     src/players/split_render.cpp
+    src/render/ao_origin.cpp
 )
 
 # Includes are rooted at src/ so every #include names its module ("platform/log.h").

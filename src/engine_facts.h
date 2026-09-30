@@ -117,6 +117,31 @@ inline constexpr platform::SlotFact kFieldMove{
 // step is `flags = Force1 | (flags & ~Force0)` with two engine masks that only the static initialiser writes (zero).
 inline constexpr std::uintptr_t kShowFlagForce1Mask   = 0x1453E39D4;  // u32: bits forced on for every view
 inline constexpr std::uint32_t  kSplitDisabledFlags   = 0x100A;       // 0x8 TemporalAA; 0x2, 0x1000 [ASSUMPTION] Bloom, MotionBlur
+/// What the mod forces by default: bit 0x2 leaks player 1's moving content into player 2's half (live A/B,
+/// PLAN §4.9d), so it stays off until its pass reads each view's own rect.
+inline constexpr std::uint32_t  kSplitForcedFlags     = 0x1008;
+
+// --- AO downsample stage-0 origin (RE-rdc-split-frame.md, RE-impl-facts-ao-fix.md) ------------------
+// SE_AODownsamplePS0__SetParameters is shared by AO downsample stages 0/1/2; only stage 0's pixel shader reads
+// the taps (cb0[19], cb0[20]), at ftoi(tap) + 2*SV_Position, without View.ViewRect.Min.
+inline constexpr std::uint32_t kPassContextView = 0x00;  // FRenderingCompositePassContext: const FViewInfo*
+inline constexpr std::uint32_t kViewRectMinX    = 0x70;  // FViewInfo::ViewRect.Min.X (int32)
+inline constexpr std::uint32_t kViewRectMinY    = 0x74;
+
+inline constexpr std::array<std::uint8_t, 16> kAoDownsampleSetParamsEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x10, 0x48, 0x89, 0x74, 0x24, 0x18, 0x55, 0x57, 0x41, 0x55, 0x41, 0x56};
+/// SE_AODownsamplePS0__SetParameters(FShader* ps, FRHICommandList* rhi, const PassContext* ctx).
+inline constexpr platform::FunctionFact kAoDownsampleSetParams{L"SE_AODownsamplePS0__SetParameters", 0x1421D0D70,
+                                                               kAoDownsampleSetParamsEntry};
+inline constexpr std::array<std::uint8_t, 16> kSetShaderValueVec4Entry{
+    0x48, 0x89, 0x54, 0x24, 0x10, 0x55, 0x56, 0x41, 0x57, 0x48, 0x83, 0xEC, 0x30, 0x41, 0x0F, 0xB7};
+/// RHICmdList__SetShaderValue_Vec4(FRHICommandList*, FRHIPixelShader*, const FShaderParameter*, const void* value):
+/// copies the 16-byte value into the command list at once. Thousands of callers: call sites only.
+inline constexpr platform::FunctionFact kSetShaderValueVec4{L"RHICmdList__SetShaderValue_Vec4", 0x1421C8A80,
+                                                            kSetShaderValueVec4Entry};
+inline constexpr std::uintptr_t kAoStage0SetParamsCall = 0x1421CED47;  // stage-0-only call of the shared SetParameters
+inline constexpr std::uintptr_t kAoTapsCallA           = 0x1421D0FC3;  // taps 0,1 -> cb0[19]
+inline constexpr std::uintptr_t kAoTapsCallB           = 0x1421D0FD9;  // taps 2,3 -> cb0[20]
 
 // --- The game's own input tick (RE-input-p2.md §1) ------------------------------------------------
 // AEndPlayerController's constructor turns off the stock per-controller input tick in PlayerTick for gameplay;

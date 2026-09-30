@@ -10,7 +10,7 @@ namespace lss::players::split_render {
 namespace {
 
 std::uint32_t* g_forceOn = nullptr;                      // set once at install
-std::uint32_t  g_mask    = facts::kSplitDisabledFlags;  // game thread
+std::uint32_t  g_mask    = facts::kSplitForcedFlags;    // game thread
 std::uint32_t  g_written = 0;                           // what the mod last wrote (0 = nothing)
 
 bool Write(std::uint32_t value) noexcept

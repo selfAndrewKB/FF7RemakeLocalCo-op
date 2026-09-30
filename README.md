@@ -14,9 +14,9 @@ Two-player split-screen for FINAL FANTASY VII REMAKE (Intergrade, UE 4.18), as a
 
 ## Control scripts
 
-Scripts dropped into `Mods/LocalSplitScreen/control/inbox/*.txt` (UTF-8; write under another extension, then rename) run on the game thread without keys or window focus; results go to `control/done/<name>.result.txt` and the log. Commands: `join`, `leave`, `seat`, `unseat`, `stick <player> <lx> <ly> <rx> <ry> <ticks>`, `wait <ticks>`, `console <command>`, `showflags <hex>`, `status`, `note <text>`, `quit` (`src/control/channel.h`). A file named `abort` in the inbox stops a running script.
+Scripts dropped into `Mods/LocalSplitScreen/control/inbox/*.txt` (UTF-8; write under another extension, then rename) run on the game thread without keys or window focus; results go to `control/done/<name>.result.txt` and the log. Commands: `join`, `leave`, `seat`, `unseat`, `stick <player> <lx> <ly> <rx> <ry> <ticks>`, `wait <ticks>`, `console <command>`, `showflags <hex>`, `ao-origin on|off`, `status`, `note <text>`, `quit` (`src/control/channel.h`). A file named `abort` in the inbox stops a running script.
 
-While player 2 is in, the mod also gives player 2's controller the game's input step right after player 1's (the game ticks only the primary controller's input), and forces back on the effects stock UE 4.18 turns off for split screen (TAA, and most likely bloom and motion blur: show flags `0x100A`).
+While player 2 is in, the mod also gives player 2's controller the game's input step right after player 1's (the game ticks only the primary controller's input), and forces back on the effects stock UE 4.18 turns off for split screen (show flags `0x1008`: TAA and bit `0x1000`; bit `0x2`, most likely bloom, leaks player 1's picture into player 2's half and stays off until fixed). It also makes Square Enix's AO downsample read each view's own rows (the split-screen ghost).
 
 While player 2 is in, each player's sticks are their own pad's (pad 1 = XInput user 0, also the keyboard;
 pad 2 = user 1).
@@ -51,4 +51,6 @@ src/
     player_two_camera     player 2's field camera operator and the per-player scopes
     party_seat            PROBE: player 2 possesses Aerith
     split_render          the single-player effects in each half (the engine's show-flag force mask)
+  render/
+    ao_origin             the AO downsample's view-rect origin (three call redirects)
 ```
