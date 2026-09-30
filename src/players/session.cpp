@@ -19,7 +19,10 @@
 #include "players/party_seat.h"
 #include "players/player_two_camera.h"
 
+#include <Unreal/Core/Containers/FString.hpp>
+
 #include <cstdint>
+#include <new>
 #include <string>
 
 namespace lss::players {
@@ -398,6 +401,57 @@ try
 catch (...)
 {
     platform::Log(L"report: an engine lookup raised an exception");
+}
+
+void Session::Status() const noexcept
+{
+    Report();
+    if (playerTwo_ != nullptr && cameraInstalled_)
+    {
+        player_two_camera::LogCounts();
+    }
+}
+
+bool Session::Seated() const noexcept
+{
+    return seatInstalled_ && party_seat::Seated();
+}
+
+bool Session::Console(const wchar_t* command) noexcept
+try
+{
+    auto* function = UObjectGlobals::StaticFindObject<UFunction*>(
+        nullptr, nullptr, STR("/Script/Engine.KismetSystemLibrary:ExecuteConsoleCommand"));
+    auto* library = UObjectGlobals::StaticFindObject<UClass*>(nullptr, nullptr, STR("/Script/Engine.KismetSystemLibrary"));
+    auto* players = LocalPlayers(GameInstance());
+    if (function == nullptr || library == nullptr || players == nullptr || players->Num() < 1)
+    {
+        return false;
+    }
+    auto* context = function->FindProperty(RC::Unreal::FName(STR("WorldContextObject"), RC::Unreal::FNAME_Find));
+    auto* text    = function->FindProperty(RC::Unreal::FName(STR("Command"), RC::Unreal::FNAME_Find));
+    constexpr std::int32_t kMaxFrame = 64;
+    const std::int32_t     size      = function->GetParmsSize();
+    if (context == nullptr || text == nullptr || size > kMaxFrame || context->GetSize() != sizeof(UObject*) ||
+        text->GetSize() != sizeof(RC::Unreal::FString) || context->GetOffset_Internal() < 0 ||
+        context->GetOffset_Internal() + context->GetSize() > size || text->GetOffset_Internal() < 0 ||
+        text->GetOffset_Internal() + text->GetSize() > size ||
+        (context->GetOffset_Internal() < text->GetOffset_Internal() + text->GetSize() &&
+         text->GetOffset_Internal() < context->GetOffset_Internal() + context->GetSize()))
+    {
+        return false;
+    }
+    // SpecificPlayer stays null: the engine then uses player 1's controller, as the console does.
+    alignas(16) std::uint8_t frame[kMaxFrame]{};
+    *reinterpret_cast<UObject**>(frame + context->GetOffset_Internal()) = Field((*players)[0], facts::kLocalPlayerController);
+    auto*      string = new (frame + text->GetOffset_Internal()) RC::Unreal::FString(command);
+    const bool called = GuardedProcessEvent(static_cast<UObject*>(library->GetClassDefaultObject()), function, frame);
+    string->~FString();
+    return called;
+}
+catch (...)
+{
+    return false;
 }
 
 }  // namespace lss::players

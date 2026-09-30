@@ -10,7 +10,11 @@ Two-player split-screen for FINAL FANTASY VII REMAKE (Intergrade, UE 4.18), as a
 | Ctrl+F7 | Player 2 joins: own End player controller, camera manager and field camera (following Aerith) |
 | Ctrl+F8 | Player 2 leaves |
 | Ctrl+F9 | PROBE: player 2 takes Aerith through the game's leader funnel, or gives her back (borrows player 1's PlayerTrigger) |
-| Ctrl+F6 | Log every local player's controller, pawn, camera manager and camera actor |
+| Ctrl+F6 | Log every local player's controller, pawn, camera manager and camera actor, and each player's input, movement and camera call counts |
+
+## Control scripts
+
+Scripts dropped into `Mods/LocalSplitScreen/control/inbox/*.txt` (UTF-8; write under another extension, then rename) run on the game thread without keys or window focus; results go to `control/done/<name>.result.txt` and the log. Commands: `join`, `leave`, `seat`, `unseat`, `stick <player> <lx> <ly> <rx> <ry> <ticks>`, `wait <ticks>`, `console <command>`, `status`, `note <text>`, `quit` (`src/control/channel.h`).
 
 While player 2 is in, each player's sticks are their own pad's (pad 1 = XInput user 0, also the keyboard;
 pad 2 = user 1).
@@ -39,7 +43,8 @@ src/
   engine_facts.h          every address, offset and expected byte string, with its research doc
   platform/               image, verified functions and vtable slots, guards, log (shared design with Rebirth's)
   players/
-    session               join and leave through UE's local-player path
+    session               join and leave through UE's local-player path; console commands
+  control/channel         control scripts from files (test driver)
     own_controller        the End camera manager's BeginPlay, made safe for a second player
     player_two_camera     player 2's field camera operator and the per-player scopes
     party_seat            PROBE: player 2 possesses Aerith

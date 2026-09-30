@@ -36,4 +36,12 @@ bool Start(void* playerOneController, void* playerTwoController) noexcept;
 /// null if it is gone) for the caller to destroy.
 void* Take() noexcept;
 
+/// Test input (control scripts): while held, `user`'s stick record reads these values (LX, LY, RX, RY,
+/// -1..1) inside that player's stick scopes, in place of the pad. Only acts while player 2 is in. Game thread.
+void HoldStick(unsigned user, const float (&axes)[4]) noexcept;
+void ReleaseStick(unsigned user) noexcept;
+
+/// Logs how often each player's input, movement and camera calls ran since the last report. Game thread.
+void LogCounts() noexcept;
+
 }  // namespace lss::players::player_two_camera

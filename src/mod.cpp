@@ -11,12 +11,16 @@
 #include <Mod/CppUserModBase.hpp>
 #include <Unreal/Hooks/Hooks.hpp>
 
+#include "control/channel.h"
 #include "platform/image.h"
 #include "platform/log.h"
 #include "players/own_controller.h"
+#include "players/player_two_camera.h"
 #include "players/session.h"
 
+#include <cstdint>
 #include <optional>
+#include <string>
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -27,7 +31,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.3.0-seat-probe";
+constexpr const wchar_t* kVersion = L"0.4.0-control-channel";
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
@@ -49,13 +53,81 @@ bool Pressed(int virtualKey, bool& wasDown) noexcept
     return pressed;
 }
 
+using lss::control::Outcome;
+
+/// The running mod as a control script sees it: each command does what its key does, but asks for a state and
+/// says why when it cannot reach it. Game thread only.
+class ModTarget final : public lss::control::Target
+{
+public:
+    explicit ModTarget(lss::players::Session& session) noexcept : session_(session) {}
+
+    Outcome Join() override
+    {
+        session_.Join();
+        return session_.HasPlayerTwo() ? Outcome{} : Outcome{false, L"player 2 did not join (see the log)"};
+    }
+    Outcome Leave() override
+    {
+        session_.Leave();
+        return session_.HasPlayerTwo() ? Outcome{false, L"player 2 is still in (see the log)"} : Outcome{};
+    }
+    Outcome Seat(bool seated) override
+    {
+        if (!session_.HasPlayerTwo())
+        {
+            return {false, L"player 2 is not in"};
+        }
+        if (session_.Seated() != seated)
+        {
+            session_.ToggleSeat();
+        }
+        return session_.Seated() == seated ? Outcome{} : Outcome{false, L"the seat did not change (see the log)"};
+    }
+    Outcome HoldStick(std::int32_t player, const float (&axes)[4]) override
+    {
+        if (!session_.HasPlayerTwo())
+        {
+            return {false, L"stick holds act only while player 2 is in"};
+        }
+        lss::players::player_two_camera::HoldStick(static_cast<unsigned>(player - 1), axes);
+        return {};
+    }
+    void ReleaseStick(std::int32_t player) override
+    {
+        lss::players::player_two_camera::ReleaseStick(static_cast<unsigned>(player - 1));
+    }
+    Outcome Console(const std::wstring& command) override
+    {
+        Log(L"control: console command '{}'", command);
+        return lss::players::Session::Console(command.c_str()) ? Outcome{}
+                                                                : Outcome{false, L"the console command could not be called"};
+    }
+    Outcome Status() override
+    {
+        session_.Status();
+        return {};
+    }
+    Outcome Quit() override
+    {
+        if (session_.HasPlayerTwo())
+        {
+            return {false, L"player 2 is still in ('leave' first)"};
+        }
+        return Console(L"quit");
+    }
+
+private:
+    lss::players::Session& session_;
+};
+
 class LocalSplitScreenMod final : public RC::CppUserModBase
 {
 public:
     LocalSplitScreenMod()
     {
         ModName        = STR("LocalSplitScreen");
-        ModVersion     = STR("0.3.0-seat-probe");
+        ModVersion     = STR("0.4.0-control-channel");
         ModDescription = STR("Two-player split-screen for FF7 Remake");
         ModAuthors     = STR("Andrew");
     }
@@ -84,6 +156,7 @@ public:
             return;
         }
         installed_ = true;
+        channel_.Open();
         const Hook::FCallbackOptions options{false, false, STR("LocalSplitScreen"), STR("player intent")};
         tickCallback_ = Hook::RegisterEngineTickPreCallback(
             [this](Hook::TCallbackIterationData<void>&, RC::Unreal::UEngine*, float, bool) { OnEngineTick(); }, options);
@@ -107,11 +180,15 @@ private:
         }
         if (Pressed(VK_F6, reportWasDown_))
         {
-            session_.Report();
+            session_.Status();
         }
+        channel_.Tick(target_);
     }
 
-    lss::players::Session session_;
+    // Declaration order matters: target_ holds a reference to session_, so session_ must be constructed first.
+    lss::players::Session          session_;
+    ModTarget                      target_{session_};
+    lss::control::CommandChannel   channel_;
     bool                  installed_     = false;
     bool                  joinWasDown_   = false;
     bool                  leaveWasDown_  = false;

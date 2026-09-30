@@ -10,6 +10,8 @@
 #include <array>
 #include <cstdint>
 #include <cstring>
+#include <format>
+#include <string>
 
 namespace lss::players::player_two_camera {
 
@@ -64,6 +66,22 @@ Weak  g_playerOne;              // player 1's controller while player 2 is in (r
 Weak  g_playerTwo;              // player 2's controller while player 2 is in
 Weak  g_operatorTwo;            // player 2's operator
 bool  g_spawning    = false;
+
+// Test input and diagnostics, game thread only.
+struct StickHold
+{
+    bool                 active = false;
+    std::array<float, 4> axes{};
+};
+std::array<StickHold, 2> g_holds;
+
+struct CallCounts
+{
+    std::uint32_t input = 0;      // ProcessPlayerInput under the player's scopes
+    std::uint32_t move  = 0;      // Tick_FieldMove under the player's scopes
+    std::uint32_t operatorTick = 0;
+};
+std::array<CallCounts, 2> g_counts;
 
 constexpr std::uint32_t kItemBytes       = 0x18;  // FUObjectItem: Object +0, Flags +8, SerialNumber +0x10
 constexpr std::uint32_t kItemFlags       = 0x08;
@@ -214,8 +232,12 @@ public:
         const std::uint8_t*  bank    = owner + facts::kStickBanks + 16 * facts::kXInputBank;
         std::uint8_t*        records = nullptr;
         std::int32_t         count   = 0;
-        if (Read(bank, records) && Read(bank + 8, count) && records != nullptr && count > 0 &&
-            user < static_cast<std::uint32_t>(count))
+        if (user < g_holds.size() && g_holds[user].active)
+        {
+            pad = g_holds[user].axes;
+        }
+        else if (Read(bank, records) && Read(bank + 8, count) && records != nullptr && count > 0 &&
+                 user < static_cast<std::uint32_t>(count))
         {
             Read(records + static_cast<std::size_t>(user) * facts::kStickRecordBytes, pad);
         }
@@ -295,6 +317,7 @@ void OperatorTick(void* self, float deltaSeconds)
         g_operatorTick(self, deltaSeconds);
         return;
     }
+    ++g_counts[1].operatorTick;
     const PrimaryScope  primary(players.two);
     const OperatorScope scope(g_operatorTwo);
     g_operatorTick(self, deltaSeconds);
@@ -311,10 +334,12 @@ void ProcessPlayerInput(void* self, float deltaSeconds, bool gamePaused)
     }
     if (self == players.one)
     {
+        ++g_counts[0].input;
         const StickScope stick(0, false);
         g_processInput(self, deltaSeconds, gamePaused);
         return;
     }
+    ++g_counts[1].input;
     if (Resolve(g_operatorTwo) == nullptr)
     {
         // Without its own operator, player 2's stick would reach player 1's: a still stick instead.
@@ -341,10 +366,12 @@ void FieldMove(void* self, float deltaSeconds)
     }
     if (self == players.one)
     {
+        ++g_counts[0].move;
         const StickScope stick(0, false);
         g_fieldMove(self, deltaSeconds);
         return;
     }
+    ++g_counts[1].move;
     const PrimaryScope  primary(players.two);
     const OperatorScope scope(g_operatorTwo);  // no-op while player 2 has no operator
     const StickScope    stick(1, true);
@@ -518,6 +545,50 @@ void* Take() noexcept
     g_playerOne       = {};
     g_playerTwo       = {};
     return operatorTwo;
+}
+
+void HoldStick(unsigned user, const float (&axes)[4]) noexcept
+{
+    if (user < g_holds.size())
+    {
+        g_holds[user].active = true;
+        std::memcpy(g_holds[user].axes.data(), axes, sizeof(axes));
+    }
+}
+
+void ReleaseStick(unsigned user) noexcept
+{
+    if (user < g_holds.size())
+    {
+        g_holds[user] = {};
+    }
+}
+
+void LogCounts() noexcept
+try
+{
+    // Diagnostic fields of each controller: its control rotation (stock AController) and the camera
+    // sensitivity the game's ProcessPlayerInput scales the right stick by (RE-camera.md §9.3).
+    constexpr std::uint32_t kControlRotation   = 0x3A8;
+    constexpr std::uint32_t kCameraSensitivity = 0x9E8;
+    const Players players = CurrentPlayers();
+    void* const   controllers[2] = {players.one, players.two};
+    for (std::size_t i = 0; i < g_counts.size(); ++i)
+    {
+        std::array<float, 3> rotation{};
+        float                sensitivity = 0.0f;
+        const auto*          base        = static_cast<const std::uint8_t*>(controllers[i]);
+        const bool           read = base != nullptr && Read(base + kControlRotation, rotation) && Read(base + kCameraSensitivity, sensitivity);
+        platform::Log(L"player {}: input calls {}, move calls {}, own operator ticks {}; control rotation {}; camera sensitivity {}",
+                      i + 1, g_counts[i].input, g_counts[i].move, g_counts[i].operatorTick,
+                      read ? std::format(L"P{:.1f} Y{:.1f} R{:.1f}", rotation[0], rotation[1], rotation[2]) : std::wstring(L"unread"),
+                      read ? std::format(L"{:.3f}", sensitivity) : std::wstring(L"unread"));
+        g_counts[i] = {};
+    }
+}
+catch (...)
+{
+    // Formatting fails only by running out of memory; a lost diagnostic line must not take the game down.
 }
 
 }  // namespace lss::players::player_two_camera

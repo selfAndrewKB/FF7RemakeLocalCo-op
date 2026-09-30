@@ -35,8 +35,15 @@ public:
     void ToggleSeat() noexcept;
     /// Logs every local player: controller, camera manager, main camera actor, pawn, view shape.
     void Report() const noexcept;
+    /// Report, plus each player's input/movement/camera call counts since the last one.
+    void Status() const noexcept;
 
     bool HasPlayerTwo() const noexcept { return playerTwo_ != nullptr; }
+    bool Seated() const noexcept;
+
+    /// An engine console command, as typed in the console (UKismetSystemLibrary::ExecuteConsoleCommand with
+    /// player 1's controller). False if the call could not be made.
+    static bool Console(const wchar_t* command) noexcept;
 
 private:
     RC::Unreal::UObject* playerTwo_    = nullptr;  // ULocalPlayer
