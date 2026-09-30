@@ -38,6 +38,7 @@ add_library(LocalSplitScreen SHARED
     src/players/session.cpp
     src/players/split_render.cpp
     src/render/ao_origin.cpp
+    src/render/bloom_origin.cpp
 )
 
 # Includes are rooted at src/ so every #include names its module ("platform/log.h").

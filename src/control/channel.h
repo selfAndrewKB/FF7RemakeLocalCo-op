@@ -21,8 +21,9 @@
 //   wait <ticks>                        do nothing for a number of ticks
 //   console <command>                   an engine console command
 //   showflags <hex>                     the show flags forced on in both halves while player 2 is in (0 = the
-//                                       engine's split rule; default 0x100A, players/split_render.h)
+//                                       engine's split rule; default 0x100A with the bloom fix, else 0x1008; players/split_render.h)
 //   ao-origin on|off                    the AO downsample reads each view's own rows (render/ao_origin.h; on)
+//   bloom-origin on|off                 the first bloom reduce reads each view's own rows (render/bloom_origin.h; on)
 //   status                              log the players and each one's input, movement and camera counts
 //   note <text>                         write a marker line to the log
 //   quit                                quit the game through the engine (player 2 must be out)
@@ -59,6 +60,7 @@ public:
     virtual Outcome Console(const std::wstring& command)            = 0;
     virtual Outcome ShowFlags(std::uint32_t mask)                   = 0;
     virtual Outcome AoOrigin(bool on)                               = 0;
+    virtual Outcome BloomOrigin(bool on)                            = 0;
     virtual Outcome Status()                                        = 0;
     virtual Outcome Quit()                                          = 0;
 };
@@ -74,6 +76,7 @@ enum class CommandKind
     Console,
     ShowFlags,
     AoOrigin,
+    BloomOrigin,
     Status,
     Note,
     Quit,
@@ -84,7 +87,7 @@ struct Command
     CommandKind   kind    = CommandKind::Note;
     std::int32_t  player  = 0;   // stick: 1 or 2
     float         axes[4] = {};  // stick: LX, LY, RX, RY
-    std::uint32_t ticks   = 0;   // stick, wait; showflags: the mask; ao-origin: 1 on, 0 off
+    std::uint32_t ticks   = 0;   // stick, wait; showflags: the mask; ao-/bloom-origin: 1 on, 0 off
     std::wstring  text;          // console, note
 };
 

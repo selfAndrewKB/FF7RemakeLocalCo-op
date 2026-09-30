@@ -18,7 +18,9 @@
 #include "players/player_two_camera.h"
 #include "players/session.h"
 #include "players/split_render.h"
+#include "engine_facts.h"
 #include "render/ao_origin.h"
+#include "render/bloom_origin.h"
 
 #include <cstdint>
 #include <optional>
@@ -33,7 +35,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.6.0-ao-origin";
+constexpr const wchar_t* kVersion = L"0.7.0-bloom-origin";
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
@@ -116,6 +118,16 @@ public:
         Log(L"control: AO origin fix {}", on ? L"on" : L"off");
         return {};
     }
+    Outcome BloomOrigin(bool on) override
+    {
+        if (!lss::render::bloom_origin::Installed())
+        {
+            return {false, L"the bloom origin fix is not installed (see the log at startup)"};
+        }
+        lss::render::bloom_origin::SetEnabled(on);
+        Log(L"control: bloom origin fix {}", on ? L"on" : L"off");
+        return {};
+    }
     Outcome Status() override
     {
         session_.Status();
@@ -140,7 +152,7 @@ public:
     LocalSplitScreenMod()
     {
         ModName        = STR("LocalSplitScreen");
-        ModVersion     = STR("0.6.0-ao-origin");
+        ModVersion     = STR("0.7.0-bloom-origin");
         ModDescription = STR("Two-player split-screen for FF7 Remake");
         ModAuthors     = STR("Andrew");
     }
@@ -171,6 +183,11 @@ public:
         }
         installed_ = true;
         lss::render::ao_origin::Install(*image);  // optional: without it player 2's half keeps the AO ghost
+        // Optional: without it player 2's bloom would be built from player 1's rows, so bloom stays off in split.
+        if (lss::render::bloom_origin::Install(*image))
+        {
+            lss::players::split_render::SetMask(lss::facts::kSplitDisabledFlags, false);
+        }
         channel_.Open();
         const Hook::FCallbackOptions options{false, false, STR("LocalSplitScreen"), STR("player intent")};
         tickCallback_ = Hook::RegisterEngineTickPreCallback(

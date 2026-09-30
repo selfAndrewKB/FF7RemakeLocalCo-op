@@ -7,6 +7,7 @@
 #include "platform/verified_code.h"
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 
 namespace lss::facts {
@@ -116,9 +117,9 @@ inline constexpr platform::SlotFact kFieldMove{
 // Stock EngineShowFlagOverride (0x14322C1D0) clears these show-flag bits whenever the viewport is split; its last
 // step is `flags = Force1 | (flags & ~Force0)` with two engine masks that only the static initialiser writes (zero).
 inline constexpr std::uintptr_t kShowFlagForce1Mask   = 0x1453E39D4;  // u32: bits forced on for every view
-inline constexpr std::uint32_t  kSplitDisabledFlags   = 0x100A;       // 0x8 TemporalAA; 0x2, 0x1000 [ASSUMPTION] Bloom, MotionBlur
-/// What the mod forces by default: bit 0x2 leaks player 1's moving content into player 2's half (live A/B,
-/// PLAN §4.9d), so it stays off until its pass reads each view's own rect.
+inline constexpr std::uint32_t  kSplitDisabledFlags   = 0x100A;       // 0x8 TemporalAA, 0x2 Bloom; 0x1000 [ASSUMPTION] MotionBlur
+/// What the mod forces without the bloom fix: bit 0x2 (Bloom) leaks player 1's moving content into player 2's half
+/// (live A/B, PLAN §4.9d) unless render/bloom_origin is installed, which raises the mask to kSplitDisabledFlags.
 inline constexpr std::uint32_t  kSplitForcedFlags     = 0x1008;
 
 // --- AO downsample stage-0 origin (RE-rdc-split-frame.md, RE-impl-facts-ao-fix.md) ------------------
@@ -142,6 +143,50 @@ inline constexpr platform::FunctionFact kSetShaderValueVec4{L"RHICmdList__SetSha
 inline constexpr std::uintptr_t kAoStage0SetParamsCall = 0x1421CED47;  // stage-0-only call of the shared SetParameters
 inline constexpr std::uintptr_t kAoTapsCallA           = 0x1421D0FC3;  // taps 0,1 -> cb0[19]
 inline constexpr std::uintptr_t kAoTapsCallB           = 0x1421D0FD9;  // taps 2,3 -> cb0[20]
+
+// --- Bloom level-0 origin (RE-split-bit2-leak.md, RE-impl-facts-bloom-swap.md) ----------------------------------
+// SE_RCPassBloomReduce__Process calls one of two level-0 binders (rcx = pass context, context+0 = FViewInfo*); each
+// builds a 0xA8-byte FGraphicsPipelineStateInitializer (PS at +0x10, a raw pointer) and passes it to the stock
+// engine pipeline cache, which copies it as its key.
+inline constexpr std::uintptr_t kBloomL0BindCall          = 0x142286533;  // E8 -> 0x1422A4C20 SE_BloomReduce__BindFirst
+inline constexpr std::uintptr_t kBloomL0BindExactCall     = 0x14228653A;  // E8 -> 0x1422A5050 SE_BloomReduce__BindFirstExact2x
+inline constexpr std::array<std::uint8_t, 16> kBloomL0BindEntry{  // the same prologue in both binders
+    0x40, 0x55, 0x53, 0x56, 0x57, 0x41, 0x54, 0x41, 0x55, 0x41, 0x56, 0x41, 0x57, 0x48, 0x8D, 0x6C};
+/// SE_BloomReduce__BindFirst / __BindFirstExact2x(context, FVertexShaderRHIRef* out, const float4* srcRect,
+/// const float4* dstRect).
+inline constexpr platform::FunctionFact kBloomL0Bind{L"SE_BloomReduce__BindFirst", 0x1422A4C20, kBloomL0BindEntry};
+inline constexpr platform::FunctionFact kBloomL0BindExact{L"SE_BloomReduce__BindFirstExact2x", 0x1422A5050,
+                                                          kBloomL0BindEntry};
+inline constexpr std::uintptr_t kBloomL0PipelineCall      = 0x1422A4ED8;  // in BindFirst
+inline constexpr std::uintptr_t kBloomL0ExactPipelineCall = 0x1422A5308;  // in BindFirstExact2x
+inline constexpr std::array<std::uint8_t, 16> kGetAndOrCreateGraphicsPsoEntry{
+    0x40, 0x55, 0x53, 0x56, 0x57, 0x41, 0x55, 0x48, 0x8D, 0x6C, 0x24, 0xA0, 0x48, 0x81, 0xEC, 0x60};
+/// PipelineStateCache::GetAndOrCreateGraphicsPipelineState(FRHICommandList*, const Initializer*, uint32 applyFlags):
+/// stock 4.18, 490 callers: call sites only.
+inline constexpr platform::FunctionFact kGetAndOrCreateGraphicsPso{
+    L"PipelineStateCache::GetAndOrCreateGraphicsPipelineState", 0x1426DE680, kGetAndOrCreateGraphicsPsoEntry};
+inline constexpr std::size_t   kPsoInitializerSize = 0xA8;
+inline constexpr std::uint32_t kPsoInitPixelShader = 0x10;
+
+// The RHI. D3D12 unless the command line has -d3d11, -dx11 or -sm5 (PlatformCreateDynamicRHI 0x1426E6AA0).
+inline constexpr std::uintptr_t kGDynamicRHI              = 0x14582C478;  // FDynamicRHI*
+inline constexpr std::uintptr_t kGRHICommandListImmediate = 0x14593F4D8;  // FRHICommandListImmediate (object)
+inline constexpr std::uintptr_t kVtblD3D12DynamicRHI      = 0x144D3B3B0;
+inline constexpr std::uintptr_t kVtblD3D11DynamicRHI      = 0x144D39718;
+inline constexpr std::uintptr_t kVtblD3D12PixelShader     = 0x144D3B278;
+/// FDynamicRHI slot 144, CreatePixelShader_RenderThread(rhi, FPixelShaderRHIRef* out, FRHICommandListImmediate*,
+/// const TArray<uint8>* code): the engine's own render-thread creation (D3D12: the base 0x1426E47C0, which stalls
+/// the RHI thread around slot 12). `*out` comes back holding one reference.
+inline constexpr std::uint32_t  kRhiSlotCreatePixelShaderRT = 144;
+inline constexpr std::array<std::uint8_t, 16> kCreatePixelShaderRTEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x6C, 0x24, 0x10, 0x48, 0x89, 0x74, 0x24, 0x18, 0x57};
+inline constexpr platform::FunctionFact kD3D12CreatePixelShaderRT{L"FDynamicRHI::CreatePixelShader_RenderThread",
+                                                                  0x1426E47C0, kCreatePixelShaderRTEntry};
+// FD3D12PixelShader: a full copy of the code blob it was made from
+// ([resource tables][DXBC][optional data][int32 footer]), and where the DXBC lies inside it.
+inline constexpr std::uint32_t kD3D12PsBytecode    = 0x48;  // const uint8*
+inline constexpr std::uint32_t kD3D12PsBytecodeLen = 0x50;  // size_t
+inline constexpr std::uint32_t kD3D12PsCode        = 0x58;  // TArray<uint8>: Data, Num (+0x60), Max (+0x64)
 
 // --- The game's own input tick (RE-input-p2.md §1) ------------------------------------------------
 // AEndPlayerController's constructor turns off the stock per-controller input tick in PlayerTick for gameplay;
