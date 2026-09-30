@@ -1,0 +1,39 @@
+#pragma once
+
+// Player 2's own field camera: a second AEndFieldCameraOperator, driven by the game's own code.
+//
+// The game has one field camera operator (a world actor, g_EndGameRoot+0x9B0) that follows the party leader
+// and writes the primary camera manager's pose slot 24 each tick; PartyManager+0 names the primary controller.
+// Player 2's camera is the same operator class, spawned with the game's own spawn call and parameters, and run
+// with two globals swapped for the length of each of its calls (Remake/Documentation/research/RE-camera.md
+// §9.6, RE-impl-facts-v0.2.md):
+//   - PartyManager+0 = player 2's controller, so the operator reads player 2's control rotation and writes
+//     player 2's camera manager;
+//   - the root's operator weak pair = player 2's operator, so the game's own "the operator" lookups inside
+//     those calls find player 2's.
+// The same two swaps hold around player 2's ProcessPlayerInput, where the right stick reaches "the operator".
+// Each player's stick calls see only that player's pad: the input object merges every pad into one value
+// per frame, so for the length of a controller's input and movement calls the merged value is replaced by
+// that player's pad record, and put back after (pad 1 = XInput user 0, pad 2 = user 1).
+// All of this runs on the game thread.
+
+namespace lss::platform {
+class GameImage;
+}
+
+namespace lss::players::player_two_camera {
+
+/// Checks every function, slot and global, and replaces the operator's BeginPlay and Tick slots and the
+/// End controller's ProcessPlayerInput and Tick_FieldMove slots. False (logged) if anything differs.
+bool Install(const platform::GameImage& image) noexcept;
+
+/// Game thread, after player 2's controller exists: spawns player 2's operator and points it at the
+/// player-2 member (Aerith in the test party). False (logged) if the field has no operator or the member
+/// is not loaded.
+bool Start(void* playerOneController, void* playerTwoController) noexcept;
+
+/// Game thread, before player 2's controller is removed: forgets player 2's operator and returns it (or
+/// null if it is gone) for the caller to destroy.
+void* Take() noexcept;
+
+}  // namespace lss::players::player_two_camera

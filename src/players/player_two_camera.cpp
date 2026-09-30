@@ -1,0 +1,523 @@
+#include "players/player_two_camera.h"
+
+#include "engine_facts.h"
+#include "platform/guarded.h"
+#include "platform/image.h"
+#include "platform/log.h"
+#include "platform/verified_code.h"
+#include "platform/vtable_entry.h"
+
+#include <array>
+#include <cstdint>
+#include <cstring>
+
+namespace lss::players::player_two_camera {
+
+namespace {
+
+/// A UE4 FWeakObjectPtr as the game stores it: the object's index in GUObjectArray and its serial number.
+struct Weak
+{
+    std::int32_t index  = -1;
+    std::int32_t serial = 0;
+};
+
+using SpawnActorFn     = void* (*)(void* world, void* type, const void* transform, const void* parameters);
+using GetWorldFn       = void* (*)(void* gameMode);
+using StaticClassFn    = void* (*)();
+using SetOwnerCharaFn  = void (*)(void* cameraOperator, void* character);
+using GetPlayerActorFn = void* (*)(void* partyManager, std::uint8_t variant, std::uint8_t type, bool alternate);
+using AllocateSerialFn = std::int32_t (*)(void* objectArray, std::int32_t index);
+using ActorVoidFn      = void (*)(void* self);
+using ActorFloatFn     = void (*)(void* self, float deltaSeconds);
+using InputFn          = void (*)(void* self, float deltaSeconds, bool gamePaused);
+
+// Set once at install, then only read.
+void**           g_partyManager   = nullptr;  // the global holding the party manager pointer
+std::uint8_t**   g_root           = nullptr;
+void**           g_gameMode       = nullptr;
+std::uint64_t*   g_frameStamp     = nullptr;
+std::uint8_t*    g_corrections    = nullptr;
+std::uint32_t*   g_nameNone       = nullptr;
+std::uint8_t**   g_objects        = nullptr;
+std::int32_t*    g_objectCount    = nullptr;
+void*            g_objectArray    = nullptr;
+std::uint8_t**   g_squareInput    = nullptr;
+SpawnActorFn     g_spawnActor     = nullptr;
+StaticClassFn    g_staticClass    = nullptr;
+SetOwnerCharaFn  g_setOwnerChara  = nullptr;
+GetPlayerActorFn g_getPlayerActor = nullptr;
+AllocateSerialFn g_allocateSerial = nullptr;
+
+platform::VTableEntry g_operatorBeginPlaySlot;
+platform::VTableEntry g_operatorTickSlot;
+platform::VTableEntry g_inputSlot;
+platform::VTableEntry g_moveSlot;
+ActorVoidFn           g_operatorBeginPlay = nullptr;
+ActorFloatFn          g_operatorTick      = nullptr;
+InputFn               g_processInput      = nullptr;
+ActorFloatFn          g_fieldMove         = nullptr;
+
+// Game thread only (set by Start from the engine tick; the wrappers act only on that thread).
+DWORD g_gameThread  = 0;
+Weak  g_playerOne;              // player 1's controller while player 2 is in (resolved at each use)
+Weak  g_playerTwo;              // player 2's controller while player 2 is in
+Weak  g_operatorTwo;            // player 2's operator
+bool  g_spawning    = false;
+
+constexpr std::uint32_t kItemBytes       = 0x18;  // FUObjectItem: Object +0, Flags +8, SerialNumber +0x10
+constexpr std::uint32_t kItemFlags       = 0x08;
+constexpr std::uint32_t kItemSerial      = 0x10;
+constexpr std::int32_t  kUnreachableBits = 0x30000000;  // PendingKill | Unreachable: the pointer is not to be used
+
+template <class T>
+bool Read(const void* address, T& out) noexcept
+{
+    return address != nullptr && platform::CopyGuarded(&out, address, sizeof(T));
+}
+
+bool OnGameThread() noexcept
+{
+    return g_gameThread != 0 && GetCurrentThreadId() == g_gameThread;
+}
+
+/// The object a weak pair names, if it is still that object and alive (the engine's own validity rule).
+void* Resolve(const Weak& weak) noexcept
+{
+    std::uint8_t* objects = nullptr;
+    std::int32_t  count   = 0;
+    if (weak.index < 0 || weak.serial == 0 || !Read(g_objects, objects) || !Read(g_objectCount, count) ||
+        weak.index >= count || objects == nullptr)
+    {
+        return nullptr;
+    }
+    const std::uint8_t* item   = objects + static_cast<std::size_t>(weak.index) * kItemBytes;
+    void*               object = nullptr;
+    std::int32_t        flags = 0, serial = 0;
+    if (!Read(item, object) || !Read(item + kItemFlags, flags) || !Read(item + kItemSerial, serial) ||
+        serial != weak.serial || (flags & kUnreachableBits) != 0)
+    {
+        return nullptr;
+    }
+    return object;
+}
+
+/// A weak pair for a live object, the way the game builds one (InternalIndex plus the allocated serial).
+Weak MakeWeak(void* object) noexcept
+{
+    Weak weak;
+    std::int32_t index = -1;
+    std::int32_t serial = 0;
+    if (object != nullptr && Read(static_cast<std::uint8_t*>(object) + facts::kObjectIndex, index) && index >= 0 &&
+        platform::CallGuarded(g_allocateSerial, serial, g_objectArray, index) && serial != 0)
+    {
+        weak = {index, serial};
+    }
+    return weak;
+}
+
+std::int32_t* OperatorPair() noexcept
+{
+    std::uint8_t* root = nullptr;
+    return Read(g_root, root) && root != nullptr ? reinterpret_cast<std::int32_t*>(root + facts::kRootOperatorWeak)
+                                                 : nullptr;
+}
+
+void* PlayerOneOperator() noexcept
+{
+    const std::int32_t* pair = OperatorPair();
+    Weak                weak;
+    return pair != nullptr && Read(pair, weak) ? Resolve(weak) : nullptr;
+}
+
+/// PartyManager+0 names the given controller for its lifetime; put back only if still what was written.
+class PrimaryScope
+{
+public:
+    explicit PrimaryScope(void* controller) noexcept
+    {
+        void* manager = nullptr;
+        if (controller != nullptr && Read(g_partyManager, manager) && manager != nullptr &&
+            Read(manager, saved_))
+        {
+            if (platform::WriteGuarded(manager, &controller, sizeof(controller)))
+            {
+                field_ = static_cast<void**>(manager);
+                wrote_ = controller;
+            }
+        }
+    }
+    ~PrimaryScope()
+    {
+        void* now = nullptr;
+        if (field_ != nullptr && Read(field_, now) && now == wrote_ && !platform::WriteGuarded(field_, &saved_, sizeof(saved_)))
+        {
+            platform::Log(L"player 2's camera: the primary controller could not be put back");
+        }
+    }
+    PrimaryScope(const PrimaryScope&)            = delete;
+    PrimaryScope& operator=(const PrimaryScope&) = delete;
+
+private:
+    void** field_ = nullptr;
+    void*  saved_ = nullptr;
+    void*  wrote_ = nullptr;
+};
+
+/// The root's operator weak pair names the given operator for its lifetime; put back only if unchanged.
+class OperatorScope
+{
+public:
+    explicit OperatorScope(const Weak& weak) noexcept
+    {
+        std::int32_t* pair = OperatorPair();
+        if (weak.serial != 0 && pair != nullptr && Read(pair, saved_) && platform::WriteGuarded(pair, &weak, sizeof(weak)))
+        {
+            pair_  = pair;
+            wrote_ = weak;
+        }
+    }
+    ~OperatorScope()
+    {
+        Weak now;
+        if (pair_ != nullptr && Read(pair_, now) && now.index == wrote_.index && now.serial == wrote_.serial &&
+            !platform::WriteGuarded(pair_, &saved_, sizeof(saved_)))
+        {
+            platform::Log(L"player 2's camera: the operator pair could not be put back");
+        }
+    }
+    OperatorScope(const OperatorScope&)            = delete;
+    OperatorScope& operator=(const OperatorScope&) = delete;
+
+private:
+    std::int32_t* pair_ = nullptr;
+    Weak          saved_;
+    Weak          wrote_;
+};
+
+/// The merged stick is replaced by one pad's record for its lifetime. `user` is the XInput user (0 = pad 1,
+/// 1 = pad 2); a user whose pad is not connected gets a still stick. Player 2's scope also clears the
+/// key-driven stick (the keyboard is player 1's). The aggregate is rebuilt from the records every frame
+/// before the world ticks, so putting the saved values back leaves the frame as the game built it.
+class StickScope
+{
+public:
+    StickScope(std::uint32_t user, bool clearKeys) noexcept
+    {
+        std::uint8_t* owner = nullptr;
+        if (!Read(g_squareInput, owner) || owner == nullptr ||
+            !Read(owner + facts::kStickAnalog, savedAnalog_) || !Read(owner + facts::kStickDigital, savedDigital_))
+        {
+            return;
+        }
+        std::array<float, 4> pad{};  // still unless the pad's record exists
+        const std::uint8_t*  bank    = owner + facts::kStickBanks + 16 * facts::kXInputBank;
+        std::uint8_t*        records = nullptr;
+        std::int32_t         count   = 0;
+        if (Read(bank, records) && Read(bank + 8, count) && records != nullptr && count > 0 &&
+            user < static_cast<std::uint32_t>(count))
+        {
+            Read(records + static_cast<std::size_t>(user) * facts::kStickRecordBytes, pad);
+        }
+        const std::array<float, 4> still{};
+        if (platform::WriteGuarded(owner + facts::kStickAnalog, pad.data(), sizeof(pad)) &&
+            (!clearKeys || platform::WriteGuarded(owner + facts::kStickDigital, still.data(), sizeof(still))))
+        {
+            owner_ = owner;
+        }
+        else
+        {
+            platform::WriteGuarded(owner + facts::kStickAnalog, savedAnalog_.data(), sizeof(savedAnalog_));
+        }
+    }
+    ~StickScope()
+    {
+        if (owner_ != nullptr)
+        {
+            platform::WriteGuarded(owner_ + facts::kStickAnalog, savedAnalog_.data(), sizeof(savedAnalog_));
+            platform::WriteGuarded(owner_ + facts::kStickDigital, savedDigital_.data(), sizeof(savedDigital_));
+        }
+    }
+    StickScope(const StickScope&)            = delete;
+    StickScope& operator=(const StickScope&) = delete;
+
+private:
+    std::uint8_t*        owner_ = nullptr;
+    std::array<float, 4> savedAnalog_{};
+    std::array<float, 4> savedDigital_{};
+};
+
+// --- The slot replacements -----------------------------------------------------------------------------
+
+// The engine's own functions are called unguarded from these replacements, as the engine calls them. A fault
+// inside one is the game's own crash: catching it here and carrying on would hide it and continue in a broken
+// state. If something further up handles it, unwinding runs the scopes' destructors, which put every swapped
+// value back.
+
+/// Player 1's and player 2's controllers while player 2 is in, resolved through their weak pairs (a
+/// controller the engine destroyed or replaced resolves to null, so the scopes stop applying).
+struct Players
+{
+    void* one = nullptr;
+    void* two = nullptr;
+};
+
+Players CurrentPlayers() noexcept
+{
+    return OnGameThread() ? Players{Resolve(g_playerOne), Resolve(g_playerTwo)} : Players{};
+}
+
+/// AEndFieldCameraOperator::BeginPlay. Player 2's operator begins play inside the spawn Start makes, with
+/// PartyManager+0 already naming player 2; here the root's pair names it too, so the leader delegate and the
+/// owner the game picks are bound through player 2's controller.
+void OperatorBeginPlay(void* self)
+{
+    if (!OnGameThread() || !g_spawning || self == PlayerOneOperator())
+    {
+        g_operatorBeginPlay(self);
+        return;
+    }
+    const Weak weak = MakeWeak(self);
+    if (weak.serial == 0)
+    {
+        platform::Log(L"player 2's camera: no weak pair for the new operator; it begins play as player 1's would");
+    }
+    const OperatorScope scope(weak);
+    g_operatorBeginPlay(self);
+}
+
+/// AEndFieldCameraOperator::Tick. Player 2's operator ticks as the primary one, for player 2.
+void OperatorTick(void* self, float deltaSeconds)
+{
+    const Players players = CurrentPlayers();
+    if (players.two == nullptr || self != Resolve(g_operatorTwo))
+    {
+        g_operatorTick(self, deltaSeconds);
+        return;
+    }
+    const PrimaryScope  primary(players.two);
+    const OperatorScope scope(g_operatorTwo);
+    g_operatorTick(self, deltaSeconds);
+}
+
+/// AEndPlayerController::ProcessPlayerInput: each player's right stick reaches that player's operator.
+void ProcessPlayerInput(void* self, float deltaSeconds, bool gamePaused)
+{
+    const Players players = CurrentPlayers();
+    if (players.two == nullptr || (self != players.one && self != players.two))
+    {
+        g_processInput(self, deltaSeconds, gamePaused);
+        return;
+    }
+    if (self == players.one)
+    {
+        const StickScope stick(0, false);
+        g_processInput(self, deltaSeconds, gamePaused);
+        return;
+    }
+    if (Resolve(g_operatorTwo) == nullptr)
+    {
+        // Without its own operator, player 2's stick would reach player 1's: a still stick instead.
+        const StickScope stick(UINT32_MAX, true);
+        g_processInput(self, deltaSeconds, gamePaused);
+        return;
+    }
+    const PrimaryScope  primary(players.two);
+    const OperatorScope scope(g_operatorTwo);
+    const StickScope    stick(1, true);
+    g_processInput(self, deltaSeconds, gamePaused);
+}
+
+/// AEndPlayerController::Tick_FieldMove: each player's left stick moves only that player's character. Player
+/// 2's movement also takes its direction from player 2's camera (the game reads the primary controller's camera
+/// manager for the basis) and marks player 2's operator (the game writes flags on "the" operator).
+void FieldMove(void* self, float deltaSeconds)
+{
+    const Players players = CurrentPlayers();
+    if (players.two == nullptr || (self != players.one && self != players.two))
+    {
+        g_fieldMove(self, deltaSeconds);
+        return;
+    }
+    if (self == players.one)
+    {
+        const StickScope stick(0, false);
+        g_fieldMove(self, deltaSeconds);
+        return;
+    }
+    const PrimaryScope  primary(players.two);
+    const OperatorScope scope(g_operatorTwo);  // no-op while player 2 has no operator
+    const StickScope    stick(1, true);
+    g_fieldMove(self, deltaSeconds);
+}
+
+template <class Fn>
+bool Resolve(const platform::GameImage& image, const platform::FunctionFact& fact, Fn& out) noexcept
+{
+    const auto address = platform::FindFunction(image, fact);
+    out                = address ? reinterpret_cast<Fn>(*address) : nullptr;
+    return out != nullptr;
+}
+
+template <class T>
+bool Global(const platform::GameImage& image, std::uintptr_t address, T*& out) noexcept
+{
+    const auto live = image.Rebase(address, sizeof(T));
+    out             = live ? reinterpret_cast<T*>(*live) : nullptr;
+    return out != nullptr;
+}
+
+}  // namespace
+
+bool Install(const platform::GameImage& image) noexcept
+{
+    if (g_operatorBeginPlaySlot.Active())
+    {
+        return false;  // already installed: a second install must not undo the first
+    }
+    const auto array = image.Rebase(facts::kObjectArray);
+    if (!Global(image, facts::kPartyManagerGlobal, g_partyManager) || !Global(image, facts::kEndGameRootGlobal, g_root) ||
+        !Global(image, facts::kGameModeGlobal, g_gameMode) || !Global(image, facts::kOperatorFrameStamp, g_frameStamp) ||
+        !Global(image, facts::kOperatorCorrections, g_corrections) || !Global(image, facts::kNameNoneIndex, g_nameNone) ||
+        !Global(image, facts::kObjectArrayObjects, g_objects) || !Global(image, facts::kObjectArrayCount, g_objectCount) ||
+        !Global(image, facts::kSquareInputOwnerGlobal, g_squareInput) || !array ||
+        !Resolve(image, facts::kSpawnActor, g_spawnActor) || !Resolve(image, facts::kOperatorStaticClass, g_staticClass) ||
+        !Resolve(image, facts::kSetOwnerChara, g_setOwnerChara) || !Resolve(image, facts::kGetPlayerActor, g_getPlayerActor) ||
+        !Resolve(image, facts::kAllocateSerialNumber, g_allocateSerial))
+    {
+        platform::Log(L"player 2's camera: an engine check failed; player 2 keeps a still camera");
+        return false;
+    }
+    g_objectArray = reinterpret_cast<void*>(*array);
+
+    const auto beginPlay = platform::FindFunction(image, facts::kOperatorBeginPlay.target);
+    const auto tick      = platform::FindFunction(image, facts::kOperatorTick.target);
+    const auto input     = platform::FindFunction(image, facts::kProcessPlayerInput.target);
+    const auto move      = platform::FindFunction(image, facts::kFieldMove.target);
+    if (!beginPlay || !tick || !input || !move)
+    {
+        return false;
+    }
+    g_operatorBeginPlay = reinterpret_cast<ActorVoidFn>(*beginPlay);
+    g_operatorTick      = reinterpret_cast<ActorFloatFn>(*tick);
+    g_processInput      = reinterpret_cast<InputFn>(*input);
+    g_fieldMove         = reinterpret_cast<ActorFloatFn>(*move);
+
+    // All four or none: a partial set would split one player's state between two cameras.
+    const bool installed =
+        platform::ReplaceSlot(image, facts::kOperatorBeginPlay, reinterpret_cast<std::uintptr_t>(&OperatorBeginPlay),
+                              g_operatorBeginPlaySlot) &&
+        platform::ReplaceSlot(image, facts::kOperatorTick, reinterpret_cast<std::uintptr_t>(&OperatorTick), g_operatorTickSlot) &&
+        platform::ReplaceSlot(image, facts::kProcessPlayerInput, reinterpret_cast<std::uintptr_t>(&ProcessPlayerInput),
+                              g_inputSlot) &&
+        platform::ReplaceSlot(image, facts::kFieldMove, reinterpret_cast<std::uintptr_t>(&FieldMove), g_moveSlot);
+    if (!installed)
+    {
+        g_moveSlot.Restore();
+        g_inputSlot.Restore();
+        g_operatorTickSlot.Restore();
+        g_operatorBeginPlaySlot.Restore();
+    }
+    return installed;
+}
+
+bool Start(void* playerOneController, void* playerTwoController) noexcept
+{
+    g_gameThread = GetCurrentThreadId();
+    g_playerOne  = MakeWeak(playerOneController);
+    g_playerTwo  = MakeWeak(playerTwoController);  // from here each player's sticks are their own pad's
+
+    void* operatorOne = PlayerOneOperator();
+    void* manager     = nullptr;
+    void* gameMode    = nullptr;
+    if (operatorOne == nullptr || !Read(g_partyManager, manager) || manager == nullptr || !Read(g_gameMode, gameMode) ||
+        gameMode == nullptr)
+    {
+        platform::Log(L"player 2's camera: no field camera operator or party manager (not in the field?); still camera");
+        return false;
+    }
+    void* member = nullptr;
+    if (!platform::CallGuarded(g_getPlayerActor, member, manager, std::uint8_t{0}, facts::kAerithType, false) ||
+        member == nullptr)
+    {
+        platform::Log(L"player 2's camera: Aerith is not loaded; still camera");
+        return false;
+    }
+    void*      world    = nullptr;
+    void*      type     = nullptr;
+    void**     vtable   = nullptr;
+    GetWorldFn getWorld = nullptr;
+    if (!Read(gameMode, vtable) || !Read(reinterpret_cast<std::uint8_t*>(vtable) + facts::kGameModeGetWorldSlot, getWorld) ||
+        !platform::CallGuarded(getWorld, world, gameMode) || world == nullptr ||
+        !platform::CallGuarded(g_staticClass, type) || type == nullptr)
+    {
+        platform::Log(L"player 2's camera: the world or the operator class could not be found; still camera");
+        return false;
+    }
+
+    // The game's own spawn parameters for the operator, with no name: the engine then makes a unique one
+    // (the game's literal name would make the spawn rebuild player 1's operator in place).
+    alignas(8) std::array<std::uint8_t, 0x30> parameters{};
+    std::uint32_t                             none = 0;
+    if (!Read(g_nameNone, none))
+    {
+        platform::Log(L"player 2's camera: NAME_None could not be read; still camera");
+        return false;
+    }
+    std::memcpy(parameters.data(), &none, sizeof(none));
+    const std::uint32_t flags = facts::kOperatorObjectFlags;
+    std::memcpy(parameters.data() + 0x2C, &flags, sizeof(flags));
+
+    // The operator's constructor resets two globals player 1's operator uses; they are put back after,
+    // unconditionally: undoing the constructor's write is the point.
+    std::uint64_t stamp       = 0;
+    std::uint8_t  corrections = 0;
+    if (!Read(g_frameStamp, stamp) || !Read(g_corrections, corrections))
+    {
+        platform::Log(L"player 2's camera: the operator globals could not be read; still camera");
+        return false;
+    }
+    void*               spawned     = nullptr;
+    bool                called      = false;
+    {
+        const PrimaryScope primary(playerTwoController);  // BeginPlay runs inside the spawn
+        g_spawning = true;
+        called     = platform::CallGuarded(g_spawnActor, spawned, world, type, static_cast<const void*>(nullptr),
+                                           static_cast<const void*>(parameters.data()));
+        g_spawning = false;
+    }
+    platform::WriteGuarded(g_frameStamp, &stamp, sizeof(stamp));
+    platform::WriteGuarded(g_corrections, &corrections, sizeof(corrections));
+    if (!called || spawned == nullptr)
+    {
+        platform::Log(L"player 2's camera: the operator spawn {}; still camera", called ? L"returned nothing" : L"RAISED AN EXCEPTION");
+        return false;
+    }
+    g_operatorTwo = MakeWeak(spawned);
+
+    bool owned = false;
+    {
+        const PrimaryScope  primary(playerTwoController);
+        const OperatorScope scope(g_operatorTwo);
+        owned = platform::CallGuarded(g_setOwnerChara, spawned, member);
+    }
+    // Moving the new operator off the leader cleared the leader's camera delegate that player 1's operator
+    // had bound; the game's own re-apply puts it back.
+    void* ownerOne     = nullptr;
+    const bool reowned = Read(static_cast<std::uint8_t*>(operatorOne) + facts::kOperatorOwnerChara, ownerOne) &&
+                         ownerOne != nullptr && platform::CallGuarded(g_setOwnerChara, operatorOne, ownerOne);
+    platform::Log(L"player 2's camera: own operator spawned (index {}), following Aerith {}; player 1's operator {}",
+                  g_operatorTwo.index, owned ? L"yes" : L"NO (the owner call raised)", reowned ? L"re-applied" : L"NOT re-applied");
+    return owned;
+}
+
+void* Take() noexcept
+{
+    void* operatorTwo = Resolve(g_operatorTwo);
+    g_operatorTwo     = {};
+    g_playerOne       = {};
+    g_playerTwo       = {};
+    return operatorTwo;
+}
+
+}  // namespace lss::players::player_two_camera
