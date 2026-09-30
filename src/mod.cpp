@@ -17,6 +17,7 @@
 #include "players/own_controller.h"
 #include "players/player_two_camera.h"
 #include "players/session.h"
+#include "players/split_render.h"
 
 #include <cstdint>
 #include <optional>
@@ -31,7 +32,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.4.0-control-channel";
+constexpr const wchar_t* kVersion = L"0.5.0-player-two-input";
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
@@ -103,6 +104,11 @@ public:
         return lss::players::Session::Console(command.c_str()) ? Outcome{}
                                                                 : Outcome{false, L"the console command could not be called"};
     }
+    Outcome ShowFlags(std::uint32_t mask) override
+    {
+        lss::players::split_render::SetMask(mask, session_.HasPlayerTwo());
+        return {};
+    }
     Outcome Status() override
     {
         session_.Status();
@@ -127,7 +133,7 @@ public:
     LocalSplitScreenMod()
     {
         ModName        = STR("LocalSplitScreen");
-        ModVersion     = STR("0.4.0-control-channel");
+        ModVersion     = STR("0.5.0-player-two-input");
         ModDescription = STR("Two-player split-screen for FF7 Remake");
         ModAuthors     = STR("Andrew");
     }
@@ -142,6 +148,7 @@ public:
         // replacement stays valid. Otherwise the engine's function goes back.
         if (installed_ && !session_.HasPlayerTwo())
         {
+            lss::players::player_two_camera::RemoveInputTick();
             lss::players::own_controller::Remove();
         }
     }
@@ -182,6 +189,7 @@ private:
         {
             session_.Status();
         }
+        lss::players::player_two_camera::MaintainInputTick();
         channel_.Tick(target_);
     }
 

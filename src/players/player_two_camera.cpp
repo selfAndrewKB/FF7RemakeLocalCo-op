@@ -33,6 +33,7 @@ using AllocateSerialFn = std::int32_t (*)(void* objectArray, std::int32_t index)
 using ActorVoidFn      = void (*)(void* self);
 using ActorFloatFn     = void (*)(void* self, float deltaSeconds);
 using InputFn          = void (*)(void* self, float deltaSeconds, bool gamePaused);
+using PhaseHookFn      = void (*)(void* world, void* context, std::int32_t phase, bool start);
 
 // Set once at install, then only read.
 void**           g_partyManager   = nullptr;  // the global holding the party manager pointer
@@ -60,6 +61,13 @@ ActorFloatFn          g_operatorTick      = nullptr;
 InputFn               g_processInput      = nullptr;
 ActorFloatFn          g_fieldMove         = nullptr;
 
+// The game's input tick for the primary controller (RE-input-p2.md §1): its phase hook is reached through a
+// global function pointer the game sets at runtime, so the pointer is checked every engine tick.
+std::uintptr_t* g_phaseHookPointer = nullptr;
+PhaseHookFn     g_phaseHook        = nullptr;
+InputFn         g_tickPlayerInput  = nullptr;
+bool            g_phaseHookLogged  = false;
+
 // Game thread only (set by Start from the engine tick; the wrappers act only on that thread).
 DWORD g_gameThread  = 0;
 Weak  g_playerOne;              // player 1's controller while player 2 is in (resolved at each use)
@@ -82,6 +90,16 @@ struct CallCounts
     std::uint32_t operatorTick = 0;
 };
 std::array<CallCounts, 2> g_counts;
+
+/// Player 1's input step this frame: the game's arguments, for player 2's step right after it.
+struct PrimaryInput
+{
+    bool  ran    = false;
+    float dt     = 0.0f;
+    bool  paused = false;
+};
+PrimaryInput g_primaryInput;
+bool         g_noPlayerInputLogged = false;
 
 constexpr std::uint32_t kItemBytes       = 0x18;  // FUObjectItem: Object +0, Flags +8, SerialNumber +0x10
 constexpr std::uint32_t kItemFlags       = 0x08;
@@ -335,6 +353,7 @@ void ProcessPlayerInput(void* self, float deltaSeconds, bool gamePaused)
     if (self == players.one)
     {
         ++g_counts[0].input;
+        g_primaryInput = {true, deltaSeconds, gamePaused};
         const StickScope stick(0, false);
         g_processInput(self, deltaSeconds, gamePaused);
         return;
@@ -376,6 +395,42 @@ void FieldMove(void* self, float deltaSeconds)
     const OperatorScope scope(g_operatorTwo);  // no-op while player 2 has no operator
     const StickScope    stick(1, true);
     g_fieldMove(self, deltaSeconds);
+}
+
+/// The game's world-tick phase hook. At phase 1's start it ticks the primary controller's input (the only
+/// controller whose input the game ticks during play). Right after it, player 2's controller gets the same input
+/// step with the same arguments; the ProcessPlayerInput replacement then scopes it to player 2's operator and pad.
+void PhaseHook(void* world, void* context, std::int32_t phase, bool start)
+{
+    g_phaseHook(world, context, phase, start);
+    if (phase != facts::kInputTickPhase || !start || !g_primaryInput.ran || g_tickPlayerInput == nullptr)
+    {
+        return;
+    }
+    const PrimaryInput primary = g_primaryInput;
+    g_primaryInput             = {};
+    const Players players      = CurrentPlayers();
+    void*         playerInput  = nullptr;
+    if (players.two == nullptr)
+    {
+        return;
+    }
+    if (!Read(static_cast<std::uint8_t*>(players.two) + facts::kControllerPlayerInput, playerInput) || playerInput == nullptr)
+    {
+        if (!g_noPlayerInputLogged)
+        {
+            platform::Log(L"player 2's input: the controller has no PlayerInput object; its input step is skipped");
+            g_noPlayerInputLogged = true;
+        }
+        return;
+    }
+    // Unlike the replacements above, the engine never makes this call itself (it ticks only the primary
+    // controller's input), so it is guarded like the mod's other calls: a fault turns player 2's input step off.
+    if (!platform::CallGuarded(g_tickPlayerInput, players.two, primary.dt, primary.paused))
+    {
+        g_tickPlayerInput = nullptr;
+        platform::Log(L"player 2's input: the input step RAISED AN EXCEPTION; player 2's input step is off until the game restarts");
+    }
 }
 
 template <class Fn>
@@ -444,14 +499,62 @@ bool Install(const platform::GameImage& image) noexcept
         g_inputSlot.Restore();
         g_operatorTickSlot.Restore();
         g_operatorBeginPlaySlot.Restore();
+        return false;
     }
-    return installed;
+    // Optional: without it player 2's right stick does nothing, and everything else still works.
+    if (!Global(image, facts::kWorldTickPhaseHookGlobal, g_phaseHookPointer) ||
+        !Resolve(image, facts::kWorldTickPhaseHook, g_phaseHook) || !Resolve(image, facts::kTickPlayerInput, g_tickPlayerInput))
+    {
+        g_phaseHookPointer = nullptr;
+        platform::Log(L"player 2's input: the game's input tick could not be verified; player 2's right stick stays unused");
+    }
+    return true;
+}
+
+void MaintainInputTick() noexcept
+{
+    if (g_phaseHookPointer == nullptr)
+    {
+        return;
+    }
+    std::uintptr_t current = 0;
+    const auto     ours    = reinterpret_cast<std::uintptr_t>(&PhaseHook);
+    if (!Read(g_phaseHookPointer, current) || current == ours)
+    {
+        return;
+    }
+    if (current == reinterpret_cast<std::uintptr_t>(g_phaseHook))
+    {
+        const bool swapped = platform::WriteGuarded(g_phaseHookPointer, &ours, sizeof(ours));
+        if (swapped || !g_phaseHookLogged)
+        {
+            platform::Log(L"player 2's input: the game's world-tick phase hook {}", swapped ? L"is wrapped (player 2's input step follows player 1's)" : L"could NOT be wrapped");
+        }
+        g_phaseHookLogged = !swapped;
+    }
+    else if (current != 0 && !g_phaseHookLogged)
+    {
+        platform::Log(L"player 2's input: the world-tick phase hook points somewhere unexpected; left alone");
+        g_phaseHookLogged = true;
+    }
+}
+
+void RemoveInputTick() noexcept
+{
+    std::uintptr_t current = 0;
+    if (g_phaseHookPointer != nullptr && Read(g_phaseHookPointer, current) &&
+        current == reinterpret_cast<std::uintptr_t>(&PhaseHook))
+    {
+        const auto original = reinterpret_cast<std::uintptr_t>(g_phaseHook);
+        platform::WriteGuarded(g_phaseHookPointer, &original, sizeof(original));
+    }
 }
 
 bool Start(void* playerOneController, void* playerTwoController) noexcept
 {
-    g_gameThread = GetCurrentThreadId();
-    g_playerOne  = MakeWeak(playerOneController);
+    g_gameThread          = GetCurrentThreadId();
+    g_noPlayerInputLogged = false;
+    g_playerOne           = MakeWeak(playerOneController);
     g_playerTwo  = MakeWeak(playerTwoController);  // from here each player's sticks are their own pad's
 
     void* operatorOne = PlayerOneOperator();

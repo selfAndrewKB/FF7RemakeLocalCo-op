@@ -36,6 +36,13 @@ bool Start(void* playerOneController, void* playerTwoController) noexcept;
 /// null if it is gone) for the caller to destroy.
 void* Take() noexcept;
 
+/// Game thread, every engine tick: keeps the game's world-tick phase hook wrapped, so that player 2's
+/// controller gets the game's input step right after player 1's (the game ticks only the primary controller's
+/// input; RE-input-p2.md §1). The game sets that hook pointer at runtime, hence the per-tick check.
+void MaintainInputTick() noexcept;
+/// Puts the game's phase hook back (unload).
+void RemoveInputTick() noexcept;
+
 /// Test input (control scripts): while held, `user`'s stick record reads these values (LX, LY, RX, RY,
 /// -1..1) inside that player's stick scopes, in place of the pad. Only acts while player 2 is in. Game thread.
 void HoldStick(unsigned user, const float (&axes)[4]) noexcept;

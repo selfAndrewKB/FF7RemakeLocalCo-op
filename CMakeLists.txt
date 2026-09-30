@@ -34,6 +34,7 @@ add_library(LocalSplitScreen SHARED
     src/players/party_seat.cpp
     src/players/player_two_camera.cpp
     src/players/session.cpp
+    src/players/split_render.cpp
 )
 
 # Includes are rooted at src/ so every #include names its module ("platform/log.h").

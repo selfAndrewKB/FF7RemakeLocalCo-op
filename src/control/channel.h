@@ -9,7 +9,8 @@
 //   Mods/LocalSplitScreen/control/done/    each script once taken, and its <name>.result.txt
 // Scripts run one at a time, lowest file name first. A script with an invalid line is rejected whole. Each
 // completed command is appended to the result file at once (and logged); the last line is
-// `finished: ok|failed|rejected`. The first failing command stops the script and releases its stick holds.
+// `finished: ok|failed|rejected|aborted`. The first failing command stops the script and releases its stick holds.
+// A file named `abort` in the inbox stops the running script the same way (the channel deletes the file).
 //
 // The language, one command per line ('#' starts a comment):
 //   join | leave                        add or remove player 2 (as Ctrl+F7 / Ctrl+F8)
@@ -19,6 +20,8 @@
 //                                       pad; runs alongside the commands after it; needs player 2 in
 //   wait <ticks>                        do nothing for a number of ticks
 //   console <command>                   an engine console command
+//   showflags <hex>                     the show flags forced on in both halves while player 2 is in (0 = the
+//                                       engine's split rule; default 0x100A, players/split_render.h)
 //   status                              log the players and each one's input, movement and camera counts
 //   note <text>                         write a marker line to the log
 //   quit                                quit the game through the engine (player 2 must be out)
@@ -53,6 +56,7 @@ public:
     virtual Outcome HoldStick(std::int32_t player, const float (&axes)[4]) = 0;
     virtual void    ReleaseStick(std::int32_t player)               = 0;
     virtual Outcome Console(const std::wstring& command)            = 0;
+    virtual Outcome ShowFlags(std::uint32_t mask)                   = 0;
     virtual Outcome Status()                                        = 0;
     virtual Outcome Quit()                                          = 0;
 };
@@ -66,6 +70,7 @@ enum class CommandKind
     Stick,
     Wait,
     Console,
+    ShowFlags,
     Status,
     Note,
     Quit,
@@ -76,7 +81,7 @@ struct Command
     CommandKind   kind    = CommandKind::Note;
     std::int32_t  player  = 0;   // stick: 1 or 2
     float         axes[4] = {};  // stick: LX, LY, RX, RY
-    std::uint32_t ticks   = 0;   // stick, wait
+    std::uint32_t ticks   = 0;   // stick, wait; showflags: the mask
     std::wstring  text;          // console, note
 };
 

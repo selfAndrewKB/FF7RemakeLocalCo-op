@@ -217,6 +217,20 @@ ParsedLine ParseLine(std::wstring_view line)
         command.ticks = *ticks;
         return {command, {}};
     }
+    if (verb == L"showflags")
+    {
+        const std::wstring text = words.size() == 2 ? std::wstring(words[1]) : std::wstring{};
+        wchar_t*           end  = nullptr;
+        const auto         mask = text.empty() ? 0ul : std::wcstoul(text.c_str(), &end, 16);
+        if (text.empty() || text[0] == L'-' || end != text.c_str() + text.size() || mask > 0xFFFFFFFFul)
+        {
+            return Error(L"showflags takes one hexadecimal mask (e.g. 100A, or 0)");
+        }
+        Command command;
+        command.kind  = CommandKind::ShowFlags;
+        command.ticks = static_cast<std::uint32_t>(mask);
+        return {command, {}};
+    }
     if (verb == L"console" || verb == L"note")
     {
         const auto text = Rest(line);
@@ -247,6 +261,7 @@ std::wstring Describe(const Command& command)
         return std::format(L"stick {} {} {} {} {} {}", command.player, command.axes[0], command.axes[1], command.axes[2],
                            command.axes[3], command.ticks);
     case CommandKind::Console: return L"console " + command.text;
+    case CommandKind::ShowFlags: return std::format(L"showflags {:X}", command.ticks);
     case CommandKind::Note: return L"note " + command.text;
     }
     return L"?";
@@ -294,6 +309,21 @@ void CommandChannel::Tick(Target& target) noexcept
         if (!running_ && tick_ % kScanTicks == 0)
         {
             StartNext();
+        }
+        if (running_ && tick_ % kScanTicks == 0)
+        {
+            std::error_code error;
+            const fs::path  abort = inbox_ / L"abort";
+            if (fs::exists(abort, error))
+            {
+                fs::remove(abort, error);
+                target.ReleaseStick(1);
+                target.ReleaseStick(2);
+                Append(std::format(L"tick {}: aborted by the abort file", tick_));
+                Append(L"finished: aborted");
+                running_.reset();
+                return;
+            }
         }
         if (running_)
         {
@@ -413,6 +443,7 @@ void CommandChannel::Step(Target& target)
         case CommandKind::Status: outcome = target.Status(); break;
         case CommandKind::Quit: outcome = target.Quit(); break;
         case CommandKind::Console: outcome = target.Console(command.text); break;
+        case CommandKind::ShowFlags: outcome = target.ShowFlags(command.ticks); break;
         case CommandKind::Note: Log(L"control note: {}", command.text); break;
         case CommandKind::Stick:
             outcome = target.HoldStick(command.player, command.axes);

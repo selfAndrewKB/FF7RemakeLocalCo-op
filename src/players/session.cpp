@@ -18,6 +18,7 @@
 #include "players/own_controller.h"
 #include "players/party_seat.h"
 #include "players/player_two_camera.h"
+#include "players/split_render.h"
 
 #include <Unreal/Core/Containers/FString.hpp>
 
@@ -201,6 +202,7 @@ bool Session::Install(const platform::GameImage& image) noexcept
     removeLocalPlayer_ = *remove;
     cameraInstalled_   = player_two_camera::Install(image);  // optional: without it player 2's camera stays still
     seatInstalled_     = party_seat::Install(image);         // optional probe (Ctrl+F9)
+    split_render::Install(image);                            // optional: without it the halves keep the split rule's reduced effects
     return true;
 }
 
@@ -225,6 +227,11 @@ try
         return;
     }
     UObject* playerOneController = Field((*players)[0], facts::kLocalPlayerController);
+    if (Field(playerOneController, facts::kControllerPawn) == nullptr)
+    {
+        platform::Log(L"join refused: player 1 controls no character (title screen or a load); join in the field");
+        return;
+    }
     if (!own_controller::UsesNativeClasses(playerOneController))
     {
         platform::Log(L"join refused: player 1's controller or camera manager is not the End class the research read ({})",
@@ -273,6 +280,7 @@ try
     const bool filledTwo         = FillHalf(managerTwo);
     platform::Log(L"join: player 2 is in; halves filled: player 1 {}, player 2 {}", filledOne ? L"yes" : L"NO",
                   filledTwo ? L"yes" : L"NO");
+    split_render::OnJoin();
     if (cameraInstalled_)
     {
         if (!player_two_camera::Start(playerOneController, playerTwoController))
@@ -300,6 +308,7 @@ try
     {
         platform::Log(L"leave: the engine no longer lists player 2; letting go without touching it");
         playerTwo_ = nullptr;
+        split_render::OnLeave();
         return;
     }
     // The actors player 2's controller and camera manager spawned, which nothing destroys (the End camera
@@ -333,6 +342,7 @@ try
         return;
     }
     playerTwo_ = nullptr;
+    split_render::OnLeave();
     if (seatInstalled_)
     {
         party_seat::Forget();  // a later player 2 is a new controller, set up afresh

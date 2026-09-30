@@ -112,6 +112,30 @@ inline constexpr platform::SlotFact kFieldMove{
     L"AEndPlayerController::Tick_FieldMove (slot 129)", kEndPlayerControllerVTable + 129 * 8,
     {L"AEndPlayerController::Tick_FieldMove", 0x1415F5990, kFieldMoveEntry}};
 
+// --- Split-screen show flags (RE-render-views.md) ------------------------------------------------
+// Stock EngineShowFlagOverride (0x14322C1D0) clears these show-flag bits whenever the viewport is split; its last
+// step is `flags = Force1 | (flags & ~Force0)` with two engine masks that only the static initialiser writes (zero).
+inline constexpr std::uintptr_t kShowFlagForce1Mask   = 0x1453E39D4;  // u32: bits forced on for every view
+inline constexpr std::uint32_t  kSplitDisabledFlags   = 0x100A;       // 0x8 TemporalAA; 0x2, 0x1000 [ASSUMPTION] Bloom, MotionBlur
+
+// --- The game's own input tick (RE-input-p2.md §1) ------------------------------------------------
+// AEndPlayerController's constructor turns off the stock per-controller input tick in PlayerTick for gameplay;
+// the game ticks only PartyManager+0's input, from its world-tick phase hook (phase 1, start), through a global
+// function pointer set at runtime.
+inline constexpr std::uintptr_t kWorldTickPhaseHookGlobal = 0x145994E28;  // void (*)(UWorld*, void*, int32 phase, bool start)
+inline constexpr std::int32_t   kInputTickPhase           = 1;
+inline constexpr std::uint32_t  kControllerPlayerInput    = 0x498;        // APlayerController::PlayerInput
+inline constexpr std::array<std::uint8_t, 16> kWorldTickPhaseHookEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x6C, 0x24, 0x10, 0x48, 0x89, 0x74, 0x24, 0x18, 0x48};
+inline constexpr std::array<std::uint8_t, 16> kTickPlayerInputEntry{
+    0x48, 0x8B, 0xC4, 0x56, 0x41, 0x56, 0x48, 0x81, 0xEC, 0xD8, 0x00, 0x00, 0x00, 0x0F, 0x29, 0x70};
+inline constexpr platform::FunctionFact kWorldTickPhaseHook{L"EndGame_WorldTickPhaseHook", 0x1416BF9D0,
+                                                            kWorldTickPhaseHookEntry};
+/// Stock APlayerController::TickPlayerInput(float DeltaSeconds, bool bGamePaused): PlayerInput tick, then
+/// ProcessPlayerInput (slot 376). Does not check PlayerInput for null in shipping.
+inline constexpr platform::FunctionFact kTickPlayerInput{L"APlayerController::TickPlayerInput", 0x1431BC2B0,
+                                                         kTickPlayerInputEntry};
+
 inline constexpr platform::FunctionFact kSetOwnerChara{L"AEndFieldCameraOperator::SetOwnerChara", 0x140FDFB50,
                                                        kSetOwnerCharaEntry};
 inline constexpr platform::FunctionFact kSpawnActor{L"UWorld::SpawnActor", 0x143007550, kSpawnActorEntry};
