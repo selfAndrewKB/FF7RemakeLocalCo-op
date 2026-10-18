@@ -1,7 +1,8 @@
 // LocalSplitScreen for FINAL FANTASY VII REMAKE: the UE4SS entry point.
 //
 // Verifies every engine fact it relies on, installs, and turns the player-intent keys into joins and leaves
-// on the game thread (the engine tick's pre-callback), so they never land inside a frame's drawing.
+// on the game thread (the engine tick's pre-callback), so they never land inside a frame's drawing. A retry, load,
+// jump or return to the title takes player 2 out first and brings it back after (players/field_exit.h).
 //   Ctrl+F7  player 2 joins with a controller and camera manager of its own
 //   Ctrl+F8  player 2 leaves
 //   Ctrl+F9  PROBE: player 2 takes Aerith through the game's leader funnel, or gives her back
@@ -39,7 +40,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.8.1-game-state";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.9.0-field-exit";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
@@ -121,6 +122,9 @@ void RegisterSessionCommands(lss::players::Session& session)
               .get = [&session] { return Value{session.Seated()}; }});
     Register({.name = L"p2.in", .shape = Shape::OnOff, .help = L"player 2 is in",
               .get = [&session] { return Value{session.HasPlayerTwo()}; }});
+    Register({.name = L"p2.rejoin", .shape = Shape::OnOff,
+              .help = L"player 2 was taken out by a world change and joins again once the field is back ('leave' cancels)",
+              .get  = [&session] { return Value{session.RejoinPending()}; }});
     Register({.name  = L"p2.state",
               .shape = Shape::Word,
               .words = {L"out", L"in", L"playing"},
@@ -183,6 +187,10 @@ public:
             Hook::UnregisterCallback(tickCallback_);
         }
         remote_.Close();
+        if (installed_)
+        {
+            session_.Remove();  // the field-exit calls go back whether or not player 2 is in
+        }
         // With player 2 in, its camera manager was built through the replacement; the DLL is pinned, so the
         // replacement stays valid. Otherwise the engine's function goes back.
         if (installed_ && !session_.HasPlayerTwo())
@@ -237,7 +245,8 @@ private:
             session_.Status();
         }
         lss::players::player_two_camera::MaintainInputTick();
-        lss::players::game_state::Tick();  // before the console, so its readings are this tick's
+        lss::players::game_state::Tick();  // first: the session and the console read this tick's values
+        session_.Tick();
         remote_.Tick();
     }
 

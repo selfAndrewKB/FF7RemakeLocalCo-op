@@ -8,7 +8,7 @@ Two-player split-screen for FINAL FANTASY VII REMAKE (Intergrade, UE 4.18), as a
 | Keys | What |
 |------|------|
 | Ctrl+F7 | Player 2 joins: own End player controller, camera manager and field camera (following Aerith) |
-| Ctrl+F8 | Player 2 leaves |
+| Ctrl+F8 | Player 2 leaves (also cancels a rejoin after a load) |
 | Ctrl+F9 | PROBE: player 2 takes Aerith through the game's leader funnel, or gives her back (borrows player 1's PlayerTrigger) |
 | Ctrl+F6 | Log every local player's controller, pawn, camera manager and camera actor, and each player's input, movement and camera call counts |
 
@@ -69,6 +69,8 @@ src/
   players/
     game_state            the game's own state, location and field step as readings, every change logged
     session               join and leave through UE's local-player path; console commands
+    field_exit            player 2 leaves inside the game's field-exit request (retry, load, jump, title);
+                          session rejoins once the field is back (two call redirects)
     own_controller        the End camera manager's BeginPlay, made safe for a second player
     player_two_camera     player 2's field camera operator and the per-player scopes
     party_seat            PROBE: player 2 possesses Aerith

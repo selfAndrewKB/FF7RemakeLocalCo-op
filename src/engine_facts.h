@@ -70,6 +70,16 @@ inline constexpr std::size_t    kFieldRootStep        = 0x70;   // dword: the fi
 inline constexpr std::size_t    kFieldRootRunning     = 0x74;   // byte: the step machine runs
 inline constexpr std::size_t    kFieldRootLocation    = 0x78;   // FName: the current location
 inline constexpr std::uint32_t  kGameModeGetWorldSlot = 0x140;
+
+// --- The field exit (RE-lifecycle-world.md §3.1, §8) ----------------------------------------------
+inline constexpr std::array<std::uint8_t, 10> kRequestFieldExitEntry{0x40, 0x53, 0x48, 0x83, 0xEC, 0x40, 0x80, 0x79, 0x74, 0x00};
+/// EndGameRoot_RequestFieldExit_ClearRunning74(root): clears the running byte, destroys the field camera operator,
+/// resets the party's components. Every retry, load, jump and return to the title reaches it; IDA lists two
+/// code references (below) and no pointer to it.
+inline constexpr platform::FunctionFact kRequestFieldExit{L"EndGameRoot_RequestFieldExit_ClearRunning74", 0x140FF6E00,
+                                                          kRequestFieldExitEntry};
+inline constexpr std::uintptr_t kFieldExitStateCall     = 0x1416C20B6;  // AEndGameState_OnEnterState(9): call
+inline constexpr std::uintptr_t kFieldExitBlueprintJump = 0x141AC7D5A;  // UEndFieldAPI::execExitLoation: tail jmp
 inline constexpr std::uintptr_t kOperatorFrameStamp   = 0x1457E99C8;  // u64, written by the operator constructor
 inline constexpr std::uintptr_t kOperatorCorrections  = 0x1453A2A51;  // u8, written by the operator constructor
 inline constexpr std::uintptr_t kNameNoneIndex        = 0x145991B80;  // u32, NAME_None's comparison index

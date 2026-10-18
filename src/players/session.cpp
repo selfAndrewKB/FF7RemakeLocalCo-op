@@ -15,6 +15,8 @@
 #include "platform/image.h"
 #include "platform/log.h"
 #include "platform/verified_code.h"
+#include "players/field_exit.h"
+#include "players/game_state.h"
 #include "players/own_controller.h"
 #include "players/party_seat.h"
 #include "players/player_two_camera.h"
@@ -26,6 +28,11 @@
 #include <new>
 #include <string>
 
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <Windows.h>
+
 namespace lss::players {
 
 namespace {
@@ -36,6 +43,16 @@ using RC::Unreal::UObject;
 namespace UObjectGlobals = RC::Unreal::UObjectGlobals;
 
 constexpr std::int32_t kPlayerTwoControllerId = 1;
+
+/// The field is back after a world change (RE-lifecycle-world.md §8): play state, the steady step, running. The
+/// entry's step 12 re-reconciles every non-leader controller, so a join before step 13 would be undone.
+constexpr std::uint8_t kStatePlay  = 6;
+constexpr std::int32_t kStepSteady = 13;
+
+/// How long the field must stay back, with player 1 on a character, before player 2 rejoins; and how many joins
+/// may fail before the rejoin is left to Ctrl+F7. Timed, not counted in ticks: loads tick uncapped.
+constexpr std::chrono::seconds kRejoinSteady{2};
+constexpr int                  kRejoinFailures = 3;
 
 /// UGameplayStatics::CreatePlayer's parameter frame, checked against the UFunction's own size before use.
 struct CreatePlayerParams
@@ -203,7 +220,145 @@ bool Session::Install(const platform::GameImage& image) noexcept
     cameraInstalled_   = player_two_camera::Install(image);  // optional: without it player 2's camera stays still
     seatInstalled_     = party_seat::Install(image);         // optional probe (Ctrl+F9)
     split_render::Install(image);                            // optional: without it the halves keep the split rule's reduced effects
+    fieldExitInstalled_ = field_exit::Install(image, &Session::OnFieldExit, this);  // without it, Tick's step check alone
     return true;
+}
+
+void Session::Remove() noexcept
+{
+    if (fieldExitInstalled_)
+    {
+        field_exit::Remove();
+        fieldExitInstalled_ = false;
+    }
+}
+
+void Session::OnFieldExit(void* self, const wchar_t* caller) noexcept
+{
+    auto* session = static_cast<Session*>(self);
+    if (!session->HasPlayerTwo())
+    {
+        return;
+    }
+    if (GetCurrentThreadId() != session->gameThread_)
+    {
+        platform::Log(L"field exit: requested off the game thread ({}); player 2 is left to the field-step check", caller);
+        return;
+    }
+    session->LeaveForWorldChange(caller);
+}
+
+void Session::LeaveForWorldChange(const wchar_t* why) noexcept
+{
+    const bool seated = Seated();
+    platform::Log(L"world change ({}): player 2 leaves first{}", why, seated ? L" and gives Aerith back" : L"");
+    if (!TakeOut(true))
+    {
+        worldChangeStuck_ = true;
+        platform::Log(L"world change: player 2 could NOT be taken out; the game tears the field down with player 2 in");
+        return;
+    }
+    rejoin_ = Rejoin{.pending = true, .reseat = seated};
+    platform::Log(L"world change: player 2 joins again once the field is back (Ctrl+F8 cancels)");
+}
+
+void Session::Tick() noexcept
+try
+{
+    gameThread_                     = GetCurrentThreadId();
+    const game_state::Snapshot game = game_state::Current();
+    const bool steady = game.valid && game.hasRoot && game.running && game.step == kStepSteady;
+    if (steady)
+    {
+        worldChangeStuck_ = false;
+    }
+    if (!HasPlayerTwo())
+    {
+        TryRejoin();
+        return;
+    }
+    auto* players = LocalPlayers(gameInstance_);
+    if (players != nullptr && !Contains(*players, playerTwo_))
+    {
+        platform::Log(L"player 2 was removed by the engine; the mod lets go of it");
+        Forget();
+        return;
+    }
+    // The fallback: the field is leaving (running cleared, or an exit step) and the request was not seen.
+    if (!worldChangeStuck_ && game.valid && game.hasRoot && (!game.running || game.step > kStepSteady))
+    {
+        platform::Log(L"field exit not seen at the request (state {}, step {}, running {})", game_state::StateName(game.state),
+                      game.step, game.running ? L"on" : L"off");
+        LeaveForWorldChange(L"the field-step check");
+    }
+}
+catch (...)
+{
+    platform::Log(L"session tick: an engine lookup raised an exception");
+}
+
+void Session::TryRejoin() noexcept
+{
+    if (!rejoin_.pending)
+    {
+        return;
+    }
+    const game_state::Snapshot game = game_state::Current();
+    auto*                      players = LocalPlayers(gameInstance_);
+    // Player 1 on a character also keeps the title screen out (a field in the play state too, with no character).
+    const bool ready = game.valid && game.state == kStatePlay && game.hasRoot && game.running && game.step == kStepSteady &&
+                       players != nullptr && players->Num() == 1 &&
+                       Field(Field((*players)[0], facts::kLocalPlayerController), facts::kControllerPawn) != nullptr;
+    const auto now = std::chrono::steady_clock::now();
+    if (!ready)
+    {
+        rejoin_.steady = false;
+        return;
+    }
+    if (!rejoin_.steady)
+    {
+        rejoin_.steady = true;
+        rejoin_.since  = now;
+        platform::Log(L"rejoin: the field is back ({}); player 2 joins in {} s if it stays", game.location,
+                      kRejoinSteady.count());
+        return;
+    }
+    if (now - rejoin_.since < kRejoinSteady)
+    {
+        return;
+    }
+    Join();
+    if (!HasPlayerTwo())
+    {
+        rejoin_.steady = false;  // another wait, then another try
+        if (++rejoin_.failures >= kRejoinFailures)
+        {
+            rejoin_ = Rejoin{};
+            platform::Log(L"rejoin: player 2 did not join in {} tries (see above); press Ctrl+F7 to join", kRejoinFailures);
+        }
+        return;
+    }
+    const bool reseat = rejoin_.reseat;
+    rejoin_           = Rejoin{};
+    platform::Log(L"rejoin: player 2 is back{}", reseat ? L"; taking Aerith again" : L"");
+    if (reseat && seatInstalled_ && !Seated())
+    {
+        ToggleSeat();
+    }
+}
+
+void Session::Forget() noexcept
+{
+    playerTwo_ = nullptr;
+    split_render::OnLeave();
+    if (cameraInstalled_)
+    {
+        player_two_camera::Take();  // forgotten, not destroyed: it belonged to the old world
+    }
+    if (seatInstalled_)
+    {
+        party_seat::Forget();
+    }
 }
 
 void Session::Join() noexcept
@@ -296,20 +451,29 @@ catch (...)
 }
 
 void Session::Leave() noexcept
-try
 {
+    if (rejoin_.pending)
+    {
+        rejoin_ = Rejoin{};
+        platform::Log(L"player 2 no longer rejoins after the world change");
+    }
     if (playerTwo_ == nullptr)
     {
         platform::Log(L"player 2 is not in");
         return;
     }
+    TakeOut(false);
+}
+
+bool Session::TakeOut(bool worldChange) noexcept
+try
+{
     auto* players = LocalPlayers(gameInstance_);
     if (players == nullptr || !Contains(*players, playerTwo_))
     {
         platform::Log(L"leave: the engine no longer lists player 2; letting go without touching it");
-        playerTwo_ = nullptr;
-        split_render::OnLeave();
-        return;
+        Forget();
+        return true;
     }
     // The actors player 2's controller and camera manager spawned, which nothing destroys (the End camera
     // manager has no EndPlay or Destroyed override). Read before the removal destroys their owners.
@@ -320,8 +484,13 @@ try
     // Player 2's character goes back to its AI first, through the game's leader funnel.
     if (seatInstalled_ && !party_seat::Unseat(Field((*players)[0], facts::kLocalPlayerController), controller))
     {
-        platform::Log(L"leave refused: player 2's controller still holds Aerith; press Ctrl+F8 again to retry");
-        return;
+        if (!worldChange)
+        {
+            platform::Log(L"leave refused: player 2's controller still holds Aerith; press Ctrl+F8 again to retry");
+            return false;
+        }
+        // The game destroys and rebuilds the party next; removing the controller unpossesses her on the way.
+        platform::Log(L"leave: player 2's controller still holds Aerith; the world change takes player 2 out regardless");
     }
     // Player 2's field camera operator next: its cleanup unbinds the delegates it bound on player 2's
     // controller, which must still exist then.
@@ -339,7 +508,7 @@ try
     if (!removed)
     {
         platform::Log(L"leave failed: the engine did not remove player 2{}", raised ? L" (the call raised an exception)" : L"");
-        return;
+        return false;
     }
     playerTwo_ = nullptr;
     split_render::OnLeave();
@@ -356,10 +525,12 @@ try
     platform::Log(L"leave: player 2 removed{}; leftovers destroyed: camera actor {}, battle-talk actor {}",
                   raised ? L" (the call raised an exception after removing it)" : L"", cameraGone ? L"yes" : L"no",
                   talkGone ? L"yes" : L"no");
+    return true;
 }
 catch (...)
 {
     platform::Log(L"leave: an engine lookup raised an exception");
+    return playerTwo_ == nullptr;
 }
 
 void Session::ToggleSeat() noexcept
