@@ -9,7 +9,7 @@
 // Leave: the actors player 2's controller and camera manager spawned, which the engine never destroys, are
 // destroyed first, then UGameInstance::RemoveLocalPlayer. The engine's own list is the evidence of both.
 //
-// Player 2 comes out without a pawn: seating a party member is the next stage (PLAN-REMAKE-COOP.md §4.3).
+// Player 2 comes out without a pawn: seating a party member is the next stage (Documentation/plan/topics/session.md).
 
 #include <cstdint>
 

@@ -11,7 +11,7 @@
 // RE-impl-facts-v0.2.md §7).
 //
 // The game has one PlayerTrigger (a placed actor), and SwitchLeaderInternal needs one. Whether player 2 gets a
-// copy of it or borrows player 1's is the user's decision (PLAN-REMAKE-COOP.md §4.3). This probe BORROWS player
+// copy of it or borrows player 1's is the user's decision (Documentation/plan/topics/session.md). This probe BORROWS player
 // 1's: while player 2 holds Aerith, player 1's trigger rides on her (player 1's field prompts follow her).
 // Unseating gives Aerith back to her AI and re-seats player 1's leader through the same funnel, which puts the
 // trigger back on it.

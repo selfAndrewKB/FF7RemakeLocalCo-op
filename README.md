@@ -1,7 +1,7 @@
 # LocalSplitScreen (FF7 Remake)
 
 Two-player split-screen for FINAL FANTASY VII REMAKE (Intergrade, UE 4.18), as a UE4SS C++ mod. Plan and research:
-`../Documentation/PLAN-REMAKE-COOP.md` and `../Documentation/research/RE-*.md`.
+`../Documentation/plan/README.md` and `../Documentation/research/RE-*.md`.
 
 ## Keys
 

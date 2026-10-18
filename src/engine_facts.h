@@ -120,7 +120,7 @@ inline constexpr platform::SlotFact kFieldMove{
 inline constexpr std::uintptr_t kShowFlagForce1Mask   = 0x1453E39D4;  // u32: bits forced on for every view
 inline constexpr std::uint32_t  kSplitDisabledFlags   = 0x100A;       // 0x8 TemporalAA, 0x2 Bloom; 0x1000 [ASSUMPTION] MotionBlur
 /// What the mod forces without the bloom fix: bit 0x2 (Bloom) leaks player 1's moving content into player 2's half
-/// (live A/B, PLAN §4.9d) unless render/bloom_origin is installed, which raises the mask to kSplitDisabledFlags.
+/// (live A/B, Documentation/plan/topics/render.md) unless render/bloom_origin is installed, which raises the mask to kSplitDisabledFlags.
 inline constexpr std::uint32_t  kSplitForcedFlags     = 0x1008;
 
 // --- AO downsample stage-0 origin (RE-rdc-split-frame.md, RE-impl-facts-ao-fix.md) ------------------
