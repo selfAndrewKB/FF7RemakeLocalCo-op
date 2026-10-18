@@ -1,5 +1,6 @@
 #include "render/bloom_origin.h"
 
+#include "control/registry.h"
 #include "engine_facts.h"
 #include "platform/call_redirect.h"
 #include "platform/guarded.h"
@@ -299,6 +300,15 @@ bool Install(const platform::GameImage& image) noexcept
         return false;
     }
     g_installed.store(true);
+    control::Register({.name  = L"bloom-origin",
+                       .shape = control::Shape::OnOff,
+                       .help  = L"the first bloom reduce reads each view's own rows (render/bloom_origin.h; on)",
+                       .set   = [](const control::Value& value) {
+                           SetEnabled(std::get<bool>(value));
+                           platform::Log(L"bloom origin fix {}", Enabled() ? L"on" : L"off");
+                           return control::Outcome{};
+                       },
+                       .get = [] { return control::Value{Enabled()}; }});
     platform::Log(L"bloom origin: installed ({}); player 2's bloom will read its own rows", g_rhiName);
     return true;
 }

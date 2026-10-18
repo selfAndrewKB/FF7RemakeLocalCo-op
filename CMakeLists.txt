@@ -23,7 +23,11 @@ add_subdirectory("${UE4SS_ROOT}" "${CMAKE_BINARY_DIR}/RE-UE4SS")
 
 add_library(LocalSplitScreen SHARED
     src/mod.cpp
-    src/control/channel.cpp
+    src/control/registry.cpp
+    src/control/remote.cpp
+    src/control/runner.cpp
+    src/control/script.cpp
+    src/control/server.cpp
     src/platform/call_redirect.cpp
     src/platform/guarded.cpp
     src/platform/image.cpp
@@ -45,3 +49,27 @@ add_library(LocalSplitScreen SHARED
 target_include_directories(LocalSplitScreen PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_compile_features(LocalSplitScreen PRIVATE cxx_std_20)
 target_link_libraries(LocalSplitScreen PUBLIC UE4SS)
+
+# ------------------------------------------------------------------------------------------------
+# Host-side tests: the logic that needs neither the game nor UE4SS (run with --target <name>, then the exe)
+# ------------------------------------------------------------------------------------------------
+enable_testing()
+
+add_executable(ControlScriptTests
+    tests/control_script_test.cpp
+    src/control/registry.cpp
+    src/control/script.cpp
+)
+target_include_directories(ControlScriptTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(ControlScriptTests PRIVATE cxx_std_20)
+add_test(NAME control_script COMMAND ControlScriptTests)
+
+add_executable(ControlRunnerTests
+    tests/control_runner_test.cpp
+    src/control/registry.cpp
+    src/control/runner.cpp
+    src/control/script.cpp
+)
+target_include_directories(ControlRunnerTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(ControlRunnerTests PRIVATE cxx_std_20)
+add_test(NAME control_runner COMMAND ControlRunnerTests)

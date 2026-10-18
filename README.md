@@ -12,9 +12,24 @@ Two-player split-screen for FINAL FANTASY VII REMAKE (Intergrade, UE 4.18), as a
 | Ctrl+F9 | PROBE: player 2 takes Aerith through the game's leader funnel, or gives her back (borrows player 1's PlayerTrigger) |
 | Ctrl+F6 | Log every local player's controller, pawn, camera manager and camera actor, and each player's input, movement and camera call counts |
 
-## Control scripts
+## The console
 
-Scripts dropped into `Mods/LocalSplitScreen/control/inbox/*.txt` (UTF-8; write under another extension, then rename) run on the game thread without keys or window focus; results go to `control/done/<name>.result.txt` and the log. Commands: `join`, `leave`, `seat`, `unseat`, `stick <player> <lx> <ly> <rx> <ry> <ticks>`, `wait <ticks>`, `console <command>`, `showflags <hex>`, `ao-origin on|off`, `bloom-origin on|off`, `status`, `note <text>`, `quit` (`src/control/channel.h`). A file named `abort` in the inbox stops a running script.
+The mod listens on `127.0.0.1:4418` (`src/control/remote.h`): one command per line, replies streamed back one line
+each (`ok`, `failed`, `rejected`, `dropped`, `value`, `help`, `note`; `src/control/runner.h`). From the host:
+
+```
+python ../tools/game.py shell                                  an interactive console (tab completes commands)
+python ../tools/game.py -c join -c "wait-until p2.state == playing" -c "hold 2 stick 0 1 0 0 120"
+python ../tools/game.py run ../tools/scripts/smoke.txt         a file of commands, stopping at the first failure
+python ../tools/game.py status | launch | quit | relaunch --deploy --label v0.8.0 | shot | keys Enter
+```
+
+Every module registers its own commands (`src/control/registry.h`), so `help` on the running build is the list.
+Today: `join`, `leave`, `seat on|off`, `console <command>`, `report`, `quit`, `showflags <hex>`, `ao-origin on|off`,
+`bloom-origin on|off`, `log-level error|warning|info|debug|trace`; readings `p2.in`, `p2.state` (out|in|playing),
+`tick`, `version`. The language's own verbs (`src/control/script.h`): `get <name>`, `status`, `help [<name>]`,
+`wait <ticks>`, `wait-until <name> <op> <value> [<ticks>]`, `hold <player> stick <lx> <ly> <rx> <ry> <ticks>`,
+`note <text>`, `abort`. A failure drops the commands queued behind it; queries answer even during a wait.
 
 While player 2 is in, the mod also gives player 2's controller the game's input step right after player 1's (the game ticks only the primary controller's input), and forces back on the effects stock UE 4.18 turns off for split screen (show flags `0x100A`: TAA, bloom and bit `0x1000`). It makes Square Enix's AO downsample and first bloom reduce read each view's own rows; both read player 1's rows for player 2's view in the stock game (the split-screen ghost and its moving traces). The bloom fix works on D3D12 (the default renderer) and D3D11 (`-dx11`); where it cannot install, bloom stays off in split (`0x1008`).
 
@@ -44,9 +59,14 @@ src/
   mod.cpp                 UE4SS entry point, keys on the engine tick
   engine_facts.h          every address, offset and expected byte string, with its research doc
   platform/               image, verified functions and vtable slots, guards, log (shared design with Rebirth's)
+  control/
+    registry              every command a module registers: name, argument shape, set, get, help
+    script                the language: a line against the registry, plus the runner's own verbs
+    runner                the queue: order, waits, holds, failures, replies (host-tested)
+    server                the TCP socket and its thread (127.0.0.1:4418)
+    remote                the three joined on the game thread; log-level and tick
   players/
     session               join and leave through UE's local-player path; console commands
-  control/channel         control scripts from files (test driver)
     own_controller        the End camera manager's BeginPlay, made safe for a second player
     player_two_camera     player 2's field camera operator and the per-player scopes
     party_seat            PROBE: player 2 possesses Aerith

@@ -6,12 +6,15 @@
 //   Ctrl+F8  player 2 leaves
 //   Ctrl+F9  PROBE: player 2 takes Aerith through the game's leader funnel, or gives her back
 //   Ctrl+F6  log every local player's controller, camera manager and camera actor
+// The same intents, and every module's switches, are commands on the console (control/remote.h), driven from
+// the host by tools/game.py.
 
 #include <DynamicOutput/DynamicOutput.hpp>
 #include <Mod/CppUserModBase.hpp>
 #include <Unreal/Hooks/Hooks.hpp>
 
-#include "control/channel.h"
+#include "control/registry.h"
+#include "control/remote.h"
 #include "platform/image.h"
 #include "platform/log.h"
 #include "players/own_controller.h"
@@ -35,7 +38,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.7.1-bloom-d3d11";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.8.0-console";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
@@ -58,36 +61,16 @@ bool Pressed(int virtualKey, bool& wasDown) noexcept
 }
 
 using lss::control::Outcome;
+using lss::control::Shape;
+using lss::control::Value;
 
-/// The running mod as a control script sees it: each command does what its key does, but asks for a state and
-/// says why when it cannot reach it. Game thread only.
-class ModTarget final : public lss::control::Target
+/// The input holds the console can make: at the mod's own per-pad stick layer, so a scripted stick takes the
+/// path a real pad takes.
+class ModHolds final : public lss::control::Holds
 {
 public:
-    explicit ModTarget(lss::players::Session& session) noexcept : session_(session) {}
+    explicit ModHolds(lss::players::Session& session) noexcept : session_(session) {}
 
-    Outcome Join() override
-    {
-        session_.Join();
-        return session_.HasPlayerTwo() ? Outcome{} : Outcome{false, L"player 2 did not join (see the log)"};
-    }
-    Outcome Leave() override
-    {
-        session_.Leave();
-        return session_.HasPlayerTwo() ? Outcome{false, L"player 2 is still in (see the log)"} : Outcome{};
-    }
-    Outcome Seat(bool seated) override
-    {
-        if (!session_.HasPlayerTwo())
-        {
-            return {false, L"player 2 is not in"};
-        }
-        if (session_.Seated() != seated)
-        {
-            session_.ToggleSeat();
-        }
-        return session_.Seated() == seated ? Outcome{} : Outcome{false, L"the seat did not change (see the log)"};
-    }
     Outcome HoldStick(std::int32_t player, const float (&axes)[4]) override
     {
         if (!session_.HasPlayerTwo())
@@ -101,54 +84,85 @@ public:
     {
         lss::players::player_two_camera::ReleaseStick(static_cast<unsigned>(player - 1));
     }
-    Outcome Console(const std::wstring& command) override
-    {
-        Log(L"control: console command '{}'", command);
-        return lss::players::Session::Console(command.c_str()) ? Outcome{}
-                                                                : Outcome{false, L"the console command could not be called"};
-    }
-    Outcome ShowFlags(std::uint32_t mask) override
-    {
-        lss::players::split_render::SetMask(mask, session_.HasPlayerTwo());
-        return {};
-    }
-    Outcome AoOrigin(bool on) override
-    {
-        if (!lss::render::ao_origin::Installed())
-        {
-            return {false, L"the AO origin fix is not installed (see the log at startup)"};
-        }
-        lss::render::ao_origin::SetEnabled(on);
-        Log(L"control: AO origin fix {}", on ? L"on" : L"off");
-        return {};
-    }
-    Outcome BloomOrigin(bool on) override
-    {
-        if (!lss::render::bloom_origin::Installed())
-        {
-            return {false, L"the bloom origin fix is not installed (see the log at startup)"};
-        }
-        lss::render::bloom_origin::SetEnabled(on);
-        Log(L"control: bloom origin fix {}", on ? L"on" : L"off");
-        return {};
-    }
-    Outcome Status() override
-    {
-        session_.Status();
-        return {};
-    }
-    Outcome Quit() override
-    {
-        if (session_.HasPlayerTwo())
-        {
-            return {false, L"player 2 is still in ('leave' first)"};
-        }
-        return Console(L"quit");
-    }
 
 private:
     lss::players::Session& session_;
 };
+
+/// The session's commands and readings on the console. The render modules register their own switches.
+void RegisterSessionCommands(lss::players::Session& session)
+{
+    using lss::control::Register;
+    Register({.name = L"join", .help = L"player 2 joins with a controller and camera manager of its own (Ctrl+F7)",
+              .set  = [&session](const Value&) {
+                  session.Join();
+                  return session.HasPlayerTwo() ? Outcome{} : Outcome{false, L"player 2 did not join (see the log)"};
+              }});
+    Register({.name = L"leave", .help = L"player 2 leaves (Ctrl+F8)", .set = [&session](const Value&) {
+                  session.Leave();
+                  return session.HasPlayerTwo() ? Outcome{false, L"player 2 is still in (see the log)"} : Outcome{};
+              }});
+    Register({.name  = L"seat",
+              .shape = Shape::OnOff,
+              .help  = L"PROBE: player 2 holds Aerith through the game's leader funnel, or gives her back (Ctrl+F9)",
+              .set   = [&session](const Value& value) {
+                  const bool seated = std::get<bool>(value);
+                  if (!session.HasPlayerTwo())
+                  {
+                      return Outcome{false, L"player 2 is not in"};
+                  }
+                  if (session.Seated() != seated)
+                  {
+                      session.ToggleSeat();
+                  }
+                  return session.Seated() == seated ? Outcome{} : Outcome{false, L"the seat did not change (see the log)"};
+              },
+              .get = [&session] { return Value{session.Seated()}; }});
+    Register({.name = L"p2.in", .shape = Shape::OnOff, .help = L"player 2 is in",
+              .get = [&session] { return Value{session.HasPlayerTwo()}; }});
+    Register({.name  = L"p2.state",
+              .shape = Shape::Word,
+              .words = {L"out", L"in", L"playing"},
+              .help  = L"out, in (no member), or playing (holds a member)",
+              .get   = [&session] {
+                  return Value{std::wstring(!session.HasPlayerTwo() ? L"out" : session.Seated() ? L"playing" : L"in")};
+              }});
+    Register({.name  = L"showflags",
+              .shape = Shape::Hex,
+              .max   = 0xFFFFFFFF,
+              .help  = L"the show flags forced on in both halves while player 2 is in (0 = the engine's split rule; "
+                       L"players/split_render.h)",
+              .set   = [&session](const Value& value) {
+                  lss::players::split_render::SetMask(static_cast<std::uint32_t>(std::get<std::int64_t>(value)),
+                                                      session.HasPlayerTwo());
+                  return Outcome{};
+              },
+              .get = [] { return Value{static_cast<std::int64_t>(lss::players::split_render::Mask())}; }});
+    Register({.name = L"console", .shape = Shape::Text, .help = L"an engine console command, as typed in the console",
+              .set  = [](const Value& value) {
+                  const auto& command = std::get<std::wstring>(value);
+                  Log(L"console command '{}'", command);
+                  return lss::players::Session::Console(command.c_str())
+                             ? Outcome{}
+                             : Outcome{false, L"the console command could not be called"};
+              }});
+    Register({.name = L"report", .help = L"log every local player's controller, pawn, camera and call counts (Ctrl+F6)",
+              .set  = [&session](const Value&) {
+                  session.Status();
+                  return Outcome{};
+              }});
+    Register({.name = L"quit", .help = L"quit the game through the engine (player 2 must be out)",
+              .set  = [&session](const Value&) {
+                  if (session.HasPlayerTwo())
+                  {
+                      return Outcome{false, L"player 2 is still in ('leave' first)"};
+                  }
+                  return lss::players::Session::Console(L"quit") ? Outcome{}
+                                                                  : Outcome{false, L"the console command could not be called"};
+              }});
+    Register({.name = L"version", .shape = Shape::Text, .help = L"the mod's version",
+              .get  = [] { return Value{std::wstring(kVersion)}; }});
+}
 
 class LocalSplitScreenMod final : public RC::CppUserModBase
 {
@@ -167,6 +181,7 @@ public:
         {
             Hook::UnregisterCallback(tickCallback_);
         }
+        remote_.Close();
         // With player 2 in, its camera manager was built through the replacement; the DLL is pinned, so the
         // replacement stays valid. Otherwise the engine's function goes back.
         if (installed_ && !session_.HasPlayerTwo())
@@ -192,7 +207,8 @@ public:
         {
             lss::players::split_render::SetMask(lss::facts::kSplitDisabledFlags, false);
         }
-        channel_.Open();
+        RegisterSessionCommands(session_);
+        remote_.Open();
         const Hook::FCallbackOptions options{false, false, STR("LocalSplitScreen"), STR("player intent")};
         tickCallback_ = Hook::RegisterEngineTickPreCallback(
             [this](Hook::TCallbackIterationData<void>&, RC::Unreal::UEngine*, float, bool) { OnEngineTick(); }, options);
@@ -219,13 +235,13 @@ private:
             session_.Status();
         }
         lss::players::player_two_camera::MaintainInputTick();
-        channel_.Tick(target_);
+        remote_.Tick();
     }
 
-    // Declaration order matters: target_ holds a reference to session_, so session_ must be constructed first.
+    // Declaration order matters: holds_ and remote_ hold references into session_, so it comes first.
     lss::players::Session          session_;
-    ModTarget                      target_{session_};
-    lss::control::CommandChannel   channel_;
+    ModHolds                       holds_{session_};
+    lss::control::Remote           remote_{holds_};
     bool                  installed_     = false;
     bool                  joinWasDown_   = false;
     bool                  leaveWasDown_  = false;

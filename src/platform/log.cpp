@@ -6,6 +6,33 @@
 
 namespace lss::platform {
 
+namespace detail {
+std::atomic<std::uint8_t> g_level{static_cast<std::uint8_t>(Level::Info)};
+}
+
+void SetLevel(Level level) noexcept
+{
+    detail::g_level.store(static_cast<std::uint8_t>(level), std::memory_order_relaxed);
+}
+
+Level CurrentLevel() noexcept
+{
+    return static_cast<Level>(detail::g_level.load(std::memory_order_relaxed));
+}
+
+const wchar_t* LevelName(Level level) noexcept
+{
+    switch (level)
+    {
+    case Level::Error: return L"error";
+    case Level::Warning: return L"warning";
+    case Level::Info: return L"info";
+    case Level::Debug: return L"debug";
+    case Level::Trace: return L"trace";
+    }
+    return L"?";
+}
+
 void WriteLine(std::wstring_view line) noexcept
 {
     // UE4SS formats with "{}" placeholders, so the text is passed as an argument, never as the
@@ -13,8 +40,8 @@ void WriteLine(std::wstring_view line) noexcept
     // Warning level is the one UE4SS writes to its log file in shipping builds.
     // The sink allocates and formats, so it can throw. This function is noexcept, and an escaping
     // exception would end the game over a log line; a lost line is the lesser failure.
-    // UE4SS's output devices are not synchronised, and the mod logs from the render thread too
-    // (render/ao_origin), so lines are written one at a time.
+    // UE4SS's output devices are not synchronised, and the mod logs from the render thread and the
+    // console's socket thread too, so lines are written one at a time.
     static std::mutex mutex;
     try
     {

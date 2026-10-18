@@ -1,5 +1,6 @@
 #include "render/ao_origin.h"
 
+#include "control/registry.h"
 #include "engine_facts.h"
 #include "platform/call_redirect.h"
 #include "platform/guarded.h"
@@ -98,6 +99,15 @@ bool Install(const platform::GameImage& image) noexcept
         return false;
     }
     g_installed.store(true);
+    control::Register({.name  = L"ao-origin",
+                       .shape = control::Shape::OnOff,
+                       .help  = L"the AO downsample reads each view's own rows (render/ao_origin.h; on)",
+                       .set   = [](const control::Value& value) {
+                           SetEnabled(std::get<bool>(value));
+                           platform::Log(L"AO origin fix {}", Enabled() ? L"on" : L"off");
+                           return control::Outcome{};
+                       },
+                       .get = [] { return control::Value{Enabled()}; }});
     platform::Log(L"AO origin: installed; player 2's AO downsample will read its own rows");
     return true;
 }
