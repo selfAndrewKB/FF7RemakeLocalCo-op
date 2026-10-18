@@ -19,6 +19,7 @@
 #include "platform/log.h"
 #include "players/own_controller.h"
 #include "players/player_two_camera.h"
+#include "players/game_state.h"
 #include "players/session.h"
 #include "players/split_render.h"
 #include "engine_facts.h"
@@ -38,7 +39,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.8.0-console";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.8.1-game-state";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
@@ -207,6 +208,7 @@ public:
         {
             lss::players::split_render::SetMask(lss::facts::kSplitDisabledFlags, false);
         }
+        lss::players::game_state::Install(*image);  // readings only; fine without
         RegisterSessionCommands(session_);
         remote_.Open();
         const Hook::FCallbackOptions options{false, false, STR("LocalSplitScreen"), STR("player intent")};
@@ -235,6 +237,7 @@ private:
             session_.Status();
         }
         lss::players::player_two_camera::MaintainInputTick();
+        lss::players::game_state::Tick();  // before the console, so its readings are this tick's
         remote_.Tick();
     }
 

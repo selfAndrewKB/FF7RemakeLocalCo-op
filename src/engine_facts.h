@@ -57,6 +57,18 @@ inline constexpr std::uintptr_t kPartyManagerGlobal   = 0x1457E9A88;  // AEndPar
 inline constexpr std::uintptr_t kEndGameRootGlobal    = 0x1457E99D0;  // root object*; +0x9B0/+0x9B4 = the operator's weak pair
 inline constexpr std::uint32_t  kRootOperatorWeak     = 0x9B0;
 inline constexpr std::uintptr_t kGameModeGlobal       = 0x1457E9AB0;  // AEndGameMode*; vtable +0x140 = GetWorld
+
+// --- The game's state machine and field step (RE-lifecycle-world.md §1, §2, §3) --------------------
+// GS = [GM+0x3D0] (stock AGameModeBase::GameState; the game checks IsA_AEndGameState at every use). ROOT = the
+// field root at kEndGameRootGlobal. Offsets from the reflection dump and the research [ASSUMPTION: not yet
+// cross-checked against reflection at run time]; values logged on change (players/game_state).
+inline constexpr std::size_t    kGameModeGameState    = 0x3D0;  // AGameModeBase::GameState
+inline constexpr std::size_t    kGameStateState       = 0x3B8;  // EGameState byte: 4 title, 5 loading, 6 play, 7 pause, 8 menu, 9 leaving, 10 chapter-start pause
+inline constexpr std::size_t    kGameStateMenuKind    = 0x4FC;  // the menu's kind while the state is 8
+inline constexpr std::size_t    kGameStatePause       = 0x4F0;  // execIsGamePause: != 0 while paused
+inline constexpr std::size_t    kFieldRootStep        = 0x70;   // dword: the field step machine (13 = steady field, 14-20 exit steps)
+inline constexpr std::size_t    kFieldRootRunning     = 0x74;   // byte: the step machine runs
+inline constexpr std::size_t    kFieldRootLocation    = 0x78;   // FName: the current location
 inline constexpr std::uint32_t  kGameModeGetWorldSlot = 0x140;
 inline constexpr std::uintptr_t kOperatorFrameStamp   = 0x1457E99C8;  // u64, written by the operator constructor
 inline constexpr std::uintptr_t kOperatorCorrections  = 0x1453A2A51;  // u8, written by the operator constructor

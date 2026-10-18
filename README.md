@@ -27,7 +27,8 @@ python ../tools/game.py status | launch | quit | relaunch --deploy --label v0.8.
 Every module registers its own commands (`src/control/registry.h`), so `help` on the running build is the list.
 Today: `join`, `leave`, `seat on|off`, `console <command>`, `report`, `quit`, `showflags <hex>`, `ao-origin on|off`,
 `bloom-origin on|off`, `log-level error|warning|info|debug|trace`; readings `p2.in`, `p2.state` (out|in|playing),
-`tick`, `version`. The language's own verbs (`src/control/script.h`): `get <name>`, `status`, `help [<name>]`,
+`game.state` (title|loading|play|pause|menu|leaving|…), `game.paused`, `game.menu-kind`, `game.location`,
+`field.step` (13 = steady field), `field.running`, `tick`, `version`. The language's own verbs (`src/control/script.h`): `get <name>`, `status`, `help [<name>]`,
 `wait <ticks>`, `wait-until <name> <op> <value> [<ticks>]`, `hold <player> stick <lx> <ly> <rx> <ry> <ticks>`,
 `note <text>`, `abort`. A failure drops the commands queued behind it; queries answer even during a wait.
 
@@ -66,6 +67,7 @@ src/
     server                the TCP socket and its thread (127.0.0.1:4418)
     remote                the three joined on the game thread; log-level and tick
   players/
+    game_state            the game's own state, location and field step as readings, every change logged
     session               join and leave through UE's local-player path; console commands
     own_controller        the End camera manager's BeginPlay, made safe for a second player
     player_two_camera     player 2's field camera operator and the per-player scopes

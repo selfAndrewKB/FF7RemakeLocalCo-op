@@ -36,6 +36,7 @@ add_library(LocalSplitScreen SHARED
     src/platform/near_code.cpp
     src/platform/verified_code.cpp
     src/platform/vtable_entry.cpp
+    src/players/game_state.cpp
     src/players/own_controller.cpp
     src/players/party_seat.cpp
     src/players/player_two_camera.cpp
