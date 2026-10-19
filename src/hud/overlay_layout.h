@@ -45,6 +45,11 @@ void Remove() noexcept;
 /// split is shown and each player's view (player 2's for player 2's pass, hud/second_image.h).
 void Tick(bool splitShown, const ViewShare& playerOne, const ViewShare& playerTwo) noexcept;
 
+/// Writes player `player`'s (1 or 2) marker host set, as that player's pass last laid it out, into the overlay
+/// (+0x388..+0x3A8), for marker placements made outside the render (hud/marker_replay.h); the render writes the same
+/// values again in that player's pass. False before that pass has run with the band. Game thread.
+bool WriteHostSet(int player) noexcept;
+
 /// Whether the last overlay render laid the HUD out in a band. Game thread.
 bool BandApplies() noexcept;
 

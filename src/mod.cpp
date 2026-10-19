@@ -21,6 +21,8 @@
 #include "hud/overlay_layout.h"
 #include "hud/root_placement.h"
 #include "hud/image_entries.h"
+#include "hud/marker_replay.h"
+#include "hud/minimap_two.h"
 #include "hud/second_image.h"
 #include "hud/ui_targets.h"
 #include "platform/guarded.h"
@@ -48,7 +50,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.11.0-hud-image";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.12.0-hud-markers";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
@@ -198,7 +200,9 @@ public:
         lss::hud::hud_probe::Remove();
         lss::hud::root_placement::Remove();
         lss::hud::overlay_layout::Remove();
+        lss::hud::marker_replay::Remove();
         lss::hud::second_image::Remove();
+        lss::hud::minimap_two::Remove();
         lss::hud::image_entries::Remove();
         lss::hud::ui_targets::Remove();
         if (installed_)
@@ -234,9 +238,9 @@ public:
         lss::hud::hud_probe::Install(*image);       // logging only; fine without
         lss::hud::overlay_layout::Install(*image);  // optional: without it each half shows the middle of the HUD
         lss::hud::ui_targets::Install(*image);      // optional: without it both halves sample one UI image
-        if (lss::hud::image_entries::Install(*image))  // optional: player 2's own HUD image needs both
+        if (lss::hud::image_entries::Install(*image) && lss::hud::minimap_two::Install(*image))  // optional: player 2's image
         {
-            lss::hud::second_image::Install(*image);
+            lss::hud::second_image::Install(*image) && lss::hud::marker_replay::Install(*image);
         }
         RegisterSessionCommands(session_);
         remote_.Open();
@@ -288,7 +292,17 @@ private:
         lss::hud::overlay_layout::ViewShare one, two;
         const bool split = session_.HasPlayerTwo() && ReadView(0, one) && ReadView(1, two);
         lss::hud::overlay_layout::Tick(split, one, two);
-        lss::hud::second_image::Tick(split);
+        lss::hud::second_image::Players players;
+        for (int i = 0; split && i < 2; ++i)
+        {
+            players.localPlayer[i] = session_.LocalPlayer(i);
+            lss::platform::CopyGuarded(&players.controller[i],
+                                       static_cast<const std::uint8_t*>(players.localPlayer[i]) + lss::facts::kLocalPlayerController,
+                                       sizeof(void*));
+        }
+        lss::hud::second_image::Tick(split, players);
+        lss::hud::minimap_two::Tick(split && session_.Seated(), players.controller[1]);
+        lss::hud::marker_replay::Tick();
         lss::hud::root_placement::Tick(split && lss::hud::overlay_layout::BandApplies());
     }
 

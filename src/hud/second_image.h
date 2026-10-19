@@ -10,8 +10,8 @@
 //      the overlay's fade saved and restored (it advances by the world's delta instead), so no timer or animation
 //      advances twice. Its slot acquire is the real one and is remembered (the acquire call 0x141509FCF, crossing a
 //      block: installed from the game thread outside the render); its layer entry is named for player 2 (hud/
-//      overlay_layout's entry call), laid out in player 2's view; its submit is skipped; the navi map's own pool-0 ring
-//      is not turned (hud/image_code.h);
+//      overlay_layout's entry call), laid out in player 2's view; its submit is skipped; the navi map's pool 0 is
+//      handed over between the passes (hud/minimap_two.h);
 //   2. player 1's pass: the game's own call. Its acquire returns the remembered slot, its entry is the stock one, and
 //      its submit sends the slot holding [player 2's entry, player 1's entry].
 // Player 1 renders last, so everything the overlay keeps from its last pass (its rects, hit-test grid, window size,
@@ -28,9 +28,16 @@ namespace lss::hud::second_image {
 bool Install(const platform::GameImage& image) noexcept;
 void Remove() noexcept;
 
+/// Both players' ULocalPlayer and player controller, for the marker replays.
+struct Players
+{
+    void* localPlayer[2] = {};
+    void* controller[2]  = {};
+};
+
 /// Game thread, every tick, before the frame's render: installs the acquire call once and records whether the split is
-/// shown.
-void Tick(bool splitShown) noexcept;
+/// shown and who the players are.
+void Tick(bool splitShown, const Players& players) noexcept;
 
 /// The `hud-image` switch (on from a successful install).
 void SetEnabled(bool on) noexcept;

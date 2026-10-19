@@ -152,6 +152,23 @@ Weak MakeWeak(void* object) noexcept
     return weak;
 }
 
+}  // namespace
+
+bool WeakPairOf(void* object, std::int32_t (&pair)[2]) noexcept
+{
+    const Weak weak = MakeWeak(object);
+    pair[0] = weak.index;
+    pair[1] = weak.serial;
+    return weak.index >= 0 && weak.serial != 0;
+}
+
+void* ObjectOf(const std::int32_t (&pair)[2]) noexcept
+{
+    return Resolve(Weak{pair[0], pair[1]});
+}
+
+namespace {
+
 std::int32_t* OperatorPair() noexcept
 {
     std::uint8_t* root = nullptr;

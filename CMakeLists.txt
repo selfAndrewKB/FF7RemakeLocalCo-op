@@ -30,6 +30,8 @@ add_library(LocalSplitScreen SHARED
     src/control/server.cpp
     src/hud/hud_probe.cpp
     src/hud/image_entries.cpp
+    src/hud/marker_replay.cpp
+    src/hud/minimap_two.cpp
     src/hud/overlay_pass.cpp
     src/hud/pass_hide.cpp
     src/hud/second_image.cpp

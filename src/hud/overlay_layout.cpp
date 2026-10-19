@@ -78,6 +78,15 @@ struct Pending
 };
 Pending g_pending;
 
+/// Each player's whole marker host set (overlay +0x388..+0x3A8) as that player's pass last laid it out, for writing
+/// outside the render (WriteHostSet).
+struct HostSet
+{
+    bool  valid = false;
+    float min[2] = {}, origin[2] = {}, ui[2] = {}, size[2] = {}, scale = 0.0f;
+};
+HostSet g_hostSet[2];
+
 /// The entry the layer-entry call placed in this render, for the submit call at its end: the per-child matrices
 /// the paint pushed are complete only then.
 struct Submit
@@ -171,6 +180,12 @@ IntRect* LayoutRect(IntRect* out)
         g_bandApplies = 1;
         g_pending = {true, place, share.originX * hostW, share.originY * hostH, viewW, viewH, host,
                      BandClipMap(band, image.Width(), image.Height())};
+        g_hostSet[two ? 1 : 0] = {true,
+                                  {static_cast<float>(band.minX), static_cast<float>(band.minY)},
+                                  {share.originX * hostW, share.originY * hostH},
+                                  {static_cast<float>(band.Width()), static_cast<float>(band.Height())},
+                                  {viewW, viewH},
+                                  host};
     }
     return result;
 }
@@ -419,6 +434,26 @@ void Tick(bool splitShown, const ViewShare& playerOne, const ViewShare& playerTw
     g_splitShown = splitShown && g_rectCall.IsInstalled();
     g_playerOne  = playerOne;
     g_playerTwo  = playerTwo;
+}
+
+bool WriteHostSet(int player) noexcept
+{
+    const HostSet& set = g_hostSet[player == 2 ? 1 : 0];
+    const std::uintptr_t overlay = Overlay();
+    if (!set.valid || overlay == 0 || GetCurrentThreadId() != g_gameThread)
+    {
+        return false;
+    }
+    WriteFloat(overlay + facts::kOverlayLayoutMin, set.min[0]);
+    WriteFloat(overlay + facts::kOverlayLayoutMin + 4, set.min[1]);
+    WriteFloat(overlay + facts::kOverlayHostOrigin, set.origin[0]);
+    WriteFloat(overlay + facts::kOverlayHostOrigin + 4, set.origin[1]);
+    WriteFloat(overlay + facts::kOverlayUiSize, set.ui[0]);
+    WriteFloat(overlay + facts::kOverlayUiSize + 4, set.ui[1]);
+    WriteFloat(overlay + facts::kOverlayHostSize, set.size[0]);
+    WriteFloat(overlay + facts::kOverlayHostSize + 4, set.size[1]);
+    WriteFloat(overlay + facts::kOverlayHostScale, set.scale);
+    return true;
 }
 
 bool BandApplies() noexcept

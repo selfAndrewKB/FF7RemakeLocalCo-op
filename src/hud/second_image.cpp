@@ -4,6 +4,9 @@
 #include "engine_facts.h"
 #include "hud/image_code.h"
 #include "hud/image_entries.h"
+#include "hud/marker_replay.h"
+#include "hud/minimap_two.h"
+#include "hud/overlay_layout.h"
 #include "hud/overlay_pass.h"
 #include "hud/pass_hide.h"
 #include "hud/ui_targets.h"
@@ -22,6 +25,8 @@
 
 #include <cstdint>
 #include <cstring>
+#include <format>
+#include <string>
 
 namespace lss::hud::second_image {
 
@@ -33,11 +38,12 @@ using SubmitFn  = void (*)(void* renderer, std::uintptr_t pool, void* slot);
 
 platform::VTableEntry  g_driver;       // the overlay render delegate's slot
 platform::CallRedirect g_acquireCall;  // crosses a block: installed from the game thread
-platform::CodeRedirect g_naviCode;
 RenderFn               g_render  = nullptr;
 SubmitFn               g_submit  = nullptr;
 std::uintptr_t         g_acquireSite = 0, g_acquireTarget = 0;
 double*                g_deltaTime = nullptr;  // FApp::DeltaTime
+void**                 g_uiFilters = nullptr;  // &EndUISystem[37] (the UI filters: type 4 fades the whole overlay)
+float                  g_fadeTarget = -1.0f;   // the overlay fade's target last frame (an Info line when it changes)
 bool                   g_installed = false;
 bool                   g_acquirePending = false;
 
@@ -46,12 +52,29 @@ DWORD                   g_gameThread = 0;
 bool                    g_on         = true;
 bool                    g_split      = false;
 bool                    g_refused    = false;
-alignas(8) std::uint8_t g_naviSkip   = 0;  // read by the navi map's code (hud/image_code.h)
 void*                   g_renderer   = nullptr;  // from player 2's acquire
 void*                   g_slot       = nullptr;  // player 2's acquired slot, for player 1's pass
 unsigned long long      g_stockName  = 0;
 unsigned long long      g_twoName    = 0;
 bool                    g_running    = false;    // the last frame rendered player 2's image (logged on change)
+Players                 g_players;
+
+/// Each pass's cost, averaged over the frames since the reading was last taken (game thread).
+struct Timing
+{
+    double        twoMs = 0.0, oneMs = 0.0;
+    std::uint32_t frames = 0;
+};
+Timing g_timing;
+double g_lastTwoMs = 0.0, g_lastOneMs = 0.0;
+
+double NowMs() noexcept
+{
+    LARGE_INTEGER counter, frequency;
+    QueryPerformanceCounter(&counter);
+    QueryPerformanceFrequency(&frequency);
+    return static_cast<double>(counter.QuadPart) * 1000.0 / static_cast<double>(frequency.QuadPart);
+}
 
 void Refuse(const wchar_t* why)
 {
@@ -61,7 +84,8 @@ void Refuse(const wchar_t* why)
 
 bool Ready() noexcept
 {
-    if (!g_on || !g_split || g_refused || g_twoName == 0 || !g_acquireCall.IsInstalled() || !g_naviCode.IsInstalled())
+    if (!g_on || !g_split || g_refused || g_twoName == 0 || !g_acquireCall.IsInstalled() ||
+        !minimap_two::PoolCodeInstalled())
     {
         return false;
     }
@@ -73,20 +97,73 @@ bool Ready() noexcept
     return ui_targets::Enabled();
 }
 
+/// The UI filters' counts and suppressed flags, for the fade lines.
+std::wstring Filters() noexcept
+{
+    std::uint8_t* filters = nullptr;
+    std::int32_t  counts[6]{};
+    std::uint8_t  suppressed[6]{};
+    if (g_uiFilters == nullptr || !platform::CopyGuarded(&filters, g_uiFilters, sizeof(filters)) || filters == nullptr ||
+        !platform::CopyGuarded(counts, filters + facts::kUiFilterCounts, sizeof(counts)) ||
+        !platform::CopyGuarded(suppressed, filters + facts::kUiFilterSuppressed, sizeof(suppressed)))
+    {
+        return L"unreadable";
+    }
+    return std::format(L"counts {} {} {} {} {} {}, suppressed {}{}{}{}{}{}", counts[0], counts[1], counts[2], counts[3],
+                       counts[4], counts[5], suppressed[0], suppressed[1], suppressed[2], suppressed[3], suppressed[4],
+                       suppressed[5]);
+}
+
+/// The overlay fade (alpha, from, to, elapsed, duration).
+struct Fade
+{
+    float alpha = 0.0f, from = 0.0f, to = 0.0f, elapsed = 0.0f, duration = 0.0f;
+};
+static_assert(sizeof(Fade) == 20);
+
+/// An Info line when the game sets a new fade target (UI filter type 4: menus, scripted HUD hides).
+void WatchFade(void* overlay) noexcept
+{
+    Fade fade;
+    if (!platform::CopyGuarded(&fade, static_cast<const std::uint8_t*>(overlay) + facts::kOverlayFade, sizeof(fade)) ||
+        fade.to == g_fadeTarget)
+    {
+        return;
+    }
+    if (g_fadeTarget >= 0.0f)
+    {
+        platform::Log(L"HUD overlay: the game fades the whole HUD from {:.2f} to {:.2f} over {:.2f} s (UI filters: {})",
+                      fade.from, fade.to, fade.duration, Filters());
+    }
+    g_fadeTarget = fade.to;
+}
+
 /// The overlay render with player 2's levers (DeltaTime 0, the fade kept). False if the render faulted.
 bool RenderPlayerTwo(void* overlay) noexcept
 {
     const double deltaTime = *g_deltaTime;
-    std::uint8_t fade[20]{};
-    platform::CopyGuarded(fade, static_cast<const std::uint8_t*>(overlay) + facts::kOverlayFade, sizeof(fade));
+    Fade         fade;
+    platform::CopyGuarded(&fade, static_cast<const std::uint8_t*>(overlay) + facts::kOverlayFade, sizeof(fade));
     pass_hide::BeginPlayerTwoPass();
     *g_deltaTime = 0.0;
-    g_naviSkip   = 1;
     overlay_pass::Set(overlay_pass::Pass::PlayerTwo);
+    minimap_two::BeginPass(overlay_pass::Pass::PlayerTwo);
     const bool ok = platform::CallGuarded(g_render, overlay);
-    g_naviSkip   = 0;
+    minimap_two::EndPass();
     *g_deltaTime = deltaTime;
-    platform::WriteGuarded(static_cast<std::uint8_t*>(overlay) + facts::kOverlayFade, fade, sizeof(fade));
+    // The fade advances in both renders (by the world's delta), so player 2's step is taken back. A new fade the game
+    // asked for during this render (a widget's tick in the paint) is kept: putting the old one back would lose it.
+    Fade after;
+    platform::CopyGuarded(&after, static_cast<const std::uint8_t*>(overlay) + facts::kOverlayFade, sizeof(after));
+    if (after.to != fade.to || after.duration != fade.duration || after.from != fade.from)
+    {
+        platform::Log(L"HUD image: the game asked for a HUD fade to {:.2f} during player 2's render; kept (UI filters: {})",
+                      after.to, Filters());
+    }
+    else
+    {
+        platform::WriteGuarded(static_cast<std::uint8_t*>(overlay) + facts::kOverlayFade, &fade, sizeof(fade));
+    }
     pass_hide::EndPlayerTwoPass();
     return ok;
 }
@@ -100,19 +177,53 @@ void Driver(void* delegate)
     {
         return;
     }
+    if (GetCurrentThreadId() == g_gameThread)
+    {
+        WatchFade(overlay);
+    }
     const bool two = GetCurrentThreadId() == g_gameThread && Ready();
     if (two != g_running)
     {
         g_running = two;
         platform::Log(L"HUD image: player 2's image {}", two ? L"rendered each frame" : L"stopped");
     }
-    if (two && !RenderPlayerTwo(overlay))
+    const double start = NowMs();
+    if (two)
     {
-        Refuse(L"the overlay render faulted in player 2's pass");
+        // Markers placed through player 2's camera for player 2's image, then back to player 1's for player 1's.
+        const bool hostSets = overlay_layout::WriteHostSet(2);
+        if (hostSets)
+        {
+            marker_replay::Replay(2, g_players.localPlayer[1], g_players.controller[1]);
+        }
+        if (!RenderPlayerTwo(overlay))
+        {
+            Refuse(L"the overlay render faulted in player 2's pass");
+        }
+        if (hostSets && overlay_layout::WriteHostSet(1))
+        {
+            marker_replay::Replay(1, g_players.localPlayer[0], g_players.controller[0]);
+        }
     }
+    const double middle = NowMs();
     overlay_pass::Set(two ? overlay_pass::Pass::PlayerOne : overlay_pass::Pass::Single);
+    minimap_two::BeginPass(two ? overlay_pass::Pass::PlayerOne : overlay_pass::Pass::Single);
     g_render(overlay);
+    minimap_two::EndPass();
     overlay_pass::Set(overlay_pass::Pass::Single);
+    minimap_two::EndFrame();  // pool 0's slot, if player 1's map did not take it
+    marker_replay::EndFrame();
+    const double end = NowMs();
+    g_timing.twoMs += middle - start;
+    g_timing.oneMs += end - middle;
+    if (++g_timing.frames >= 300)
+    {
+        g_lastTwoMs = g_timing.twoMs / g_timing.frames;
+        g_lastOneMs = g_timing.oneMs / g_timing.frames;
+        g_timing    = {};
+        platform::LogDebug(L"HUD image: overlay render ms per frame over 300 frames: player 2's pass {:.3f}, player 1's {:.3f}",
+                           g_lastTwoMs, g_lastOneMs);
+    }
     if (g_slot != nullptr)
     {
         // Player 1's pass did not take the slot (its render returned early). The acquire advanced the ring, so the slot
@@ -153,12 +264,12 @@ bool Install(const platform::GameImage& image) noexcept
     const auto acquireFn = image.Rebase(c::kAcquireLayer);
     const auto submitFn  = image.Rebase(facts::kSubmitLayerSlot);
     const auto delta     = image.Rebase(facts::kAppDeltaTime, sizeof(double));
+    if (const auto filters = image.Rebase(facts::kUiFilterSlotGlobal, sizeof(void*)))
+    {
+        g_uiFilters = reinterpret_cast<void**>(*filters);
+    }
     const auto thunk     = image.Rebase(facts::kOverlayDelegateThunk);
-    const auto navi      = image.Rebase(c::kNaviSite, sizeof(c::kNaviCall));
-    const auto naviBack  = image.Rebase(c::kNaviReturn);
-    const auto naviSkip  = image.Rebase(c::kNaviSkipTo);
-    if (!render || !slot || !acquire || !acquireFn || !submitFn || !delta || !thunk || !navi || !naviBack || !naviSkip ||
-        !image.BytesMatch(c::kNaviCheckStart, c::kNaviBytes) || !image.BytesMatch(c::kNaviSubmitStart, c::kNaviSubmitBytes))
+    if (!render || !slot || !acquire || !acquireFn || !submitFn || !delta || !thunk || !minimap_two::PoolCodeInstalled())
     {
         platform::Log(L"HUD image: the overlay render is not what the research read; player 2's image stays off");
         return false;
@@ -168,14 +279,8 @@ bool Install(const platform::GameImage& image) noexcept
     g_deltaTime     = reinterpret_cast<double*>(*delta);
     g_acquireSite   = *acquire;
     g_acquireTarget = *acquireFn;
-    if (!g_naviCode.Install(*navi, c::kNaviCall, c::NaviCode(g_naviSkip, *naviBack, *acquireFn, *naviSkip), *naviBack))
-    {
-        platform::Log(L"HUD image: the navi map's acquire could not be redirected; player 2's image stays off");
-        return false;
-    }
     if (!g_driver.Replace(*slot, *thunk, reinterpret_cast<std::uintptr_t>(&Driver)))
     {
-        g_naviCode.Restore();
         platform::Log(L"HUD image: the overlay's render delegate is not the game's thunk; player 2's image stays off");
         return false;
     }
@@ -194,6 +299,10 @@ bool Install(const platform::GameImage& image) noexcept
                   return Outcome{};
               },
               .get = [] { return Value{Enabled()}; }});
+    Register({.name  = L"hud.image-ms",
+              .shape = Shape::Text,
+              .help  = L"the overlay render's cost per frame (ms, the last 300 frames): player 2's pass, player 1's pass",
+              .get   = [] { return Value{std::format(L"player 2 {:.3f} ms, player 1 {:.3f} ms", g_lastTwoMs, g_lastOneMs)}; }});
     platform::Log(L"HUD image: installed (hud-image on); the acquire call follows on the game thread");
     return true;
 }
@@ -206,18 +315,18 @@ void Remove() noexcept
     }
     g_on = false;
     const bool driver  = g_driver.Restore();
-    const bool navi    = g_naviCode.Restore();
     const bool acquire = !g_acquireCall.IsInstalled() || (GetCurrentThreadId() == g_gameThread && g_acquireCall.Restore());
-    if (!driver || !navi || !acquire)
+    if (!driver || !acquire)
     {
         platform::Log(L"HUD image: a redirect was changed after us or is off the game thread; left in place (inert: the "
                       L"image is off)");
     }
-    g_installed = !(driver && navi && acquire);
+    g_installed = !(driver && acquire);
 }
 
-void Tick(bool splitShown) noexcept
+void Tick(bool splitShown, const Players& players) noexcept
 {
+    g_players = players;
     if (!g_installed)
     {
         return;

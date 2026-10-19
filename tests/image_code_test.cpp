@@ -113,7 +113,8 @@ void TestBuffers()
 }
 
 // --- 2. The navi map's pool 0 --------------------------------------------------------------------------------------
-// int Navi(float* io): rbx = io; xmm8 = 0; the site (block offset 9) calls "acquire" (returns 7 in eax); the
+// int Navi(float* io): rbx = io; rsi = the qword at io+16 (the painting octagon); xmm8 = 0; the site (block offset 9)
+// calls "acquire" (returns 7 in eax); the
 // instruction after the call stores eax at io[0] and returns 1; the skip point stores xmm8 at io[1] and returns 2.
 struct NaviStandIn
 {
@@ -126,9 +127,11 @@ struct NaviStandIn
     {
         Builder b;
         b.Put({0x53});                                      // push rbx
-        b.Put({0x48, 0x83, 0xEC, 0x30});                    // sub rsp, 30h
+        b.Put({0x56});                                      // push rsi
+        b.Put({0x48, 0x83, 0xEC, 0x38});                    // sub rsp, 38h (16-aligned again)
         b.Put({0x44, 0x0F, 0x11, 0x44, 0x24, 0x10});        // movups [rsp+10h], xmm8
         b.Put({0x48, 0x89, 0xCB});                          // mov rbx, rcx
+        b.Put({0x48, 0x8B, 0x71, 0x10});                    // mov rsi, [rcx+10h]
         b.Put({0x45, 0x0F, 0x57, 0xC0});                    // xorps xmm8, xmm8
         b.PadTo(code::kNaviSite & 0xF);
         site = b.At();
@@ -140,7 +143,7 @@ struct NaviStandIn
         b.Put({0xF3, 0x44, 0x0F, 0x11, 0x43, 0x04});        // skip: movss [rbx+4], xmm8
         b.Put({0xB8, 0x02, 0x00, 0x00, 0x00});              // mov eax, 2
         b.Put({0x44, 0x0F, 0x10, 0x44, 0x24, 0x10});        // epilogue: movups xmm8, [rsp+10h]
-        b.Put({0x48, 0x83, 0xC4, 0x30, 0x5B, 0xC3});        // add rsp, 30h; pop rbx; ret
+        b.Put({0x48, 0x83, 0xC4, 0x38, 0x5E, 0x5B, 0xC3});  // add rsp, 38h; pop rsi; pop rbx; ret
         b.PadTo(0);
         acquire = b.At();
         b.Put({0xB8, 0x07, 0x00, 0x00, 0x00, 0xC3});        // acquire: mov eax, 7; ret
@@ -153,25 +156,31 @@ struct NaviStandIn
 
 void TestNavi()
 {
-    std::puts("navi map: the call made as the game makes it, or the pool 0 span skipped with xmm8 = 1.0");
+    std::puts("navi map: the call made as the game makes it, or the named octagon's pool 0 span skipped with xmm8 = 1.0");
     NaviStandIn                 s;
-    alignas(8) std::uint8_t     skip = 0;
+    code::NaviState             state;
     lss::platform::CodeRedirect redirect;
     std::uint8_t                call[5];
     std::memcpy(call, s.page + s.site, sizeof(call));
     const auto at = [&s](std::size_t offset) { return reinterpret_cast<std::uintptr_t>(s.page + offset); };
-    EXPECT(redirect.Install(at(s.site), call, code::NaviCode(skip, at(s.site + 5), at(s.acquire), at(s.skipTo)),
+    EXPECT(redirect.Install(at(s.site), call, code::NaviCode(state, at(s.site + 5), at(s.acquire), at(s.skipTo)),
                             at(s.site + 5)));
-    float io[4] = {};
-    EXPECT(s.fn(io) == 1);
+    alignas(8) float io[6] = {};
+    const std::uintptr_t octagon = 0x5000;
+    std::memcpy(&io[4], &octagon, sizeof(octagon));
+    EXPECT(s.fn(io) == 1);  // nothing named: the call
     int acquired = 0;
     std::memcpy(&acquired, &io[0], sizeof(acquired));
-    EXPECT(acquired == 7 && io[1] == 0.0f);
-    skip  = 1;
+    EXPECT(acquired == 7 && io[1] == 0.0f && state.seen == octagon && state.skips == 0);
+    state.skip = 0x6000;  // another octagon named: this one makes the call
     io[0] = io[1] = 0.0f;
-    EXPECT(s.fn(io) == 2 && io[1] == 1.0f && io[0] == 0.0f);
-    skip = 0;
-    EXPECT(s.fn(io) == 1);  // the emulated call leaves the stack as it found it (the function returned normally)
+    EXPECT(s.fn(io) == 1 && io[1] == 0.0f);
+    state.skip = octagon;  // this one named: skipped
+    io[0] = io[1] = 0.0f;
+    EXPECT(s.fn(io) == 2 && io[1] == 1.0f && io[0] == 0.0f && state.skips == 1);
+    state.skip = 0;
+    state.seen = 0;
+    EXPECT(s.fn(io) == 1 && state.seen == octagon && state.skips == 1);  // the emulated call left the stack as it was
     EXPECT(redirect.Restore());
 }
 

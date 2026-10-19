@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 // Player 2's own field camera: a second AEndFieldCameraOperator, driven by the game's own code.
 //
 // The game has one field camera operator (a world actor, g_EndGameRoot+0x9B0) that follows the party leader
@@ -22,6 +24,13 @@ class GameImage;
 }
 
 namespace lss::players::player_two_camera {
+
+/// A UE4 weak pointer pair {GUObjectArray index, serial number} for a live object, made the way the game makes one
+/// (the serial allocated if the object has none yet). False if the object cannot be read. Game thread.
+bool WeakPairOf(void* object, std::int32_t (&pair)[2]) noexcept;
+
+/// The object a weak pair names, if it is still that object (same serial) and reachable; else nullptr.
+void* ObjectOf(const std::int32_t (&pair)[2]) noexcept;
 
 /// Checks every function, slot and global, and replaces the operator's BeginPlay and Tick slots and the
 /// End controller's ProcessPlayerInput and Tick_FieldMove slots. False (logged) if anything differs.

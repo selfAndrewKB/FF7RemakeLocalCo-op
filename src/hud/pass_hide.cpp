@@ -34,6 +34,7 @@ namespace UObjectGlobals = RC::Unreal::UObjectGlobals;
 constexpr std::wstring_view kPlayerOneCursors[] = {
     L"FieldTarget_",       // FieldTarget_01_C, FieldTarget_Block_C: talk, examine, field actions (slot 15)
     L"FieldTargetSearch",  // FieldTargetSearch_02_C, _02_Arrow_C, FieldTargetSearchIcon_C (slot 55)
+    L"TurnBackAlert",      // TurnBackAlert_C: over player 1's leader, triggered by player 1 (slot 36)
 };
 
 struct Hidden

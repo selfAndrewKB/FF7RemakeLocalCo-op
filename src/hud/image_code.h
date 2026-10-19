@@ -16,11 +16,15 @@
 //    pool 0 (acquire 0x1414FDDA9 .. submit 0x1414FDFBB) inside the overlay paint; a second overlay paint would turn
 //    pool 0's ring twice a frame (Rebirth's 32 KB leak). In player 2's pass the span is skipped, as Rebirth's
 //    minimap_once: the map widget paints the texture player 1's pass rendered.
-//    Replaced: the `call AcquireLayerSlot` (5 bytes at 0x1414FDDA9). Flag clear: the call is made exactly as the game
-//    makes it, without a call instruction of our own: the game's return address (0x1414FDDAE) is pushed and the code
-//    jumps to the function, so unwinding inside it sees the game's own frame. Flag set: xmm8 = 1.0 (the span sets it;
-//    0x1414FDFD0 compares with it) and a jump past the submit (0x1414FDFC0). After the span the function reloads
-//    r12/r13 and every register and stack slot it reads (checked in IDA, RE-hud-overlay-pass.md §10). rax changes.
+//    Replaced: the `call AcquireLayerSlot` (5 bytes at 0x1414FDDA9). There rsi = the painting octagon's paint
+//    interface (recorded for the mod's readings). If it is the one named for this pass (the other player's octagon,
+//    hud/minimap_two.h; the skip counted): xmm8 = 1.0 (the
+//    span sets it; 0x1414FDFD0 compares with it) and a jump past the submit (0x1414FDFC0). Otherwise the call is made
+//    exactly as the game makes it, without a call instruction of our own: the game's return address (0x1414FDDAE) is
+//    pushed and the code jumps to the acquire (hud/minimap_two's handover), so unwinding inside it sees the game's own
+//    frame. After the span the function reloads
+//    r12/r13 and every register and stack slot it reads (checked in IDA, RE-hud-overlay-pass.md §10). rax and the
+//    flags change (the site is a call: the flags are dead there).
 
 #include <array>
 #include <cstddef>
@@ -92,36 +96,48 @@ inline constexpr std::uint8_t   kNaviSubmitBytes[] = {0x4D, 0x8B, 0xC5, 0x33, 0x
 /// The instruction replaced: call FEndMenuRenderer__AcquireLayerSlot.
 inline constexpr std::uint8_t kNaviCall[] = {0xE8, 0x62, 0xDC, 0x4F, 0x02};
 
-inline constexpr std::size_t kNaviCodeSize = 75;
+/// What the navi code reads and records (game thread): the paint interface whose span is skipped in this pass (0:
+/// none), then, for the mod's readings, the last paint interface that reached the site and the skips made.
+struct alignas(16) NaviState
+{
+    std::uintptr_t skip  = 0;
+    std::uintptr_t seen  = 0;  // +0x08
+    std::uint64_t  skips = 0;  // +0x10
+};
+static_assert(offsetof(NaviState, seen) == 0x08 && offsetof(NaviState, skips) == 0x10);
 
-/// Live addresses: the pass flag (a byte, nonzero in player 2's pass), the call's return address, the acquire function
-/// and the point after the submit.
-inline std::array<std::uint8_t, kNaviCodeSize> NaviCode(const std::uint8_t& skip, std::uintptr_t returnAddress,
+inline constexpr std::size_t kNaviCodeSize = 83;
+
+/// Live addresses: the state above, the call's return address, the acquire function (the game's, or a replacement
+/// with its signature) and the point after the submit.
+inline std::array<std::uint8_t, kNaviCodeSize> NaviCode(NaviState& state, std::uintptr_t returnAddress,
                                                         std::uintptr_t acquire, std::uintptr_t skipTo) noexcept
 {
     std::array<std::uint8_t, kNaviCodeSize> code = {
-        0x48, 0xB8, 0, 0, 0, 0, 0, 0, 0, 0,        //  0: mov   rax, &skip
-        0x80, 0x38, 0x00,                          // 10: cmp   byte [rax], 0
-        0x75, 0x21,                                // 13: jne   skip (48)
-        0x48, 0x83, 0xEC, 0x08,                    // 15: sub   rsp, 8                  the call, made as the game makes it:
-        0xC7, 0x04, 0x24, 0, 0, 0, 0,              // 19: mov   dword [rsp], low        its return address
-        0xC7, 0x44, 0x24, 0x04, 0, 0, 0, 0,        // 26: mov   dword [rsp+4], high
-        0xFF, 0x25, 0, 0, 0, 0,                    // 34: jmp   [rip+0]                 AcquireLayerSlot
-        0, 0, 0, 0, 0, 0, 0, 0,                    // 40:   the function
-        0xF3, 0x44, 0x0F, 0x10, 0x05, 14, 0, 0, 0, // 48: skip: movss xmm8, [rip+one] (71)
-        0xFF, 0x25, 0, 0, 0, 0,                    // 57: jmp   [rip+0]                 past the submit
-        0, 0, 0, 0, 0, 0, 0, 0,                    // 63:   the point
-        0x00, 0x00, 0x80, 0x3F,                    // 71: one: 1.0f
-    };                                             // 75: (the appended jump back is never reached)
+        0x48, 0xB8, 0, 0, 0, 0, 0, 0, 0, 0,        //  0: mov   rax, &state
+        0x48, 0x89, 0x70, 0x08,                    // 10: mov   [rax+8], rsi        the painting octagon, recorded
+        0x48, 0x3B, 0x30,                          // 14: cmp   rsi, [rax]          the one named for this pass?
+        0x74, 0x21,                                // 17: je    skip (52)
+        0x48, 0x83, 0xEC, 0x08,                    // 19: sub   rsp, 8                  the call, made as the game makes it:
+        0xC7, 0x04, 0x24, 0, 0, 0, 0,              // 23: mov   dword [rsp], low        its return address
+        0xC7, 0x44, 0x24, 0x04, 0, 0, 0, 0,        // 30: mov   dword [rsp+4], high
+        0xFF, 0x25, 0, 0, 0, 0,                    // 38: jmp   [rip+0]                 AcquireLayerSlot
+        0, 0, 0, 0, 0, 0, 0, 0,                    // 44:   the function
+        0x48, 0xFF, 0x40, 0x10,                    // 52: skip: inc qword [rax+10h]      counted
+        0xF3, 0x44, 0x0F, 0x10, 0x05, 14, 0, 0, 0, // 56: movss xmm8, [rip+one] (79)
+        0xFF, 0x25, 0, 0, 0, 0,                    // 65: jmp   [rip+0]                 past the submit
+        0, 0, 0, 0, 0, 0, 0, 0,                    // 71:   the point
+        0x00, 0x00, 0x80, 0x3F,                    // 79: one: 1.0f
+    };                                             // 83: (the appended jump back is never reached)
     const auto put = [&code](std::size_t at, const void* value, std::size_t size) { std::memcpy(&code[at], value, size); };
-    const auto flag = reinterpret_cast<std::uint64_t>(&skip);
-    const auto low  = static_cast<std::uint32_t>(returnAddress);
-    const auto high = static_cast<std::uint32_t>(returnAddress >> 32);
-    put(2, &flag, sizeof(flag));
-    put(22, &low, sizeof(low));
-    put(30, &high, sizeof(high));
-    put(40, &acquire, sizeof(acquire));
-    put(63, &skipTo, sizeof(skipTo));
+    const auto where = reinterpret_cast<std::uint64_t>(&state);
+    const auto low   = static_cast<std::uint32_t>(returnAddress);
+    const auto high  = static_cast<std::uint32_t>(returnAddress >> 32);
+    put(2, &where, sizeof(where));
+    put(26, &low, sizeof(low));
+    put(34, &high, sizeof(high));
+    put(44, &acquire, sizeof(acquire));
+    put(71, &skipTo, sizeof(skipTo));
     return code;
 }
 

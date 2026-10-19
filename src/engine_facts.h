@@ -265,6 +265,12 @@ inline constexpr std::uint32_t  kOverlayHostSize     = 0x3A0;  // float w, h: th
 inline constexpr std::uint32_t  kOverlayHostScale    = 0x3A8;  // float: the host geometry scale
 inline constexpr std::uint32_t  kOverlayRenderStamp  = 0x464;  // i32: the frame counter at the last render
 inline constexpr std::uint32_t  kOverlayFade         = 0x450;  // 5 floats: alpha, from, to, elapsed, duration
+/// EndUISystem[37], the UI filters (RE-hud-families.md §5.9): a count per type at +0x24 (int[6]), a suppressed byte per
+/// type at +0x1E. Type 4 fades the whole overlay (to 0 when its count leaves 0, to 1 when it returns; 0x1414BF920,
+/// 0x1414BFE30); type 2 (main menu) also counts 3, 4 and 5.
+inline constexpr std::uintptr_t kUiFilterSlotGlobal  = 0x1459CAA98;
+inline constexpr std::uint32_t  kUiFilterCounts      = 0x24;
+inline constexpr std::uint32_t  kUiFilterSuppressed  = 0x1E;
 
 // The overlay render's calls the HUD layout redirects (RE-hud-overlay-pass.md §3.1; the call bytes are checked by
 // platform::CallRedirect against these targets).
@@ -318,6 +324,107 @@ inline constexpr std::uintptr_t kGMallocGlobal        = 0x145825680;  // FMalloc
 inline constexpr std::uintptr_t kMenuVertexBufferVtable = 0x144F766F8;  // FEndMenuRenderer's pool buffers
 inline constexpr std::uintptr_t kMenuIndexBufferVtable  = 0x144F76788;
 
+// Battle markers' placements, recorded and replayed per view (RE-hud-battle-markers.md §3.1, §3.3, §7). Each entry's
+// first two instructions are copied (both position-independent), so the redirects are installed from the game thread.
+inline constexpr std::uintptr_t kBarPlaceUntargeted = 0x1413DBBC0;  // (mgr, widget, const FVector*)
+inline constexpr std::array<std::uint8_t, 7> kBarPlaceUntargetedFirst{0x48, 0x8B, 0xC4, 0x4C, 0x89, 0x40, 0x18};
+inline constexpr std::uintptr_t kBarPlaceTargeted = 0x1413DC010;  // (mgr, widget, key*, loc*, int, float, u8)
+inline constexpr std::array<std::uint8_t, 5> kBarPlaceTargetedFirst{0x48, 0x89, 0x5C, 0x24, 0x10};
+inline constexpr std::uintptr_t kBattleTextPlace = 0x141496AD0;  // (out, pc, canvas*, widget*, loc*, offset, clamp, bool*)
+inline constexpr std::array<std::uint8_t, 7> kBattleTextPlaceFirst{0x4C, 0x8B, 0xDC, 0x49, 0x89, 0x5B, 0x20};
+/// FLocalPlayerContext::GetPlayerController (ctx = widget+0x1E8): the controller the bar placements project with.
+inline constexpr std::uintptr_t kPlayerContextController = 0x143016CF0;
+inline constexpr std::array<std::uint8_t, 7> kPlayerContextControllerFirst{0x44, 0x8B, 0x41, 0x0C, 0x48, 0x8B, 0xD1};
+inline constexpr std::uintptr_t kSetPositionInViewport = 0x1428F3ED0;  // UUserWidget (this, FVector2D, bool)
+// Battle text's replay (RE-hud-battle-markers.md §3.3, §10). The tick passes the canvas and the widget as TSharedPtr copies
+// on its stack (NotThreadSafe: a plain `inc [ctrl+8]`), so the record pins its own copies and gives them back with the
+// game's ~TSharedPtr. The visibility after the placement is the tick's: Slate `vt+0x1A8` with a TAttribute made from one
+// of two EVisibility statics, UMG `vt+0x248` (3 shown, 2 hidden).
+inline constexpr std::uintptr_t kSharedPtrRelease = 0x140631EF0;  // ~TSharedPtr<_, NotThreadSafe>(this)
+inline constexpr std::array<std::uint8_t, 6> kSharedPtrReleaseFirst{0x40, 0x53, 0x48, 0x83, 0xEC, 0x20};
+inline constexpr std::uintptr_t kVisibilityAttribute = 0x14136D170;  // TAttribute<EVisibility>(this, const EVisibility*)
+inline constexpr std::array<std::uint8_t, 5> kVisibilityAttributeFirst{0x0F, 0xB6, 0x02, 0x88, 0x01};
+inline constexpr std::uintptr_t kTextVisibilityShown  = 0x1453BE1CC;  // EVisibility static: placed on screen
+inline constexpr std::uintptr_t kTextVisibilityHidden = 0x1453B955A;  // EVisibility static: not projected
+inline constexpr std::uintptr_t kTextTickUmgReturn    = 0x141497E25;  // the tick's calls of the core: UMG list
+inline constexpr std::uintptr_t kTextTickNumberReturn = 0x1414983D5;  // Slate damage numbers
+inline constexpr std::uintptr_t kTextTickTextReturn   = 0x1414987E3;  // Slate texts
+inline constexpr std::uintptr_t kTextUmgWrapperReturn = 0x141496FEB;  // EndUI_BattleText_PlaceUMG_SetVisibility (spawn)
+inline constexpr std::uint32_t  kSlateSetVisibility   = 0x1A8;  // SWidget::SetVisibility(TAttribute) (by value)
+inline constexpr std::uint32_t  kWidgetSetVisibility  = 0x248;  // UWidget::SetVisibility(ESlateVisibility)
+inline constexpr std::uint32_t  kObjectWidgetUser     = 0x4E8;  // SObjectWidget::WidgetObject (written at 0x1428D8C50)
+// The target cursor (slot 18, also Barret's far-shot cursor, slot 54) and the lock-on markers (slot 43): pure placements
+// taking the controller as an argument (RE-hud-battle-markers.md §3.4, §3.7), recorded at their entries and replayed.
+inline constexpr std::uintptr_t kCursorPlace = 0x1413E7BE0;  // bool (pc, widget, const FVector*)
+inline constexpr std::array<std::uint8_t, 5> kCursorPlaceFirst{0x48, 0x89, 0x74, 0x24, 0x18};
+inline constexpr std::uintptr_t kLockonPlace = 0x1414604B0;  // void (pc, widget, const FVector*, u8 show)
+inline constexpr std::array<std::uint8_t, 5> kLockonPlaceFirst{0x48, 0x89, 0x74, 0x24, 0x18};
+// The ability-name labels (slot 45) and weak-point markers (slot 58): their placement is inline in the tick, so the
+// tick runs again for each pass with its controller lookups answering that pass's player (§3.5, §3.6). Both take only
+// the manager. Weak points run with their facing gate (manager byte +0) at 0: placement only.
+inline constexpr std::uintptr_t kEndUISystemSlots    = 0x1459CA970;  // EndUISystem__Get()'s array of managers
+inline constexpr std::uintptr_t kLabelsTick          = 0x1413E5C10;  // EndUISlot45_SkillNameLabels_Tick(mgr)
+inline constexpr std::array<std::uint8_t, 4> kLabelsTickFirst{0x40, 0x55, 0x41, 0x55};
+inline constexpr std::uintptr_t kLabelsContextCall   = 0x1413E5FDF;  // call PlayerContext: crosses a block
+inline constexpr std::uintptr_t kLabelsContextCall2  = 0x1413E60A9;  // the bar-glued y's clamp
+inline constexpr std::uintptr_t kWeakPointsTick      = 0x1414C0C10;  // EndUISlot58_WeakPointMarkers_Tick(mgr)
+inline constexpr std::array<std::uint8_t, 5> kWeakPointsTickFirst{0x48, 0x89, 0x4C, 0x24, 0x08};
+inline constexpr std::uintptr_t kWeakPointsContextCall = 0x1414C0EEA;
+inline constexpr std::uint32_t  kLabelsSlot = 45, kWeakPointsSlot = 58;
+inline constexpr std::uint32_t  kLabelsNumBits = 0x28, kWeakPointsNumBits = 0x30;  // the TSets' element counts
+
+// Player 2's own navi map manager (EndUISystem[29], RE-hud-minimap-two.md §2-§6, §9). Call sites are checked by
+// platform::CallRedirect against their targets.
+inline constexpr std::uintptr_t kNaviSlotGlobal        = 0x1459CAA58;  // EndUISystem[29]: the game's manager
+inline constexpr std::uintptr_t kBannerSlotGlobal      = 0x1459CAA88;  // EndUISystem[35]: the banner fades' lists +0x10, +0x80
+inline constexpr std::uintptr_t kNaviManagerCtor       = 0x1414722C0;  // (memory): in place, 0x268 bytes
+inline constexpr std::uintptr_t kGameMalloc            = 0x141C32C90;  // FMemory::Malloc(size, alignment)
+inline constexpr std::uintptr_t kMulticastAddRaw       = 0x14099A3B0;  // (list, handle out, object, {method, 0})
+inline constexpr std::uintptr_t kNaviBannerStart       = 0x141473960;  // __OnBannerStart_FadeOut
+inline constexpr std::uintptr_t kNaviBannerEnd         = 0x141473980;  // __OnBannerEnd_FadeIn
+inline constexpr std::uintptr_t kNaviTick              = 0x141477150;  // (manager, float dt)
+inline constexpr std::uintptr_t kNaviTickCall          = 0x1413AE3A0;  // in EndUISystem__TickHUDWithDelta
+inline constexpr std::uintptr_t kNaviSetupMap          = 0x14147B780;  // (manager, map data)
+inline constexpr std::array<std::uintptr_t, 2> kNaviSetupCalls{0x141685898, 0x141685C82};
+inline constexpr std::uintptr_t kNaviFieldStart        = 0x14147B0C0;
+inline constexpr std::uintptr_t kNaviFieldStartCall    = 0x1413AD412;
+inline constexpr std::uintptr_t kNaviFieldEnd          = 0x14147B450;  // releases the map pieces
+inline constexpr std::uintptr_t kNaviFieldEndCall      = 0x140FF544A;
+inline constexpr std::uintptr_t kNaviReset             = 0x1414728E0;  // removes the widgets
+inline constexpr std::uintptr_t kNaviResetCall         = 0x1413ADCE1;
+inline constexpr std::uintptr_t kNaviAddIcon           = 0x141479D90;  // (manager, key, a3, a4, a5, a6)
+inline constexpr std::array<std::uintptr_t, 4> kNaviAddIconCalls{0x140FF7A40, 0x1410D4CCA, 0x1410D4EB6, 0x1411620B8};
+inline constexpr std::uintptr_t kNaviRemoveIcon        = 0x14147A830;  // (manager, key)
+// The last crosses a block: installed from the game thread.
+inline constexpr std::array<std::uintptr_t, 5> kNaviRemoveIconCalls{0x140FF5115, 0x1410D4071, 0x1410D4AA7, 0x1411623D7,
+                                                                    0x140FF7A7F};
+inline constexpr std::uintptr_t kNaviSetHidden         = 0x141479BC0;  // +0x180 (manager, value)
+inline constexpr std::uintptr_t kNaviToggleVisible     = 0x141473750;  // +0x181 (manager)
+inline constexpr std::uintptr_t kNaviSetEnabled        = 0x141473810;  // +0x182 (manager, value)
+inline constexpr std::uintptr_t kNaviSetNaviMode       = 0x14147AF40;  // +0x258 (manager, value)
+inline constexpr std::uintptr_t kNaviSetCompassMode    = 0x14147B000;  // +0x259 (manager, value)
+inline constexpr std::uintptr_t kGetFirstPlayerController = 0x143370520;  // UWorld::GetFirstPlayerController
+inline constexpr std::uintptr_t kNaviCompassFirstPcCall = 0x1413EFDE9;  // in the compass's tick
+inline constexpr std::uintptr_t kAddToRootOverlay      = 0x1413491B0;  // UEndUserWidget (widget, int ZOrder)
+inline constexpr std::uintptr_t kNaviCreatorAddCall    = 0x141473F36;  // in the NaviMap_C creator
+inline constexpr std::uintptr_t kNaviFindOctagon       = 0x141472C70;  // (user widget): the Nav_Map octagon
+inline constexpr std::uintptr_t kNaviEntryCall         = 0x1414FDDE0;  // the octagon paint's FindOrAdd (pool 0)
+inline constexpr std::uintptr_t kNaviSubmitCall        = 0x1414FDFBB;  // the octagon paint's submit (pool 0)
+inline constexpr std::uintptr_t kSetColorAndOpacity    = 0x1428F1C20;  // UUserWidget (widget, const FLinearColor&)
+inline constexpr std::uintptr_t kCharacterByPlayerType = 0x1413B4C40;  // (u8 type): the party's character of that type
+inline constexpr std::uint32_t  kNaviManagerRoot       = 0x08;   // weak NaviMap_C
+inline constexpr std::uint32_t  kNaviManagerOctagon    = 0x18;   // weak Nav_Map (UEndNaviMapOctagon)
+inline constexpr std::uint32_t  kNaviManagerFlags      = 0x180;  // hidden, visible, enabled, auto-rotate; +0x188 zoom
+inline constexpr std::uint32_t  kNaviManagerMapData    = 0x1B4;  // the map data (a pointer at a 4-aligned offset)
+inline constexpr std::uint32_t  kNaviManagerModes      = 0x258;  // navi-map mode, compass mode, pending
+inline constexpr std::uint32_t  kNaviManagerCompass    = 0x260;  // the compass object (+0: weak Compass_C)
+inline constexpr std::uint32_t  kOctagonRenderTexture  = 0x118;  // UEndNaviMapOctagon::RenderTexture
+inline constexpr std::uint32_t  kOctagonSlate          = 0x128;  // its Slate object
+inline constexpr std::uint32_t  kOctagonSlateTarget    = 0x5C8;  // the Slate object's render target (its entries draw into it)
+inline constexpr std::uint32_t  kOctagonPaintInterface = 0x330;  // the Slate object's paint interface (rsi in the paint)
+inline constexpr std::uint32_t  kPartyPrimaryController = 0x00;  // AEndPartyManager: the primary controller
+inline constexpr std::uint32_t  kPartyLeaderType       = 0x233;  // the leader's player type byte
+
 // ULocalPlayer's split-screen view as fractions of the viewport (stock 4.18, not reflected: between ViewportClient
 // +0x58 and LastViewLocation, before AspectRatioAxisConstraint +0x7C).
 inline constexpr std::uint32_t kLocalPlayerOrigin      = 0x60;  // FVector2D
@@ -325,11 +432,15 @@ inline constexpr std::uint32_t kLocalPlayerSize        = 0x68;  // FVector2D
 
 // UMG, stock 4.18 (UMG.hpp) and UEndUserWidget's own fields (EndGame.hpp, UEndUserWidget__AddToRootOverlay).
 inline constexpr std::uint32_t kWidgetVisibility       = 0xB7;   // UWidget::Visibility (ESlateVisibility)
+inline constexpr std::uint32_t kWidgetGcWidget         = 0xD8;   // UWidget::MyGCWidget (TWeakPtr: object, then controller)
+inline constexpr std::uint32_t kSlateColorAndOpacity   = 0x410;  // SObjectWidget's ColorAndOpacity attribute (the tint
+                                                                 // UUserWidget::SetColorAndOpacity writes; +0x420 is-set)
 inline constexpr std::uint32_t kUserWidgetColor        = 0x100;  // UUserWidget::ColorAndOpacity (FLinearColor)
 inline constexpr std::uint32_t kUserWidgetAnchors      = 0x1B0;  // viewport anchors (4 floats)
 inline constexpr std::uint32_t kUserWidgetOffset       = 0x1C0;  // viewport position (2 floats), size (+0x1C8)
 inline constexpr std::uint32_t kUserWidgetAlignment    = 0x1D0;  // viewport alignment (2 floats)
 inline constexpr std::uint32_t kUserWidgetPlayerWeak   = 0x1E8;  // PlayerContext: weak ULocalPlayer (index, serial)
+inline constexpr std::uint32_t kUserWidgetViewportOffsets = 0x1C0;  // ViewportOffsets.Left/Top (what the placements write)
 inline constexpr std::uint32_t kEndWidgetRootCanvas    = 0x230;  // UEndUserWidget: its SEndCanvas while a root
 inline constexpr std::uint32_t kEndWidgetZOrder        = 0x248;  // UEndUserWidget: the ZOrder it was added with
 
