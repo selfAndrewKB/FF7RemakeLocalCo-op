@@ -61,7 +61,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.20.1-poll-gates";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.21.0-party-funnels";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;

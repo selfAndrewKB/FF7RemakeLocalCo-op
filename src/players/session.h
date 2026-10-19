@@ -9,9 +9,12 @@
 // Member: at once, and again each tick while it has none, player 2 takes the member in the 2nd slot of the game's
 // party order (players/party_member.h) through the game's leader funnel (players/party_seat.h), and its own field
 // camera operator follows that member (players/player_two_camera.h). While the slot's member is not free player 2
-// stays in and waits, logging why once. It follows the slot: a reorder, a story party change or the game making
-// its member player 1's leader gives the member back (through the same funnel) and chooses again; a member
-// destroyed under it (a retry rebuilds the party without a field exit) is let go of without a call.
+// stays in and waits, logging why once. It follows the slot through the game's own funnels (players/party_events.h):
+// before the game seats player 1 on its member, and when a formation rebuild drops the member, it is given back
+// (through the same funnel) and chosen again; after a rebuild its PLAYER actor type is set again; at an event the
+// member is handed to its AI and taken back as the game does for its leader; a story script that takes it (a field
+// AI layer, the cinema modes) gets it back until it is free again. A periodic check backs the funnels up, and a
+// member destroyed under player 2 (a retry rebuilds the party without a field exit) is let go of without a call.
 // Leave: the member given back first, then the actors player 2's controller and camera manager spawned, which the
 // engine never destroys, are destroyed, then UGameInstance::RemoveLocalPlayer. The engine's own list is the
 // evidence of both.
@@ -90,8 +93,14 @@ private:
     void TrySeat() noexcept;
     /// Player 2's member is no longer its to play: given back, and chosen again next tick.
     void ReleaseMember(const wchar_t* why) noexcept;
-    /// The party order and the member's existence, checked while player 2 holds a member.
+    /// The party order, the member's existence and its AI's hold, checked while player 2 holds a member.
     void FollowSlot() noexcept;
+    /// The game's party funnels (players/party_events.h).
+    static void OnLeaderChanging(void* self, void* character) noexcept;
+    static void OnStreamFinishing(void* self) noexcept;
+    static void OnStreamFinished(void* self) noexcept;
+    static void OnLeaderHandedToAi(void* self) noexcept;
+    static void OnLeaderReturned(void* self) noexcept;
     /// Player 2's field camera operator forgotten and destroyed (the member's release or the leave).
     void DestroyOperator() noexcept;
 
@@ -104,6 +113,8 @@ private:
     std::uintptr_t       removeLocalPlayer_ = 0;
     bool                 cameraInstalled_   = false;
     bool                 seatInstalled_     = false;
+    bool                 eventsInstalled_   = false;
+    bool                 handedToAi_        = false;    // player 2's member is with its AI for an event, as the leader is
     std::int32_t         memberWeak_[2]     = {-1, 0};  // the seated member, to notice it destroyed
     std::uint32_t        waitLogged_        = 0;        // the wait last logged (type, reason, ordinal), 0 none
     std::uint32_t        seatRetryAt_       = 0;        // the tick a refused seat is tried again

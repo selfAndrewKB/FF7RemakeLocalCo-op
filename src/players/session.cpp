@@ -19,6 +19,7 @@
 #include "players/field_exit.h"
 #include "players/game_state.h"
 #include "players/own_controller.h"
+#include "players/party_events.h"
 #include "players/party_member.h"
 #include "players/party_seat.h"
 #include "players/player_two_camera.h"
@@ -220,6 +221,16 @@ bool Session::Install(const platform::GameImage& image) noexcept
     seatInstalled_     = party_seat::Install(image) && party_member::Install(image);  // optional: without it player 2 has no member
     split_render::Install(image);                            // optional: without it the halves keep the split rule's reduced effects
     fieldExitInstalled_ = field_exit::Install(image, &Session::OnFieldExit, this);  // without it, Tick's step check alone
+    if (seatInstalled_)
+    {
+        // Without it the periodic check alone follows the party (one tick late at a leader change).
+        eventsInstalled_ = party_events::Install(image, {.leaderChanging   = &Session::OnLeaderChanging,
+                                                         .streamFinishing  = &Session::OnStreamFinishing,
+                                                         .streamFinished   = &Session::OnStreamFinished,
+                                                         .leaderHandedToAi = &Session::OnLeaderHandedToAi,
+                                                         .leaderReturned   = &Session::OnLeaderReturned,
+                                                         .context          = this});
+    }
     return true;
 }
 
@@ -229,6 +240,11 @@ void Session::Remove() noexcept
     {
         field_exit::Remove();
         fieldExitInstalled_ = false;
+    }
+    if (eventsInstalled_)
+    {
+        party_events::Remove();
+        eventsInstalled_ = false;
     }
 }
 
@@ -265,6 +281,10 @@ try
 {
     gameThread_                     = GetCurrentThreadId();
     ++ticks_;
+    if (eventsInstalled_)
+    {
+        party_events::Tick();  // the entry redirects, placed from here (outside the functions, on their thread)
+    }
     const game_state::Snapshot game = game_state::Current();
     const bool steady = game.valid && game.hasRoot && game.running && game.step == kStepSteady;
     if (steady)
@@ -373,6 +393,7 @@ void Session::Forget() noexcept
     memberWeak_[0] = -1;
     memberWeak_[1] = 0;
     waitLogged_    = 0;
+    handedToAi_    = false;
 }
 
 void Session::Join() noexcept
@@ -629,6 +650,7 @@ try
     party_seat::Unseat(kSeat, Field((*players)[0], facts::kLocalPlayerController), Field(playerTwo_, facts::kLocalPlayerController));
     memberWeak_[0] = -1;
     memberWeak_[1] = 0;
+    handedToAi_    = false;
 }
 catch (...)
 {
@@ -660,8 +682,22 @@ try
     {
         return;
     }
-    if (const wchar_t* why = party_member::WhyNotPlayable(kSeat, member, party_seat::MemberType(kSeat),
-                                                         Field((*players)[0], facts::kLocalPlayerController)))
+    if (const wchar_t* why = party_member::WhyNotInSlot(kSeat, member, party_seat::MemberType(kSeat),
+                                                       Field((*players)[0], facts::kLocalPlayerController)))
+    {
+        ReleaseMember(why);
+        return;
+    }
+    if (handedToAi_)
+    {
+        // The event's end through the return site the mod does not hear (it crosses a block): the lock is gone.
+        if (!party_member::EventLocked())
+        {
+            OnLeaderReturned(this);
+        }
+        return;
+    }
+    if (const wchar_t* why = party_member::WhyHeldByScript(member))
     {
         ReleaseMember(why);
     }
@@ -669,6 +705,69 @@ try
 catch (...)
 {
     platform::Log(L"follow: an engine lookup raised an exception");
+}
+
+void Session::OnLeaderChanging(void* self, void* character) noexcept
+{
+    auto* session = static_cast<Session*>(self);
+    if (character == nullptr || character != party_seat::Member(kSeat))
+    {
+        return;
+    }
+    session->ReleaseMember(L"about to become player 1's leader (the game's leader change)");
+}
+
+void Session::OnStreamFinishing(void* self) noexcept
+{
+    auto* session = static_cast<Session*>(self);
+    if (party_seat::Member(kSeat) != nullptr && !party_member::InFormation(party_seat::MemberType(kSeat)))
+    {
+        session->ReleaseMember(L"leaving the deployed party (its status changed)");
+    }
+}
+
+void Session::OnStreamFinished(void* self) noexcept
+{
+    auto* session = static_cast<Session*>(self);
+    void* member  = party_seat::Member(kSeat);
+    if (member == nullptr)
+    {
+        return;
+    }
+    // The rebuild typed every member PARTY; the game re-types only its own leader PLAYER.
+    platform::LogDebug(L"player 2's member keeps the PLAYER actor type after the formation rebuild: {}",
+                       party_member::ReassertPlayerType(member) ? L"set" : L"NOT set (the setter faulted)");
+    session->FollowSlot();
+}
+
+void Session::OnLeaderHandedToAi(void* self) noexcept
+{
+    auto* session = static_cast<Session*>(self);
+    void* member  = party_seat::Member(kSeat);
+    if (member == nullptr || session->handedToAi_)
+    {
+        return;
+    }
+    session->handedToAi_ = party_member::HandToAi(member);
+    platform::LogDebug(L"player 2's member handed to its AI with the game's leader (an event): {}", session->handedToAi_ ? L"yes" : L"NO");
+}
+
+void Session::OnLeaderReturned(void* self) noexcept
+try
+{
+    auto* session = static_cast<Session*>(self);
+    void* member  = party_seat::Member(kSeat);
+    if (member == nullptr || !session->handedToAi_ || session->playerTwo_ == nullptr)
+    {
+        return;
+    }
+    session->handedToAi_ = false;
+    platform::LogDebug(L"player 2's member back on its controller with the game's leader (the event ended): {}",
+                       party_member::ReturnTo(member, Field(session->playerTwo_, facts::kLocalPlayerController)) ? L"yes" : L"NO");
+}
+catch (...)
+{
+    platform::Log(L"return: an engine lookup raised an exception");
 }
 
 void Session::Report() const noexcept

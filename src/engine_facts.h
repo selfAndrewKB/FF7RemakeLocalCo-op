@@ -844,4 +844,74 @@ inline constexpr platform::FunctionFact kSeqCutPrimary{L"PrimaryPCM_SetCameraCut
 inline constexpr std::uintptr_t kCycleLeaderCandidateCall = 0x1409BAC99;
 inline constexpr std::uintptr_t kCanSwitchCandidateCall   = 0x1409BA98C;
 
+// --- The party order, a member's AI state and the game's leader funnels (RE-slot-member.md) --------------------
+/// The data singleton (allocated lazily): the field leader's type (DefaultPartyLeaderType) and the eight player
+/// status bytes (EPlayerStatus: 1 PARTY, 5 PARTY_Battle_Support are in the formation; 5 is skipped by the cycle).
+inline constexpr std::uintptr_t kDataSingletonGlobal   = 0x1457E9768;
+inline constexpr std::uint32_t  kDataFieldLeaderType   = 0x5089B;
+inline constexpr std::uint32_t  kDataPlayerStatus      = 0x5089C;  // u8[8] by player type
+inline constexpr std::uint8_t   kStatusParty           = 1;
+inline constexpr std::uint8_t   kStatusBattleSupport   = 5;
+/// AEndCharacter: the PLAYER controller slot (the reconcile lets it win), the field AI, the actor-mode object
+/// (reached as char800+0xA00 by the game); on that object the actor type (EActorType, 0 PLAYER, 1 PARTY) and the
+/// actor mode (EActorMode: 1 FIELD, 3 FIELD_CINEMA, 4 CAUTION, 5 BATTLE, 7 CINEMA).
+inline constexpr std::uint32_t  kCharacterPlayerSlot   = 0xCE8;
+inline constexpr std::uint32_t  kCharacterFieldAi      = 0xC88;
+inline constexpr std::uint32_t  kCharacter800          = 0x800;   // the EndCharacter800 interface the game's calls take
+inline constexpr std::uint32_t  kCharacterActorMode    = 0x1200;  // the actor-mode object
+inline constexpr std::uint32_t  kActorModeType         = 0xB8;
+inline constexpr std::uint32_t  kActorModeMode         = 0xBA;
+inline constexpr std::uint8_t   kActorTypePlayer       = 0;
+inline constexpr std::uint8_t   kActorModeField        = 1;
+inline constexpr std::uint8_t   kActorModeFieldCinema  = 3;
+inline constexpr std::uint8_t   kActorModeCaution      = 4;
+inline constexpr std::uint8_t   kActorModeBattle       = 5;
+inline constexpr std::uint8_t   kActorModeCinema       = 7;
+/// AEndFieldAIController: a stack of 15 request layers; the active layer (0 = the party's default layer, 16 = none)
+/// and its kind (1 = Stable, the follow-the-leader default). A higher layer or another kind is a script's hold.
+inline constexpr std::uint32_t  kFieldAiActiveLayer    = 0xDF8;
+inline constexpr std::uint32_t  kFieldAiActiveKind     = 0x55B8;
+inline constexpr std::uint8_t   kFieldAiLayerDefault   = 0;
+inline constexpr std::uint8_t   kFieldAiKindStable     = 1;
+/// The field control lock mask on the state manager ([root+0x138]): bit 0x100000 while an event holds the field.
+inline constexpr std::uint32_t  kRootStateManager      = 0x138;
+inline constexpr std::uint32_t  kStateManagerControlLock = 0x11062B0;
+inline constexpr std::uint32_t  kControlLockEvent      = 0x100000;
+/// The leader funnels: every path that seats player 1 on a character passes PartyManager_SetPartyLeader(PM, actor,
+/// input, force) or its toad twin (PM, actor) before any party-manager write; both open with pushes.
+inline constexpr std::array<std::uint8_t, 16> kSetPartyLeaderEntry{
+    0x40, 0x57, 0x41, 0x54, 0x41, 0x55, 0x41, 0x56, 0x41, 0x57, 0x48, 0x83, 0xEC, 0x30, 0x4C, 0x8B};
+inline constexpr std::size_t kSetPartyLeaderPushes = 8;
+inline constexpr platform::FunctionFact kSetPartyLeader{L"PartyManager_SetPartyLeader", 0x1415F18B0, kSetPartyLeaderEntry};
+inline constexpr std::array<std::uint8_t, 16> kSetPartyLeaderToadEntry{
+    0x40, 0x57, 0x41, 0x56, 0x41, 0x57, 0x48, 0x83, 0xEC, 0x30, 0x4C, 0x8B, 0xF1, 0x48, 0x8B, 0xFA};
+inline constexpr std::size_t kSetPartyLeaderToadPushes = 6;
+inline constexpr platform::FunctionFact kSetPartyLeaderToad{L"PartyManager_SetPartyLeader_NoInputNoForce", 0x1415F1AE0,
+                                                           kSetPartyLeaderToadEntry};
+/// The formation's one writer, at the end of every player stream, reached by the Blueprint exec's tail jump.
+inline constexpr std::array<std::uint8_t, 16> kFinishPlayerStreamEntry{
+    0x48, 0x89, 0x4C, 0x24, 0x08, 0x55, 0x53, 0x56, 0x57, 0x41, 0x54, 0x41, 0x55, 0x41, 0x56, 0x41};
+inline constexpr platform::FunctionFact kFinishPlayerStream{L"PartyManager_FinishPlayerStream_RebuildFormation", 0x1415F08F0,
+                                                            kFinishPlayerStreamEntry};
+inline constexpr std::uintptr_t kFinishPlayerStreamJump = 0x141B90183;  // E9 68 07 A6 FF, inside its block
+/// The game's hand of its leader to its AI (the PLAYER slot cleared, the controller reconciled) and the return
+/// (the slot set to the primary controller): the event's start and end, and the field-action tick.
+inline constexpr std::array<std::uint8_t, 16> kHandLeaderToAiEntry{
+    0x40, 0x53, 0x48, 0x83, 0xEC, 0x20, 0xE8, 0xE5, 0x13, 0x66, 0xFF, 0x48, 0x8B, 0xC8, 0x33, 0xD2};
+inline constexpr platform::FunctionFact kHandLeaderToAi{L"Party_HandLeaderToAI_ClearPlayerSlot", 0x140FF66D0, kHandLeaderToAiEntry};
+inline constexpr std::array<std::uintptr_t, 2> kHandLeaderCalls{0x1411215B6, 0x140FF62FB};  // E8 15 51 ED FF, E8 D0 03 00 00
+inline constexpr std::array<std::uint8_t, 16> kReturnLeaderToPcEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x08, 0x57, 0x48, 0x83, 0xEC, 0x20, 0x48, 0x8B, 0x81, 0x38, 0x01, 0x00};
+inline constexpr platform::FunctionFact kReturnLeaderToPc{L"Party_ReturnLeaderToPrimaryPC", 0x140FF6720, kReturnLeaderToPcEntry};
+inline constexpr std::uintptr_t kReturnLeaderCall = 0x141121933;  // E8 E8 4D ED FF, inside its block
+/// The reconcile (char800 vt+0x128: the PLAYER slot wins, else the AI for the mode) and the actor-type setter
+/// (char800 vt+0x110), as the game's own hand-backs and the formation rebuild call them.
+inline constexpr std::array<std::uint8_t, 16> kReconcileControllerEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x74, 0x24, 0x10, 0x57, 0x48, 0x83, 0xEC, 0x30, 0x48};
+inline constexpr platform::FunctionFact kReconcileController{L"EndCharacter800_ReconcileActiveController", 0x1416450F0,
+                                                             kReconcileControllerEntry};
+inline constexpr std::array<std::uint8_t, 16> kSetActorTypeEntry{
+    0x48, 0x8B, 0x81, 0x00, 0x0A, 0x00, 0x00, 0x88, 0x90, 0xB8, 0x00, 0x00, 0x00, 0x80, 0xFA, 0x02};
+inline constexpr platform::FunctionFact kSetActorType{L"EndCharacter800_SetActorType", 0x14164DE50, kSetActorTypeEntry};
+
 }  // namespace lss::facts
