@@ -2,6 +2,7 @@
 
 #include "control/registry.h"
 #include "engine_facts.h"
+#include "hud/image_entries.h"
 #include "platform/call_redirect.h"
 #include "platform/guarded.h"
 #include "platform/image.h"
@@ -112,6 +113,7 @@ std::uint64_t UiPass(void* sceneTargets, void* commandList, void* view, platform
         g_render.held       = before;  // the reference moves with the pointer
         SetMember(nullptr);            // the game's allocator now gives this view a target of its own
     }
+    image_entries::BeginUiPass(g_enabled.load(std::memory_order_relaxed) ? player : -1);
     const std::uint64_t bound = reinterpret_cast<AllocBindFn>(call.Original())(sceneTargets, commandList);
     void* const after = Member();
     if (player == 0)
@@ -144,6 +146,7 @@ std::uint64_t UiPassClearOnly(void* sceneTargets, void* commandList, void* view)
 /// H4.
 void PostProcess(void* postProcessing, void* commandList, void* view, void* velocity)
 {
+    image_entries::EndUiPasses();
     const int player = view == g_render.views[0] ? 0 : view == g_render.views[1] ? 1 : -1;
     void*     member = Member();
     if (player >= 0 && g_render.held != nullptr && g_render.targets[player] != nullptr && member != g_render.targets[player] &&

@@ -303,6 +303,21 @@ inline constexpr std::uintptr_t kPostProcessProcess      = 0x14251C230;  // (thi
 inline constexpr std::uintptr_t kSceneRenderTargetsGlobal = 0x145923AD0; // FSceneRenderTargets (static object)
 inline constexpr std::uint32_t  kSceneTargetsInGameUI    = 0x110;        // TRefCountPtr<IPooledRenderTarget>
 
+// Player 2's HUD image (RE-hud-overlay-pass.md §2, §3, §4; RE-hud-two-images.md §2.3, §3).
+inline constexpr std::array<std::uint8_t, 16> kOverlayRenderEntry{
+    0x4C, 0x8B, 0xDC, 0x55, 0x41, 0x56, 0x49, 0x8D, 0xAB, 0x68, 0xFF, 0xFF, 0xFF, 0x48, 0x81, 0xEC};
+inline constexpr platform::FunctionFact kOverlayRender{L"SEndRootOverlay__RenderToInGameUILayer", 0x141509D00,
+                                                       kOverlayRenderEntry};
+inline constexpr std::uintptr_t kOverlayDelegateSlot  = 0x144BF4DB0;  // the render delegate's vtable slot (+0x60)
+inline constexpr std::uintptr_t kOverlayDelegateThunk = 0x14151BAF0;  // what it holds: render [this+8] if any
+inline constexpr std::uintptr_t kOverlayAcquireCall   = 0x141509FCF;  // call AcquireLayerSlot (pool 2): crosses a block
+inline constexpr std::uintptr_t kAppDeltaTime         = 0x1453A49B0;  // FApp::DeltaTime (double): the paint's widget ticks
+inline constexpr std::uintptr_t kDrawEntryBatchCall   = 0x1439FCFD8;  // DrawLayerEntry: call DrawEntryBatchToTarget
+inline constexpr std::uintptr_t kDrawEntryBatchToTarget = 0x1439FD100;  // 9 arguments, no result
+inline constexpr std::uintptr_t kGMallocGlobal        = 0x145825680;  // FMalloc* GMalloc (vt+0x10 Malloc(size, align))
+inline constexpr std::uintptr_t kMenuVertexBufferVtable = 0x144F766F8;  // FEndMenuRenderer's pool buffers
+inline constexpr std::uintptr_t kMenuIndexBufferVtable  = 0x144F76788;
+
 // ULocalPlayer's split-screen view as fractions of the viewport (stock 4.18, not reflected: between ViewportClient
 // +0x58 and LastViewLocation, before AspectRatioAxisConstraint +0x7C).
 inline constexpr std::uint32_t kLocalPlayerOrigin      = 0x60;  // FVector2D

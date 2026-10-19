@@ -20,6 +20,8 @@
 #include "hud/hud_probe.h"
 #include "hud/overlay_layout.h"
 #include "hud/root_placement.h"
+#include "hud/image_entries.h"
+#include "hud/second_image.h"
 #include "hud/ui_targets.h"
 #include "platform/guarded.h"
 #include "platform/image.h"
@@ -46,7 +48,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.10.0-hud-band";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.11.0-hud-image";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
@@ -196,6 +198,8 @@ public:
         lss::hud::hud_probe::Remove();
         lss::hud::root_placement::Remove();
         lss::hud::overlay_layout::Remove();
+        lss::hud::second_image::Remove();
+        lss::hud::image_entries::Remove();
         lss::hud::ui_targets::Remove();
         if (installed_)
         {
@@ -230,6 +234,10 @@ public:
         lss::hud::hud_probe::Install(*image);       // logging only; fine without
         lss::hud::overlay_layout::Install(*image);  // optional: without it each half shows the middle of the HUD
         lss::hud::ui_targets::Install(*image);      // optional: without it both halves sample one UI image
+        if (lss::hud::image_entries::Install(*image))  // optional: player 2's own HUD image needs both
+        {
+            lss::hud::second_image::Install(*image);
+        }
         RegisterSessionCommands(session_);
         remote_.Open();
         const Hook::FCallbackOptions options{false, false, STR("LocalSplitScreen"), STR("player intent")};
@@ -264,20 +272,23 @@ private:
         remote_.Tick();
     }
 
-    /// The HUD layout follows the split and player 1's view (ULocalPlayer Origin and Size, read under a guard).
+    /// A local player's view share (ULocalPlayer Origin and Size), read under a guard.
+    bool ReadView(int index, lss::hud::overlay_layout::ViewShare& out) const noexcept
+    {
+        const auto* player = reinterpret_cast<const std::uint8_t*>(session_.LocalPlayer(index));
+        return player != nullptr &&
+               lss::platform::CopyGuarded(&out.originX, player + lss::facts::kLocalPlayerOrigin, 2 * sizeof(float)) &&
+               lss::platform::CopyGuarded(&out.sizeX, player + lss::facts::kLocalPlayerSize, 2 * sizeof(float)) &&
+               out.sizeX > 0.0f && out.sizeY > 0.0f && out.sizeX <= 1.0f && out.sizeY <= 1.0f;
+    }
+
+    /// The HUD layout follows the split and each player's view.
     void TickHud() noexcept
     {
-        lss::hud::overlay_layout::ViewShare one;
-        bool split = session_.HasPlayerTwo();
-        if (split)
-        {
-            const auto* player = reinterpret_cast<const std::uint8_t*>(session_.LocalPlayer(0));
-            split = player != nullptr &&
-                    lss::platform::CopyGuarded(&one.originX, player + lss::facts::kLocalPlayerOrigin, 2 * sizeof(float)) &&
-                    lss::platform::CopyGuarded(&one.sizeX, player + lss::facts::kLocalPlayerSize, 2 * sizeof(float)) &&
-                    one.sizeX > 0.0f && one.sizeY > 0.0f && one.sizeX <= 1.0f && one.sizeY <= 1.0f;
-        }
-        lss::hud::overlay_layout::Tick(split, one);
+        lss::hud::overlay_layout::ViewShare one, two;
+        const bool split = session_.HasPlayerTwo() && ReadView(0, one) && ReadView(1, two);
+        lss::hud::overlay_layout::Tick(split, one, two);
+        lss::hud::second_image::Tick(split);
         lss::hud::root_placement::Tick(split && lss::hud::overlay_layout::BandApplies());
     }
 

@@ -16,7 +16,8 @@
 //     their objects. Square's own OnPaint fallback sets the host rect to the first player's view rect; the delegate
 //     path uses the whole window only because single player's view is the window (RE-hud-split.md §1.4). The HUD
 //     ticks, which run before the next render, read these values.
-// The pass's player is player 1 until player 2 has an image of its own.
+// Each pass lays out for its own player's view: player 1's, or player 2's in player 2's pass (hud/second_image.h),
+// whose entry gets player 2's name, and whose submit is left to player 1's pass.
 // Game thread only.
 
 namespace lss::platform {
@@ -41,8 +42,8 @@ bool Install(const platform::GameImage& image) noexcept;
 void Remove() noexcept;
 
 /// Game thread, every engine tick before the frame's render: installs the rect call once, and records whether the
-/// split is shown and player 1's view.
-void Tick(bool splitShown, const ViewShare& playerOne) noexcept;
+/// split is shown and each player's view (player 2's for player 2's pass, hud/second_image.h).
+void Tick(bool splitShown, const ViewShare& playerOne, const ViewShare& playerTwo) noexcept;
 
 /// Whether the last overlay render laid the HUD out in a band. Game thread.
 bool BandApplies() noexcept;

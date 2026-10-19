@@ -29,6 +29,10 @@ add_library(LocalSplitScreen SHARED
     src/control/script.cpp
     src/control/server.cpp
     src/hud/hud_probe.cpp
+    src/hud/image_entries.cpp
+    src/hud/overlay_pass.cpp
+    src/hud/pass_hide.cpp
+    src/hud/second_image.cpp
     src/hud/overlay_band.cpp
     src/hud/overlay_layout.cpp
     src/hud/root_placement.cpp
@@ -108,3 +112,12 @@ add_executable(CodeMemoryTests
 target_include_directories(CodeMemoryTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_compile_features(CodeMemoryTests PRIVATE cxx_std_20)
 add_test(NAME code_memory COMMAND CodeMemoryTests)
+
+add_executable(ImageCodeTests
+    tests/image_code_test.cpp
+    src/platform/code_memory.cpp
+    src/platform/code_redirect.cpp
+)
+target_include_directories(ImageCodeTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(ImageCodeTests PRIVATE cxx_std_20)
+add_test(NAME image_code COMMAND ImageCodeTests)

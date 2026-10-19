@@ -26,7 +26,7 @@ python ../tools/game.py status | launch | quit | relaunch --deploy --label v0.8.
 
 Every module registers its own commands (`src/control/registry.h`), so `help` on the running build is the list.
 Today: `join`, `leave`, `seat on|off`, `console <command>`, `report`, `quit`, `showflags <hex>`, `ao-origin on|off`,
-`bloom-origin on|off`, `log-level error|warning|info|debug|trace`, `hud.dump roots|shown|all [<text>]`, `hud-band on|off`, `hud-targets on|off`, `hud-targets-log <renders>`; readings `p2.in`, `p2.state` (out|in|playing),
+`bloom-origin on|off`, `log-level error|warning|info|debug|trace`, `hud.dump roots|shown|all [<text>]`, `hud-band on|off`, `hud-image on|off`, `hud-targets on|off`, `hud-targets-log <renders>`; readings `p2.in`, `p2.state` (out|in|playing),
 `game.state` (title|loading|play|pause|menu|leaving|…), `game.paused`, `game.menu-kind`, `game.location`,
 `field.step` (13 = steady field), `field.running`, `hud.overlay`, `hud.layout`, `tick`, `version`. The language's own verbs (`src/control/script.h`): `get <name>`, `status`, `help [<name>]`,
 `wait <ticks>`, `wait-until <name> <op> <value> [<ticks>]`, `hold <player> stick <lx> <ly> <rx> <ry> <ticks>`,
@@ -35,8 +35,8 @@ Today: `join`, `leave`, `seat on|off`, `console <command>`, `report`, `quit`, `s
 While player 2 is in, the mod also gives player 2's controller the game's input step right after player 1's (the game ticks only the primary controller's input), and forces back on the effects stock UE 4.18 turns off for split screen (show flags `0x100A`: TAA, bloom and bit `0x1000`). It makes Square Enix's AO downsample and first bloom reduce read each view's own rows; both read player 1's rows for player 2's view in the stock game (the split-screen ghost and its moving traces). The bloom fix works on D3D12 (the default renderer) and D3D11 (`-dx11`); where it cannot install, bloom stays off in split (`0x1008`).
 
 While player 2 is in, the HUD is laid out for each half: the whole single-player HUD of a 32:9 screen in each half
-(minimap top right, command menu bottom left), with world markers on their objects in player 1's half. Both halves still
-show player 1's HUD (player 2's own image is the next step).
+(minimap top right, command menu bottom left), with world markers on their objects in player 1's half. Player 2's half has its own HUD image; player 1's talk and
+examine cursors stay out of it. Its content is still player 1's otherwise (minimap, prompts): player 2's own is next.
 
 While player 2 is in, each player's sticks are their own pad's (pad 1 = XInput user 0, also the keyboard;
 pad 2 = user 1).
@@ -78,7 +78,13 @@ src/
     layout_code           the centred 1920x1080 frame and the off-screen arrows' edge in a band (two code redirects,
                           host-tested by executing them)
     root_placement        the minimap, command menu and party panel in their corners of the half (the game's setters)
-    ui_targets            one UI target per view through the game's own pool (render thread; hud-targets, off)
+    ui_targets            one UI target per view through the game's own pool (render thread; on with hud-image)
+    second_image          player 2's HUD image: the overlay rendered first for player 2 (DeltaTime 0, fade kept,
+                          one acquire, one submit; the render delegate's vtable slot and three call redirects)
+    overlay_pass          which player's pass of the overlay render is running
+    image_entries         render side: each entry drawn only in its own view, player 2's own vertex/index buffers
+    image_code            the per-entry buffer load and the navi map's pool-0 skip (two code redirects, host-tested)
+    pass_hide             player 1's field target icons and search arrows transparent in player 2's pass
   players/
     game_state            the game's own state, location and field step as readings, every change logged
     session               join and leave through UE's local-player path; console commands
