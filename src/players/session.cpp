@@ -597,8 +597,14 @@ try
         {
             waitLogged_ = key;
             platform::Log(L"player 2 waits for its member (row {} of the party order, type {}): {}; the game's party order chooses it, "
-                          L"so a menu reorder or a party change ends the wait",
+                          L"so a party change ends the wait",
                           choice.ordinal, choice.type, party_member::Describe(choice.wait));
+            if (choice.wait == party_member::Wait::AiHeld || choice.wait == party_member::Wait::NoFieldAi ||
+                choice.wait == party_member::Wait::Cinema)
+            {
+                // The member's AI as the take test saw it (the actor of the row, read again).
+                platform::Log(L"  the row's member: {}", party_member::AiDetail(party_member::RowActor(kSeat, playerOne)));
+            }
         }
         return;
     }
@@ -818,6 +824,21 @@ catch (...)
 bool Session::Seated() const noexcept
 {
     return seatInstalled_ && party_seat::Seated(kSeat);
+}
+
+std::wstring Session::FormationReading() const noexcept
+try
+{
+    auto* players = LocalPlayers(GameInstance());
+    if (!seatInstalled_ || players == nullptr || players->Num() < 1)
+    {
+        return L"no party";
+    }
+    return party_member::FormationReading(Field((*players)[0], facts::kLocalPlayerController));
+}
+catch (...)
+{
+    return L"unread";
 }
 
 std::wstring Session::MemberReading() const noexcept

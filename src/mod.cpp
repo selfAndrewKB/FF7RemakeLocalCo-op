@@ -62,7 +62,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.22.0-target-cursor";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.22.1-follow-kinds";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
@@ -126,6 +126,9 @@ void RegisterSessionCommands(lss::players::Session& session)
                   session.Leave();
                   return session.HasPlayerTwo() ? Outcome{false, L"player 2 is still in (see the log)"} : Outcome{};
               }});
+    Register({.name = L"party.ai", .shape = Shape::Text,
+              .help = L"each deployed member's status, PLAYER slot holder, actor mode and field AI layers (the take test's view)",
+              .get  = [&session] { return Value{session.FormationReading()}; }});
     Register({.name = L"p2.member", .shape = Shape::Text,
               .help = L"the member player 2 plays (its type and row of the party order), or why it waits for one",
               .get  = [&session] { return Value{session.MemberReading()}; }});

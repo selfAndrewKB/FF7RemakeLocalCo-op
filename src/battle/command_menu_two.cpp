@@ -491,6 +491,19 @@ void Tick(bool playerTwoPlays) noexcept
         platform::LogDebug(L"command menu 2: player 2's controller now caches leader ordinal {} (player 2's member type {}, {})",
                            ordinal, players::scopes::MemberType(kPlayer), LeaderReading());
     }
+    // The battle HUD mode the game set on its controller while player 2 had no member (a battle begun in a cutscene
+    // that took the member): the setter's repeat needs a set-up controller, so the mode is caught up here through the
+    // same setter (the skill's lesson: the second instance misses events while its player is out; replay them).
+    const std::uint8_t hudMode = Byte(ctrl1, facts::kCommandCtrlBattleHudMode);
+    if (Byte(g_ctrl, facts::kCommandCtrlBattleHudMode) != hudMode)
+    {
+        players::scopes::Scope scope(kPlayer, kScopes);
+        if (scope.Held())
+        {
+            platform::LogDebug(L"command menu 2: battle HUD mode {} caught up on player 2's controller (set while player 2 had no member)", hudMode);
+            platform::CallGuarded(reinterpret_cast<HudModeFn>(g_hudMode.Original()), g_ctrl, hudMode);
+        }
+    }
     // The two bytes the game writes directly on its own controller.
     const std::uint8_t allowed = Byte(ctrl1, facts::kCommandCtrlMenuAllowed);
     const std::uint8_t live    = Byte(ctrl1, facts::kCommandCtrlInputLive);

@@ -65,6 +65,8 @@ public:
     bool Seated() const noexcept;
     /// The member player 2 plays (type and row), or why it waits for one; for the `p2.member` reading.
     std::wstring MemberReading() const noexcept;
+    /// Every deployed member's AI detail; for the `party.ai` reading.
+    std::wstring FormationReading() const noexcept;
     /// Player 2 was taken out by a world change and joins again once the field is back.
     bool RejoinPending() const noexcept { return rejoin_.pending; }
 

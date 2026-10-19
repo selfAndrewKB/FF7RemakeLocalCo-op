@@ -867,12 +867,18 @@ inline constexpr std::uint8_t   kActorModeFieldCinema  = 3;
 inline constexpr std::uint8_t   kActorModeCaution      = 4;
 inline constexpr std::uint8_t   kActorModeBattle       = 5;
 inline constexpr std::uint8_t   kActorModeCinema       = 7;
-/// AEndFieldAIController: a stack of 15 request layers; the active layer (0 = the party's default layer, 16 = none)
-/// and its kind (1 = Stable, the follow-the-leader default). A higher layer or another kind is a script's hold.
+/// AEndFieldAIController: a stack of 15 request layers; the active layer (0 = the party's default layer, 1 = the
+/// level's AI setting, 16 = none) and its kind: 1 Stable (the stream's default) or 11, the level's default AI setting
+/// (a follow with a formation position and gait: Aerith following Cloud in the field reads layer 1 kind 11
+/// [CONFIRMED live 2026-10-19]). Another kind is a script's hold; the layer is not read (a cutscene's preparation
+/// copies the active record into the cinema layer 13 for the members outside the scene).
 inline constexpr std::uint32_t  kFieldAiActiveLayer    = 0xDF8;
 inline constexpr std::uint32_t  kFieldAiActiveKind     = 0x55B8;
-inline constexpr std::uint8_t   kFieldAiLayerDefault   = 0;
 inline constexpr std::uint8_t   kFieldAiKindStable     = 1;
+inline constexpr std::uint8_t   kFieldAiKindDefaultSetting = 11;
+inline constexpr std::uint32_t  kFieldAiLayerRecords   = 0xE00;   // 15 records of 0x4C8 bytes; byte +0 = the kind (0 empty)
+inline constexpr std::uint32_t  kFieldAiLayerBytes     = 0x4C8;
+inline constexpr std::uint32_t  kFieldAiLayers         = 15;
 /// The field control lock mask on the state manager ([root+0x138]): bit 0x100000 while an event holds the field.
 inline constexpr std::uint32_t  kRootStateManager      = 0x138;
 inline constexpr std::uint32_t  kStateManagerControlLock = 0x11062B0;

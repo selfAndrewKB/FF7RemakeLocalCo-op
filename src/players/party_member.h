@@ -8,8 +8,9 @@
 // shows and the battle switch cycles), stepping past player 1's character and the battle-support status as that
 // cycle does; a third player would take the next row. The game's order is the only control: a story party change
 // moves the slot and the session follows it. The row's member is taken only while it is free the way the game
-// hands members to players: nobody else's controller holds it; in the field its AI sits on the party's default
-// layer (Stable, the follow) with no script layer above, it is in the FIELD or CAUTION actor mode and no event holds
+// hands members to players: nobody else's controller holds it; in the field its AI runs the party's own follow
+// (the stream's Stable layer or the level's default AI setting) with no script layer above, it is in the FIELD or
+// CAUTION actor mode and no event holds
 // the field; in battle the BATTLE mode. A story script that takes a held member (a higher AI layer, the cinema
 // modes) gets it back, and the player waits for it. A downed member stays playable, as player 1 stays on a downed
 // leader. With fewer rows than seats (a solo story party) that player has no member and waits.
@@ -17,6 +18,7 @@
 // Seat-indexed (seat 1 = player 2); game thread only; every read guarded (a reload tears the party down under them).
 
 #include <cstdint>
+#include <string>
 
 namespace lss::platform {
 class GameImage;
@@ -51,6 +53,12 @@ struct Choice
 /// holds counts as free). Logged at Debug when `log` is set.
 Choice Choose(int seat, void* playerOneController, void* taker, bool log) noexcept;
 
+/// The actor in seat `seat`'s row whatever its state (null without a row or an actor).
+void* RowActor(int seat, void* playerOneController) noexcept;
+
+/// Every formation member's type, PLAYER slot holder and AI detail, one line each (the `party.ai` reading).
+std::wstring FormationReading(void* playerOneController) noexcept;
+
 /// Why `member` is no longer seat `seat`'s row to play: the row names another type, the member left the deployed
 /// formation, or it became player 1's. Null while it still is. `type` is the member's type as taken.
 const wchar_t* WhyNotInSlot(int seat, void* member, std::uint8_t type, void* playerOneController) noexcept;
@@ -76,5 +84,9 @@ bool HandedToAi(void* member) noexcept;
 bool ReassertPlayerType(void* member) noexcept;
 
 const wchar_t* Describe(Wait wait) noexcept;
+
+/// The member's actor mode, its field AI's active layer and kind, and the kind byte of each of the 15 layers
+/// (for the log: what the take test saw).
+std::wstring AiDetail(void* member) noexcept;
 
 }  // namespace lss::players::party_member

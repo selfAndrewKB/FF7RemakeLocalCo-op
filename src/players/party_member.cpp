@@ -7,6 +7,8 @@
 #include "platform/verified_code.h"
 
 #include <cstdint>
+#include <format>
+#include <string>
 
 namespace lss::players::party_member {
 
@@ -107,7 +109,9 @@ Wait FieldWait(void* member) noexcept
     {
         return Wait::NoFieldAi;
     }
-    return layer == facts::kFieldAiLayerDefault && kind == facts::kFieldAiKindStable ? Wait::None : Wait::AiHeld;
+    // The kind decides, not the layer: a cutscene's preparation copies the active layer into the cinema layer (13)
+    // for every party member outside the scene, so the follow is seen there too; the scene itself is the actor mode.
+    return kind == facts::kFieldAiKindStable || kind == facts::kFieldAiKindDefaultSetting ? Wait::None : Wait::AiHeld;
 }
 
 }  // namespace
@@ -190,6 +194,44 @@ Choice Choose(int seat, void* playerOneController, void* taker, bool log) noexce
                            Describe(choice.wait));
     }
     return choice;
+}
+
+void* RowActor(int seat, void* playerOneController) noexcept
+{
+    Party party;
+    if (!ReadParty(playerOneController, party))
+    {
+        return nullptr;
+    }
+    const Choice choice = Choose(seat, playerOneController, nullptr, false);
+    return choice.type < facts::kPlayerTypeNone ? ActorOfType(party, choice.type) : nullptr;
+}
+
+std::wstring FormationReading(void* playerOneController) noexcept
+try
+{
+    Party party;
+    if (!ReadParty(playerOneController, party))
+    {
+        return L"unread";
+    }
+    std::wstring text = std::format(L"field leader type {}; ", party.fieldLeader);
+    for (std::int32_t i = 0; i < kRows; ++i)
+    {
+        const std::uint8_t type = party.types[i];
+        if (type >= facts::kPlayerTypeNone)
+        {
+            continue;
+        }
+        void* actor = ActorOfType(party, type);
+        text += std::format(L"[row {} type {} status {} holder {:#x}: {}] ", i, type, party.statuses[type],
+                            reinterpret_cast<std::uintptr_t>(ReadPointer(actor, facts::kCharacterPlayerSlot)), AiDetail(actor));
+    }
+    return text;
+}
+catch (...)
+{
+    return L"unread";
 }
 
 const wchar_t* WhyNotInSlot(int seat, void* member, std::uint8_t type, void* playerOneController) noexcept
@@ -275,6 +317,31 @@ bool ReassertPlayerType(void* member) noexcept
            (type == facts::kActorTypePlayer ||
             platform::CallGuarded(g_setActorType, static_cast<void*>(static_cast<std::uint8_t*>(member) + facts::kCharacter800),
                                   facts::kActorTypePlayer));
+}
+
+std::wstring AiDetail(void* member) noexcept
+try
+{
+    const std::uint8_t* ai    = static_cast<const std::uint8_t*>(ReadPointer(member, facts::kCharacterFieldAi));
+    std::uint8_t        layer = 0xFF, kind = 0xFF;
+    std::wstring        kinds;
+    if (ai != nullptr)
+    {
+        Read(ai + facts::kFieldAiActiveLayer, layer);
+        Read(ai + facts::kFieldAiActiveKind, kind);
+        for (std::uint32_t i = 0; i < facts::kFieldAiLayers; ++i)
+        {
+            std::uint8_t k = 0xFF;
+            Read(ai + facts::kFieldAiLayerRecords + i * facts::kFieldAiLayerBytes, k);
+            kinds += std::format(L"{}{}", i == 0 ? L"" : L" ", k);
+        }
+    }
+    return std::format(L"mode {}, field AI {}: active layer {} kind {}, layer kinds [{}], event lock {}", Mode(member),
+                       ai == nullptr ? L"none" : L"present", layer, kind, kinds, EventLocked() ? L"on" : L"off");
+}
+catch (...)
+{
+    return L"unread";
 }
 
 const wchar_t* Describe(Wait wait) noexcept
