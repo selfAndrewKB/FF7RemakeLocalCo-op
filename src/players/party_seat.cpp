@@ -15,13 +15,14 @@ namespace lss::players::party_seat {
 
 namespace {
 
+using platform::ReadPointer;
+
 using InitPartyLevelFn = void (*)(void* controller, void* trigger);
 using SwitchLeaderFn   = void (*)(void* controller, void* character, bool inputTriggered, bool force);
 
 constexpr std::uint32_t kTrigger        = 0x6E0;  // AEndPlayerController: the PlayerTrigger actor
 constexpr std::uint32_t kTriggerOverlap = 0x6E8;  // its EndCapsuleOverlapComponent
 constexpr std::uint32_t kLeader         = 0x6F8;  // LeaderCharacter
-constexpr std::uint8_t  kTypeNone       = 9;
 
 constexpr std::array<std::uint8_t, 16> kInitPartyLevelEntry{
     0x48, 0x89, 0x5C, 0x24, 0x18, 0x55, 0x56, 0x57, 0x41, 0x54, 0x41, 0x55, 0x41, 0x56, 0x41, 0x57};
@@ -39,22 +40,13 @@ struct State
 {
     void*        setUpController = nullptr;  // the controller InitPartyLevel ran on
     void*        member          = nullptr;
-    std::uint8_t type            = kTypeNone;
+    std::uint8_t type            = facts::kPlayerTypeNone;
 };
 std::array<State, scopes::kMaxPlayers> g_seats;
 
 bool ValidSeat(int seat) noexcept
 {
     return seat >= 1 && seat < scopes::kMaxPlayers;
-}
-
-void* ReadPointer(const void* object, std::uint32_t offset) noexcept
-{
-    void* value = nullptr;
-    return object != nullptr && platform::CopyGuarded(&value, static_cast<const std::uint8_t*>(object) + offset,
-                                                      sizeof(value))
-               ? value
-               : nullptr;
 }
 
 }  // namespace
@@ -144,8 +136,8 @@ bool Unseat(int seat, void* playerOneController, void* controller) noexcept
     }
     const std::uint8_t type = state.type;
     state.member            = nullptr;
-    state.type              = kTypeNone;
-    scopes::BindMember(seat, nullptr, kTypeNone);
+    state.type              = facts::kPlayerTypeNone;
+    scopes::BindMember(seat, nullptr, facts::kPlayerTypeNone);
     // With a borrowed trigger player 1's trigger rode on the member: re-seating player 1's own leader through the
     // same funnel puts it back. The seat's own trigger needs nothing: player 1's never moved.
     const bool borrowed  = !player_trigger::Owns(ReadPointer(controller, kTrigger));
@@ -165,7 +157,7 @@ void Forget(int seat) noexcept
         return;
     }
     g_seats[seat] = State{};
-    scopes::BindMember(seat, nullptr, kTypeNone);
+    scopes::BindMember(seat, nullptr, facts::kPlayerTypeNone);
     player_trigger::Destroy();
 }
 
@@ -181,7 +173,7 @@ void* Member(int seat) noexcept
 
 std::uint8_t MemberType(int seat) noexcept
 {
-    return ValidSeat(seat) ? g_seats[seat].type : kTypeNone;
+    return ValidSeat(seat) ? g_seats[seat].type : facts::kPlayerTypeNone;
 }
 
 }  // namespace lss::players::party_seat

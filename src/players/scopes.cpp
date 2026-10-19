@@ -14,10 +14,12 @@ namespace lss::players::scopes {
 
 namespace {
 
+using platform::Read;
+
 using platform::ByteContext;
 using Kind = ByteContext::Kind;
 
-constexpr std::uint8_t kTypeNone = 9;  // EPlayerType::NONE
+constexpr std::uint8_t kTypeNone = facts::kPlayerTypeNone;
 
 // Set once at install (live addresses).
 void**         g_partyManager = nullptr;
@@ -40,12 +42,6 @@ std::array<Player, kMaxPlayers> g_players;
 bool ValidPlayer(int player) noexcept
 {
     return player >= 1 && player < kMaxPlayers;
-}
-
-template <class T>
-bool Read(const void* address, T& out) noexcept
-{
-    return address != nullptr && platform::CopyGuarded(&out, address, sizeof(T));
 }
 
 /// One Set context holding `value` at `live`.

@@ -20,6 +20,8 @@ namespace lss::battle::targeting_two {
 
 namespace {
 
+using platform::Read;
+
 using SysFn       = void (*)(void* system);
 using SysDtFn     = void (*)(void* system, float deltaTime);
 using SetLockFn   = char (*)(void* system, std::uint8_t on, std::int32_t a3);
@@ -48,12 +50,6 @@ bool                  g_placed       = false;
 bool                  g_inBattle     = false;
 std::uint8_t          g_lastLock     = 0;
 std::uint32_t         g_runs         = 0;
-
-template <class T>
-bool Read(const void* address, T& out) noexcept
-{
-    return address != nullptr && platform::CopyGuarded(&out, address, sizeof(T));
-}
 
 void* System() noexcept
 {

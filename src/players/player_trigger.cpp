@@ -24,6 +24,8 @@ namespace lss::players::player_trigger {
 
 namespace {
 
+using platform::Read;
+
 using RC::Unreal::UClass;
 using RC::Unreal::UFunction;
 using RC::Unreal::UObject;
@@ -38,12 +40,6 @@ std::uint32_t* g_nameNone  = nullptr;
 
 // Game thread.
 std::int32_t g_trigger[2]{-1, 0};  // player 2's trigger, a weak pair
-
-template <class T>
-bool Read(const void* address, T& out) noexcept
-{
-    return address != nullptr && platform::CopyGuarded(&out, address, sizeof(T));
-}
 
 /// AActor.GetComponentByClass(class) on `actor`, through the game's own reflected call. Null if none or unknown.
 UObject* ComponentByClass(UObject* actor, const wchar_t* classPath) noexcept

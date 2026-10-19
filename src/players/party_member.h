@@ -22,8 +22,6 @@ namespace lss::players::party_member {
 
 bool Install(const platform::GameImage& image) noexcept;
 
-inline constexpr std::uint8_t kTypeNone = 9;  // EPlayerType::NONE
-
 enum class Wait : std::uint8_t
 {
     None,     // `member` is the one to take
@@ -36,7 +34,7 @@ enum class Wait : std::uint8_t
 struct Choice
 {
     void*        member  = nullptr;
-    std::uint8_t type    = kTypeNone;  // the row's player type (NONE with no row)
+    std::uint8_t type    = 9;  // the row's player type (facts::kPlayerTypeNone with no row)
     std::int32_t ordinal = -1;         // its ordinal in the formation
     Wait         wait    = Wait::NoSlot;
 };

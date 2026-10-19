@@ -22,6 +22,8 @@ namespace lss::battle::member_rates {
 
 namespace {
 
+using platform::Read;
+
 using PassiveAtbFn = void (*)(void* component, float deltaTime);
 using UcpcFlagFn   = char (*)(void* component, std::int64_t a2, std::int64_t a3);
 using StaggerFn    = char (*)(float* burst, void* attacker, void* hit);
@@ -41,12 +43,6 @@ bool   g_enabled   = true;
 std::uint32_t g_offThread[3]{};
 bool          g_offThreadLogged[3]{};
 bool          g_appliedLogged[3]{};
-
-template <class T>
-bool Read(const void* address, T& out) noexcept
-{
-    return address != nullptr && platform::CopyGuarded(&out, address, sizeof(T));
-}
 
 /// Whether this call is player 2's member's and may run in its leader scope (the game thread only).
 bool Scoped(bool ours, int lever, const wchar_t* what) noexcept

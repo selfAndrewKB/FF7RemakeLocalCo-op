@@ -17,7 +17,7 @@ namespace {
 using GetPlayerActorFn = void* (*)(void* partyManager, std::uint8_t variant, std::uint8_t type, bool alternate);
 
 constexpr int          kPlayer   = 1;
-constexpr std::uint8_t kTypeNone = 9;
+constexpr std::uint8_t kTypeNone = facts::kPlayerTypeNone;
 
 std::uintptr_t         g_target        = 0;
 std::uintptr_t         g_canSwitchCall = 0;

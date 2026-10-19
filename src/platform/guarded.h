@@ -9,6 +9,7 @@
 // frame cannot recover it.
 
 #include <cstddef>
+#include <cstdint>
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -30,6 +31,20 @@ bool CopyGuarded(void* out, const void* from, std::size_t length) noexcept;
 
 /// memcpy to memory that may not be writable. False if it faulted.
 bool WriteGuarded(void* to, const void* from, std::size_t length) noexcept;
+
+/// A value read from memory that may not be readable. False if the address is null or the read faulted.
+template <class T>
+bool Read(const void* address, T& out) noexcept
+{
+    return address != nullptr && CopyGuarded(&out, address, sizeof(T));
+}
+
+/// A pointer field of `object` at `offset`; null if the object is null or the read faulted.
+inline void* ReadPointer(const void* object, std::uint32_t offset) noexcept
+{
+    void* value = nullptr;
+    return object != nullptr && Read(static_cast<const std::uint8_t*>(object) + offset, value) ? value : nullptr;
+}
 
 /// Calls an engine function, its result into `out`. False if it faulted.
 template <class R, class... P, class... A>

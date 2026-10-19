@@ -19,6 +19,8 @@ namespace lss::battle::sequence_camera_two {
 
 namespace {
 
+using platform::Read;
+
 using ApplyFn     = std::int64_t (*)(void* requests, void* outPose, void* aimLeap, void* eyeLeap, std::uint32_t dt, void* owner, void* view);
 using EvalFn      = char (*)(void* a1, void* outPose, void* a3, void* a4, void* a5, void* a6, std::uint32_t dt, void* view, std::uint32_t a9, void* entry);
 using CutChangeFn = std::int64_t (*)(void* sequence, float time, void* params, void* pose);
@@ -72,12 +74,6 @@ std::array<View, 8>   g_views;
 std::array<Active, 8> g_actives;
 std::uint32_t g_swaps = 0, g_seeds = 0, g_cutsTwo = 0, g_captures = 0, g_unions = 0;
 bool          g_loggedSwap = false, g_loggedCut = false;
-
-template <class T>
-bool Read(const void* address, T& out) noexcept
-{
-    return address != nullptr && platform::CopyGuarded(&out, address, sizeof(T));
-}
 
 bool Copy(void* to, const void* from, std::size_t bytes) noexcept
 {

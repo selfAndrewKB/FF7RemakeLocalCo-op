@@ -12,6 +12,9 @@ namespace lss::players::party_member {
 
 namespace {
 
+using platform::Read;
+using platform::ReadPointer;
+
 using GetPlayerActorFn = void* (*)(void* partyManager, std::uint8_t variant, std::uint8_t type, bool alternate);
 
 constexpr std::int32_t  kRows            = 3;      // the deployed formation's rows
@@ -21,23 +24,11 @@ constexpr std::uint32_t kCharacterPlayerSlot = 0xCE8;  // AEndCharacter: the PLA
 GetPlayerActorFn g_getPlayerActor = nullptr;
 void**           g_partyManager   = nullptr;
 
-template <class T>
-bool Read(const void* address, T& out) noexcept
-{
-    return address != nullptr && platform::CopyGuarded(&out, address, sizeof(T));
-}
-
-void* ReadPointer(const void* object, std::uint32_t offset) noexcept
-{
-    void* value = nullptr;
-    return object != nullptr && Read(static_cast<const std::uint8_t*>(object) + offset, value) ? value : nullptr;
-}
-
 /// The formation as the game keeps it, plus player 1's character.
 struct Party
 {
-    std::uint8_t types[kRows]{kTypeNone, kTypeNone, kTypeNone};
-    std::uint8_t leaderType = kTypeNone;
+    std::uint8_t types[kRows]{facts::kPlayerTypeNone, facts::kPlayerTypeNone, facts::kPlayerTypeNone};
+    std::uint8_t leaderType = facts::kPlayerTypeNone;
     void*        leaderOne  = nullptr;  // player 1's controller's LeaderCharacter
     void*        pawnOne    = nullptr;
     std::uint8_t* manager   = nullptr;
@@ -58,7 +49,7 @@ bool ReadParty(void* playerOneController, Party& out) noexcept
 void* ActorOfType(const Party& party, std::uint8_t type) noexcept
 {
     void* actor = nullptr;
-    return type < kTypeNone && platform::CallGuarded(g_getPlayerActor, actor, static_cast<void*>(party.manager), std::uint8_t{0}, type, false)
+    return type < facts::kPlayerTypeNone && platform::CallGuarded(g_getPlayerActor, actor, static_cast<void*>(party.manager), std::uint8_t{0}, type, false)
                ? actor
                : nullptr;
 }
@@ -113,7 +104,7 @@ Choice Choose(int seat, void* playerOneController, void* taker, bool log) noexce
     {
         const std::int32_t ordinal = (anchor + step) % kRows;
         const std::uint8_t type    = party.types[ordinal];
-        if (type >= kTypeNone)
+        if (type >= facts::kPlayerTypeNone)
         {
             continue;
         }

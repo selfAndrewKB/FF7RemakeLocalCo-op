@@ -15,6 +15,8 @@ namespace lss::players::own_controller {
 
 namespace {
 
+using platform::ReadPointer;
+
 using BeginPlayFn = void (*)(void* cameraManager);
 
 /// Raised inside the spawn when player 2's camera manager cannot be made safe; the join's structured-
@@ -38,15 +40,6 @@ std::uintptr_t VTableOf(const void* object) noexcept
 {
     std::uintptr_t vtable = 0;
     return object != nullptr && platform::CopyGuarded(&vtable, object, sizeof(vtable)) ? vtable : 0;
-}
-
-void* ReadPointer(const void* object, std::uint32_t offset) noexcept
-{
-    void* value = nullptr;
-    return object != nullptr && platform::CopyGuarded(&value, static_cast<const std::uint8_t*>(object) + offset,
-                                                      sizeof(value))
-               ? value
-               : nullptr;
 }
 
 /// Makes sure PCOwner is set, filling it from Owner when it is still null. The owner must be an End

@@ -505,6 +505,7 @@ inline constexpr std::uint32_t  kOctagonPaintInterface = 0x330;  // the Slate ob
 inline constexpr std::uint32_t  kPartyPrimaryController = 0x00;  // AEndPartyManager: the primary controller
 inline constexpr std::uint32_t  kPartySlotTypes        = 0x230;  // u8[3]: the deployed members' player types by ordinal
 inline constexpr std::uint32_t  kPartyLeaderType       = 0x233;  // the leader's player type byte
+inline constexpr std::uint8_t   kPlayerTypeNone        = 9;      // EPlayerType::NONE (an empty row, no member)
 
 // ULocalPlayer's split-screen view as fractions of the viewport (stock 4.18, not reflected: between ViewportClient
 // +0x58 and LastViewLocation, before AspectRatioAxisConstraint +0x7C).

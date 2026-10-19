@@ -27,6 +27,8 @@ namespace lss::battle::enemy_leader {
 
 namespace {
 
+using platform::Read;
+
 using GetPartyLeaderFn = void* (*)(void* partyManager, std::uint8_t variant);
 using GetPlayerActorFn = void* (*)(void* partyManager, std::uint8_t variant, std::uint8_t type, bool alternate);
 using IterBeginFn      = void (*)(void* iterator, void* registry, void* owner, std::uint8_t categoryBit);
@@ -69,12 +71,6 @@ std::uint32_t g_answers      = 0;        // leader reads answered with the stand
 std::uint32_t g_scriptAnswers = 0;       // script natives answered with it
 std::uint32_t g_offThread    = 0;
 bool          g_offThreadLogged = false;
-
-template <class T>
-bool Read(const void* address, T& out) noexcept
-{
-    return address != nullptr && platform::CopyGuarded(&out, address, sizeof(T));
-}
 
 std::uint8_t* Component(void* character) noexcept
 {

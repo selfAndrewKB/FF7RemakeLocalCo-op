@@ -33,6 +33,8 @@ namespace lss::hud::minimap_two {
 
 namespace {
 
+using platform::Read;
+
 namespace f = facts;
 using U64 = std::uint64_t;
 
@@ -143,12 +145,6 @@ struct Faded
     LinearColor color;
 };
 std::vector<Faded> g_faded;
-
-template <class T>
-bool Read(const void* address, T& out) noexcept
-{
-    return address != nullptr && platform::CopyGuarded(&out, address, sizeof(T));
-}
 
 std::uint8_t* At(void* object, std::uint32_t offset) noexcept
 {

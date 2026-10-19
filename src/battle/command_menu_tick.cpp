@@ -23,6 +23,8 @@ namespace lss::battle::command_menu_tick {
 
 namespace {
 
+using platform::Read;
+
 using TickFn        = void (*)(void* controller, float deltaTime);
 using SetSlotFn     = std::int64_t (*)(std::uint8_t slot, float value);
 using InputBufferFn = void (*)(void* component, float deltaTime);
@@ -56,12 +58,6 @@ struct Routing
     bool          lastRouted = true;  // a change is logged at Debug
 };
 Routing g_routing;
-
-template <class T>
-bool Read(const void* address, T& out) noexcept
-{
-    return address != nullptr && platform::CopyGuarded(&out, address, sizeof(T));
-}
 
 std::uint8_t* Ctrl1() noexcept
 {

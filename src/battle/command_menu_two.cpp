@@ -23,6 +23,8 @@ namespace lss::battle::command_menu_two {
 
 namespace {
 
+using platform::Read;
+
 using hud::overlay_pass::Pass;
 
 using MallocFn        = void* (*)(void* allocator, std::uint64_t size, std::uint32_t alignment);
@@ -76,12 +78,6 @@ bool              g_borrowLogged = false;
 bool  g_skippedLogged = false;
 std::int32_t g_ordinalTwo = -1;  // player 2's controller's cached leader ordinal, as last seen
 std::uint32_t g_skipped = 0;  // command menu NativeTicks skipped in player 2's pass
-
-template <class T>
-bool Read(const void* address, T& out) noexcept
-{
-    return address != nullptr && platform::CopyGuarded(&out, address, sizeof(T));
-}
 
 std::uint8_t* Ctrl1() noexcept
 {

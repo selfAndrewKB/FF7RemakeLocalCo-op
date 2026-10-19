@@ -22,6 +22,8 @@ namespace lss::players::player_two_camera {
 
 namespace {
 
+using platform::Read;
+
 /// A UE4 FWeakObjectPtr as the game stores it: the object's index in GUObjectArray and its serial number.
 struct Weak
 {
@@ -112,12 +114,6 @@ constexpr std::uint32_t kItemBytes       = 0x18;  // FUObjectItem: Object +0, Fl
 constexpr std::uint32_t kItemFlags       = 0x08;
 constexpr std::uint32_t kItemSerial      = 0x10;
 constexpr std::int32_t  kUnreachableBits = 0x30000000;  // PendingKill | Unreachable: the pointer is not to be used
-
-template <class T>
-bool Read(const void* address, T& out) noexcept
-{
-    return address != nullptr && platform::CopyGuarded(&out, address, sizeof(T));
-}
 
 bool OnGameThread() noexcept
 {
