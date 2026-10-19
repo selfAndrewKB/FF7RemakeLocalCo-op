@@ -1,4 +1,5 @@
 #include "players/session.h"
+#include "players/unreal_call.h"
 
 #define RC_UNREAL_DISABLE_PROPERTY_DEPRECATION_WARNINGS
 #define RC_UNREAL_DISABLE_CLASS_DEPRECATION_WARNINGS
@@ -65,19 +66,6 @@ struct CreatePlayerParams
 static_assert(sizeof(CreatePlayerParams) == 24);
 
 using RemoveLocalPlayerFn = bool (*)(UObject* gameInstance, UObject* localPlayer);
-
-bool GuardedProcessEvent(UObject* target, UFunction* function, void* params) noexcept
-{
-    __try
-    {
-        target->ProcessEvent(function, params);
-        return true;
-    }
-    __except (platform::GuardFilter(GetExceptionCode()))
-    {
-        return false;
-    }
-}
 
 bool GuardedRemove(RemoveLocalPlayerFn remove, UObject* gameInstance, UObject* localPlayer) noexcept
 {

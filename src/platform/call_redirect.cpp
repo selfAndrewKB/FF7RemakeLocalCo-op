@@ -36,17 +36,15 @@ std::optional<std::int32_t> Displacement(std::uintptr_t site, std::uintptr_t to)
     return static_cast<std::int32_t>(displacement);
 }
 
-/// A sealed page near `site` holding a jump to `replacement`, or 0.
+/// A jump to `replacement` placed near `site` (the shared code pool), or 0.
 std::uintptr_t BuildThunk(std::uintptr_t site, std::uintptr_t replacement) noexcept
 {
-    const std::uintptr_t page = AllocateCodePageNear(site);
-    if (page == 0)
-    {
-        return 0;
-    }
-    std::memcpy(reinterpret_cast<void*>(page), kAbsoluteJump, sizeof(kAbsoluteJump));
-    std::memcpy(reinterpret_cast<void*>(page + sizeof(kAbsoluteJump)), &replacement, sizeof(replacement));
-    return SealCodePage(page) ? page : 0;
+    return PlaceCodeNear(site, sizeof(kAbsoluteJump) + sizeof(replacement),
+                         [replacement](std::uintptr_t, std::span<std::uint8_t> code) noexcept {
+                             std::memcpy(code.data(), kAbsoluteJump, sizeof(kAbsoluteJump));
+                             std::memcpy(code.data() + sizeof(kAbsoluteJump), &replacement, sizeof(replacement));
+                             return true;
+                         });
 }
 
 }  // namespace
@@ -91,7 +89,7 @@ bool CallRedirect::Place(std::uintptr_t site, std::uintptr_t target, std::uintpt
     const auto           rel   = thunk != 0 ? Displacement(site, thunk) : std::nullopt;
     if (!rel)
     {
-        return false;  // a built thunk is left allocated and unused: never reached, never freed
+        return false;  // placed code is left unused: never reached, never freed
     }
 
     auto redirected = current;

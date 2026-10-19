@@ -33,7 +33,8 @@ add_library(LocalSplitScreen SHARED
     src/platform/image.cpp
     src/platform/log.cpp
     src/platform/module_pin.cpp
-    src/platform/near_code.cpp
+    src/platform/code_memory.cpp
+    src/platform/code_redirect.cpp
     src/platform/verified_code.cpp
     src/platform/vtable_entry.cpp
     src/players/field_exit.cpp
@@ -43,6 +44,7 @@ add_library(LocalSplitScreen SHARED
     src/players/player_two_camera.cpp
     src/players/session.cpp
     src/players/split_render.cpp
+    src/players/unreal_call.cpp
     src/render/ao_origin.cpp
     src/render/bloom_origin.cpp
 )
@@ -75,3 +77,11 @@ add_executable(ControlRunnerTests
 target_include_directories(ControlRunnerTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_compile_features(ControlRunnerTests PRIVATE cxx_std_20)
 add_test(NAME control_runner COMMAND ControlRunnerTests)
+
+add_executable(CodeMemoryTests
+    tests/code_memory_test.cpp
+    src/platform/code_memory.cpp
+)
+target_include_directories(CodeMemoryTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(CodeMemoryTests PRIVATE cxx_std_20)
+add_test(NAME code_memory COMMAND CodeMemoryTests)
