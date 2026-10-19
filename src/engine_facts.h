@@ -769,6 +769,11 @@ inline constexpr platform::FunctionFact kGetPartyLeader{L"PartyManager_GetPartyL
 /// AEndBattleAIController_TickBattleAI's leader read (E8 06 4E CD 00, inside its block): the remembered leader
 /// against the party leader, then the Blueprint OnChangeLeader.
 inline constexpr std::uintptr_t kBattleAITickLeaderCall = 0x14091CED5;
+/// The Blueprint natives enemy scripts pick "the player" with, each inside its block (RE-enemy-leader-reads.md
+/// R4-R6): SetTargetByType(UCPC) and the target-type collector (GetActionCharacter and kin) call
+/// PartyManager_GetPlayerActor(PM, 0, PM+0x233, 0) with no alive test; GetLeader calls PartyManager_GetPartyLeader.
+inline constexpr std::array<std::uintptr_t, 2> kBattleScriptPlayerActorCalls{0x140922452, 0x140938923};  // E8 F9 E1 CC 00, E8 28 7D CB 00
+inline constexpr std::uintptr_t kBattleScriptLeaderCall = 0x1417B32DA;  // E8 01 EA E3 FF
 inline constexpr std::array<std::uint8_t, 16> kCharaRegistryIterBeginEntry{
     0x48, 0x89, 0x5C, 0x24, 0x10, 0x48, 0x89, 0x6C, 0x24, 0x18, 0x48, 0x89, 0x74, 0x24, 0x20, 0x57};
 inline constexpr platform::FunctionFact kCharaRegistryIterBegin{L"EndCharaRegistry_IterBegin_ByCategoryBit", 0x140F99920,

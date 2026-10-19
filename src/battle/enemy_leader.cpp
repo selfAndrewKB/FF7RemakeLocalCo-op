@@ -28,6 +28,7 @@ namespace lss::battle::enemy_leader {
 namespace {
 
 using GetPartyLeaderFn = void* (*)(void* partyManager, std::uint8_t variant);
+using GetPlayerActorFn = void* (*)(void* partyManager, std::uint8_t variant, std::uint8_t type, bool alternate);
 using IterBeginFn      = void (*)(void* iterator, void* registry, void* owner, std::uint8_t categoryBit);
 using IterNextFn       = void (*)(void* iterator);
 using SetTargetFn      = void (*)(void* component, void* character);
@@ -47,12 +48,15 @@ constexpr std::uint8_t kCategoryBattle  = 2;
 // Set at install, then only read.
 std::uint8_t**         g_root        = nullptr;
 std::uintptr_t         g_getLeader   = 0;
+std::uintptr_t         g_getActor    = 0;
 IterBeginFn            g_iterBegin   = nullptr;
 IterNextFn             g_iterNext    = nullptr;
 SetTargetFn            g_setTarget   = nullptr;
 FreeFn                 g_free        = nullptr;
 void**                 g_system      = nullptr;
 platform::CallRedirect g_leaderCall;
+platform::CallRedirect g_scriptLeaderCall;
+std::array<platform::CallRedirect, facts::kBattleScriptPlayerActorCalls.size()> g_scriptActorCalls;
 
 // Game thread.
 DWORD         g_thread       = 0;
@@ -62,6 +66,7 @@ int           g_enemySeat    = 0;        // 0: the game's leader; else the seat 
 std::uint32_t g_retargets    = 0;
 std::uint32_t g_lastEnemies  = 0;
 std::uint32_t g_answers      = 0;        // leader reads answered with the standing human's member
+std::uint32_t g_scriptAnswers = 0;       // script natives answered with it
 std::uint32_t g_offThread    = 0;
 bool          g_offThreadLogged = false;
 
@@ -164,10 +169,9 @@ std::uint32_t Retarget(void* member) noexcept
     return enemies;
 }
 
-/// PartyManager_GetPartyLeader at the battle AI tick's read: the standing human's member while the game's leader is down.
-void* LeaderForBattleAI(void* partyManager, std::uint8_t variant)
+/// The standing human's member in place of `leader` when it is the game's downed leader, on the game thread.
+void* Standing(void* leader, std::uint32_t& counter) noexcept
 {
-    void* leader = reinterpret_cast<GetPartyLeaderFn>(g_leaderCall.Original())(partyManager, variant);
     if (g_enemySeat == 0 || g_enemyLeader == nullptr || leader != g_leader)
     {
         return leader;
@@ -178,12 +182,30 @@ void* LeaderForBattleAI(void* partyManager, std::uint8_t variant)
         if (!g_offThreadLogged)
         {
             g_offThreadLogged = true;
-            platform::LogWarning(L"enemy leader: a battle AI's leader read ran off the game thread; it keeps the game's answer");
+            platform::LogWarning(L"enemy leader: a leader read ran off the game thread; it keeps the game's answer");
         }
         return leader;
     }
-    ++g_answers;
+    ++counter;
     return g_enemyLeader;
+}
+
+/// PartyManager_GetPartyLeader at the script's GetLeader: the standing human's member while the game's is down.
+void* LeaderForScript(void* partyManager, std::uint8_t variant)
+{
+    return Standing(reinterpret_cast<GetPartyLeaderFn>(g_getLeader)(partyManager, variant), g_scriptAnswers);
+}
+
+/// PartyManager_GetPlayerActor at the scripts' SetTargetByType(UCPC) and target-type collector: the same.
+void* ActorForScript(void* partyManager, std::uint8_t variant, std::uint8_t type, bool alternate)
+{
+    return Standing(reinterpret_cast<GetPlayerActorFn>(g_getActor)(partyManager, variant, type, alternate), g_scriptAnswers);
+}
+
+/// PartyManager_GetPartyLeader at the battle AI tick's read: the standing human's member while the game's leader is down.
+void* LeaderForBattleAI(void* partyManager, std::uint8_t variant)
+{
+    return Standing(reinterpret_cast<GetPartyLeaderFn>(g_getLeader)(partyManager, variant), g_answers);
 }
 
 const wchar_t* Describe(int seat) noexcept
@@ -203,7 +225,8 @@ bool Install(const platform::GameImage& image) noexcept
     const auto iterNext  = platform::FindFunction(image, facts::kCharaRegistryIterNext);
     const auto setTarget = platform::FindFunction(image, facts::kBattleCompSetTargetChar);
     const auto free      = platform::FindFunction(image, facts::kGameFree);
-    if (!root || !system || !getLeader || !site || !iterBegin || !iterNext || !setTarget || !free)
+    const auto getActor  = platform::FindFunction(image, facts::kGetPlayerActor);
+    if (!root || !system || !getLeader || !site || !iterBegin || !iterNext || !setTarget || !free || !getActor)
     {
         platform::Log(L"enemy leader: an engine check failed; enemies keep following a downed leader");
         return false;
@@ -215,15 +238,29 @@ bool Install(const platform::GameImage& image) noexcept
     g_iterNext  = reinterpret_cast<IterNextFn>(*iterNext);
     g_setTarget = reinterpret_cast<SetTargetFn>(*setTarget);
     g_free      = reinterpret_cast<FreeFn>(*free);
+    g_getActor  = *getActor;
     if (!g_leaderCall.Install(*site, g_getLeader, reinterpret_cast<std::uintptr_t>(&LeaderForBattleAI)))
     {
         platform::Log(L"enemy leader: the battle AI tick's leader read could not be redirected; enemies are re-targeted but get no leader-change event");
     }
+    const auto scriptLeader = image.Rebase(facts::kBattleScriptLeaderCall, 5);
+    if (!scriptLeader || !g_scriptLeaderCall.Install(*scriptLeader, g_getLeader, reinterpret_cast<std::uintptr_t>(&LeaderForScript)))
+    {
+        platform::Log(L"enemy leader: the scripts' GetLeader could not be redirected; a script may keep naming a downed leader");
+    }
+    for (std::size_t i = 0; i < g_scriptActorCalls.size(); ++i)
+    {
+        const auto call = image.Rebase(facts::kBattleScriptPlayerActorCalls[i], 5);
+        if (!call || !g_scriptActorCalls[i].Install(*call, g_getActor, reinterpret_cast<std::uintptr_t>(&ActorForScript)))
+        {
+            platform::Log(L"enemy leader: a script's player-actor read could not be redirected; a script may keep targeting a downed leader");
+        }
+    }
     control::Register({.name = L"enemy-leader", .shape = control::Shape::Text,
                        .help = L"whom enemies follow (the game's leader, or the standing human's member while it is down); re-targets, leader-read answers",
                        .get  = [] {
-                           return control::Value{std::format(L"enemies follow {}; re-targets {} (last {} enemies); leader-read answers {}, off-thread {}",
-                                                             Describe(g_enemySeat), g_retargets, g_lastEnemies, g_answers, g_offThread)};
+                           return control::Value{std::format(L"enemies follow {}; re-targets {} (last {} enemies); leader-read answers {}, script answers {}, off-thread {}",
+                                                             Describe(g_enemySeat), g_retargets, g_lastEnemies, g_answers, g_scriptAnswers, g_offThread)};
                        }});
     platform::Log(L"enemy leader: installed; enemies turn on the standing human's member when the game's leader is down");
     return true;
@@ -231,6 +268,11 @@ bool Install(const platform::GameImage& image) noexcept
 
 void Remove() noexcept
 {
+    for (auto& call : g_scriptActorCalls)
+    {
+        call.Restore();
+    }
+    g_scriptLeaderCall.Restore();
     g_leaderCall.Restore();
 }
 

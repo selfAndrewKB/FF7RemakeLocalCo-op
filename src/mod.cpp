@@ -62,7 +62,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.19.0-sequence-cameras";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.19.1-enemy-leader-scripts";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
