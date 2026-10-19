@@ -61,6 +61,7 @@ add_library(LocalSplitScreen SHARED
     src/players/unreal_call.cpp
     src/render/ao_origin.cpp
     src/render/bloom_origin.cpp
+    src/render/distortion_apply.cpp
 )
 
 # Includes are rooted at src/ so every #include names its module ("platform/log.h").

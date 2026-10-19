@@ -36,6 +36,7 @@
 #include "engine_facts.h"
 #include "render/ao_origin.h"
 #include "render/bloom_origin.h"
+#include "render/distortion_apply.h"
 
 #include <cstdint>
 #include <optional>
@@ -50,7 +51,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.12.0-hud-markers";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.12.1-distortion-apply";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
@@ -229,6 +230,8 @@ public:
         }
         installed_ = true;
         lss::render::ao_origin::Install(*image);  // optional: without it player 2's half keeps the AO ghost
+        // Optional: without it a distortion crossing the split line streaks over the other half.
+        lss::render::distortion_apply::Install(*image);
         // Optional: without it player 2's bloom would be built from player 1's rows, so bloom stays off in split.
         if (lss::render::bloom_origin::Install(*image))
         {
