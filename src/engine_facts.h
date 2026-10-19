@@ -254,4 +254,68 @@ inline constexpr platform::FunctionFact kAllocateSerialNumber{L"FUObjectArray::A
 inline constexpr platform::FunctionFact kOperatorStaticClass{L"AEndFieldCameraOperator::StaticClass", 0x140FD9850,
                                                              kOperatorStaticClassEntry};
 
+// --- HUD (RE-hud-ui.md, RE-hud-split.md) ---------------------------------------------------------
+/// SEndRootOverlay* (static singleton): the one Slate overlay every UEndUserWidget root is added to, rendered
+/// into the one UI image each frame by SEndRootOverlay__RenderToInGameUILayer 0x141509D00.
+inline constexpr std::uintptr_t kRootOverlayGlobal   = 0x14585A100;
+inline constexpr std::uint32_t  kOverlayLayoutMin    = 0x388;  // float x, y: the UI rect's Min
+inline constexpr std::uint32_t  kOverlayHostOrigin   = 0x390;  // float x, y: the marker host rect's origin (0, 0)
+inline constexpr std::uint32_t  kOverlayUiSize       = 0x398;  // float w, h: the UI rect's size (markers read it)
+inline constexpr std::uint32_t  kOverlayHostSize     = 0x3A0;  // float w, h: the host size (the window, px)
+inline constexpr std::uint32_t  kOverlayHostScale    = 0x3A8;  // float: the host geometry scale
+inline constexpr std::uint32_t  kOverlayRenderStamp  = 0x464;  // i32: the frame counter at the last render
+inline constexpr std::uint32_t  kOverlayFade         = 0x450;  // 5 floats: alpha, from, to, elapsed, duration
+
+// The overlay render's calls the HUD layout redirects (RE-hud-overlay-pass.md §3.1; the call bytes are checked by
+// platform::CallRedirect against these targets).
+inline constexpr std::uintptr_t kInGameUIRectCall      = 0x141509E9D;  // call EndUI__GetInGameUIRect: crosses a block
+inline constexpr std::uintptr_t kGetInGameUIRect       = 0x141508810;  // FIntRect* (FIntRect* out)
+inline constexpr std::uintptr_t kLayerEntryCall        = 0x14150A006;  // call FindOrAddNamedLayerEntry: one block
+inline constexpr std::uintptr_t kFindOrAddLayerEntry   = 0x143A015B0;  // entry* (slot*, FName, const FIntRect*)
+// FEndMenuLayerEntry: its rect and the row-major matrix FEndMenuLayerEntry__MakeRectMatrix 0x143A07AE0 fills
+// (2/W, -2/H, -1, +1 from the rect's size alone; RE-hud-overlay-pass.md §3.3).
+inline constexpr std::uint32_t kEntryRect              = 0x08;  // MinX, MinY, MaxX, MaxY (int32)
+inline constexpr std::uint32_t kEntryMatrixScaleX      = 0x40;  // m00
+inline constexpr std::uint32_t kEntryMatrixScaleY      = 0x54;  // m11
+inline constexpr std::uint32_t kEntryMatrixTranslateX  = 0x70;  // m30
+inline constexpr std::uint32_t kEntryMatrixTranslateY  = 0x74;  // m31
+// The per-child view-projections SEndCanvas's perspective paint pushes into the entry (64-byte row-major matrices,
+// built from the entry rect's size alone); a child with one draws with it instead of the entry matrix
+// (RE-hud-band-3d.md).
+inline constexpr std::uint32_t kEntryChildMatrices     = 0xD0;  // float* (16 per matrix)
+inline constexpr std::uint32_t kEntryChildMatrixCount  = 0xD8;  // int32
+inline constexpr std::uintptr_t kLayerSubmitCall       = 0x14150A1EC;  // call SubmitLayerSlot: crosses a block
+inline constexpr std::uintptr_t kSubmitLayerSlot       = 0x1439FC750;  // (renderer, pool, slot)
+
+/// EndUI__ContainScaleFor1920x1080: float (FVector2D size, packed in rcx); W/1920 below 16:9, else H/1080, at least
+/// 0.01. The game's UI scale of a rect, which every marker conversion applies (RE-hud-ui.md §2.4).
+inline constexpr std::array<std::uint8_t, 16> kContainScaleEntry{
+    0xF3, 0x0F, 0x10, 0x1D, 0xF8, 0xBA, 0xBE, 0x03, 0xF3, 0x0F, 0x10, 0x25, 0x28, 0x83, 0xBE, 0x03};
+inline constexpr platform::FunctionFact kContainScale{L"EndUI__ContainScaleFor1920x1080", 0x1413A94A0, kContainScaleEntry};
+
+// The UI image per view, render thread (RE-hud-two-images.md §2.2, §4, §5). The calls are checked by
+// platform::CallRedirect; each holds the view in r8 at the call.
+inline constexpr std::uintptr_t kUiAllocBindCall         = 0x1421E82E9;  // Render's UI loop: call AllocBind
+inline constexpr std::uintptr_t kUiAllocBindClearCall    = 0x1421E826B;  // the clear-only path: call AllocBind
+inline constexpr std::uintptr_t kUiAllocBind             = 0x142541670;  // SceneRenderTargets__AllocBindInGameUITarget
+inline constexpr std::uintptr_t kPostProcessCall         = 0x1421E8400;  // Render: call FPostProcessing::Process
+inline constexpr std::uintptr_t kPostProcessProcess      = 0x14251C230;  // (this, RHICmdList, View, VelocityRT&)
+inline constexpr std::uintptr_t kSceneRenderTargetsGlobal = 0x145923AD0; // FSceneRenderTargets (static object)
+inline constexpr std::uint32_t  kSceneTargetsInGameUI    = 0x110;        // TRefCountPtr<IPooledRenderTarget>
+
+// ULocalPlayer's split-screen view as fractions of the viewport (stock 4.18, not reflected: between ViewportClient
+// +0x58 and LastViewLocation, before AspectRatioAxisConstraint +0x7C).
+inline constexpr std::uint32_t kLocalPlayerOrigin      = 0x60;  // FVector2D
+inline constexpr std::uint32_t kLocalPlayerSize        = 0x68;  // FVector2D
+
+// UMG, stock 4.18 (UMG.hpp) and UEndUserWidget's own fields (EndGame.hpp, UEndUserWidget__AddToRootOverlay).
+inline constexpr std::uint32_t kWidgetVisibility       = 0xB7;   // UWidget::Visibility (ESlateVisibility)
+inline constexpr std::uint32_t kUserWidgetColor        = 0x100;  // UUserWidget::ColorAndOpacity (FLinearColor)
+inline constexpr std::uint32_t kUserWidgetAnchors      = 0x1B0;  // viewport anchors (4 floats)
+inline constexpr std::uint32_t kUserWidgetOffset       = 0x1C0;  // viewport position (2 floats), size (+0x1C8)
+inline constexpr std::uint32_t kUserWidgetAlignment    = 0x1D0;  // viewport alignment (2 floats)
+inline constexpr std::uint32_t kUserWidgetPlayerWeak   = 0x1E8;  // PlayerContext: weak ULocalPlayer (index, serial)
+inline constexpr std::uint32_t kEndWidgetRootCanvas    = 0x230;  // UEndUserWidget: its SEndCanvas while a root
+inline constexpr std::uint32_t kEndWidgetZOrder        = 0x248;  // UEndUserWidget: the ZOrder it was added with
+
 }  // namespace lss::facts

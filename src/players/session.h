@@ -49,6 +49,8 @@ public:
     void Status() const noexcept;
 
     bool HasPlayerTwo() const noexcept { return playerTwo_ != nullptr; }
+    /// The game instance's local player `index` (0 or 1), or null. Game thread.
+    RC::Unreal::UObject* LocalPlayer(int index) const noexcept;
     bool Seated() const noexcept;
     /// Player 2 was taken out by a world change and joins again once the field is back.
     bool RejoinPending() const noexcept { return rejoin_.pending; }

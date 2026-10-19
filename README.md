@@ -26,13 +26,17 @@ python ../tools/game.py status | launch | quit | relaunch --deploy --label v0.8.
 
 Every module registers its own commands (`src/control/registry.h`), so `help` on the running build is the list.
 Today: `join`, `leave`, `seat on|off`, `console <command>`, `report`, `quit`, `showflags <hex>`, `ao-origin on|off`,
-`bloom-origin on|off`, `log-level error|warning|info|debug|trace`; readings `p2.in`, `p2.state` (out|in|playing),
+`bloom-origin on|off`, `log-level error|warning|info|debug|trace`, `hud.dump roots|shown|all [<text>]`, `hud-band on|off`, `hud-targets on|off`, `hud-targets-log <renders>`; readings `p2.in`, `p2.state` (out|in|playing),
 `game.state` (title|loading|play|pause|menu|leaving|…), `game.paused`, `game.menu-kind`, `game.location`,
-`field.step` (13 = steady field), `field.running`, `tick`, `version`. The language's own verbs (`src/control/script.h`): `get <name>`, `status`, `help [<name>]`,
+`field.step` (13 = steady field), `field.running`, `hud.overlay`, `hud.layout`, `tick`, `version`. The language's own verbs (`src/control/script.h`): `get <name>`, `status`, `help [<name>]`,
 `wait <ticks>`, `wait-until <name> <op> <value> [<ticks>]`, `hold <player> stick <lx> <ly> <rx> <ry> <ticks>`,
 `note <text>`, `abort`. A failure drops the commands queued behind it; queries answer even during a wait.
 
 While player 2 is in, the mod also gives player 2's controller the game's input step right after player 1's (the game ticks only the primary controller's input), and forces back on the effects stock UE 4.18 turns off for split screen (show flags `0x100A`: TAA, bloom and bit `0x1000`). It makes Square Enix's AO downsample and first bloom reduce read each view's own rows; both read player 1's rows for player 2's view in the stock game (the split-screen ghost and its moving traces). The bloom fix works on D3D12 (the default renderer) and D3D11 (`-dx11`); where it cannot install, bloom stays off in split (`0x1008`).
+
+While player 2 is in, the HUD is laid out for each half: the whole single-player HUD of a 32:9 screen in each half
+(minimap top right, command menu bottom left), with world markers on their objects in player 1's half. Both halves still
+show player 1's HUD (player 2's own image is the next step).
 
 While player 2 is in, each player's sticks are their own pad's (pad 1 = XInput user 0, also the keyboard;
 pad 2 = user 1).
@@ -66,6 +70,15 @@ src/
     runner                the queue: order, waits, holds, failures, replies (host-tested)
     server                the TCP socket and its thread (127.0.0.1:4418)
     remote                the three joined on the game thread; log-level and tick
+  hud/
+    user_widgets          the live UUserWidgets, from a construction callback (no object walks; from Rebirth)
+    hud_probe             logging only: hud.dump (every HUD widget's fields) and the hud.overlay reading
+    overlay_band          the band arithmetic: visible band, layout size, host scale, clip map (host-tested; from Rebirth)
+    overlay_layout        the HUD laid out in the band each half shows; markers on their objects (three call redirects)
+    layout_code           the centred 1920x1080 frame and the off-screen arrows' edge in a band (two code redirects,
+                          host-tested by executing them)
+    root_placement        the minimap, command menu and party panel in their corners of the half (the game's setters)
+    ui_targets            one UI target per view through the game's own pool (render thread; hud-targets, off)
   players/
     game_state            the game's own state, location and field step as readings, every change logged
     session               join and leave through UE's local-player path; console commands

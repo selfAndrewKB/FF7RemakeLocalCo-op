@@ -28,6 +28,12 @@ add_library(LocalSplitScreen SHARED
     src/control/runner.cpp
     src/control/script.cpp
     src/control/server.cpp
+    src/hud/hud_probe.cpp
+    src/hud/overlay_band.cpp
+    src/hud/overlay_layout.cpp
+    src/hud/root_placement.cpp
+    src/hud/ui_targets.cpp
+    src/hud/user_widgets.cpp
     src/platform/call_redirect.cpp
     src/platform/guarded.cpp
     src/platform/image.cpp
@@ -77,6 +83,23 @@ add_executable(ControlRunnerTests
 target_include_directories(ControlRunnerTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_compile_features(ControlRunnerTests PRIVATE cxx_std_20)
 add_test(NAME control_runner COMMAND ControlRunnerTests)
+
+add_executable(OverlayBandTests
+    tests/overlay_band_test.cpp
+    src/hud/overlay_band.cpp
+)
+target_include_directories(OverlayBandTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(OverlayBandTests PRIVATE cxx_std_20)
+add_test(NAME overlay_band COMMAND OverlayBandTests)
+
+add_executable(LayoutCodeTests
+    tests/layout_code_test.cpp
+    src/platform/code_memory.cpp
+    src/platform/code_redirect.cpp
+)
+target_include_directories(LayoutCodeTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(LayoutCodeTests PRIVATE cxx_std_20)
+add_test(NAME layout_code COMMAND LayoutCodeTests)
 
 add_executable(CodeMemoryTests
     tests/code_memory_test.cpp

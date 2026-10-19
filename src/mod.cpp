@@ -2,7 +2,8 @@
 //
 // Verifies every engine fact it relies on, installs, and turns the player-intent keys into joins and leaves
 // on the game thread (the engine tick's pre-callback), so they never land inside a frame's drawing. A retry, load,
-// jump or return to the title takes player 2 out first and brings it back after (players/field_exit.h).
+// jump or return to the title takes player 2 out first and brings it back after (players/field_exit.h). While the screen
+// is split the HUD is laid out for each half's shape (hud/overlay_layout.h, hud/root_placement.h).
 //   Ctrl+F7  player 2 joins with a controller and camera manager of its own
 //   Ctrl+F8  player 2 leaves
 //   Ctrl+F9  PROBE: player 2 takes Aerith through the game's leader funnel, or gives her back
@@ -16,6 +17,11 @@
 
 #include "control/registry.h"
 #include "control/remote.h"
+#include "hud/hud_probe.h"
+#include "hud/overlay_layout.h"
+#include "hud/root_placement.h"
+#include "hud/ui_targets.h"
+#include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
 #include "players/own_controller.h"
@@ -40,7 +46,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.9.0-field-exit";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.10.0-hud-band";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
@@ -187,6 +193,10 @@ public:
             Hook::UnregisterCallback(tickCallback_);
         }
         remote_.Close();
+        lss::hud::hud_probe::Remove();
+        lss::hud::root_placement::Remove();
+        lss::hud::overlay_layout::Remove();
+        lss::hud::ui_targets::Remove();
         if (installed_)
         {
             session_.Remove();  // the field-exit calls go back whether or not player 2 is in
@@ -217,6 +227,9 @@ public:
             lss::players::split_render::SetMask(lss::facts::kSplitDisabledFlags, false);
         }
         lss::players::game_state::Install(*image);  // readings only; fine without
+        lss::hud::hud_probe::Install(*image);       // logging only; fine without
+        lss::hud::overlay_layout::Install(*image);  // optional: without it each half shows the middle of the HUD
+        lss::hud::ui_targets::Install(*image);      // optional: without it both halves sample one UI image
         RegisterSessionCommands(session_);
         remote_.Open();
         const Hook::FCallbackOptions options{false, false, STR("LocalSplitScreen"), STR("player intent")};
@@ -247,7 +260,25 @@ private:
         lss::players::player_two_camera::MaintainInputTick();
         lss::players::game_state::Tick();  // first: the session and the console read this tick's values
         session_.Tick();
+        TickHud();
         remote_.Tick();
+    }
+
+    /// The HUD layout follows the split and player 1's view (ULocalPlayer Origin and Size, read under a guard).
+    void TickHud() noexcept
+    {
+        lss::hud::overlay_layout::ViewShare one;
+        bool split = session_.HasPlayerTwo();
+        if (split)
+        {
+            const auto* player = reinterpret_cast<const std::uint8_t*>(session_.LocalPlayer(0));
+            split = player != nullptr &&
+                    lss::platform::CopyGuarded(&one.originX, player + lss::facts::kLocalPlayerOrigin, 2 * sizeof(float)) &&
+                    lss::platform::CopyGuarded(&one.sizeX, player + lss::facts::kLocalPlayerSize, 2 * sizeof(float)) &&
+                    one.sizeX > 0.0f && one.sizeY > 0.0f && one.sizeX <= 1.0f && one.sizeY <= 1.0f;
+        }
+        lss::hud::overlay_layout::Tick(split, one);
+        lss::hud::root_placement::Tick(split && lss::hud::overlay_layout::BandApplies());
     }
 
     // Declaration order matters: holds_ and remote_ hold references into session_, so it comes first.

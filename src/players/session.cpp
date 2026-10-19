@@ -581,6 +581,17 @@ void Session::Status() const noexcept
     }
 }
 
+UObject* Session::LocalPlayer(int index) const noexcept
+try
+{
+    auto* players = LocalPlayers(gameInstance_);  // set at the first join; null before
+    return players != nullptr && index >= 0 && index < players->Num() ? (*players)[index] : nullptr;
+}
+catch (...)
+{
+    return nullptr;
+}
+
 bool Session::Seated() const noexcept
 {
     return seatInstalled_ && party_seat::Seated();
