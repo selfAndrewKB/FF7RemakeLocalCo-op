@@ -1,0 +1,81 @@
+#pragma once
+
+// The game's single slots answered for one further player (platform/byte_scope.h holds the mechanism; the
+// Rebirth mod kept one class per slot, player_two/primary_controller, leader_scope, focus_scope and lock_on).
+//
+// Square Enix's code keeps one copy of what is really per player. Each further player (2, and a later 3) gets
+// a set of contexts, bound as their objects appear and cleared as they go:
+//   Primary   PartyManager+0, the primary controller: the camera basis, the input step, the rumble channel.
+//   Operator  the field root's camera operator weak pair: "the operator" the camera and menu code looks up.
+//   Leader    PartyManager's leader weak pair and type: every attack, guard, dodge, ordinal and switch resolves it.
+//   UiSlot    EndUISystem[19]: the command controller the UI code reads.
+//   Focus     the input object's focus path, layers, cause and capture map (the player's own, kept between
+//             calls), and the menu-core delegate muted: the UI route reaches this player's widgets only.
+//   Latches   the UI filters' wait-tint and Dying latch bytes, the player's own (the game's counts do the sharing).
+// A Scope opens the chosen contexts, in that order, and puts the game's values back in reverse; it is held only
+// if every chosen context was bound and opened, so a caller that needs the leader never runs with player 1's.
+// Game thread only.
+
+#include <cstdint>
+
+namespace lss::platform {
+class GameImage;
+}
+
+namespace lss::players::scopes {
+
+/// Rebases the slots' addresses. False (logged) if one is outside the image.
+bool Install(const platform::GameImage& image) noexcept;
+
+inline constexpr int kMaxPlayers = 4;  // seats 1..3 are the further players
+
+enum Which : unsigned
+{
+    Primary  = 1u << 0,
+    Operator = 1u << 1,
+    Leader   = 1u << 2,
+    UiSlot   = 1u << 3,
+    Focus    = 1u << 4,
+    Latches  = 1u << 5,
+    All      = 0x3F,
+};
+
+/// A player's controller (their primary), or null to unbind.
+void BindController(int player, void* controller) noexcept;
+/// Their field camera operator (its weak pair), or {-1, 0} to unbind.
+void BindOperator(int player, const std::int32_t (&weak)[2]) noexcept;
+/// The member they hold and its player type, or null to unbind.
+void BindMember(int player, void* member, std::uint8_t type) noexcept;
+/// Their command controller, or null to unbind (their focus copy and latches start empty again).
+void BindCommandController(int player, void* controller) noexcept;
+/// Everything of that player unbound.
+void Unbind(int player) noexcept;
+
+void*        Controller(int player) noexcept;
+void*        Member(int player) noexcept;
+std::uint8_t MemberType(int player) noexcept;  // 9 (NONE) when unbound
+void*        CommandController(int player) noexcept;
+/// The leader type the game held before this player's Leader scope opened (player 1's), while it is open.
+std::uint8_t OtherLeaderType(int player) noexcept;
+/// This player's focus path holds at least one widget (their menu is up in their own context).
+bool FocusPathSet(int player) noexcept;
+/// The game's top focus layer (player 1's, outside a Focus scope) is the command menu's own: no modal layer above it.
+bool TopLayerIsCommandMenu() noexcept;
+
+class Scope
+{
+public:
+    Scope(int player, unsigned which) noexcept;
+    ~Scope();
+    Scope(const Scope&)            = delete;
+    Scope& operator=(const Scope&) = delete;
+
+    bool Held() const noexcept { return held_; }
+
+private:
+    int      player_ = 0;
+    unsigned opened_ = 0;
+    bool     held_   = false;
+};
+
+}  // namespace lss::players::scopes

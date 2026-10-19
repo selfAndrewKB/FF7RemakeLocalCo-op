@@ -99,6 +99,49 @@ inline constexpr std::uint32_t  kStickRecordBytes  = 24;     // LX, LY, RX, RY, 
 inline constexpr std::uint32_t  kStickAnalog       = 0x700;  // LX, LY, RX, RY: what the getters read
 inline constexpr std::uint32_t  kStickDigital      = 0x6A0;  // key-driven stick, wins when non-zero
 
+// --- Per-pad buttons (RE-input.md §1, §3.2; RE-input-p2.md §2) ----------------------------------------------
+// The owner's two action tables (TSet<Elem40>: an FName, state bytes at +0x18) and the real d-pad bits; the
+// pad is known only in the key handlers, from the Slate event's UserIndex.
+inline constexpr std::uintptr_t kSquareInputVTable   = 0x144BF24B0;  // IInputProcessor
+inline constexpr std::uint32_t  kActionTableRaw      = 0xE8;         // read by every gameplay poller
+inline constexpr std::uint32_t  kActionTableUi       = 0x138;        // the UI-filtered twin
+inline constexpr std::uint32_t  kDpadBits            = 0x188;        // 8 bytes
+inline constexpr std::uint32_t  kKeyEventUserIndex   = 0x0C;         // FKeyEvent: ControllerId = XInput user
+inline constexpr std::uint32_t  kKeyEventKey         = 0x20;         // FKeyEvent: the key's FName
+inline constexpr std::uint32_t  kStickBankCount      = 0x08;         // a bank's TArray num
+
+inline constexpr std::array<std::uint8_t, 16> kInputTickEntry{
+    0x48, 0x8B, 0xC4, 0x55, 0x53, 0x56, 0x57, 0x41, 0x54, 0x41, 0x55, 0x41, 0x56, 0x41, 0x57, 0x48};
+inline constexpr std::array<std::uint8_t, 16> kInputKeyDownEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x20, 0x55, 0x56, 0x57, 0x41, 0x54, 0x41, 0x55, 0x41, 0x56, 0x41, 0x57};
+inline constexpr std::array<std::uint8_t, 16> kInputKeyUpEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x10, 0x55, 0x56, 0x57, 0x41, 0x54, 0x41, 0x55, 0x41, 0x56, 0x41, 0x57};
+/// IInputProcessor::Tick(this, float dt, FSlateApplication&, TSharedRef<ICursor>): the tables' advance and the
+/// stick aggregation, from Slate's FinishedInputThisFrame before the world ticks.
+inline constexpr platform::SlotFact kInputTick{L"SquareInput::Tick (slot 1)", kSquareInputVTable + 1 * 8,
+                                               {L"SquareInput::Tick", 0x141434550, kInputTickEntry}};
+/// HandleKeyDownEvent(this, FSlateApplication&, const FKeyEvent&): maps the key to actions and dispatches each.
+inline constexpr platform::SlotFact kInputKeyDown{L"SquareInput::HandleKeyDownEvent (slot 2)", kSquareInputVTable + 2 * 8,
+                                                  {L"SquareInput::HandleKeyDownEvent", 0x141436720, kInputKeyDownEntry}};
+inline constexpr platform::SlotFact kInputKeyUp{L"SquareInput::HandleKeyUpEvent (slot 3)", kSquareInputVTable + 3 * 8,
+                                                {L"SquareInput::HandleKeyUpEvent", 0x141438280, kInputKeyUpEntry}};
+/// SquareInput__ActionDown_UpdateTables_Dispatch(owner, unused, ActionEvent*, u8 alreadyHandled): the press into
+/// the raw table, then (unless already handled) the UI route, the menu-core delegate and the UI table. 11 callers;
+/// its first five instructions are pushes (8 bytes), replaced together: only the game thread runs it, and the
+/// redirect is installed from that thread outside it.
+inline constexpr std::array<std::uint8_t, 16> kActionDispatchEntry{
+    0x40, 0x53, 0x56, 0x57, 0x41, 0x54, 0x41, 0x56, 0x48, 0x81, 0xEC, 0xF0, 0x00, 0x00, 0x00, 0x48};
+inline constexpr std::size_t kActionDispatchPushes = 8;
+inline constexpr platform::FunctionFact kActionDispatch{L"SquareInput__ActionDown_UpdateTables_Dispatch", 0x141437B70,
+                                                        kActionDispatchEntry};
+/// SquareInput__RouteActionUpToUIHandlerStack(owner, ActionEvent*): the Up to the capturer and the focus path.
+/// Its one call, at the end of SquareInput__ActionUp_UpdateTables.
+inline constexpr std::array<std::uint8_t, 16> kRouteActionUpEntry{
+    0x4C, 0x8B, 0xDC, 0x55, 0x53, 0x57, 0x49, 0x8D, 0xAB, 0xF8, 0xFA, 0xFF, 0xFF, 0x48, 0x81, 0xEC};
+inline constexpr platform::FunctionFact kRouteActionUp{L"SquareInput__RouteActionUpToUIHandlerStack", 0x141443430,
+                                                       kRouteActionUpEntry};
+inline constexpr std::uintptr_t kRouteActionUpCall = 0x1414396A4;
+
 inline constexpr std::array<std::uint8_t, 16> kOperatorBeginPlayEntry{
     0x48, 0x89, 0x5C, 0x24, 0x10, 0x48, 0x89, 0x74, 0x24, 0x18, 0x48, 0x89, 0x7C, 0x24, 0x20, 0x55};
 inline constexpr std::array<std::uint8_t, 16> kOperatorTickEntry{
@@ -476,5 +519,125 @@ inline constexpr std::uint32_t kUserWidgetPlayerWeak   = 0x1E8;  // PlayerContex
 inline constexpr std::uint32_t kUserWidgetViewportOffsets = 0x1C0;  // ViewportOffsets.Left/Top (what the placements write)
 inline constexpr std::uint32_t kEndWidgetRootCanvas    = 0x230;  // UEndUserWidget: its SEndCanvas while a root
 inline constexpr std::uint32_t kEndWidgetZOrder        = 0x248;  // UEndUserWidget: the ZOrder it was added with
+
+// --- The game's single slots a further player gets for one call (players/scopes.h) --------------------------------
+// The party manager's leader (RE-party-possession.md §3), the input object's focus context (RE-command-menu-two.md
+// §2), the UI filters' latches (§4) and the UI system's command controller slot (RE-battle.md §2.1).
+inline constexpr std::uint32_t kPartyLeaderWeak       = 0x238;  // AEndPartyManager: the leader's weak pair {index, serial}
+inline constexpr std::uint32_t kFocusPath             = 0x08;   // SquareInput owner: FWeakWidgetPath (32 bytes)
+inline constexpr std::uint32_t kFocusPathBytes        = 0x20;
+inline constexpr std::uint32_t kFocusLayers           = 0x40;   // TArray of 40-byte layers (16 bytes)
+inline constexpr std::uint32_t kFocusLayersBytes      = 0x10;
+inline constexpr std::uint32_t kFocusLayerBytes       = 40;     // a layer: weak layer, weak saved focus (+0x10), priority (+0x20)
+inline constexpr std::uint32_t kFocusLayerPriority    = 0x20;
+inline constexpr std::int32_t  kCommandMenuLayerPriority = -1000;  // the command menu's own layer; modal menus are above
+inline constexpr std::uint32_t kFocusCause            = 0x6C;   // 1 byte
+inline constexpr std::uint32_t kFocusCaptureMap       = 0x98;   // TSet of 48-byte elements (80 bytes)
+inline constexpr std::uint32_t kFocusCaptureMapBytes  = 0x50;
+inline constexpr std::uint32_t kFocusCaptureFirstFree = 0x30;   // FirstFreeIndex inside the map: -1 when empty
+inline constexpr std::uint32_t kFocusMenuDelegate     = 0x190;  // the menu-core delegate (64 bytes; all zero = unbound)
+inline constexpr std::uint32_t kFocusMenuDelegateBytes = 0x40;
+inline constexpr std::uint32_t kUiFilterLatches       = 0x18;   // EndUISystem[37]: the wait-tint (+0x18) and Dying (+0x19) latch bytes
+inline constexpr std::uintptr_t kCommandCtrlSlotGlobal = 0x1459CAA08;  // EndUISystem[19]: the field command controller
+
+// --- A second field command controller (RE-battle.md §2, RE-command-menu-two.md) ----------------------------------
+// FieldCommandCtrl: 0x5D0 bytes from GMalloc, the ctor, then SetupMenuWidgets(ctrl, world) builds its own two widgets
+// (Command_C and the party panel Status_C), pushes its menu as a focus layer and binds its handlers. Its tick (one call
+// site, in the field systems' tick) polls its own widget's key states into requests and drives the leader's attacks,
+// guard, dodge and commands. The widget's key states are advanced in the widget's NativeTick, once per overlay paint.
+inline constexpr std::uint32_t kCommandCtrlSize          = 0x5D0;
+/// The length of the one home-area store that starts the entry-redirected controller functions (their entry arrays
+/// below are the 16-byte checks; an entry redirect copies the instruction only).
+inline constexpr std::size_t   kHomeStoreBytes           = 5;
+inline constexpr std::uint32_t kCommandCtrlCommandLists  = 0x38;   // the command-list sub-object (ctrl+0x38)
+inline constexpr std::uint32_t kCommandCtrlPartyList     = 0x1D0;  // the party-list sub-object
+inline constexpr std::uint32_t kCommandCtrlFieldMenuWeak = 0x2F8;  // Status_C (the party panel) weak pair
+inline constexpr std::uint32_t kCommandCtrlMenuWeak      = 0x300;  // Command_C weak pair
+inline constexpr std::uint32_t kCommandCtrlBattleHudMode = 0x348;  // u8: 1 in battle
+inline constexpr std::uint32_t kCommandCtrlMenuAllowed   = 0x3D5;  // u8, written directly by events on the game's controller
+inline constexpr std::uint32_t kCommandCtrlWaitState     = 0x418;  // u8: the menu's wait (time slow, tint)
+inline constexpr std::uint32_t kCommandCtrlInputLive     = 0x420;  // u8, written on the game's controller
+inline constexpr std::uint32_t kCommandCtrlSetupPending  = 0x541;  // u8: the tick re-runs Setup
+inline constexpr std::uint32_t kCommandCtrlSetUp         = 0x543;  // u8: Setup ran (cleared by ResetAll)
+inline constexpr std::uint32_t kCommandCtrlLayerPushed   = 0x544;  // u8: the menu's focus layer is up
+inline constexpr std::uintptr_t kCommandMenuVTable       = 0x144BCF730;  // UEndFieldCommandMenu
+inline constexpr std::uint32_t  kCommandMenuNativeTickSlot = 90;         // UUserWidget::NativeTick(geometry, dt)
+
+inline constexpr std::array<std::uint8_t, 16> kCommandCtrlCtorEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x74, 0x24, 0x10, 0x48, 0x89, 0x7C, 0x24, 0x18, 0x4C};
+inline constexpr std::array<std::uint8_t, 16> kCommandCtrlSetupEntry{
+    0x40, 0x55, 0x56, 0x57, 0x48, 0x8D, 0x6C, 0x24, 0xB9, 0x48, 0x81, 0xEC, 0xD0, 0x00, 0x00, 0x00};
+inline constexpr std::array<std::uint8_t, 16> kCommandCtrlTickEntry{
+    0x40, 0x55, 0x53, 0x41, 0x54, 0x48, 0x8D, 0x6C, 0x24, 0xB9, 0x48, 0x81, 0xEC, 0xF0, 0x00, 0x00};
+inline constexpr std::array<std::uint8_t, 16> kCommandCtrlResetAllEntry{
+    0x40, 0x57, 0x48, 0x83, 0xEC, 0x50, 0xC6, 0x81, 0x41, 0x05, 0x00, 0x00, 0x00, 0x48, 0x8B, 0xF9};
+inline constexpr std::array<std::uint8_t, 16> kCommandCtrlSetHudModeEntry{
+    0x48, 0x89, 0x74, 0x24, 0x20, 0x57, 0x48, 0x83, 0xEC, 0x40, 0x0F, 0xB6, 0xF2, 0x48, 0x8B, 0xF9};
+inline constexpr std::array<std::uint8_t, 16> kCommandCtrlRefreshEntry{
+    0x40, 0x57, 0x48, 0x83, 0xEC, 0x20, 0x44, 0x8B, 0x81, 0xFC, 0x02, 0x00, 0x00, 0x48, 0x8B, 0xF9};
+inline constexpr std::array<std::uint8_t, 16> kCommandListsRebuildEntry{
+    0x48, 0x89, 0x4C, 0x24, 0x08, 0x53, 0x55, 0x56, 0x57, 0x41, 0x55, 0x41, 0x56, 0x48, 0x83, 0xEC};
+inline constexpr std::array<std::uint8_t, 16> kCommandCtrlSetMenuAllowedEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x18, 0x55, 0x56, 0x41, 0x56, 0x48, 0x83, 0xEC, 0x20, 0x44, 0x8B, 0x91};
+inline constexpr std::array<std::uint8_t, 16> kCommandCtrlSetInputLiveEntry{
+    0x40, 0x53, 0x48, 0x83, 0xEC, 0x30, 0x88, 0x91, 0x20, 0x04, 0x00, 0x00, 0x48, 0x8B, 0xD9, 0x84};
+inline constexpr std::array<std::uint8_t, 16> kCommandMenuNativeTickEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x74, 0x24, 0x10, 0x48, 0x89, 0x7C, 0x24, 0x18, 0x55};
+inline constexpr std::array<std::uint8_t, 16> kPartyListRebuildEntry{
+    0x40, 0x53, 0x56, 0x57, 0x48, 0x83, 0xEC, 0x30, 0x33, 0xFF, 0x48, 0x8D, 0x59, 0x30, 0x89, 0x7B};
+inline constexpr std::array<std::uint8_t, 16> kSetGameSpeedSlotEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x08, 0x57, 0x48, 0x83, 0xEC, 0x30, 0x48, 0x8B, 0x05, 0xFF, 0xAA, 0xE4};
+
+inline constexpr platform::FunctionFact kCommandCtrlCtor{L"FieldCommandCtrl__Ctor", 0x141412310, kCommandCtrlCtorEntry};
+/// SetupMenuWidgets(ctrl, UWorld*): creates the widgets once, pushes the menu's focus layer, binds the handlers.
+inline constexpr platform::FunctionFact kCommandCtrlSetup{L"FieldCommandCtrl__SetupMenuWidgets", 0x1414130F0,
+                                                          kCommandCtrlSetupEntry};
+/// Tick(ctrl, float dt): one call site, in EndGame_TickFieldSystems_CallsFieldStepTick; the call crosses a block.
+inline constexpr platform::FunctionFact kCommandCtrlTick{L"FieldCommandCtrl__Tick", 0x141418010, kCommandCtrlTickEntry};
+inline constexpr std::uintptr_t         kCommandCtrlTickCall = 0x1416BF38C;
+/// ResetAll(ctrl): clears the set-up byte, pops its focus layer, collapses the panel, writes speed slot 2 = 1.
+inline constexpr platform::FunctionFact kCommandCtrlResetAll{L"FieldCommandCtrl_ResetAll", 0x141414E50,
+                                                             kCommandCtrlResetAllEntry};
+inline constexpr std::array<std::uintptr_t, 3> kCommandCtrlResetAllCalls{0x140FF4C86, 0x14113FC67, 0x141B273E8};
+inline constexpr std::uintptr_t kCommandCtrlSetupCall     = 0x14113FE01;  // on/off 0/42 off
+inline constexpr std::uintptr_t kCommandCtrlSetupTailJump = 0x1413B0552;  // EndUISystem_SetupMenusAndCmdCtrl's tail (on/off 68, state exits, a thunk)
+/// SetBattleHudMode348(ctrl, u8 mode): the battle HUD mode (on/off 68); its entry is one home-area store.
+inline constexpr platform::FunctionFact kCommandCtrlSetHudMode{L"FieldCommandCtrl_SetBattleHudMode348", 0x141415420,
+                                                               kCommandCtrlSetHudModeEntry};
+/// RefreshFieldMenu(ctrl): the party panel rebuilt from the party (15 callers); its first step has one call site.
+inline constexpr platform::FunctionFact kCommandCtrlRefresh{L"FieldCommandCtrl_RefreshFieldMenu", 0x14141EE80,
+                                                            kCommandCtrlRefreshEntry};
+inline constexpr platform::FunctionFact kPartyListRebuild{L"PartyList_RebuildStep", 0x1414AC1A0, kPartyListRebuildEntry};
+inline constexpr std::uintptr_t         kPartyListRebuildCall = 0x14141EEE3;
+/// FieldCmdSub38_RebuildMemberCommandLists(ctrl+0x38, a2): the command lists after equipment, materia and party changes.
+inline constexpr platform::FunctionFact kCommandListsRebuild{L"FieldCmdSub38_RebuildMemberCommandLists", 0x1413C4A80,
+                                                             kCommandListsRebuildEntry};
+/// SetMenuAllowed3D5(ctrl, u8 on, u8 keep, u8 a4): six callers; about 25 others write the byte directly.
+inline constexpr platform::FunctionFact kCommandCtrlSetMenuAllowed{L"FieldCommandCtrl_SetMenuAllowed3D5", 0x14141F4F0,
+                                                                   kCommandCtrlSetMenuAllowedEntry};
+/// SetInputLive420(ctrl, u8 live, a3): off ends the wait (sound, tint latch, slot 2 = 1); on stores the byte.
+inline constexpr platform::FunctionFact kCommandCtrlSetInputLive{L"FieldCommandCtrl_SetInputLive420", 0x141419990,
+                                                                 kCommandCtrlSetInputLiveEntry};
+/// UEndFieldCommandMenu::NativeTick (slot 90): advances the widget's key states (pressed/held/released) and runs
+/// its Blueprint graph; it runs once per overlay paint.
+inline constexpr platform::SlotFact kCommandMenuNativeTick{
+    L"UEndFieldCommandMenu::NativeTick (slot 90)", kCommandMenuVTable + kCommandMenuNativeTickSlot * 8,
+    {L"UEndFieldCommandMenu_AdvanceKeyStateMaps", 0x14121A430, kCommandMenuNativeTickEntry}};
+/// GameState_SetGameSpeedSlot(u8 slot, float value): the tick's one write of slot 2 (the menu's time slow).
+inline constexpr platform::FunctionFact kSetGameSpeedSlot{L"GameState_SetGameSpeedSlot", 0x14099EFA0, kSetGameSpeedSlotEntry};
+inline constexpr std::uintptr_t         kCommandCtrlSlowCall = 0x141418D03;
+
+// --- The battle system and the leader's input buffer (RE-battle.md, RE-battle-member-two.md §2.6) -------------------
+inline constexpr std::uintptr_t kBattleSystemGlobal       = 0x1457E9720;  // the battle system (`sys`), null outside battle
+inline constexpr std::uint32_t  kGameStatePauseCounter    = 0x4F0;        // AEndGameState: the pause-like counter (dt 0 while set)
+inline constexpr std::uint32_t  kCharacterBattleComponent = 0xCB0;        // AEndCharacter: the battle player component (`comp`)
+inline constexpr std::uint32_t  kBattleCompInputBufferSlot = 0xE0;        // comp vtable: the leader-only input buffer (comp, dt)
+
+// --- The battle switch (RE-battle-switch.md §4) -----------------------------------------------------------------
+// BattleSystem_CycleLeader walks the members from the leader; BattleSystem_CanSwitchLeader counts them. Each fetches
+// a candidate with PartyManager_GetPlayerActor(PM, 0, type, 0); a null answer is the game's own skip branch. The
+// cycle's call sits inside a block; CanSwitch's crosses one (placed from the game thread, outside the function).
+inline constexpr std::uintptr_t kCycleLeaderCandidateCall = 0x1409BAC99;
+inline constexpr std::uintptr_t kCanSwitchCandidateCall   = 0x1409BA98C;
 
 }  // namespace lss::facts

@@ -29,6 +29,8 @@
 #include "platform/image.h"
 #include "platform/log.h"
 #include "players/own_controller.h"
+#include "players/pad_buttons.h"
+#include "players/scopes.h"
 #include "players/player_two_camera.h"
 #include "players/game_state.h"
 #include "players/session.h"
@@ -206,6 +208,7 @@ public:
         lss::hud::minimap_two::Remove();
         lss::hud::image_entries::Remove();
         lss::hud::ui_targets::Remove();
+        lss::players::pad_buttons::Remove();
         if (installed_)
         {
             session_.Remove();  // the field-exit calls go back whether or not player 2 is in
@@ -237,6 +240,8 @@ public:
         {
             lss::players::split_render::SetMask(lss::facts::kSplitDisabledFlags, false);
         }
+        lss::players::pad_buttons::Install(*image);  // optional: without it every pad presses player 1's buttons
+        lss::players::scopes::Install(*image);  // the per-player answers to the game's single slots (battle modules follow)
         lss::players::game_state::Install(*image);  // readings only; fine without
         lss::hud::hud_probe::Install(*image);       // logging only; fine without
         lss::hud::overlay_layout::Install(*image);  // optional: without it each half shows the middle of the HUD

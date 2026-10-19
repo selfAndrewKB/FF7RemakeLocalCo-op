@@ -32,6 +32,10 @@ namespace lss::platform {
 class EntryRedirect
 {
 public:
+    /// The most an entry redirect copies: a home-area store or `sub rsp, imm32` (up to 7), or the five pushes
+    /// that open the game's input dispatcher (8).
+    static constexpr std::size_t kMaxFirstBytes = 8;
+
     EntryRedirect() = default;
     ~EntryRedirect() = default;  // leaves an installed redirect in place (see above)
 
@@ -39,9 +43,12 @@ public:
     EntryRedirect& operator=(const EntryRedirect&) = delete;
 
     /// Sends calls of the function at `entry` (live address) to `replacement`, if its first
-    /// instruction is exactly `first` (5 to 16 bytes, inside one aligned 16-byte block). The caller
-    /// guarantees `first` is one position-independent instruction no branch lands inside. Returns
-    /// false, changing nothing, if any condition fails or this object already holds a redirect.
+    /// instruction is exactly `first` (5 to kMaxFirstBytes bytes, inside one aligned 16-byte block). The
+    /// caller guarantees `first` is one position-independent instruction no branch lands inside (or a run
+    /// of such instructions, when only the thread that installs the redirect ever runs the function, and it
+    /// installs from outside it). Pass the instruction's bytes, never a longer entry check: a trampoline
+    /// replaying a cut instruction corrupts the stack (live 2026-10-19). Returns false, changing nothing, if
+    /// any condition fails or this object already holds a redirect.
     bool Install(std::uintptr_t entry, std::span<const std::uint8_t> first, std::uintptr_t replacement) noexcept;
 
     /// The same redirect placed at the function's second instruction, for a first instruction that

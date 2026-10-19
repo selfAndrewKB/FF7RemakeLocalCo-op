@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.18)
 
-# LocalSplitScreen â€” two-player split-screen for FINAL FANTASY VII REMAKE, as a UE4SS C++ mod.
+# LocalSplitScreen — two-player split-screen for FINAL FANTASY VII REMAKE, as a UE4SS C++ mod.
 #
 # Plan and research: Remake/Documentation/plan/README.md and research/RE-*.md.
 # The platform layer (src/platform) is shared in design with Rebirth/LocalSplitScreen; every engine address
@@ -40,6 +40,7 @@ add_library(LocalSplitScreen SHARED
     src/hud/root_placement.cpp
     src/hud/ui_targets.cpp
     src/hud/user_widgets.cpp
+    src/platform/byte_scope.cpp
     src/platform/call_redirect.cpp
     src/platform/guarded.cpp
     src/platform/image.cpp
@@ -54,8 +55,10 @@ add_library(LocalSplitScreen SHARED
     src/players/field_exit.cpp
     src/players/game_state.cpp
     src/players/own_controller.cpp
+    src/players/pad_buttons.cpp
     src/players/party_seat.cpp
     src/players/player_two_camera.cpp
+    src/players/scopes.cpp
     src/players/session.cpp
     src/players/split_render.cpp
     src/players/unreal_call.cpp
@@ -136,6 +139,22 @@ add_executable(EntryRedirectTests
 target_include_directories(EntryRedirectTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_compile_features(EntryRedirectTests PRIVATE cxx_std_20)
 add_test(NAME entry_redirect COMMAND EntryRedirectTests)
+
+add_executable(ByteScopeTests
+    tests/byte_scope_test.cpp
+    src/platform/byte_scope.cpp
+    src/platform/guarded.cpp
+)
+target_include_directories(ByteScopeTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(ByteScopeTests PRIVATE cxx_std_20)
+add_test(NAME byte_scope COMMAND ByteScopeTests)
+
+add_executable(ActionTablesTests
+    tests/action_tables_test.cpp
+)
+target_include_directories(ActionTablesTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(ActionTablesTests PRIVATE cxx_std_20)
+add_test(NAME action_tables COMMAND ActionTablesTests)
 
 add_executable(InstructionPatchTests
     tests/instruction_patch_test.cpp

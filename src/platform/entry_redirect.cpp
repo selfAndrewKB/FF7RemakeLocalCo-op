@@ -41,13 +41,13 @@ std::uintptr_t BuildPage(std::uintptr_t entry, std::span<const std::uint8_t> cop
 
 bool EntryRedirect::Install(std::uintptr_t entry, std::span<const std::uint8_t> first, std::uintptr_t replacement) noexcept
 {
-    return Place(entry, first, 0, replacement);
+    return first.size() <= kMaxFirstBytes && Place(entry, first, 0, replacement);
 }
 
 bool EntryRedirect::InstallAtSecondInstruction(std::uintptr_t entry, std::span<const std::uint8_t> first,
                                                std::span<const std::uint8_t> second, std::uintptr_t replacement) noexcept
 {
-    if (first.empty() || first.size() + second.size() > kMaxCopied)
+    if (first.empty() || second.size() > kMaxFirstBytes || first.size() + second.size() > kMaxCopied)
     {
         return false;
     }

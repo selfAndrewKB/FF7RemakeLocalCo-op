@@ -5,6 +5,7 @@
 #include "platform/image.h"
 #include "platform/log.h"
 #include "platform/verified_code.h"
+#include "players/scopes.h"
 
 #include <array>
 #include <cstdint>
@@ -100,6 +101,10 @@ bool Seat(void* playerOneController, void* playerTwoController) noexcept
         return false;
     }
     g_seated = ReadPointer(playerTwoController, kLeader) == aerith;
+    if (g_seated)
+    {
+        scopes::BindMember(1, aerith, facts::kAerithType);
+    }
     platform::Log(L"seat probe: player 2's controller {} Aerith (its leader field {})", g_seated ? L"now holds" : L"did NOT take",
                   g_seated ? L"names her" : L"does not name her");
     return g_seated;
@@ -119,6 +124,7 @@ bool Unseat(void* playerOneController, void* playerTwoController) noexcept
         return false;
     }
     g_seated = false;
+    scopes::BindMember(1, nullptr, 9);
     // The shared trigger rode on Aerith: re-seating player 1's own leader through the same funnel puts it back.
     void*      leaderOne = ReadPointer(playerOneController, kLeader);
     const bool reseated  = leaderOne != nullptr &&
@@ -132,6 +138,7 @@ void Forget() noexcept
 {
     g_seatedController = nullptr;
     g_seated           = false;
+    scopes::BindMember(1, nullptr, 9);
 }
 
 bool Seated() noexcept

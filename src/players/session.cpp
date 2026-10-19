@@ -21,6 +21,8 @@
 #include "players/own_controller.h"
 #include "players/party_seat.h"
 #include "players/player_two_camera.h"
+#include "players/pad_buttons.h"
+#include "players/scopes.h"
 #include "players/split_render.h"
 
 #include <Unreal/Core/Containers/FString.hpp>
@@ -45,7 +47,7 @@ namespace UObjectGlobals = RC::Unreal::UObjectGlobals;
 
 constexpr std::int32_t kPlayerTwoControllerId = 1;
 
-/// The field is back after a world change (RE-lifecycle-world.md ยง8): play state, the steady step, running. The
+/// The field is back after a world change (RE-lifecycle-world.md ง8): play state, the steady step, running. The
 /// entry's step 12 re-reconciles every non-leader controller, so a join before step 13 would be undone.
 constexpr std::uint8_t kStatePlay  = 6;
 constexpr std::int32_t kStepSteady = 13;
@@ -338,7 +340,9 @@ void Session::TryRejoin() noexcept
 void Session::Forget() noexcept
 {
     playerTwo_ = nullptr;
+    scopes::Unbind(1);
     split_render::OnLeave();
+    pad_buttons::SetPlayers(1);
     if (cameraInstalled_)
     {
         player_two_camera::Take();  // forgotten, not destroyed: it belonged to the old world
@@ -424,6 +428,8 @@ try
     platform::Log(L"join: player 2 is in; halves filled: player 1 {}, player 2 {}", filledOne ? L"yes" : L"NO",
                   filledTwo ? L"yes" : L"NO");
     split_render::OnJoin();
+    pad_buttons::SetPlayers(2);  // from here pad 2's buttons are player 2's
+    scopes::BindController(1, playerTwoController);
     if (cameraInstalled_)
     {
         if (!player_two_camera::Start(playerOneController, playerTwoController))
@@ -500,10 +506,12 @@ try
     }
     playerTwo_ = nullptr;
     split_render::OnLeave();
+    pad_buttons::SetPlayers(1);
     if (seatInstalled_)
     {
         party_seat::Forget();  // a later player 2 is a new controller, set up afresh
     }
+    scopes::Unbind(1);
     // Research says nothing destroys these two with their owners; a changed class pointer would mean the
     // memory was reused, and then they are left alone.
     const bool cameraGone = cameraClass != nullptr && ClassOf(cameraActor) == cameraClass &&

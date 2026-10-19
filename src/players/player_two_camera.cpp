@@ -6,6 +6,8 @@
 #include "platform/log.h"
 #include "platform/verified_code.h"
 #include "platform/vtable_entry.h"
+#include "players/pad_buttons.h"
+#include "players/scopes.h"
 
 #include <array>
 #include <cstdint>
@@ -154,6 +156,48 @@ Weak MakeWeak(void* object) noexcept
 
 }  // namespace
 
+StickScope::StickScope(std::uint32_t user, bool clearKeys) noexcept
+{
+    std::uint8_t* owner = nullptr;
+    if (!Read(g_squareInput, owner) || owner == nullptr || !Read(owner + facts::kStickAnalog, savedAnalog_) ||
+        !Read(owner + facts::kStickDigital, savedDigital_))
+    {
+        return;
+    }
+    std::array<float, 4> pad{};  // still unless the pad's record exists
+    const std::uint8_t*  bank    = owner + facts::kStickBanks + 16 * facts::kXInputBank;
+    std::uint8_t*        records = nullptr;
+    std::int32_t         count   = 0;
+    if (user < g_holds.size() && g_holds[user].active)
+    {
+        pad = g_holds[user].axes;
+    }
+    else if (Read(bank, records) && Read(bank + 8, count) && records != nullptr && count > 0 &&
+             user < static_cast<std::uint32_t>(count))
+    {
+        Read(records + static_cast<std::size_t>(user) * facts::kStickRecordBytes, pad);
+    }
+    const std::array<float, 4> still{};
+    if (platform::WriteGuarded(owner + facts::kStickAnalog, pad.data(), sizeof(pad)) &&
+        (!clearKeys || platform::WriteGuarded(owner + facts::kStickDigital, still.data(), sizeof(still))))
+    {
+        owner_ = owner;
+    }
+    else
+    {
+        platform::WriteGuarded(owner + facts::kStickAnalog, savedAnalog_, sizeof(savedAnalog_));
+    }
+}
+
+StickScope::~StickScope()
+{
+    if (owner_ != nullptr)
+    {
+        platform::WriteGuarded(owner_ + facts::kStickAnalog, savedAnalog_, sizeof(savedAnalog_));
+        platform::WriteGuarded(owner_ + facts::kStickDigital, savedDigital_, sizeof(savedDigital_));
+    }
+}
+
 bool WeakPairOf(void* object, std::int32_t (&pair)[2]) noexcept
 {
     const Weak weak = MakeWeak(object);
@@ -248,62 +292,6 @@ private:
     Weak          wrote_;
 };
 
-/// The merged stick is replaced by one pad's record for its lifetime. `user` is the XInput user (0 = pad 1,
-/// 1 = pad 2); a user whose pad is not connected gets a still stick. Player 2's scope also clears the
-/// key-driven stick (the keyboard is player 1's). The aggregate is rebuilt from the records every frame
-/// before the world ticks, so putting the saved values back leaves the frame as the game built it.
-class StickScope
-{
-public:
-    StickScope(std::uint32_t user, bool clearKeys) noexcept
-    {
-        std::uint8_t* owner = nullptr;
-        if (!Read(g_squareInput, owner) || owner == nullptr ||
-            !Read(owner + facts::kStickAnalog, savedAnalog_) || !Read(owner + facts::kStickDigital, savedDigital_))
-        {
-            return;
-        }
-        std::array<float, 4> pad{};  // still unless the pad's record exists
-        const std::uint8_t*  bank    = owner + facts::kStickBanks + 16 * facts::kXInputBank;
-        std::uint8_t*        records = nullptr;
-        std::int32_t         count   = 0;
-        if (user < g_holds.size() && g_holds[user].active)
-        {
-            pad = g_holds[user].axes;
-        }
-        else if (Read(bank, records) && Read(bank + 8, count) && records != nullptr && count > 0 &&
-                 user < static_cast<std::uint32_t>(count))
-        {
-            Read(records + static_cast<std::size_t>(user) * facts::kStickRecordBytes, pad);
-        }
-        const std::array<float, 4> still{};
-        if (platform::WriteGuarded(owner + facts::kStickAnalog, pad.data(), sizeof(pad)) &&
-            (!clearKeys || platform::WriteGuarded(owner + facts::kStickDigital, still.data(), sizeof(still))))
-        {
-            owner_ = owner;
-        }
-        else
-        {
-            platform::WriteGuarded(owner + facts::kStickAnalog, savedAnalog_.data(), sizeof(savedAnalog_));
-        }
-    }
-    ~StickScope()
-    {
-        if (owner_ != nullptr)
-        {
-            platform::WriteGuarded(owner_ + facts::kStickAnalog, savedAnalog_.data(), sizeof(savedAnalog_));
-            platform::WriteGuarded(owner_ + facts::kStickDigital, savedDigital_.data(), sizeof(savedDigital_));
-        }
-    }
-    StickScope(const StickScope&)            = delete;
-    StickScope& operator=(const StickScope&) = delete;
-
-private:
-    std::uint8_t*        owner_ = nullptr;
-    std::array<float, 4> savedAnalog_{};
-    std::array<float, 4> savedDigital_{};
-};
-
 // --- The slot replacements -----------------------------------------------------------------------------
 
 // The engine's own functions are called unguarded from these replacements, as the engine calls them. A fault
@@ -383,9 +371,10 @@ void ProcessPlayerInput(void* self, float deltaSeconds, bool gamePaused)
         g_processInput(self, deltaSeconds, gamePaused);
         return;
     }
-    const PrimaryScope  primary(players.two);
-    const OperatorScope scope(g_operatorTwo);
-    const StickScope    stick(1, true);
+    const PrimaryScope             primary(players.two);
+    const OperatorScope            scope(g_operatorTwo);
+    const StickScope               stick(1, true);
+    const pad_buttons::ButtonScope buttons(1);
     g_processInput(self, deltaSeconds, gamePaused);
 }
 
@@ -408,9 +397,10 @@ void FieldMove(void* self, float deltaSeconds)
         return;
     }
     ++g_counts[1].move;
-    const PrimaryScope  primary(players.two);
-    const OperatorScope scope(g_operatorTwo);  // no-op while player 2 has no operator
-    const StickScope    stick(1, true);
+    const PrimaryScope             primary(players.two);
+    const OperatorScope            scope(g_operatorTwo);  // no-op while player 2 has no operator
+    const StickScope               stick(1, true);
+    const pad_buttons::ButtonScope buttons(1);
     g_fieldMove(self, deltaSeconds);
 }
 
@@ -641,6 +631,10 @@ bool Start(void* playerOneController, void* playerTwoController) noexcept
         return false;
     }
     g_operatorTwo = MakeWeak(spawned);
+    {
+        const std::int32_t pair[2]{g_operatorTwo.index, g_operatorTwo.serial};
+        scopes::BindOperator(1, pair);  // the operator the game's camera and menu code finds in player 2's scopes
+    }
 
     bool owned = false;
     {
@@ -662,6 +656,10 @@ void* Take() noexcept
 {
     void* operatorTwo = Resolve(g_operatorTwo);
     g_operatorTwo     = {};
+    {
+        const std::int32_t none[2]{-1, 0};
+        scopes::BindOperator(1, none);
+    }
     g_playerOne       = {};
     g_playerTwo       = {};
     return operatorTwo;

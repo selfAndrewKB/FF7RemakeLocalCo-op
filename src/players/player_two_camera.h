@@ -60,4 +60,22 @@ void ReleaseStick(unsigned user) noexcept;
 /// Logs how often each player's input, movement and camera calls ran since the last report. Game thread.
 void LogCounts() noexcept;
 
+/// The merged stick replaced by one pad's record for its lifetime (`user` = XInput user: 0 pad 1, 1 pad 2; a pad not
+/// connected reads still). `clearKeys` also clears the key-driven stick (the keyboard is player 1's). The game
+/// rebuilds the aggregate from the records every frame before the world ticks, so putting the saved values back
+/// leaves the frame as the game built it. Game thread.
+class StickScope
+{
+public:
+    StickScope(std::uint32_t user, bool clearKeys) noexcept;
+    ~StickScope();
+    StickScope(const StickScope&)            = delete;
+    StickScope& operator=(const StickScope&) = delete;
+
+private:
+    std::uint8_t* owner_ = nullptr;
+    float         savedAnalog_[4]{};
+    float         savedDigital_[4]{};
+};
+
 }  // namespace lss::players::player_two_camera
