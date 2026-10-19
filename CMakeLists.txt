@@ -43,6 +43,7 @@ add_library(LocalSplitScreen SHARED
     src/platform/call_redirect.cpp
     src/platform/guarded.cpp
     src/platform/image.cpp
+    src/platform/instruction_patch.cpp
     src/platform/log.cpp
     src/platform/module_pin.cpp
     src/platform/code_memory.cpp
@@ -134,3 +135,12 @@ add_executable(EntryRedirectTests
 target_include_directories(EntryRedirectTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_compile_features(EntryRedirectTests PRIVATE cxx_std_20)
 add_test(NAME entry_redirect COMMAND EntryRedirectTests)
+
+add_executable(InstructionPatchTests
+    tests/instruction_patch_test.cpp
+    src/platform/instruction_patch.cpp
+    src/platform/code_memory.cpp
+)
+target_include_directories(InstructionPatchTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(InstructionPatchTests PRIVATE cxx_std_20)
+add_test(NAME instruction_patch COMMAND InstructionPatchTests)

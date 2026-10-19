@@ -191,6 +191,39 @@ inline constexpr platform::FunctionFact kGetAndOrCreateGraphicsPso{
 inline constexpr std::size_t   kPsoInitializerSize = 0xA8;
 inline constexpr std::uint32_t kPsoInitPixelShader = 0x10;
 
+// --- Distortion apply target size (RE-render-views.md 4A.1, the 2026-10-19 capture) -------------------------------
+// SE_Distortion_ApplyPass writes the blurred distortion into SceneColor. It sets the viewport to the whole buffer
+// (FSceneRenderTargets::BufferSize) but passes DrawRectangle the view's size as TargetSize, so in split screen player
+// 1's rectangle covers the whole screen and player 2's lands off screen. The game stores BufferSize as the
+// TextureSize argument at [rsp+50h] just before; the patch makes TargetSize load that instead of [rsp+70h] (the view
+// size it built from ViewRect). Equal in single view, where the view fills the buffer.
+inline constexpr std::array<std::uint8_t, 16> kDistortionApplyEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x10, 0x55, 0x56, 0x57, 0x41, 0x54, 0x41, 0x55, 0x41, 0x56, 0x41, 0x57};
+/// SE_Distortion_ApplyPass(FRHICommandList*, FSceneRenderTargets*, const FViewInfo*, DistortBlurred).
+inline constexpr platform::FunctionFact kDistortionApply{L"SE_Distortion_ApplyPass", 0x14220E5B0, kDistortionApplyEntry};
+/// 0x14220EB37 through 0x14220EB74: DrawRectangle's TextureSize (BufferSize, [rsp+50h]) and TargetSize ([rsp+70h])
+/// arguments, as the research read them.
+inline constexpr std::uintptr_t kDistortionApplyArgsStart = 0x14220EB37;
+inline constexpr std::uint8_t   kDistortionApplyArgs[]    = {
+    0x48, 0x8B, 0x45, 0x98,                    // mov rax, [rbp-68h]       &FSceneRenderTargets
+    0x66, 0x0F, 0x6E, 0xC1,                    // movd xmm0, ecx
+    0x89, 0x4C, 0x24, 0x74,                    // mov [rsp+74h], ecx       view height
+    0xB9, 0x01, 0x00, 0x00, 0x00,              // mov ecx, 1
+    0x89, 0x4C, 0x24, 0x68,                    // mov [rsp+68h], ecx       InstanceCount
+    0x48, 0x8B, 0x80, 0x28, 0x02, 0x00, 0x00,  // mov rax, [rax+228h]      BufferSize
+    0x89, 0x4C, 0x24, 0x60,                    // mov [rsp+60h], ecx       Flags (the triangle)
+    0x49, 0x8B, 0xCF,                          // mov rcx, r15
+    0x48, 0x89, 0x74, 0x24, 0x58,              // mov [rsp+58h], rsi       VertexShader
+    0x48, 0x89, 0x44, 0x24, 0x50,              // mov [rsp+50h], rax       TextureSize = BufferSize
+    0x0F, 0x5B, 0xC0,                          // cvtdq2ps xmm0, xmm0
+    0x89, 0x54, 0x24, 0x70,                    // mov [rsp+70h], edx       view width
+    0x48, 0x8B, 0x44, 0x24, 0x70,              // mov rax, [rsp+70h]       TargetSize = the view size
+    0x48, 0x89, 0x44, 0x24, 0x48,              // mov [rsp+48h], rax
+};
+inline constexpr std::uintptr_t kDistortionApplyTargetLoad = 0x14220EB6B;  // in the block at 0x14220EB60
+inline constexpr std::uint8_t   kDistortionApplyTargetView[]   = {0x48, 0x8B, 0x44, 0x24, 0x70};  // mov rax, [rsp+70h]
+inline constexpr std::uint8_t   kDistortionApplyTargetBuffer[] = {0x48, 0x8B, 0x44, 0x24, 0x50};  // mov rax, [rsp+50h]
+
 // The RHI. D3D12 unless the command line has -d3d11, -dx11 or -sm5 (PlatformCreateDynamicRHI 0x1426E6AA0).
 inline constexpr std::uintptr_t kGDynamicRHI              = 0x14582C478;  // FDynamicRHI*
 inline constexpr std::uintptr_t kGRHICommandListImmediate = 0x14593F4D8;  // FRHICommandListImmediate (object)
