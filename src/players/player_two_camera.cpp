@@ -69,6 +69,7 @@ ActorFloatFn          g_fieldMove         = nullptr;
 std::uintptr_t* g_phaseHookPointer = nullptr;
 PhaseHookFn     g_phaseHook        = nullptr;
 InputFn         g_tickPlayerInput  = nullptr;
+int             g_operatorTicking  = 0;  // 2 while player 2's operator ticks
 bool            g_phaseHookLogged  = false;
 
 // Game thread only (set by Start from the engine tick; the wrappers act only on that thread).
@@ -344,8 +345,14 @@ void OperatorTick(void* self, float deltaSeconds)
     ++g_counts[1].operatorTick;
     const PrimaryScope               primary(players.two);
     const OperatorScope              scope(g_operatorTwo);
-    const battle::targeting_two::FieldsScope targets;  // its lock camera follows player 2's target, not player 1's
+    // Its leader is player 2's member: the battle camera requests, the move and camera-input checks and the battle
+    // sequence overrides the tick reads are keyed on the party leader (RE-lock-camera-two.md §1.4), as the lock
+    // camera follows player 2's target, not player 1's.
+    const scopes::Scope              leader(1, scopes::Leader);
+    const battle::targeting_two::FieldsScope targets;
+    g_operatorTicking = 2;
     g_operatorTick(self, deltaSeconds);
+    g_operatorTicking = 0;
 }
 
 /// AEndPlayerController::ProcessPlayerInput: each player's right stick reaches that player's operator.
@@ -682,6 +689,11 @@ void ReleaseStick(unsigned user) noexcept
     {
         g_holds[user] = {};
     }
+}
+
+int OperatorTicking() noexcept
+{
+    return g_operatorTicking;
 }
 
 void LogCounts() noexcept

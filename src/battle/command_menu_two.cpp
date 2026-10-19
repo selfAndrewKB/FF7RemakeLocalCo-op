@@ -15,6 +15,7 @@
 #include <array>
 #include <cstdint>
 #include <cstring>
+#include <format>
 #include <span>
 #include <string>
 
@@ -73,6 +74,7 @@ alignas(16) float g_colorOne[kRoots.size()][4]{};  // player 1's roots' colours 
 bool              g_swapped[kRoots.size()]{};      // which pair player 2's pass swapped this frame
 bool              g_borrowLogged = false;
 bool  g_skippedLogged = false;
+std::int32_t g_ordinalTwo = -1;  // player 2's controller's cached leader ordinal, as last seen
 std::uint32_t g_skipped = 0;  // command menu NativeTicks skipped in player 2's pass
 
 template <class T>
@@ -297,6 +299,23 @@ bool FindInto(const platform::GameImage& image, const platform::FunctionFact& fa
     return out != nullptr;
 }
 
+/// Each controller's cached leader ordinal and member count, and the party's slot types.
+std::wstring LeaderReading() noexcept
+{
+    const auto fields = [](const void* ctrl) {
+        std::int32_t ordinal = -1, count = -1;
+        if (ctrl != nullptr)
+        {
+            Read(static_cast<const std::uint8_t*>(ctrl) + facts::kCommandCtrlLeaderOrdinal, ordinal);
+            Read(static_cast<const std::uint8_t*>(ctrl) + facts::kCommandCtrlMemberCount, count);
+        }
+        return std::format(L"ordinal {} of {}", ordinal, count);
+    };
+    std::uint8_t slots[3]{9, 9, 9};
+    Read(reinterpret_cast<const void*>(players::scopes::PartyManagerAddress() + facts::kPartySlotTypes), slots);
+    return std::format(L"ctrl1 {}, ctrl2 {}; party slot types {} {} {}", fields(Ctrl1()), fields(g_ctrl), slots[0], slots[1], slots[2]);
+}
+
 }  // namespace
 
 bool Install(const platform::GameImage& image) noexcept
@@ -367,6 +386,10 @@ bool Install(const platform::GameImage& image) noexcept
                            return control::Outcome{};
                        },
                        .get = [] { return control::Value{g_enabled}; }});
+    control::Register({.name = L"menu-two.leader", .shape = control::Shape::Text,
+                       .help = L"each command controller's cached leader ordinal and member count, and the party's slot types "
+                               L"(the poll reads no input while the member at its ordinal is KO'd)",
+                       .get  = [] { return control::Value{LeaderReading()}; }});
     control::Register({.name = L"menu-two.state", .shape = control::Shape::Word, .words = {L"none", L"built", L"ready"},
                        .help = L"player 2's command controller: none, built, or ready (set up)",
                        .get  = [] { return control::Value{std::wstring(g_ctrl == nullptr ? L"none" : Ready() ? L"ready" : L"built")}; }});
@@ -434,6 +457,14 @@ void Tick(bool playerTwoPlays) noexcept
             }
         }
         return;
+    }
+    // The ordinal the controller's own tick caches (its poll stops while that member is KO'd): a change is logged.
+    std::int32_t ordinal = -1;
+    if (Read(static_cast<const std::uint8_t*>(g_ctrl) + facts::kCommandCtrlLeaderOrdinal, ordinal) && ordinal != g_ordinalTwo)
+    {
+        g_ordinalTwo = ordinal;
+        platform::LogDebug(L"command menu 2: player 2's controller now caches leader ordinal {} (player 2's member type {}, {})",
+                           ordinal, players::scopes::MemberType(kPlayer), LeaderReading());
     }
     // The two bytes the game writes directly on its own controller.
     const std::uint8_t allowed = Byte(ctrl1, facts::kCommandCtrlMenuAllowed);

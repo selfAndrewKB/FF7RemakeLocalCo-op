@@ -235,6 +235,11 @@ void* Member(int player) noexcept
     return ValidPlayer(player) ? g_players[player].member : nullptr;
 }
 
+std::uintptr_t PartyManagerAddress() noexcept
+{
+    return PartyManager();
+}
+
 std::uint8_t MemberType(int player) noexcept
 {
     return ValidPlayer(player) ? g_players[player].type : kTypeNone;

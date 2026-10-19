@@ -54,6 +54,7 @@ void Unbind(int player) noexcept;
 void*        Controller(int player) noexcept;
 void*        Member(int player) noexcept;
 std::uint8_t MemberType(int player) noexcept;  // 9 (NONE) when unbound
+std::uintptr_t PartyManagerAddress() noexcept;  // the live party manager, 0 when unset
 void*        CommandController(int player) noexcept;
 /// The leader type the game held before this player's Leader scope opened (player 1's), while it is open.
 std::uint8_t OtherLeaderType(int player) noexcept;

@@ -504,6 +504,7 @@ inline constexpr std::uint32_t  kOctagonSlate          = 0x128;  // its Slate ob
 inline constexpr std::uint32_t  kOctagonSlateTarget    = 0x5C8;  // the Slate object's render target (its entries draw into it)
 inline constexpr std::uint32_t  kOctagonPaintInterface = 0x330;  // the Slate object's paint interface (rsi in the paint)
 inline constexpr std::uint32_t  kPartyPrimaryController = 0x00;  // AEndPartyManager: the primary controller
+inline constexpr std::uint32_t  kPartySlotTypes        = 0x230;  // u8[3]: the deployed members' player types by ordinal
 inline constexpr std::uint32_t  kPartyLeaderType       = 0x233;  // the leader's player type byte
 
 // ULocalPlayer's split-screen view as fractions of the viewport (stock 4.18, not reflected: between ViewportClient
@@ -554,6 +555,9 @@ inline constexpr std::uint32_t kCommandCtrlSize          = 0x5D0;
 /// The length of the one home-area store that starts the entry-redirected controller functions (their entry arrays
 /// below are the 16-byte checks; an entry redirect copies the instruction only).
 inline constexpr std::size_t   kHomeStoreBytes           = 5;
+inline constexpr std::uint32_t kCommandCtrlMemberCount   = 0x10;   // i32: the controller's member-list count
+inline constexpr std::uint32_t kCommandCtrlLeaderOrdinal = 0x28;   // i32: the leader's party ordinal the tick caches; the
+                                                                   // poll reads no input while that member is KO'd
 inline constexpr std::uint32_t kCommandCtrlCommandLists  = 0x38;   // the command-list sub-object (ctrl+0x38)
 inline constexpr std::uint32_t kCommandCtrlPartyList     = 0x1D0;  // the party-list sub-object
 inline constexpr std::uint32_t kCommandCtrlFieldMenuWeak = 0x2F8;  // Status_C (the party panel) weak pair
@@ -694,6 +698,15 @@ inline constexpr platform::FunctionFact kBattleCompSetUcpcFlag{L"BattlePlayerCom
 inline constexpr platform::FunctionFact kBattleStaggerRewards{L"BattleBurst_OnHit_AddBP_StaggerRewards", 0x140966EE0,
                                                               kBattleStaggerRewardsEntry};
 inline constexpr std::uintptr_t kBattleStaggerRewardsCall = 0x140892DB8;  // its one call site
+
+// --- The lock camera (RE-lock-camera-two.md §1.4) --------------------------------------------------------------
+// The operator tick's Lock-state call of BattleCamRequests_FindActiveRotation(reqMgr, &rot, owner, view, params, 0):
+// the battle camera requests, keyed on the party leader, that re-aim the lock camera.
+inline constexpr std::array<std::uint8_t, 16> kBattleCamFindActiveRotationEntry{
+    0x48, 0x89, 0x54, 0x24, 0x10, 0x56, 0x41, 0x54, 0x41, 0x55, 0x41, 0x57, 0x48, 0x83, 0xEC, 0x48};
+inline constexpr platform::FunctionFact kBattleCamFindActiveRotation{L"BattleCamRequests_FindActiveRotation", 0x140A15A80,
+                                                                      kBattleCamFindActiveRotationEntry};
+inline constexpr std::uintptr_t kBattleCamFindActiveRotationLockCall = 0x140FDE18C;  // E8 EF 78 A3 FF; crosses a block
 
 // --- The battle switch (RE-battle-switch.md §4) -----------------------------------------------------------------
 // BattleSystem_CycleLeader walks the members from the leader; BattleSystem_CanSwitchLeader counts them. Each fetches

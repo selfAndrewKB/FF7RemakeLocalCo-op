@@ -60,6 +60,9 @@ void ReleaseStick(unsigned user) noexcept;
 /// Logs how often each player's input, movement and camera calls ran since the last report. Game thread.
 void LogCounts() noexcept;
 
+/// 2 while player 2's operator's Tick runs (inside its scopes), else 0.
+int OperatorTicking() noexcept;
+
 /// The merged stick replaced by one pad's record for its lifetime (`user` = XInput user: 0 pad 1, 1 pad 2; a pad not
 /// connected reads still). `clearKeys` also clears the key-driven stick (the keyboard is player 1's). The game
 /// rebuilds the aggregate from the records every frame before the world ticks, so putting the saved values back
