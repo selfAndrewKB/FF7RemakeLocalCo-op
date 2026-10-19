@@ -754,6 +754,35 @@ inline constexpr std::array<platform::SlotFact, 3> kCmdMenuRestoreLockSlots{{
     {L"command-menu state vtable 0x144BF1E78: restore lock", 0x144BF1E78, kCmdMenuRestoreLockA},
     {L"command-menu state vtable 0x144BF1E80: restore lock (B)", 0x144BF1E80, kCmdMenuRestoreLockB}}};
 
+// --- Enemies and a downed leader (RE-enemy-leader-reads.md §2, §5.1) ---------------------------------------
+inline constexpr std::uint32_t kBattleCompActionState            = 0x611;   // the battle component's action state byte
+inline constexpr std::uint8_t  kBattleCompStateKnockedOut        = 13;      // the KO (dead) state
+inline constexpr std::uint32_t kCharacterBattleAI                = 0xCA8;   // AEndCharacter: its battle AI controller
+inline constexpr std::uint32_t kBattleAITargetSelectType         = 0x15D0;  // BattleAICharaSpec.TargetSelectType on the controller
+inline constexpr std::uint8_t  kBattleAITargetSelectFollowsLeader = 10;     // re-targeted to the new leader on a forced switch
+inline constexpr std::uint32_t kEndGameRootCharaOwner            = 0x170;   // the field root's object holding the registry
+inline constexpr std::uint32_t kCharaRegistry                    = 0xCE98;  // the character registry inside it
+
+inline constexpr std::array<std::uint8_t, 16> kGetPartyLeaderEntry{
+    0x40, 0x53, 0x48, 0x83, 0xEC, 0x20, 0x48, 0x8B, 0xD9, 0x0F, 0xB6, 0xCA, 0x84, 0xD2, 0x74, 0x65};
+inline constexpr platform::FunctionFact kGetPartyLeader{L"PartyManager_GetPartyLeader", 0x1415F1CE0, kGetPartyLeaderEntry};
+/// AEndBattleAIController_TickBattleAI's leader read (E8 06 4E CD 00, inside its block): the remembered leader
+/// against the party leader, then the Blueprint OnChangeLeader.
+inline constexpr std::uintptr_t kBattleAITickLeaderCall = 0x14091CED5;
+inline constexpr std::array<std::uint8_t, 16> kCharaRegistryIterBeginEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x10, 0x48, 0x89, 0x6C, 0x24, 0x18, 0x48, 0x89, 0x74, 0x24, 0x20, 0x57};
+inline constexpr platform::FunctionFact kCharaRegistryIterBegin{L"EndCharaRegistry_IterBegin_ByCategoryBit", 0x140F99920,
+                                                                kCharaRegistryIterBeginEntry};
+inline constexpr std::array<std::uint8_t, 16> kCharaRegistryIterNextEntry{
+    0x40, 0x53, 0x48, 0x83, 0xEC, 0x20, 0x44, 0x8B, 0x41, 0x10, 0x48, 0x8B, 0xD9, 0x44, 0x39, 0x81};
+inline constexpr platform::FunctionFact kCharaRegistryIterNext{L"EndCharaRegistry_IterNext", 0x140F99A60, kCharaRegistryIterNextEntry};
+inline constexpr std::array<std::uint8_t, 16> kBattleCompSetTargetCharEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x10, 0x57, 0x48, 0x83, 0xEC, 0x40, 0x83, 0xB9, 0x10, 0x03, 0x00, 0x00};
+inline constexpr platform::FunctionFact kBattleCompSetTargetChar{L"BattleComp_SetTargetChar", 0x14096BFA0, kBattleCompSetTargetCharEntry};
+inline constexpr std::array<std::uint8_t, 16> kGameFreeEntry{
+    0x48, 0x85, 0xC9, 0x74, 0x2E, 0x53, 0x48, 0x83, 0xEC, 0x20, 0x48, 0x8B, 0xD9, 0x48, 0x8B, 0x0D};
+inline constexpr platform::FunctionFact kGameFree{L"FMemory::Free", 0x1416C0370, kGameFreeEntry};
+
 // --- The battle switch (RE-battle-switch.md §4) -----------------------------------------------------------------
 // BattleSystem_CycleLeader walks the members from the leader; BattleSystem_CanSwitchLeader counts them. Each fetches
 // a candidate with PartyManager_GetPlayerActor(PM, 0, type, 0); a null answer is the game's own skip branch. The

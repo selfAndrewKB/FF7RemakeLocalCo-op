@@ -17,6 +17,7 @@
 
 #include "battle/command_menu_tick.h"
 #include "battle/command_menu_two.h"
+#include "battle/enemy_leader.h"
 #include "battle/lock_camera_two.h"
 #include "battle/member_rates.h"
 #include "battle/party_switch.h"
@@ -60,7 +61,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.17.0-lock-camera-ledger";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.18.0-enemy-leader";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
@@ -216,6 +217,7 @@ public:
         lss::hud::image_entries::Remove();
         lss::hud::ui_targets::Remove();
         lss::players::pad_buttons::Remove();
+        lss::battle::enemy_leader::Remove();
         lss::battle::member_rates::Remove();
         lss::battle::lock_camera_two::Remove();
         lss::battle::targeting_two::Remove();
@@ -263,6 +265,7 @@ public:
             lss::battle::targeting_two::Install(*image);
             lss::battle::lock_camera_two::Install(*image);
             lss::battle::member_rates::Install(*image);
+            lss::battle::enemy_leader::Install(*image);
         }
         lss::players::game_state::Install(*image);  // readings only; fine without
         lss::hud::hud_probe::Install(*image);       // logging only; fine without
@@ -308,6 +311,7 @@ private:
         lss::battle::targeting_two::Tick();
         lss::battle::lock_camera_two::Tick();
         lss::battle::member_rates::Tick();
+        lss::battle::enemy_leader::Tick();
         TickHud();
         remote_.Tick();
     }
