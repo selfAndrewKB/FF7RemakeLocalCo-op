@@ -66,10 +66,12 @@ NativeTickFn            g_nativeTick = nullptr;
 void* g_ctrl      = nullptr;  // player 2's controller, once built (kept for the game's life)
 bool  g_plays     = false;
 bool  g_enabled   = true;
-bool  g_hidden    = false;   // player 2's roots transparent (outside its pass)
 Pass  g_pass      = Pass::Single;
-alignas(16) float g_colorOne[2][4]{};  // player 1's roots' colours while transparent in player 2's pass
-alignas(16) float g_colorTwo[2][4]{};  // player 2's roots' own colours
+/// The two roots a controller owns: the command menu and the field menu (the party panel).
+constexpr std::array<std::uint32_t, 2> kRoots{facts::kCommandCtrlMenuWeak, facts::kCommandCtrlFieldMenuWeak};
+alignas(16) float g_colorOne[kRoots.size()][4]{};  // player 1's roots' colours while transparent in player 2's pass
+bool              g_swapped[kRoots.size()]{};      // which pair player 2's pass swapped this frame
+bool              g_borrowLogged = false;
 bool  g_skippedLogged = false;
 std::uint32_t g_skipped = 0;  // command menu NativeTicks skipped in player 2's pass
 
@@ -109,15 +111,20 @@ void Tint(void* widget, const float (&color)[4]) noexcept
     }
 }
 
-/// Reads a widget's own colour and makes it transparent; the colour comes back with Restore.
-void Hide(void* widget, float (&saved)[4]) noexcept
+bool Colour(const void* widget, float (&out)[4]) noexcept
 {
-    if (widget == nullptr || !Read(static_cast<const std::uint8_t*>(widget) + facts::kUserWidgetColor, saved))
+    return widget != nullptr && Read(static_cast<const std::uint8_t*>(widget) + facts::kUserWidgetColor, out);
+}
+
+/// Alpha 0, the colour kept. A widget stays transparent until a pass gives it a colour again.
+void Transparent(void* widget) noexcept
+{
+    alignas(16) float colour[4];
+    if (Colour(widget, colour) && colour[3] != 0.0f)
     {
-        return;
+        colour[3] = 0.0f;
+        Tint(widget, colour);
     }
-    alignas(16) const float clear[4]{saved[0], saved[1], saved[2], 0.0f};
-    Tint(widget, clear);
 }
 
 /// The world the game mode names (for a Setup of our own).
@@ -411,9 +418,11 @@ void Tick(bool playerTwoPlays) noexcept
             if (Ready())
             {
                 // Its roots start transparent; they show only in player 2's pass.
-                Hide(Root(g_ctrl, facts::kCommandCtrlMenuWeak), g_colorTwo[0]);
-                Hide(Root(g_ctrl, facts::kCommandCtrlFieldMenuWeak), g_colorTwo[1]);
-                g_hidden = true;
+                for (const std::uint32_t root : kRoots)
+                {
+                    Transparent(Root(g_ctrl, root));
+                }
+                g_borrowLogged = false;
                 platform::Log(L"command menu 2: player 2's controller set up (its menu {} and panel {} in player 2's context; path set {})",
                               Root(g_ctrl, facts::kCommandCtrlMenuWeak) != nullptr ? L"built" : L"MISSING",
                               Root(g_ctrl, facts::kCommandCtrlFieldMenuWeak) != nullptr ? L"built" : L"MISSING",
@@ -478,29 +487,45 @@ bool Ready() noexcept
 void BeginPass(Pass pass) noexcept
 {
     g_pass = pass;
-    if (!g_hidden || !g_enabled)
+    if (pass != Pass::PlayerTwo || !Ready() || !g_enabled)
     {
         return;
     }
-    if (pass == Pass::PlayerTwo)
+    // Player 2's roots take player 1's roots' colours for the pass (the game's fades on player 1's carry over,
+    // and a root that outlives a leave keeps no stale colour of its own); player 1's go transparent.
+    for (std::size_t i = 0; i < kRoots.size(); ++i)
     {
-        // Player 2's roots with their own colours; player 1's transparent.
-        Tint(Root(g_ctrl, facts::kCommandCtrlMenuWeak), g_colorTwo[0]);
-        Tint(Root(g_ctrl, facts::kCommandCtrlFieldMenuWeak), g_colorTwo[1]);
-        Hide(Root(Ctrl1(), facts::kCommandCtrlMenuWeak), g_colorOne[0]);
-        Hide(Root(Ctrl1(), facts::kCommandCtrlFieldMenuWeak), g_colorOne[1]);
+        void* one = Root(Ctrl1(), kRoots[i]);
+        void* two = Root(g_ctrl, kRoots[i]);
+        g_swapped[i] = one != nullptr && two != nullptr && Colour(one, g_colorOne[i]);
+        if (!g_swapped[i])
+        {
+            continue;
+        }
+        Tint(two, g_colorOne[i]);
+        Transparent(one);
+    }
+    if (!g_borrowLogged && (g_swapped[0] || g_swapped[1]))
+    {
+        g_borrowLogged = true;
+        platform::LogDebug(L"command menu 2: player 2's roots take player 1's colours in its pass (menu alpha {:.2f}, panel alpha {:.2f})",
+                           g_swapped[0] ? g_colorOne[0][3] : -1.0f, g_swapped[1] ? g_colorOne[1][3] : -1.0f);
     }
 }
 
 void EndPass() noexcept
 {
-    if (g_pass == Pass::PlayerTwo && g_hidden && g_enabled)
+    if (g_pass == Pass::PlayerTwo)
     {
-        Tint(Root(Ctrl1(), facts::kCommandCtrlMenuWeak), g_colorOne[0]);
-        Tint(Root(Ctrl1(), facts::kCommandCtrlFieldMenuWeak), g_colorOne[1]);
-        float saved[4];
-        Hide(Root(g_ctrl, facts::kCommandCtrlMenuWeak), saved);
-        Hide(Root(g_ctrl, facts::kCommandCtrlFieldMenuWeak), saved);
+        for (std::size_t i = 0; i < kRoots.size(); ++i)
+        {
+            if (g_swapped[i])
+            {
+                g_swapped[i] = false;
+                Tint(Root(Ctrl1(), kRoots[i]), g_colorOne[i]);
+                Transparent(Root(g_ctrl, kRoots[i]));
+            }
+        }
     }
     g_pass = Pass::Single;
 }
