@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.18)
 
-# LocalSplitScreen — two-player split-screen for FINAL FANTASY VII REMAKE, as a UE4SS C++ mod.
+# LocalSplitScreen â€” two-player split-screen for FINAL FANTASY VII REMAKE, as a UE4SS C++ mod.
 #
 # Plan and research: Remake/Documentation/plan/README.md and research/RE-*.md.
 # The platform layer (src/platform) is shared in design with Rebirth/LocalSplitScreen; every engine address
@@ -28,6 +28,9 @@ add_library(LocalSplitScreen SHARED
     src/control/runner.cpp
     src/control/script.cpp
     src/control/server.cpp
+    src/battle/command_menu_tick.cpp
+    src/battle/command_menu_two.cpp
+    src/battle/party_switch.cpp
     src/hud/hud_probe.cpp
     src/hud/image_entries.cpp
     src/hud/marker_replay.cpp

@@ -21,6 +21,7 @@
 #include "players/own_controller.h"
 #include "players/party_seat.h"
 #include "players/player_two_camera.h"
+#include "battle/command_menu_two.h"
 #include "players/pad_buttons.h"
 #include "players/scopes.h"
 #include "players/split_render.h"
@@ -47,7 +48,7 @@ namespace UObjectGlobals = RC::Unreal::UObjectGlobals;
 
 constexpr std::int32_t kPlayerTwoControllerId = 1;
 
-/// The field is back after a world change (RE-lifecycle-world.md ง8): play state, the steady step, running. The
+/// The field is back after a world change (RE-lifecycle-world.md ยง8): play state, the steady step, running. The
 /// entry's step 12 re-reconciles every non-leader controller, so a join before step 13 would be undone.
 constexpr std::uint8_t kStatePlay  = 6;
 constexpr std::int32_t kStepSteady = 13;
@@ -340,6 +341,7 @@ void Session::TryRejoin() noexcept
 void Session::Forget() noexcept
 {
     playerTwo_ = nullptr;
+    battle::command_menu_two::OnLeave();
     scopes::Unbind(1);
     split_render::OnLeave();
     pad_buttons::SetPlayers(1);
@@ -475,6 +477,8 @@ try
     UObject* manager     = Field(controller, facts::kControllerCameraManager);
     UObject* cameraActor = Field(manager, facts::kCameraManagerMainCamera);
     UObject* battleTalk  = Field(controller, facts::kControllerBattleTalkActor);
+    // Player 2's menu lets go of its focus layers first, inside its own context, while its controller exists.
+    battle::command_menu_two::OnLeave();
     // Player 2's character goes back to its AI first, through the game's leader funnel.
     if (seatInstalled_ && !party_seat::Unseat(Field((*players)[0], facts::kLocalPlayerController), controller))
     {

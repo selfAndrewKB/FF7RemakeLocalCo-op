@@ -15,6 +15,9 @@
 #include <Mod/CppUserModBase.hpp>
 #include <Unreal/Hooks/Hooks.hpp>
 
+#include "battle/command_menu_tick.h"
+#include "battle/command_menu_two.h"
+#include "battle/party_switch.h"
 #include "control/registry.h"
 #include "control/remote.h"
 #include "hud/hud_probe.h"
@@ -53,7 +56,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.12.1-distortion-apply";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.13.0-battle-menu-two";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
@@ -209,6 +212,9 @@ public:
         lss::hud::image_entries::Remove();
         lss::hud::ui_targets::Remove();
         lss::players::pad_buttons::Remove();
+        lss::battle::party_switch::Remove();
+        lss::battle::command_menu_tick::Remove();
+        lss::battle::command_menu_two::Remove();
         if (installed_)
         {
             session_.Remove();  // the field-exit calls go back whether or not player 2 is in
@@ -241,7 +247,12 @@ public:
             lss::players::split_render::SetMask(lss::facts::kSplitDisabledFlags, false);
         }
         lss::players::pad_buttons::Install(*image);  // optional: without it every pad presses player 1's buttons
-        lss::players::scopes::Install(*image);  // the per-player answers to the game's single slots (battle modules follow)
+        // Player 2's own battle: its command menu, ticked in its scopes, and the switch rules. Each optional.
+        if (lss::players::scopes::Install(*image) && lss::battle::command_menu_two::Install(*image))
+        {
+            lss::battle::command_menu_tick::Install(*image);
+            lss::battle::party_switch::Install(*image);
+        }
         lss::players::game_state::Install(*image);  // readings only; fine without
         lss::hud::hud_probe::Install(*image);       // logging only; fine without
         lss::hud::overlay_layout::Install(*image);  // optional: without it each half shows the middle of the HUD
@@ -280,6 +291,9 @@ private:
         lss::players::player_two_camera::MaintainInputTick();
         lss::players::game_state::Tick();  // first: the session and the console read this tick's values
         session_.Tick();
+        lss::battle::command_menu_two::Tick(session_.Seated());
+        lss::battle::command_menu_tick::Tick();
+        lss::battle::party_switch::Tick();
         TickHud();
         remote_.Tick();
     }
