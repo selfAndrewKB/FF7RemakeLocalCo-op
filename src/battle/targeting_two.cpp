@@ -1,5 +1,6 @@
 #include "battle/targeting_two.h"
 
+#include "battle/target_cursor_two.h"
 #include "control/registry.h"
 #include "engine_facts.h"
 #include "platform/byte_scope.h"
@@ -90,6 +91,7 @@ void End(const wchar_t* why) noexcept
     {
         return;
     }
+    target_cursor_two::End();  // player 2's cursor released while its member and the battle system exist
     void* system = System();
     if (system != nullptr && system == g_fieldsSystem)
     {
@@ -130,6 +132,7 @@ void Targeting(void* system, float deltaTime)
         ++g_runs;
         g_preTick(system);
         reinterpret_cast<SysDtFn>(g_target)(system, deltaTime);
+        target_cursor_two::RunForPlayerTwo(system);  // the game's cursor driver follows its targeting call
     }
     const std::uint8_t lockTwo = g_fields.Value(0)[facts::kBattleSysLock - facts::kBattleSysTargetFields];
     if (lockTwo != g_lastLock)

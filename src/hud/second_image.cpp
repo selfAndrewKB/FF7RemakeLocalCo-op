@@ -9,6 +9,7 @@
 #include "hud/overlay_layout.h"
 #include "hud/overlay_pass.h"
 #include "battle/command_menu_two.h"
+#include "battle/target_cursor_two.h"
 #include "hud/pass_hide.h"
 #include "hud/ui_targets.h"
 #include "platform/call_redirect.h"
@@ -147,6 +148,7 @@ bool RenderPlayerTwo(void* overlay) noexcept
     platform::CopyGuarded(&fade, static_cast<const std::uint8_t*>(overlay) + facts::kOverlayFade, sizeof(fade));
     pass_hide::BeginPlayerTwoPass();
     battle::command_menu_two::BeginPass(overlay_pass::Pass::PlayerTwo);
+    battle::target_cursor_two::BeginPass(overlay_pass::Pass::PlayerTwo);
     *g_deltaTime = 0.0;
     overlay_pass::Set(overlay_pass::Pass::PlayerTwo);
     minimap_two::BeginPass(overlay_pass::Pass::PlayerTwo);
@@ -166,6 +168,7 @@ bool RenderPlayerTwo(void* overlay) noexcept
     {
         platform::WriteGuarded(static_cast<std::uint8_t*>(overlay) + facts::kOverlayFade, &fade, sizeof(fade));
     }
+    battle::target_cursor_two::EndPass();
     battle::command_menu_two::EndPass();
     pass_hide::EndPlayerTwoPass();
     return ok;
@@ -212,7 +215,9 @@ void Driver(void* delegate)
     overlay_pass::Set(two ? overlay_pass::Pass::PlayerOne : overlay_pass::Pass::Single);
     minimap_two::BeginPass(two ? overlay_pass::Pass::PlayerOne : overlay_pass::Pass::Single);
     battle::command_menu_two::BeginPass(two ? overlay_pass::Pass::PlayerOne : overlay_pass::Pass::Single);
+    battle::target_cursor_two::BeginPass(two ? overlay_pass::Pass::PlayerOne : overlay_pass::Pass::Single);
     g_render(overlay);
+    battle::target_cursor_two::EndPass();
     battle::command_menu_two::EndPass();
     minimap_two::EndPass();
     overlay_pass::Set(overlay_pass::Pass::Single);

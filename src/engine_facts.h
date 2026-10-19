@@ -914,4 +914,31 @@ inline constexpr std::array<std::uint8_t, 16> kSetActorTypeEntry{
     0x48, 0x8B, 0x81, 0x00, 0x0A, 0x00, 0x00, 0x88, 0x90, 0xB8, 0x00, 0x00, 0x00, 0x80, 0xFA, 0x02};
 inline constexpr platform::FunctionFact kSetActorType{L"EndCharacter800_SetActorType", 0x14164DE50, kSetActorTypeEntry};
 
+// --- The battle target cursor (RE-target-cursor-two.md) --------------------------------------------------------
+/// The one cursor widget's pointer on the battle system (outside the target fields), and the HUD keys the cursor
+/// driver writes each frame: the enemy bar manager's (EndUISystem[27]) displayed target (a weak pointer pair) and
+/// the off-screen icon manager's (EndUISystem[38]) target name (an FString at +0x88, its FName at +0x98).
+inline constexpr std::uint32_t  kBattleSysCursorWidget        = 0x10;
+inline constexpr std::uintptr_t kEnemyBarSlotGlobal           = 0x1459CAA48;  // EndUISystem[27]
+inline constexpr std::uint32_t  kEnemyBarDisplayedTarget      = 0xD8;
+inline constexpr std::uint32_t  kEnemyBarDisplayedTargetBytes = 0x10;
+inline constexpr std::uintptr_t kOutsideIconSlotGlobal        = 0x1459CAAA0;  // EndUISystem[38]
+inline constexpr std::uint32_t  kOutsideIconTargetName        = 0x88;
+inline constexpr std::uint32_t  kOutsideIconTargetNameBytes   = 0x18;
+/// The cursor driver (creates, moves, styles, traces and releases the cursor from the leader's target; called by the
+/// battle tick after each targeting call), the line-of-sight step (once per frame from the field systems' tick;
+/// its call crosses a block) and the battle suspension that releases the cursor (entry: three instructions, 5 bytes).
+inline constexpr std::array<std::uint8_t, 16> kCursorDriverEntry{
+    0x40, 0x55, 0x41, 0x54, 0x41, 0x55, 0x41, 0x57, 0x48, 0x8D, 0xAC, 0x24, 0x38, 0xFE, 0xFF, 0xFF};
+inline constexpr platform::FunctionFact kCursorDriver{L"BattleSystem_TickTargetCursorWidget_Slot18", 0x1409B9170, kCursorDriverEntry};
+inline constexpr std::array<std::uint8_t, 16> kCursorLineOfSightEntry{
+    0x4C, 0x8B, 0xDC, 0x53, 0x48, 0x81, 0xEC, 0x10, 0x02, 0x00, 0x00, 0x48, 0x8B, 0x05, 0xE6, 0x03};
+inline constexpr platform::FunctionFact kCursorLineOfSight{L"BattleSystem_TickTargetCursorLineOfSight_Slot18", 0x1409C06D0,
+                                                           kCursorLineOfSightEntry};
+inline constexpr std::uintptr_t kCursorLineOfSightCall = 0x1416BF36E;  // E8 5D 13 30 FF, crosses a block
+inline constexpr std::array<std::uint8_t, 16> kBattleSuspendEntry{
+    0x4C, 0x8B, 0xDC, 0x55, 0x53, 0x57, 0x41, 0x54, 0x41, 0x55, 0x49, 0x8D, 0xAB, 0x68, 0xFE, 0xFF};
+inline constexpr std::size_t kBattleSuspendFirstBytes = 5;  // mov r11, rsp; push rbp; push rbx
+inline constexpr platform::FunctionFact kBattleSuspend{L"BattleSystem_Suspend_ReleaseCursorAndIcons", 0x1409B5630, kBattleSuspendEntry};
+
 }  // namespace lss::facts

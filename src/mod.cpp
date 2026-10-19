@@ -21,6 +21,7 @@
 #include "battle/member_rates.h"
 #include "battle/party_switch.h"
 #include "battle/sequence_camera_two.h"
+#include "battle/target_cursor_two.h"
 #include "battle/targeting_two.h"
 #include "control/registry.h"
 #include "control/remote.h"
@@ -61,7 +62,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.21.0-party-funnels";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.22.0-target-cursor";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
@@ -205,6 +206,7 @@ public:
         lss::hud::ui_targets::Remove();
         lss::players::pad_buttons::Remove();
         lss::battle::sequence_camera_two::Remove();
+        lss::battle::target_cursor_two::Remove();
         lss::battle::enemy_leader::Remove();
         lss::battle::member_rates::Remove();
         lss::battle::lock_camera_two::Remove();
@@ -250,7 +252,10 @@ public:
         {
             lss::battle::command_menu_tick::Install(*image);
             lss::battle::party_switch::Install(*image);
-            lss::battle::targeting_two::Install(*image);
+            if (lss::battle::targeting_two::Install(*image))
+            {
+                lss::battle::target_cursor_two::Install(*image);  // optional: without it both halves show player 1's cursor
+            }
             lss::battle::lock_camera_two::Install(*image);
             lss::battle::member_rates::Install(*image);
             lss::battle::enemy_leader::Install(*image);
@@ -294,6 +299,7 @@ private:
         lss::battle::command_menu_tick::Tick();
         lss::battle::party_switch::Tick();
         lss::battle::targeting_two::Tick();
+        lss::battle::target_cursor_two::Tick();
         lss::battle::lock_camera_two::Tick();
         lss::battle::member_rates::Tick();
         lss::battle::enemy_leader::Tick();

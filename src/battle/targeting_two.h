@@ -15,7 +15,7 @@
 // flavour land on player 2's camera), the UI slot and focus context (the menu's target row), pad 2's buttons and
 // right stick, and player 2's own copy of the target fields exchanged into the battle system. Player 2's lock
 // toggle posts the game-wide Global.LockOn, so player 1's lock is put back through the game's setter before the
-// copy comes out. The cursor widget's tick is not run for player 2 (one cursor, player 1's). At the battle's end
+// copy comes out. The game's cursor driver runs again for player 2 right after (battle/target_cursor_two.h). At the battle's end
 // (the battle HUD mode falling to 0) player 2's lock and target are ended with the game's own clear, on its copy.
 // Game thread only.
 

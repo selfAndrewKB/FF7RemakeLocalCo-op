@@ -35,6 +35,7 @@ add_library(LocalSplitScreen SHARED
     src/battle/member_rates.cpp
     src/battle/party_switch.cpp
     src/battle/sequence_camera_two.cpp
+    src/battle/target_cursor_two.cpp
     src/battle/targeting_two.cpp
     src/hud/hud_probe.cpp
     src/hud/image_entries.cpp
