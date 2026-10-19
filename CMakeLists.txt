@@ -45,6 +45,7 @@ add_library(LocalSplitScreen SHARED
     src/platform/module_pin.cpp
     src/platform/code_memory.cpp
     src/platform/code_redirect.cpp
+    src/platform/entry_redirect.cpp
     src/platform/verified_code.cpp
     src/platform/vtable_entry.cpp
     src/players/field_exit.cpp
@@ -121,3 +122,13 @@ add_executable(ImageCodeTests
 target_include_directories(ImageCodeTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_compile_features(ImageCodeTests PRIVATE cxx_std_20)
 add_test(NAME image_code COMMAND ImageCodeTests)
+
+add_executable(EntryRedirectTests
+    tests/entry_redirect_test.cpp
+    src/platform/entry_redirect.cpp
+    src/platform/module_pin.cpp
+    src/platform/code_memory.cpp
+)
+target_include_directories(EntryRedirectTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(EntryRedirectTests PRIVATE cxx_std_20)
+add_test(NAME entry_redirect COMMAND EntryRedirectTests)
