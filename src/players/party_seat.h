@@ -10,11 +10,10 @@
 // possesses her and moves her with no extra driver (Remake/Documentation/research/RE-party-possession.md,
 // RE-impl-facts-v0.2.md §7).
 //
-// The game has one PlayerTrigger (a placed actor), and SwitchLeaderInternal needs one. Whether player 2 gets a
-// copy of it or borrows player 1's is the user's decision (Documentation/plan/topics/session.md). This probe BORROWS player
-// 1's: while player 2 holds Aerith, player 1's trigger rides on her (player 1's field prompts follow her).
-// Unseating gives Aerith back to her AI and re-seats player 1's leader through the same funnel, which puts the
-// trigger back on it.
+// The game has one PlayerTrigger (a placed actor), and SwitchLeaderInternal needs one per controller. Player 2 gets
+// its own copy of it (players/player_trigger.h); only if none can be made does the probe fall back to borrowing
+// player 1's, which then rides on Aerith (encounters and prompts follow her: the user's bug of 2026-10-19) and is
+// put back on player 1's leader at the unseat.
 
 namespace lss::platform {
 class GameImage;

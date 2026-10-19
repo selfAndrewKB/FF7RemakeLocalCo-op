@@ -15,6 +15,9 @@ namespace lss::facts {
 
 // --- Reflected offsets (UE4SS CXX header dump, Engine.hpp) -------------------------------------
 inline constexpr std::uint32_t kActorOwner                = 0x88;   // AActor::Owner
+inline constexpr std::uint32_t kActorRootComponent        = 0x160;  // AActor::RootComponent
+inline constexpr std::uint32_t kActorTags                 = 0x198;  // AActor::Tags (TArray<FName>)
+inline constexpr std::uint32_t kObjectClass               = 0x10;   // UObjectBase::ClassPrivate
 inline constexpr std::uint32_t kLocalPlayerController     = 0x30;   // UPlayer::PlayerController
 inline constexpr std::uint32_t kControllerPawn            = 0x380;  // AController::Pawn
 inline constexpr std::uint32_t kControllerCameraManager   = 0x410;  // APlayerController::PlayerCameraManager
@@ -89,6 +92,8 @@ inline constexpr std::uintptr_t kObjectArray          = 0x1453BD470;  // GUObjec
 inline constexpr std::uint32_t  kObjectIndex          = 0x0C;         // UObjectBase::InternalIndex
 inline constexpr std::uint32_t  kOperatorOwnerChara   = 0x5D0;        // AEndFieldCameraOperator's owner character
 inline constexpr std::uint32_t  kOperatorObjectFlags  = 0x48;         // the game's spawn flags for the operator
+inline constexpr std::uint32_t  kSpawnParamsTemplate  = 0x08;         // FActorSpawnParameters::Template (RE-player-trigger.md §4.2)
+inline constexpr std::uint32_t  kSpawnParamsObjectFlags = 0x2C;       // FActorSpawnParameters::ObjectFlags
 inline constexpr std::uint8_t   kAerithType           = 3;            // EPlayerType
 
 inline constexpr std::uintptr_t kFieldCameraOperatorVTable = 0x144BB5D78;

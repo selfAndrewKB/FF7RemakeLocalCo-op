@@ -5,6 +5,7 @@
 #include "platform/image.h"
 #include "platform/log.h"
 #include "platform/verified_code.h"
+#include "players/player_trigger.h"
 #include "players/scopes.h"
 
 #include <array>
@@ -60,6 +61,10 @@ bool Install(const platform::GameImage& image) noexcept
     {
         return false;
     }
+    if (!player_trigger::Install(image))
+    {
+        platform::Log(L"seat: player 2's own trigger cannot be made (an engine check failed); player 1's is borrowed");
+    }
     g_initPartyLevel = reinterpret_cast<InitPartyLevelFn>(*init);
     g_switchLeader   = reinterpret_cast<SwitchLeaderFn>(*change);
     g_getPlayerActor = reinterpret_cast<GetPlayerActorFn>(*find);
@@ -76,6 +81,15 @@ bool Seat(void* playerOneController, void* playerTwoController) noexcept
     void* trigger = ReadPointer(playerOneController, kTrigger);
     void* manager = ReadPointer(g_partyManager, 0);
     void* aerith  = nullptr;
+    // Player 2's own trigger (a copy of the placed one); player 1's only if none could be made, the old probe.
+    if (void* own = player_trigger::Ensure(playerOneController); own != nullptr)
+    {
+        trigger = own;
+    }
+    else
+    {
+        platform::Log(L"seat: player 2 borrows player 1's PlayerTrigger (encounters and prompts will follow player 2's member)");
+    }
     if (trigger == nullptr || ReadPointer(playerOneController, kTriggerOverlap) == nullptr || manager == nullptr ||
         !platform::CallGuarded(g_getPlayerActor, aerith, manager, std::uint8_t{0}, facts::kAerithType, false) ||
         aerith == nullptr || aerith == ReadPointer(playerOneController, kLeader))
@@ -125,12 +139,14 @@ bool Unseat(void* playerOneController, void* playerTwoController) noexcept
     }
     g_seated = false;
     scopes::BindMember(1, nullptr, 9);
-    // The shared trigger rode on Aerith: re-seating player 1's own leader through the same funnel puts it back.
+    // With a borrowed trigger (the old probe) player 1's trigger rode on Aerith: re-seating player 1's own leader
+    // through the same funnel puts it back. Player 2's own trigger needs nothing: player 1's never moved.
+    const bool borrowed = !player_trigger::Owns(ReadPointer(playerTwoController, kTrigger));
     void*      leaderOne = ReadPointer(playerOneController, kLeader);
-    const bool reseated  = leaderOne != nullptr &&
+    const bool reseated  = borrowed && leaderOne != nullptr &&
                            platform::CallGuarded(g_switchLeader, playerOneController, leaderOne, false, true);
-    platform::Log(L"seat probe: Aerith given back to her AI{}; player 1's leader {}", called ? L"" : L" (the call raised after releasing her)",
-                  reseated ? L"re-seated (trigger back on it)" : L"NOT re-seated");
+    platform::Log(L"seat: Aerith given back to her AI{}; player 1's leader {}", called ? L"" : L" (the call raised after releasing her)",
+                  borrowed ? (reseated ? L"re-seated (its trigger back on it)" : L"NOT re-seated") : L"untouched (player 2 has its own trigger)");
     return true;
 }
 
@@ -139,6 +155,7 @@ void Forget() noexcept
     g_seatedController = nullptr;
     g_seated           = false;
     scopes::BindMember(1, nullptr, 9);
+    player_trigger::Destroy();
 }
 
 bool Seated() noexcept

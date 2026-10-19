@@ -35,6 +35,9 @@ struct Snapshot
 /// The last values Tick read.
 Snapshot Current() noexcept;
 
+/// The world the game mode names (AEndGameMode::GetWorld), or null. Game thread.
+void* World() noexcept;
+
 /// The state's console word: none, boot, title, loading, play, pause, menu, leaving, chapter-start, other.
 const wchar_t* StateName(std::uint8_t state) noexcept;
 

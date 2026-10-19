@@ -161,4 +161,20 @@ void Tick() noexcept
     g_logged = true;
 }
 
+void* World() noexcept
+{
+    void*       gameMode = nullptr;
+    void**      vtable   = nullptr;
+    void* (*getWorld)(void*) = nullptr;
+    void*       world    = nullptr;
+    if (g_gameMode == nullptr || !platform::CopyGuarded(&gameMode, g_gameMode, sizeof(gameMode)) || gameMode == nullptr ||
+        !platform::CopyGuarded(&vtable, gameMode, sizeof(vtable)) ||
+        !platform::CopyGuarded(&getWorld, reinterpret_cast<std::uint8_t*>(vtable) + facts::kGameModeGetWorldSlot, sizeof(getWorld)) ||
+        !platform::CallGuarded(getWorld, world, gameMode))
+    {
+        return nullptr;
+    }
+    return world;
+}
+
 }  // namespace lss::players::game_state
