@@ -7,9 +7,8 @@ Two-player split-screen for FINAL FANTASY VII REMAKE (Intergrade, UE 4.18), as a
 
 | Keys | What |
 |------|------|
-| Ctrl+F7 | Player 2 joins: own End player controller, camera manager and field camera (following Aerith) |
+| Ctrl+F7 | Player 2 joins: own End player controller, camera manager and field camera, and takes the member in the 2nd slot of the party order through the game's leader funnel (with its own copy of the PlayerTrigger); it follows that slot |
 | Ctrl+F8 | Player 2 leaves (also cancels a rejoin after a load) |
-| Ctrl+F9 | PROBE: player 2 takes Aerith through the game's leader funnel, or gives her back (with its own copy of the PlayerTrigger) |
 | Ctrl+F6 | Log every local player's controller, pawn, camera manager and camera actor, and each player's input, movement and camera call counts |
 
 ## The console
@@ -25,8 +24,8 @@ python ../tools/game.py status | launch | quit | relaunch --deploy --label v0.8.
 ```
 
 Every module registers its own commands (`src/control/registry.h`), so `help` on the running build is the list.
-Today: `join`, `leave`, `seat on|off`, `console <command>`, `report`, `quit`, `showflags <hex>`, `ao-origin on|off`,
-`bloom-origin on|off`, `distortion-apply on|off`, `pad-buttons on|off`, `menu-two on|off`, `targeting-two on|off`, `rates-two on|off`, `menu-two.leader`, `lock-camera-two.requests`, `lock-camera-two.restore`, `camera-override-two`, `enemy-leader`, `sequence-camera-two`, `log-level error|warning|info|debug|trace` (Debug by default; Trace holds the per-frame lines), `hud.dump roots|shown|all [<text>]`, `hud-band on|off`, `hud-image on|off`, `hud-targets on|off`, `hud-targets-log <renders>`; readings `p2.in`, `p2.state` (out|in|playing),
+Today: `join`, `leave`, `console <command>`, `report`, `quit`, `showflags <hex>`, `ao-origin on|off`,
+`bloom-origin on|off`, `distortion-apply on|off`, `pad-buttons on|off`, `menu-two on|off`, `targeting-two on|off`, `rates-two on|off`, `menu-two.leader`, `menu-two.route`, `lock-camera-two.requests`, `lock-camera-two.restore`, `camera-override-two`, `enemy-leader`, `sequence-camera-two`, `log-level error|warning|info|debug|trace` (Debug by default; Trace holds the per-frame lines), `hud.dump roots|shown|all [<text>]`, `hud-band on|off`, `hud-image on|off`, `hud-targets on|off`, `hud-targets-log <renders>`; readings `p2.in`, `p2.member`, `p2.state` (out|in|playing),
 `game.state` (title|loading|play|pause|menu|leaving|…), `game.paused`, `game.menu-kind`, `game.location`,
 `field.step` (13 = steady field), `field.running`, `hud.overlay`, `hud.layout`, `pad.events`, `menu-two.state`, `targeting-two.runs`, `targeting-two.lock`, `tick`, `version`. The language's own verbs (`src/control/script.h`): `get <name>`, `status`, `help [<name>]`,
 `wait <ticks>`, `wait-until <name> <op> <value> [<ticks>]`, `hold <player> stick <lx> <ly> <rx> <ry> <ticks>`,
@@ -97,7 +96,8 @@ src/
                           session rejoins once the field is back (two call redirects)
     own_controller        the End camera manager's BeginPlay, made safe for a second player
     player_two_camera     player 2's field camera operator and the per-player scopes
-    party_seat            PROBE: player 2 possesses Aerith
+    party_member          which deployed member a seat plays: the row after player 1's in the party order
+    party_seat            a seat's controller takes its member through the game's leader funnel
     split_render          the single-player effects in each half (the engine's show-flag force mask)
   render/
     ao_origin             the AO downsample's view-rect origin (three call redirects)

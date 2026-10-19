@@ -1,21 +1,29 @@
 #pragma once
 
-// Player 2 joining and leaving through UE's own local-player path, on the game thread.
+// Player 2 joining, taking its party member, and leaving, through UE's and the game's own paths, on the game thread.
 //
-// Join: UGameplayStatics::CreatePlayer(ControllerId 1, spawn a controller) inside own_controller's join
-// scope, so player 2 gets a real End player controller and camera manager of its own. The engine then lays
-// out the split screen by itself. Each half is filled (the game's main cameras ask for 16:9) with the stock
-// setter UCameraComponent::SetConstraintAspectRatio.
-// Leave: the actors player 2's controller and camera manager spawned, which the engine never destroys, are
-// destroyed first, then UGameInstance::RemoveLocalPlayer. The engine's own list is the evidence of both.
-//
-// Player 2 comes out without a pawn: seating a party member is the next stage (Documentation/plan/topics/session.md).
+// Join: UGameplayStatics::CreatePlayer(ControllerId 1, spawn a controller) inside own_controller's join scope, so
+// player 2 gets a real End player controller and camera manager of its own. The engine then lays out the split
+// screen by itself. Each half is filled (the game's main cameras ask for 16:9) with the stock setter
+// UCameraComponent::SetConstraintAspectRatio.
+// Member: at once, and again each tick while it has none, player 2 takes the member in the 2nd slot of the game's
+// party order (players/party_member.h) through the game's leader funnel (players/party_seat.h), and its own field
+// camera operator follows that member (players/player_two_camera.h). While the slot's member is not free player 2
+// stays in and waits, logging why once. It follows the slot: a reorder, a story party change or the game making
+// its member player 1's leader gives the member back (through the same funnel) and chooses again; a member
+// destroyed under it (a retry rebuilds the party without a field exit) is let go of without a call.
+// Leave: the member given back first, then the actors player 2's controller and camera manager spawned, which the
+// engine never destroys, are destroyed, then UGameInstance::RemoveLocalPlayer. The engine's own list is the
+// evidence of both.
 // World changes: a retry, load, jump or return to the title takes player 2 out first (players/field_exit.h, with a
-// field-step check in Tick as the fallback), and player 2 joins again, holding Aerith again if it did, once the
-// field has been steady for a moment with player 1 on a character.
+// field-step check in Tick as the fallback), and player 2 joins again, taking its member again, once the field has
+// been steady for a moment with player 1 on a character.
+//
+// One further player today (seat 1); the member modules are seat-indexed for a third.
 
 #include <chrono>
 #include <cstdint>
+#include <string>
 
 namespace RC::Unreal {
 class UObject;
@@ -39,10 +47,9 @@ public:
     /// Player 2 leaves (the player's intent); also cancels a rejoin after a world change.
     void Leave() noexcept;
     /// Once per engine tick, after players/game_state's: lets go of a player 2 the engine no longer lists, takes
-    /// player 2 out at a field exit the request did not report, and rejoins player 2 after a world change.
+    /// player 2 out at a field exit the request did not report, rejoins player 2 after a world change, takes the
+    /// member once free, and follows the party order.
     void Tick() noexcept;
-    /// PROBE (Ctrl+F9): player 2 takes Aerith through the game's leader funnel, or gives her back.
-    void ToggleSeat() noexcept;
     /// Logs every local player: controller, camera manager, main camera actor, pawn, view shape.
     void Report() const noexcept;
     /// Report, plus each player's input/movement/camera call counts since the last one.
@@ -51,7 +58,10 @@ public:
     bool HasPlayerTwo() const noexcept { return playerTwo_ != nullptr; }
     /// The game instance's local player `index` (0 or 1), or null. Game thread.
     RC::Unreal::UObject* LocalPlayer(int index) const noexcept;
+    /// Player 2 holds its member.
     bool Seated() const noexcept;
+    /// The member player 2 plays (type and row), or why it waits for one; for the `p2.member` reading.
+    std::wstring MemberReading() const noexcept;
     /// Player 2 was taken out by a world change and joins again once the field is back.
     bool RejoinPending() const noexcept { return rejoin_.pending; }
 
@@ -64,19 +74,26 @@ private:
     struct Rejoin
     {
         bool                                  pending  = false;
-        bool                                  reseat   = false;  // player 2 held Aerith when it was taken out
         bool                                  steady   = false;  // the field has been ready since `since`
         std::chrono::steady_clock::time_point since{};
         int                                   failures = 0;      // joins that did not add player 2
     };
 
     static void OnFieldExit(void* self, const wchar_t* caller) noexcept;
-    /// Leave's work. A world change cannot wait: it takes player 2 out even if the seat release failed.
+    /// Leave's work. A world change cannot wait: it takes player 2 out even if the member's release failed.
     bool TakeOut(bool worldChange) noexcept;
     void LeaveForWorldChange(const wchar_t* why) noexcept;
     void TryRejoin() noexcept;
     /// Player 2 is gone by the engine's hand: the mod's own records of it are dropped, nothing is touched.
     void Forget() noexcept;
+    /// Player 2 takes its slot's member if it is free now (the wait is logged once per reason).
+    void TrySeat() noexcept;
+    /// Player 2's member is no longer its to play: given back, and chosen again next tick.
+    void ReleaseMember(const wchar_t* why) noexcept;
+    /// The party order and the member's existence, checked while player 2 holds a member.
+    void FollowSlot() noexcept;
+    /// Player 2's field camera operator forgotten and destroyed (the member's release or the leave).
+    void DestroyOperator() noexcept;
 
     RC::Unreal::UObject* playerTwo_    = nullptr;  // ULocalPlayer
     RC::Unreal::UObject* gameInstance_ = nullptr;  // kept after a leave: the instance lives as long as the game
@@ -87,6 +104,10 @@ private:
     std::uintptr_t       removeLocalPlayer_ = 0;
     bool                 cameraInstalled_   = false;
     bool                 seatInstalled_     = false;
+    std::int32_t         memberWeak_[2]     = {-1, 0};  // the seated member, to notice it destroyed
+    std::uint32_t        waitLogged_        = 0;        // the wait last logged (type, reason, ordinal), 0 none
+    std::uint32_t        seatRetryAt_       = 0;        // the tick a refused seat is tried again
+    std::uint32_t        ticks_             = 0;
 };
 
 }  // namespace lss::players

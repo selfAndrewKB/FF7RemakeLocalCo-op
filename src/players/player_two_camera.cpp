@@ -33,7 +33,6 @@ using SpawnActorFn     = void* (*)(void* world, void* type, const void* transfor
 using GetWorldFn       = void* (*)(void* gameMode);
 using StaticClassFn    = void* (*)();
 using SetOwnerCharaFn  = void (*)(void* cameraOperator, void* character);
-using GetPlayerActorFn = void* (*)(void* partyManager, std::uint8_t variant, std::uint8_t type, bool alternate);
 using AllocateSerialFn = std::int32_t (*)(void* objectArray, std::int32_t index);
 using ActorVoidFn      = void (*)(void* self);
 using ActorFloatFn     = void (*)(void* self, float deltaSeconds);
@@ -54,7 +53,6 @@ std::uint8_t**   g_squareInput    = nullptr;
 SpawnActorFn     g_spawnActor     = nullptr;
 StaticClassFn    g_staticClass    = nullptr;
 SetOwnerCharaFn  g_setOwnerChara  = nullptr;
-GetPlayerActorFn g_getPlayerActor = nullptr;
 AllocateSerialFn g_allocateSerial = nullptr;
 
 platform::VTableEntry g_operatorBeginPlaySlot;
@@ -519,7 +517,7 @@ bool Install(const platform::GameImage& image) noexcept
         !Global(image, facts::kObjectArrayObjects, g_objects) || !Global(image, facts::kObjectArrayCount, g_objectCount) ||
         !Global(image, facts::kSquareInputOwnerGlobal, g_squareInput) || !array ||
         !FindInto(image, facts::kSpawnActor, g_spawnActor) || !FindInto(image, facts::kOperatorStaticClass, g_staticClass) ||
-        !FindInto(image, facts::kSetOwnerChara, g_setOwnerChara) || !FindInto(image, facts::kGetPlayerActor, g_getPlayerActor) ||
+        !FindInto(image, facts::kSetOwnerChara, g_setOwnerChara) ||
         !FindInto(image, facts::kAllocateSerialNumber, g_allocateSerial))
     {
         platform::Log(L"player 2's camera: an engine check failed; player 2 keeps a still camera");
@@ -611,7 +609,7 @@ void RemoveInputTick() noexcept
     }
 }
 
-bool Start(void* playerOneController, void* playerTwoController) noexcept
+bool Start(void* playerOneController, void* playerTwoController, void* member) noexcept
 {
     g_gameThread          = GetCurrentThreadId();
     g_noPlayerInputLogged = false;
@@ -627,11 +625,9 @@ bool Start(void* playerOneController, void* playerTwoController) noexcept
         platform::Log(L"player 2's camera: no field camera operator or party manager (not in the field?); still camera");
         return false;
     }
-    void* member = nullptr;
-    if (!platform::CallGuarded(g_getPlayerActor, member, manager, std::uint8_t{0}, facts::kAerithType, false) ||
-        member == nullptr)
+    if (member == nullptr)
     {
-        platform::Log(L"player 2's camera: Aerith is not loaded; still camera");
+        platform::Log(L"player 2's camera: no member to follow; still camera");
         return false;
     }
     void*      world    = nullptr;
@@ -705,7 +701,7 @@ bool Start(void* playerOneController, void* playerTwoController) noexcept
     void* ownerOne     = nullptr;
     const bool reowned = Read(static_cast<std::uint8_t*>(operatorOne) + facts::kOperatorOwnerChara, ownerOne) &&
                          ownerOne != nullptr && platform::CallGuarded(g_setOwnerChara, operatorOne, ownerOne);
-    platform::Log(L"player 2's camera: own operator spawned (index {}), following Aerith {}; player 1's operator {}",
+    platform::Log(L"player 2's camera: own operator spawned (index {}), following player 2's member {}; player 1's operator {}",
                   g_operatorTwo.index, owned ? L"yes" : L"NO (the owner call raised)", reowned ? L"re-applied" : L"NOT re-applied");
     return owned;
 }

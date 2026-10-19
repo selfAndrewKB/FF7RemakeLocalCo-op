@@ -266,18 +266,6 @@ bool FocusPathSet(int player) noexcept
     return count > 0;
 }
 
-bool TopLayerIsCommandMenu() noexcept
-{
-    const std::uintptr_t owner = Object(g_input);
-    std::uint8_t*        layers = nullptr;
-    std::int32_t         count  = 0;
-    std::int32_t         priority = 0;
-    return owner != 0 && Read(reinterpret_cast<const void*>(owner + facts::kFocusLayers), layers) &&
-           Read(reinterpret_cast<const void*>(owner + facts::kFocusLayers + 8), count) && layers != nullptr && count > 0 &&
-           Read(layers + static_cast<std::size_t>(count - 1) * facts::kFocusLayerBytes + facts::kFocusLayerPriority, priority) &&
-           priority == facts::kCommandMenuLayerPriority;
-}
-
 Scope::Scope(int player, unsigned which) noexcept : player_(player)
 {
     if (!ValidPlayer(player))

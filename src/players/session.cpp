@@ -19,6 +19,7 @@
 #include "players/field_exit.h"
 #include "players/game_state.h"
 #include "players/own_controller.h"
+#include "players/party_member.h"
 #include "players/party_seat.h"
 #include "players/player_two_camera.h"
 #include "battle/command_menu_two.h"
@@ -30,6 +31,7 @@
 #include <Unreal/Core/Containers/FString.hpp>
 
 #include <cstdint>
+#include <format>
 #include <new>
 #include <string>
 
@@ -48,6 +50,7 @@ using RC::Unreal::UObject;
 namespace UObjectGlobals = RC::Unreal::UObjectGlobals;
 
 constexpr std::int32_t kPlayerTwoControllerId = 1;
+constexpr int          kSeat                  = 1;  // player 2's seat (players/scopes.h, party_member.h)
 
 /// The field is back after a world change (RE-lifecycle-world.md §8): play state, the steady step, running. The
 /// entry's step 12 re-reconciles every non-leader controller, so a join before step 13 would be undone.
@@ -58,6 +61,10 @@ constexpr std::int32_t kStepSteady = 13;
 /// may fail before the rejoin is left to Ctrl+F7. Timed, not counted in ticks: loads tick uncapped.
 constexpr std::chrono::seconds kRejoinSteady{2};
 constexpr int                  kRejoinFailures = 3;
+/// A refused seat (the funnel did not take the member) is tried again after this many ticks; the party order is
+/// checked under a held member every this many ticks (cheap guarded reads).
+constexpr std::uint32_t kSeatRetryTicks  = 60;
+constexpr std::uint32_t kFollowSlotTicks = 10;
 
 /// UGameplayStatics::CreatePlayer's parameter frame, checked against the UFunction's own size before use.
 struct CreatePlayerParams
@@ -210,7 +217,7 @@ bool Session::Install(const platform::GameImage& image) noexcept
     }
     removeLocalPlayer_ = *remove;
     cameraInstalled_   = player_two_camera::Install(image);  // optional: without it player 2's camera stays still
-    seatInstalled_     = party_seat::Install(image);         // optional probe (Ctrl+F9)
+    seatInstalled_     = party_seat::Install(image) && party_member::Install(image);  // optional: without it player 2 has no member
     split_render::Install(image);                            // optional: without it the halves keep the split rule's reduced effects
     fieldExitInstalled_ = field_exit::Install(image, &Session::OnFieldExit, this);  // without it, Tick's step check alone
     return true;
@@ -242,15 +249,14 @@ void Session::OnFieldExit(void* self, const wchar_t* caller) noexcept
 
 void Session::LeaveForWorldChange(const wchar_t* why) noexcept
 {
-    const bool seated = Seated();
-    platform::Log(L"world change ({}): player 2 leaves first{}", why, seated ? L" and gives Aerith back" : L"");
+    platform::Log(L"world change ({}): player 2 leaves first{}", why, Seated() ? L" and gives its member back" : L"");
     if (!TakeOut(true))
     {
         worldChangeStuck_ = true;
         platform::Log(L"world change: player 2 could NOT be taken out; the game tears the field down with player 2 in");
         return;
     }
-    rejoin_ = Rejoin{.pending = true, .reseat = seated};
+    rejoin_ = Rejoin{.pending = true};
     platform::Log(L"world change: player 2 joins again once the field is back (Ctrl+F8 cancels)");
 }
 
@@ -258,6 +264,7 @@ void Session::Tick() noexcept
 try
 {
     gameThread_                     = GetCurrentThreadId();
+    ++ticks_;
     const game_state::Snapshot game = game_state::Current();
     const bool steady = game.valid && game.hasRoot && game.running && game.step == kStepSteady;
     if (steady)
@@ -282,6 +289,19 @@ try
         platform::Log(L"field exit not seen at the request (state {}, step {}, running {})", game_state::StateName(game.state),
                       game.step, game.running ? L"on" : L"off");
         LeaveForWorldChange(L"the field-step check");
+        return;
+    }
+    if (!seatInstalled_ || !steady || game.state != kStatePlay)
+    {
+        return;
+    }
+    if (!Seated())
+    {
+        TrySeat();
+    }
+    else if (ticks_ % kFollowSlotTicks == 0)
+    {
+        FollowSlot();
     }
 }
 catch (...)
@@ -330,13 +350,8 @@ void Session::TryRejoin() noexcept
         }
         return;
     }
-    const bool reseat = rejoin_.reseat;
-    rejoin_           = Rejoin{};
-    platform::Log(L"rejoin: player 2 is back{}", reseat ? L"; taking Aerith again" : L"");
-    if (reseat && seatInstalled_ && !Seated())
-    {
-        ToggleSeat();
-    }
+    rejoin_ = Rejoin{};
+    platform::Log(L"rejoin: player 2 is back");
 }
 
 void Session::Forget() noexcept
@@ -353,8 +368,11 @@ void Session::Forget() noexcept
     }
     if (seatInstalled_)
     {
-        party_seat::Forget();
+        party_seat::Forget(kSeat);
     }
+    memberWeak_[0] = -1;
+    memberWeak_[1] = 0;
+    waitLogged_    = 0;
 }
 
 void Session::Join() noexcept
@@ -433,15 +451,17 @@ try
                   filledTwo ? L"yes" : L"NO");
     split_render::OnJoin();
     pad_buttons::SetPlayers(2);  // from here pad 2's buttons are player 2's
-    scopes::BindController(1, playerTwoController);
-    if (cameraInstalled_)
+    scopes::BindController(kSeat, playerTwoController);
+    waitLogged_  = 0;
+    seatRetryAt_ = 0;
+    if (seatInstalled_)
     {
-        if (!player_two_camera::Start(playerOneController, playerTwoController))
-        {
-            platform::Log(L"join: player 2 keeps a still camera; each player's sticks are still their own pad's");
-        }
+        TrySeat();  // its member at once when free; else each tick (Tick)
     }
-    Report();
+    else
+    {
+        Report();
+    }
 }
 catch (...)
 {
@@ -483,22 +503,20 @@ try
     // controller and member still exist.
     battle::targeting_two::OnLeave();
     battle::command_menu_two::OnLeave();
-    // Player 2's character goes back to its AI first, through the game's leader funnel.
-    if (seatInstalled_ && !party_seat::Unseat(Field((*players)[0], facts::kLocalPlayerController), controller))
+    // Player 2's member goes back to its AI first, through the game's leader funnel.
+    if (seatInstalled_ && !party_seat::Unseat(kSeat, Field((*players)[0], facts::kLocalPlayerController), controller))
     {
         if (!worldChange)
         {
-            platform::Log(L"leave refused: player 2's controller still holds Aerith; press Ctrl+F8 again to retry");
+            platform::Log(L"leave refused: player 2's controller still holds its member; press Ctrl+F8 again to retry");
             return false;
         }
-        // The game destroys and rebuilds the party next; removing the controller unpossesses her on the way.
-        platform::Log(L"leave: player 2's controller still holds Aerith; the world change takes player 2 out regardless");
+        // The game destroys and rebuilds the party next; removing the controller unpossesses the member on the way.
+        platform::Log(L"leave: player 2's controller still holds its member; the world change takes player 2 out regardless");
     }
     // Player 2's field camera operator next: its cleanup unbinds the delegates it bound on player 2's
     // controller, which must still exist then.
-    UObject* operatorTwo = cameraInstalled_ ? static_cast<UObject*>(player_two_camera::Take()) : nullptr;
-    const bool operatorGone = operatorTwo != nullptr && CallNoParams(operatorTwo, STR("/Script/Engine.Actor:K2_DestroyActor"));
-    platform::Log(L"leave: player 2's camera operator {}", operatorTwo == nullptr ? L"was not running" : operatorGone ? L"destroyed" : L"NOT DESTROYED");
+    DestroyOperator();
 
     const void* cameraClass = ClassOf(cameraActor);
     const void* talkClass   = ClassOf(battleTalk);
@@ -517,9 +535,11 @@ try
     pad_buttons::SetPlayers(1);
     if (seatInstalled_)
     {
-        party_seat::Forget();  // a later player 2 is a new controller, set up afresh
+        party_seat::Forget(kSeat);  // a later player 2 is a new controller, set up afresh
     }
-    scopes::Unbind(1);
+    memberWeak_[0] = -1;
+    memberWeak_[1] = 0;
+    scopes::Unbind(kSeat);
     // Research says nothing destroys these two with their owners; a changed class pointer would mean the
     // memory was reused, and then they are left alone.
     const bool cameraGone = cameraClass != nullptr && ClassOf(cameraActor) == cameraClass &&
@@ -537,30 +557,118 @@ catch (...)
     return playerTwo_ == nullptr;
 }
 
-void Session::ToggleSeat() noexcept
+void Session::TrySeat() noexcept
 try
 {
     auto* players = LocalPlayers(gameInstance_);
-    if (playerTwo_ == nullptr || !seatInstalled_ || players == nullptr || !Contains(*players, playerTwo_))
+    if (playerTwo_ == nullptr || !seatInstalled_ || players == nullptr || !Contains(*players, playerTwo_) || ticks_ < seatRetryAt_)
     {
-        platform::Log(L"seat probe: player 2 is not in (or the probe did not install)");
         return;
     }
     UObject* playerOne = Field((*players)[0], facts::kLocalPlayerController);
     UObject* playerTwo = Field(playerTwo_, facts::kLocalPlayerController);
-    if (party_seat::Seated())
+    const party_member::Choice choice = party_member::Choose(kSeat, playerOne, playerTwo, false);
+    if (choice.member == nullptr)
     {
-        party_seat::Unseat(playerOne, playerTwo);
+        const std::uint32_t key = 1u | static_cast<std::uint32_t>(choice.type) << 8 | static_cast<std::uint32_t>(choice.wait) << 16 |
+                                  static_cast<std::uint32_t>(choice.ordinal + 1) << 24;
+        if (key != waitLogged_)
+        {
+            waitLogged_ = key;
+            platform::Log(L"player 2 waits for its member (row {} of the party order, type {}): {}; the game's party order chooses it, "
+                          L"so a menu reorder or a party change ends the wait",
+                          choice.ordinal, choice.type, party_member::Describe(choice.wait));
+        }
+        return;
     }
-    else
+    waitLogged_ = 0;
+    if (!party_seat::Seat(kSeat, playerOne, playerTwo, choice.member, choice.type))
     {
-        party_seat::Seat(playerOne, playerTwo);
+        seatRetryAt_ = ticks_ + kSeatRetryTicks;  // the refusal is logged by the seat; tried again later
+        return;
+    }
+    if (!player_two_camera::WeakPairOf(choice.member, memberWeak_))
+    {
+        memberWeak_[0] = -1;
+        memberWeak_[1] = 0;
+    }
+    platform::Log(L"player 2 plays member type {} (row {} of the party order)", choice.type, choice.ordinal);
+    if (cameraInstalled_ && !player_two_camera::Start(playerOne, playerTwo, choice.member))
+    {
+        platform::Log(L"player 2 keeps a still camera; each player's sticks are still their own pad's");
     }
     Report();
 }
 catch (...)
 {
-    platform::Log(L"seat probe: an engine lookup raised an exception");
+    platform::Log(L"seat: an engine lookup raised an exception");
+}
+
+void Session::DestroyOperator() noexcept
+{
+    UObject*   operatorTwo  = cameraInstalled_ ? static_cast<UObject*>(player_two_camera::Take()) : nullptr;
+    const bool operatorGone = operatorTwo != nullptr && CallNoParams(operatorTwo, STR("/Script/Engine.Actor:K2_DestroyActor"));
+    platform::Log(L"player 2's camera operator {}", operatorTwo == nullptr ? L"was not running" : operatorGone ? L"destroyed" : L"NOT DESTROYED");
+}
+
+void Session::ReleaseMember(const wchar_t* why) noexcept
+try
+{
+    auto* players = LocalPlayers(gameInstance_);
+    if (playerTwo_ == nullptr || players == nullptr || !Contains(*players, playerTwo_))
+    {
+        return;
+    }
+    platform::Log(L"player 2's member (type {}) is {}: given back, to choose again from the party order",
+                  party_seat::MemberType(kSeat), why);
+    // Player 2's lock and target end, and its menu lets go of its focus layers inside its own context, while its
+    // member still exists; the menu is set up again for the next member by its own tick.
+    battle::targeting_two::OnLeave();
+    battle::command_menu_two::OnLeave();
+    DestroyOperator();
+    party_seat::Unseat(kSeat, Field((*players)[0], facts::kLocalPlayerController), Field(playerTwo_, facts::kLocalPlayerController));
+    memberWeak_[0] = -1;
+    memberWeak_[1] = 0;
+}
+catch (...)
+{
+    platform::Log(L"release: an engine lookup raised an exception");
+}
+
+void Session::FollowSlot() noexcept
+try
+{
+    void* member = party_seat::Member(kSeat);
+    if (member == nullptr)
+    {
+        return;
+    }
+    // Destroyed under player 2 (a retry rebuilds the party without a field exit): nothing is called on it.
+    if (memberWeak_[1] != 0 && player_two_camera::ObjectOf(memberWeak_) != member)
+    {
+        platform::Log(L"player 2's member was destroyed under it (the party rebuilt without a field exit); player 2 lets go and chooses again");
+        battle::targeting_two::OnLeave();
+        battle::command_menu_two::OnLeave();
+        DestroyOperator();
+        party_seat::Forget(kSeat);
+        memberWeak_[0] = -1;
+        memberWeak_[1] = 0;
+        return;
+    }
+    auto* players = LocalPlayers(gameInstance_);
+    if (players == nullptr || players->Num() < 1)
+    {
+        return;
+    }
+    if (const wchar_t* why = party_member::WhyNotPlayable(kSeat, member, party_seat::MemberType(kSeat),
+                                                         Field((*players)[0], facts::kLocalPlayerController)))
+    {
+        ReleaseMember(why);
+    }
+}
+catch (...)
+{
+    platform::Log(L"follow: an engine lookup raised an exception");
 }
 
 void Session::Report() const noexcept
@@ -610,7 +718,32 @@ catch (...)
 
 bool Session::Seated() const noexcept
 {
-    return seatInstalled_ && party_seat::Seated();
+    return seatInstalled_ && party_seat::Seated(kSeat);
+}
+
+std::wstring Session::MemberReading() const noexcept
+try
+{
+    if (playerTwo_ == nullptr)
+    {
+        return L"out";
+    }
+    if (Seated())
+    {
+        return std::format(L"playing type {}", party_seat::MemberType(kSeat));
+    }
+    auto* players = LocalPlayers(gameInstance_);
+    if (!seatInstalled_ || players == nullptr || players->Num() < 2)
+    {
+        return L"waiting (no seat)";
+    }
+    const party_member::Choice choice = party_member::Choose(kSeat, Field((*players)[0], facts::kLocalPlayerController),
+                                                             Field(playerTwo_, facts::kLocalPlayerController), false);
+    return std::format(L"waiting: row {} type {}: {}", choice.ordinal, choice.type, party_member::Describe(choice.wait));
+}
+catch (...)
+{
+    return L"unread";
 }
 
 bool Session::Console(const wchar_t* command) noexcept

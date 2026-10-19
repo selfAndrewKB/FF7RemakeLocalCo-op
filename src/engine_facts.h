@@ -94,7 +94,6 @@ inline constexpr std::uint32_t  kOperatorOwnerChara   = 0x5D0;        // AEndFie
 inline constexpr std::uint32_t  kOperatorObjectFlags  = 0x48;         // the game's spawn flags for the operator
 inline constexpr std::uint32_t  kSpawnParamsTemplate  = 0x08;         // FActorSpawnParameters::Template (RE-player-trigger.md §4.2)
 inline constexpr std::uint32_t  kSpawnParamsObjectFlags = 0x2C;       // FActorSpawnParameters::ObjectFlags
-inline constexpr std::uint8_t   kAerithType           = 3;            // EPlayerType
 
 inline constexpr std::uintptr_t kFieldCameraOperatorVTable = 0x144BB5D78;
 inline constexpr std::uintptr_t kSquareInputOwnerGlobal    = 0x1459CA980;  // SquareInput owner*
@@ -534,9 +533,7 @@ inline constexpr std::uint32_t kFocusPath             = 0x08;   // SquareInput o
 inline constexpr std::uint32_t kFocusPathBytes        = 0x20;
 inline constexpr std::uint32_t kFocusLayers           = 0x40;   // TArray of 40-byte layers (16 bytes)
 inline constexpr std::uint32_t kFocusLayersBytes      = 0x10;
-inline constexpr std::uint32_t kFocusLayerBytes       = 40;     // a layer: weak layer, weak saved focus (+0x10), priority (+0x20)
-inline constexpr std::uint32_t kFocusLayerPriority    = 0x20;
-inline constexpr std::int32_t  kCommandMenuLayerPriority = -1000;  // the command menu's own layer; modal menus are above
+// A layer is 40 bytes: weak layer, weak saved focus (+0x10), priority (+0x20); the command menu's own is -1000.
 inline constexpr std::uint32_t kFocusCause            = 0x6C;   // 1 byte
 inline constexpr std::uint32_t kFocusCaptureMap       = 0x98;   // TSet of 48-byte elements (80 bytes)
 inline constexpr std::uint32_t kFocusCaptureMapBytes  = 0x50;

@@ -37,10 +37,9 @@ void* ObjectOf(const std::int32_t (&pair)[2]) noexcept;
 /// (logged) if anything differs.
 bool Install(const platform::GameImage& image) noexcept;
 
-/// Game thread, after player 2's controller exists: spawns player 2's operator and points it at the
-/// player-2 member (Aerith in the test party). False (logged) if the field has no operator or the member
-/// is not loaded.
-bool Start(void* playerOneController, void* playerTwoController) noexcept;
+/// Game thread, once player 2's controller holds `member`: spawns player 2's operator and points it at the
+/// member. False (logged) if the field has no operator or the spawn failed.
+bool Start(void* playerOneController, void* playerTwoController, void* member) noexcept;
 
 /// Game thread, before player 2's controller is removed: forgets player 2's operator and returns it (or
 /// null if it is gone) for the caller to destroy.

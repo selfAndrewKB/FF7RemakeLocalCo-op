@@ -2,6 +2,7 @@
 
 #include "battle/command_menu_two.h"
 #include "battle/targeting_two.h"
+#include "control/registry.h"
 #include "engine_facts.h"
 #include "platform/call_redirect.h"
 #include "platform/guarded.h"
@@ -14,7 +15,9 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <format>
 #include <optional>
+#include <string>
 
 namespace lss::battle::command_menu_tick {
 
@@ -46,6 +49,13 @@ bool  g_placed    = false;
 bool  g_bufferLogged = false;
 std::uint32_t g_ticksTwo = 0;
 std::optional<players::scopes::Scope> g_eventScope;  // player 2's context around one of pad 2's key events
+/// Pad 2's key events: routed into player 2's context, or not (its menu not up, its path empty, its scope refused).
+struct Routing
+{
+    std::uint32_t routed = 0, notReady = 0, noPath = 0, notHeld = 0;
+    bool          lastRouted = true;  // a change is logged at Debug
+};
+Routing g_routing;
 
 template <class T>
 bool Read(const void* address, T& out) noexcept
@@ -133,21 +143,44 @@ std::int64_t SetSlot(std::uint8_t slot, float value)
     return reinterpret_cast<SetSlotFn>(g_slowTarget)(slot, value);
 }
 
-/// Pad 2's key events reach player 2's widgets inside player 2's context, once its menu is up and no modal layer
-/// sits above player 1's own menu.
+void NoteRouting(bool routed, const wchar_t* why) noexcept
+{
+    if (routed != g_routing.lastRouted)
+    {
+        g_routing.lastRouted = routed;
+        platform::LogDebug(L"command menu 2: pad 2's key events {} player 2's context ({})", routed ? L"reach" : L"do NOT reach", why);
+    }
+}
+
+/// Pad 2's key events reach player 2's widgets inside player 2's context, once its menu is up in that context.
 bool EnterEventContext(unsigned user) noexcept
 {
-    if (user != 1 || !g_enabled || g_eventScope.has_value() || !command_menu_two::Ready() ||
-        !players::scopes::FocusPathSet(kPlayer) || !players::scopes::TopLayerIsCommandMenu())
+    if (user != 1 || !g_enabled || g_eventScope.has_value())
     {
+        return false;
+    }
+    if (!command_menu_two::Ready())
+    {
+        ++g_routing.notReady;
+        NoteRouting(false, L"player 2's menu is not set up");
+        return false;
+    }
+    if (!players::scopes::FocusPathSet(kPlayer))
+    {
+        ++g_routing.noPath;
+        NoteRouting(false, L"player 2's focus path is empty");
         return false;
     }
     g_eventScope.emplace(kPlayer, players::scopes::Focus | players::scopes::UiSlot);
     if (!g_eventScope->Held())
     {
         g_eventScope.reset();
+        ++g_routing.notHeld;
+        NoteRouting(false, L"player 2's focus scope could not open");
         return false;
     }
+    ++g_routing.routed;
+    NoteRouting(true, L"its menu is up in its context");
     return true;
 }
 
@@ -185,6 +218,13 @@ bool Install(const platform::GameImage& image) noexcept
         return false;
     }
     players::pad_buttons::SetUiContext({&EnterEventContext, &LeaveEventContext});
+    control::Register({.name = L"menu-two.route", .shape = control::Shape::Text,
+                       .help = L"pad 2's key events routed into player 2's context, and those refused (menu not set up, "
+                               L"path empty, scope not held)",
+                       .get  = [] {
+                           return control::Value{std::format(L"routed {}; refused: not ready {}, no path {}, not held {}",
+                                                             g_routing.routed, g_routing.notReady, g_routing.noPath, g_routing.notHeld)};
+                       }});
     return true;
 }
 

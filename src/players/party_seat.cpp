@@ -17,11 +17,11 @@ namespace {
 
 using InitPartyLevelFn = void (*)(void* controller, void* trigger);
 using SwitchLeaderFn   = void (*)(void* controller, void* character, bool inputTriggered, bool force);
-using GetPlayerActorFn = void* (*)(void* partyManager, std::uint8_t variant, std::uint8_t type, bool alternate);
 
-constexpr std::uint32_t kTrigger       = 0x6E0;  // AEndPlayerController: the PlayerTrigger actor
+constexpr std::uint32_t kTrigger        = 0x6E0;  // AEndPlayerController: the PlayerTrigger actor
 constexpr std::uint32_t kTriggerOverlap = 0x6E8;  // its EndCapsuleOverlapComponent
-constexpr std::uint32_t kLeader        = 0x6F8;  // LeaderCharacter
+constexpr std::uint32_t kLeader         = 0x6F8;  // LeaderCharacter
+constexpr std::uint8_t  kTypeNone       = 9;
 
 constexpr std::array<std::uint8_t, 16> kInitPartyLevelEntry{
     0x48, 0x89, 0x5C, 0x24, 0x18, 0x55, 0x56, 0x57, 0x41, 0x54, 0x41, 0x55, 0x41, 0x56, 0x41, 0x57};
@@ -33,12 +33,20 @@ constexpr platform::FunctionFact kSwitchLeader{L"EndPlayerController::SwitchLead
 // Set once at install.
 InitPartyLevelFn g_initPartyLevel = nullptr;
 SwitchLeaderFn   g_switchLeader   = nullptr;
-GetPlayerActorFn g_getPlayerActor = nullptr;
-void**           g_partyManager   = nullptr;
 
-// Game thread.
-void* g_seatedController = nullptr;  // player 2's controller once InitPartyLevel ran on it
-bool  g_seated           = false;
+// Game thread, per seat.
+struct State
+{
+    void*        setUpController = nullptr;  // the controller InitPartyLevel ran on
+    void*        member          = nullptr;
+    std::uint8_t type            = kTypeNone;
+};
+std::array<State, scopes::kMaxPlayers> g_seats;
+
+bool ValidSeat(int seat) noexcept
+{
+    return seat >= 1 && seat < scopes::kMaxPlayers;
+}
 
 void* ReadPointer(const void* object, std::uint32_t offset) noexcept
 {
@@ -55,112 +63,125 @@ bool Install(const platform::GameImage& image) noexcept
 {
     const auto init   = platform::FindFunction(image, kInitPartyLevel);
     const auto change = platform::FindFunction(image, kSwitchLeader);
-    const auto find   = platform::FindFunction(image, facts::kGetPlayerActor);
-    const auto party  = image.Rebase(facts::kPartyManagerGlobal, sizeof(void*));
-    if (!init || !change || !find || !party)
+    if (!init || !change)
     {
         return false;
     }
     if (!player_trigger::Install(image))
     {
-        platform::Log(L"seat: player 2's own trigger cannot be made (an engine check failed); player 1's is borrowed");
+        platform::Log(L"seat: a further player's own trigger cannot be made (an engine check failed); player 1's is borrowed");
     }
     g_initPartyLevel = reinterpret_cast<InitPartyLevelFn>(*init);
     g_switchLeader   = reinterpret_cast<SwitchLeaderFn>(*change);
-    g_getPlayerActor = reinterpret_cast<GetPlayerActorFn>(*find);
-    g_partyManager   = reinterpret_cast<void**>(*party);
     return true;
 }
 
-bool Seat(void* playerOneController, void* playerTwoController) noexcept
+bool Seat(int seat, void* playerOneController, void* controller, void* member, std::uint8_t type) noexcept
 {
-    if (g_seated || playerOneController == nullptr || playerTwoController == nullptr)
+    if (!ValidSeat(seat) || g_seats[seat].member != nullptr || playerOneController == nullptr || controller == nullptr ||
+        member == nullptr)
     {
         return false;
     }
-    void* trigger = ReadPointer(playerOneController, kTrigger);
-    void* manager = ReadPointer(g_partyManager, 0);
-    void* aerith  = nullptr;
-    // Player 2's own trigger (a copy of the placed one); player 1's only if none could be made, the old probe.
+    State& state   = g_seats[seat];
+    void*  trigger = ReadPointer(playerOneController, kTrigger);
+    // The seat's own trigger (a copy of the placed one); player 1's only if none could be made.
     if (void* own = player_trigger::Ensure(playerOneController); own != nullptr)
     {
         trigger = own;
     }
     else
     {
-        platform::Log(L"seat: player 2 borrows player 1's PlayerTrigger (encounters and prompts will follow player 2's member)");
+        platform::Log(L"seat {}: borrows player 1's PlayerTrigger (encounters and prompts will follow this seat's member)", seat + 1);
     }
-    if (trigger == nullptr || ReadPointer(playerOneController, kTriggerOverlap) == nullptr || manager == nullptr ||
-        !platform::CallGuarded(g_getPlayerActor, aerith, manager, std::uint8_t{0}, facts::kAerithType, false) ||
-        aerith == nullptr || aerith == ReadPointer(playerOneController, kLeader))
+    if (trigger == nullptr || ReadPointer(playerOneController, kTriggerOverlap) == nullptr ||
+        member == ReadPointer(playerOneController, kLeader))
     {
-        platform::Log(L"seat probe: refused (player 1's trigger, the party manager or Aerith is missing, or she is player 1's leader)");
+        platform::Log(L"seat {}: refused (player 1's trigger or overlap component is missing, or the member is player 1's leader)", seat + 1);
         return false;
     }
     // The game's party setup for a controller, once per controller: it stores the trigger and its overlap
     // component and creates the controller's nav-area component.
-    if (g_seatedController != playerTwoController)
+    if (state.setUpController != controller)
     {
-        if (!platform::CallGuarded(g_initPartyLevel, playerTwoController, trigger) ||
-            ReadPointer(playerTwoController, kTriggerOverlap) == nullptr)
+        if (!platform::CallGuarded(g_initPartyLevel, controller, trigger) || ReadPointer(controller, kTriggerOverlap) == nullptr)
         {
-            platform::Log(L"seat probe: InitPartyLevel on player 2's controller failed or left no overlap component; not seating");
+            platform::Log(L"seat {}: InitPartyLevel on its controller failed or left no overlap component; not seating", seat + 1);
             return false;
         }
-        g_seatedController = playerTwoController;
+        state.setUpController = controller;
     }
-    if (!platform::CallGuarded(g_switchLeader, playerTwoController, aerith, false, false))
+    if (!platform::CallGuarded(g_switchLeader, controller, member, false, false))
     {
-        platform::Log(L"seat probe: SwitchLeaderInternal(player 2, Aerith) RAISED AN EXCEPTION");
+        platform::Log(L"seat {}: SwitchLeaderInternal(controller, member) RAISED AN EXCEPTION", seat + 1);
         return false;
     }
-    g_seated = ReadPointer(playerTwoController, kLeader) == aerith;
-    if (g_seated)
+    const bool seated = ReadPointer(controller, kLeader) == member;
+    if (seated)
     {
-        scopes::BindMember(1, aerith, facts::kAerithType);
+        state.member = member;
+        state.type   = type;
+        scopes::BindMember(seat, member, type);
     }
-    platform::Log(L"seat probe: player 2's controller {} Aerith (its leader field {})", g_seated ? L"now holds" : L"did NOT take",
-                  g_seated ? L"names her" : L"does not name her");
-    return g_seated;
+    platform::Log(L"seat {}: its controller {} member type {} (its leader field {})", seat + 1,
+                  seated ? L"now holds" : L"did NOT take", type, seated ? L"names it" : L"does not name it");
+    return seated;
 }
 
-bool Unseat(void* playerOneController, void* playerTwoController) noexcept
+bool Unseat(int seat, void* playerOneController, void* controller) noexcept
 {
-    if (!g_seated || playerTwoController == nullptr)
+    if (!ValidSeat(seat) || g_seats[seat].member == nullptr || controller == nullptr)
     {
         return true;
     }
-    const bool called   = platform::CallGuarded(g_switchLeader, playerTwoController, static_cast<void*>(nullptr), false, false);
-    const bool released = ReadPointer(playerTwoController, kLeader) == nullptr;
+    State&     state    = g_seats[seat];
+    const bool called   = platform::CallGuarded(g_switchLeader, controller, static_cast<void*>(nullptr), false, false);
+    const bool released = ReadPointer(controller, kLeader) == nullptr;
     if (!released)
     {
-        platform::Log(L"seat probe: player 2's controller still holds Aerith after the release{}", called ? L"" : L" (the call raised)");
+        platform::Log(L"seat {}: its controller still holds its member after the release{}", seat + 1, called ? L"" : L" (the call raised)");
         return false;
     }
-    g_seated = false;
-    scopes::BindMember(1, nullptr, 9);
-    // With a borrowed trigger (the old probe) player 1's trigger rode on Aerith: re-seating player 1's own leader
-    // through the same funnel puts it back. Player 2's own trigger needs nothing: player 1's never moved.
-    const bool borrowed = !player_trigger::Owns(ReadPointer(playerTwoController, kTrigger));
+    const std::uint8_t type = state.type;
+    state.member            = nullptr;
+    state.type              = kTypeNone;
+    scopes::BindMember(seat, nullptr, kTypeNone);
+    // With a borrowed trigger player 1's trigger rode on the member: re-seating player 1's own leader through the
+    // same funnel puts it back. The seat's own trigger needs nothing: player 1's never moved.
+    const bool borrowed  = !player_trigger::Owns(ReadPointer(controller, kTrigger));
     void*      leaderOne = ReadPointer(playerOneController, kLeader);
     const bool reseated  = borrowed && leaderOne != nullptr &&
                            platform::CallGuarded(g_switchLeader, playerOneController, leaderOne, false, true);
-    platform::Log(L"seat: Aerith given back to her AI{}; player 1's leader {}", called ? L"" : L" (the call raised after releasing her)",
-                  borrowed ? (reseated ? L"re-seated (its trigger back on it)" : L"NOT re-seated") : L"untouched (player 2 has its own trigger)");
+    platform::Log(L"seat {}: member type {} given back to its AI{}; player 1's leader {}", seat + 1, type,
+                  called ? L"" : L" (the call raised after releasing it)",
+                  borrowed ? (reseated ? L"re-seated (its trigger back on it)" : L"NOT re-seated") : L"untouched (the seat has its own trigger)");
     return true;
 }
 
-void Forget() noexcept
+void Forget(int seat) noexcept
 {
-    g_seatedController = nullptr;
-    g_seated           = false;
-    scopes::BindMember(1, nullptr, 9);
+    if (!ValidSeat(seat))
+    {
+        return;
+    }
+    g_seats[seat] = State{};
+    scopes::BindMember(seat, nullptr, kTypeNone);
     player_trigger::Destroy();
 }
 
-bool Seated() noexcept
+bool Seated(int seat) noexcept
 {
-    return g_seated;
+    return ValidSeat(seat) && g_seats[seat].member != nullptr;
+}
+
+void* Member(int seat) noexcept
+{
+    return ValidSeat(seat) ? g_seats[seat].member : nullptr;
+}
+
+std::uint8_t MemberType(int seat) noexcept
+{
+    return ValidSeat(seat) ? g_seats[seat].type : kTypeNone;
 }
 
 }  // namespace lss::players::party_seat

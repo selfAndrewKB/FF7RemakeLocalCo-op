@@ -4,9 +4,8 @@
 // on the game thread (the engine tick's pre-callback), so they never land inside a frame's drawing. A retry, load,
 // jump or return to the title takes player 2 out first and brings it back after (players/field_exit.h). While the screen
 // is split the HUD is laid out for each half's shape (hud/overlay_layout.h, hud/root_placement.h).
-//   Ctrl+F7  player 2 joins with a controller and camera manager of its own
+//   Ctrl+F7  player 2 joins with a controller and camera manager of its own, and takes its party member at once
 //   Ctrl+F8  player 2 leaves
-//   Ctrl+F9  PROBE: player 2 takes Aerith through the game's leader funnel, or gives her back
 //   Ctrl+F6  log every local player's controller, camera manager and camera actor
 // The same intents, and every module's switches, are commands on the console (control/remote.h), driven from
 // the host by tools/game.py.
@@ -62,7 +61,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.19.1-enemy-leader-scripts";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.20.0-auto-seat";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
@@ -126,22 +125,9 @@ void RegisterSessionCommands(lss::players::Session& session)
                   session.Leave();
                   return session.HasPlayerTwo() ? Outcome{false, L"player 2 is still in (see the log)"} : Outcome{};
               }});
-    Register({.name  = L"seat",
-              .shape = Shape::OnOff,
-              .help  = L"PROBE: player 2 holds Aerith through the game's leader funnel, or gives her back (Ctrl+F9)",
-              .set   = [&session](const Value& value) {
-                  const bool seated = std::get<bool>(value);
-                  if (!session.HasPlayerTwo())
-                  {
-                      return Outcome{false, L"player 2 is not in"};
-                  }
-                  if (session.Seated() != seated)
-                  {
-                      session.ToggleSeat();
-                  }
-                  return session.Seated() == seated ? Outcome{} : Outcome{false, L"the seat did not change (see the log)"};
-              },
-              .get = [&session] { return Value{session.Seated()}; }});
+    Register({.name = L"p2.member", .shape = Shape::Text,
+              .help = L"the member player 2 plays (its type and row of the party order), or why it waits for one",
+              .get  = [&session] { return Value{session.MemberReading()}; }});
     Register({.name = L"p2.in", .shape = Shape::OnOff, .help = L"player 2 is in",
               .get = [&session] { return Value{session.HasPlayerTwo()}; }});
     Register({.name = L"p2.rejoin", .shape = Shape::OnOff,
@@ -150,7 +136,7 @@ void RegisterSessionCommands(lss::players::Session& session)
     Register({.name  = L"p2.state",
               .shape = Shape::Word,
               .words = {L"out", L"in", L"playing"},
-              .help  = L"out, in (no member), or playing (holds a member)",
+              .help  = L"out, in (waiting for its party member), or playing (holds it)",
               .get   = [&session] {
                   return Value{std::wstring(!session.HasPlayerTwo() ? L"out" : session.Seated() ? L"playing" : L"in")};
               }});
@@ -283,7 +269,7 @@ public:
         const Hook::FCallbackOptions options{false, false, STR("LocalSplitScreen"), STR("player intent")};
         tickCallback_ = Hook::RegisterEngineTickPreCallback(
             [this](Hook::TCallbackIterationData<void>&, RC::Unreal::UEngine*, float, bool) { OnEngineTick(); }, options);
-        Log(L"ready: every engine check passed. Ctrl+F7 adds player 2, Ctrl+F8 removes player 2, Ctrl+F9 seats Aerith on player 2 (probe), Ctrl+F6 reports");
+        Log(L"ready: every engine check passed. Ctrl+F7 adds player 2 (it takes the 2nd party slot's member), Ctrl+F8 removes player 2, Ctrl+F6 reports");
     }
 
 private:
@@ -296,10 +282,6 @@ private:
         if (Pressed(VK_F8, leaveWasDown_))
         {
             session_.Leave();
-        }
-        if (Pressed(VK_F9, seatWasDown_))
-        {
-            session_.ToggleSeat();
         }
         if (Pressed(VK_F6, reportWasDown_))
         {
@@ -358,7 +340,6 @@ private:
     bool                  joinWasDown_   = false;
     bool                  leaveWasDown_  = false;
     bool                  reportWasDown_ = false;
-    bool                  seatWasDown_   = false;
     Hook::GlobalCallbackId tickCallback_ = Hook::ERROR_ID;
 };
 

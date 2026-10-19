@@ -60,8 +60,6 @@ void*        CommandController(int player) noexcept;
 std::uint8_t OtherLeaderType(int player) noexcept;
 /// This player's focus path holds at least one widget (their menu is up in their own context).
 bool FocusPathSet(int player) noexcept;
-/// The game's top focus layer (player 1's, outside a Focus scope) is the command menu's own: no modal layer above it.
-bool TopLayerIsCommandMenu() noexcept;
 
 class Scope
 {

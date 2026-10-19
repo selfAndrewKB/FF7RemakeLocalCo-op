@@ -14,8 +14,12 @@
 // The tick's one write of the world's battle-command speed slot (the menu's time slow) is redirected: player 1's
 // value is noted and player 2's tick writes the smaller of the two, so either menu slows the world. Pad 2's key
 // events reach player 2's widgets through player 2's own focus context, opened around each event once player
-// 2's menu is up and player 1's top focus layer is its own command menu (a modal layer above it, the pause menu,
-// takes every pad). Game thread only.
+// 2's menu is up in that context. Nothing of player 1's gates the route: player 2's context holds player 2's
+// widgets alone, and a modal UI (the pause menu, a tutorial) stops both controllers' polls inside the game's own
+// tick gates. (Until v0.20.0 the route also needed player 1's top focus layer to be its own command menu, so every
+// layer player 1 pushed above it, its Tactical Mode list or its target list, cut pad 2 off from player 2's menu:
+// the user's "player 2 could not dodge or open Tactical Mode" while player 1's leader lay KO'd with a list open.)
+// Game thread only.
 
 namespace lss::platform {
 class GameImage;

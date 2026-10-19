@@ -64,6 +64,7 @@ add_library(LocalSplitScreen SHARED
     src/players/game_state.cpp
     src/players/own_controller.cpp
     src/players/pad_buttons.cpp
+    src/players/party_member.cpp
     src/players/party_seat.cpp
     src/players/player_trigger.cpp
     src/players/camera_override_two.cpp
