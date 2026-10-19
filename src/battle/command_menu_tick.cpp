@@ -1,6 +1,7 @@
 #include "battle/command_menu_tick.h"
 
 #include "battle/command_menu_two.h"
+#include "battle/targeting_two.h"
 #include "engine_facts.h"
 #include "platform/call_redirect.h"
 #include "platform/guarded.h"
@@ -104,6 +105,9 @@ void TickControllers(void* controller, float deltaTime)
     players::scopes::Scope             scope(kPlayer, players::scopes::All);
     players::pad_buttons::ButtonScope  buttons(1);
     players::player_two_camera::StickScope stick(1, true);
+    // A command executed here aims at the displayed target and re-locks the camera on it while the member is the
+    // leader and locked on: player 2's target fields, not player 1's (RE-lock-camera-ledger.md row X4).
+    const targeting_two::FieldsScope   targets;
     if (!scope.Held())
     {
         return;
@@ -206,6 +210,11 @@ void Tick() noexcept
     {
         platform::Log(L"command menu 2: the controller tick's call could not be redirected; player 2's menu never ticks");
     }
+}
+
+bool EventContextActive() noexcept
+{
+    return g_eventScope.has_value();
 }
 
 int TickingPlayer() noexcept

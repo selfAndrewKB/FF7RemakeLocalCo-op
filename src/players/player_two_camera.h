@@ -32,8 +32,9 @@ bool WeakPairOf(void* object, std::int32_t (&pair)[2]) noexcept;
 /// The object a weak pair names, if it is still that object (same serial) and reachable; else nullptr.
 void* ObjectOf(const std::int32_t (&pair)[2]) noexcept;
 
-/// Checks every function, slot and global, and replaces the operator's BeginPlay and Tick slots and the
-/// End controller's ProcessPlayerInput and Tick_FieldMove slots. False (logged) if anything differs.
+/// Checks every function, slot and global, and replaces the operator's BeginPlay and Tick slots, the End
+/// controller's ProcessPlayerInput and Tick_FieldMove slots and the End camera manager's UpdateCamera slot. False
+/// (logged) if anything differs.
 bool Install(const platform::GameImage& image) noexcept;
 
 /// Game thread, after player 2's controller exists: spawns player 2's operator and points it at the

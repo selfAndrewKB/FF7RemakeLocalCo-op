@@ -31,5 +31,7 @@ void Tick() noexcept;
 
 /// Which player's controller is ticking now (0 none, 1 the game's, 2 player 2's).
 int TickingPlayer() noexcept;
+/// True while one of pad 2's key events runs in player 2's context.
+bool EventContextActive() noexcept;
 
 }  // namespace lss::battle::command_menu_tick

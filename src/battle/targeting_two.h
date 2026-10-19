@@ -19,6 +19,8 @@
 // (the battle HUD mode falling to 0) player 2's lock and target are ended with the game's own clear, on its copy.
 // Game thread only.
 
+#include <cstdint>
+
 namespace lss::platform {
 class GameImage;
 }
@@ -36,7 +38,11 @@ void Tick() noexcept;
 void OnLeave() noexcept;
 
 /// Player 2's target fields in the battle system while it lives (nothing outside a battle, or before player 2's
-/// first targeting run): for player 2's camera operator tick, which follows the lock-camera target.
+/// first targeting run): for every game call made for player 2 that reads or writes the lock, the displayed target
+/// or the target-list mode (the targeting run, the operator tick, the input and movement steps, the command
+/// controller's tick, the re-targets). If the call changed player 2's lock, player 1's goes back through the game's
+/// setter before the fields come out, so the game-wide Global.LockOn is player 1's again; player 2's lock and
+/// dummy-lock latch stay in its copy.
 class FieldsScope
 {
 public:
@@ -45,8 +51,12 @@ public:
     FieldsScope(const FieldsScope&)            = delete;
     FieldsScope& operator=(const FieldsScope&) = delete;
 
+    bool Held() const noexcept { return held_; }
+
 private:
-    bool held_ = false;
+    void*        system_  = nullptr;
+    std::uint8_t lockOne_ = 0;  // player 1's lock when the fields went in
+    bool         held_    = false;
 };
 
 }  // namespace lss::battle::targeting_two

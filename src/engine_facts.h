@@ -708,6 +708,52 @@ inline constexpr platform::FunctionFact kBattleCamFindActiveRotation{L"BattleCam
                                                                       kBattleCamFindActiveRotationEntry};
 inline constexpr std::uintptr_t kBattleCamFindActiveRotationLockCall = 0x140FDE18C;  // E8 EF 78 A3 FF; crosses a block
 
+// --- The lock camera's edges outside the operator's tick (RE-lock-camera-ledger.md) -------------------------
+// A character's camera-override delegate (a TFunction at `chara+0x20F0`; the handler pointer at +0). The game's one
+// handler resolves the root operator's NotifyOverride flavor (row X3).
+inline constexpr std::uint32_t kCharaCameraOverrideDelegate = 0x20F0;
+inline constexpr std::array<std::uint8_t, 16> kCharaCameraOverrideHandlerEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x08, 0x57, 0x48, 0x83, 0xEC, 0x40, 0xB1, 0x15, 0x4D, 0x8B, 0xD1, 0x4D};
+inline constexpr platform::FunctionFact kCharaCameraOverrideHandler{
+    L"Chara_CameraOverrideDelegate_ToGlobalFieldCamNotifyOverride", 0x141011C30, kCharaCameraOverrideHandlerEntry};
+
+/// AEndPlayerCameraManager::UpdateCamera (slot 198, void(this, float)): the leader occlusion fade and the slot
+/// blends inside read the party leader and the primary controller (row X7).
+inline constexpr std::array<std::uint8_t, 16> kCameraManagerUpdateCameraEntry{
+    0x4C, 0x8B, 0xDC, 0x55, 0x41, 0x57, 0x49, 0x8D, 0xAB, 0x78, 0xFE, 0xFF, 0xFF, 0x48, 0x81, 0xEC};
+inline constexpr platform::SlotFact kCameraManagerUpdateCamera{
+    L"AEndPlayerCameraManager::UpdateCamera (slot 198)", kEndCameraManagerVTable + 198 * 8,
+    {L"AEndPlayerCameraManager::UpdateCamera", 0x141687090, kCameraManagerUpdateCameraEntry}};
+
+// Lock re-targets from outside both players' contexts (row X9): an enemy's transform (the AI controller's
+// TransformCharacter exec) moves the displayed target to the new form; a script locks the leader on the nearest
+// enemy (the battle API's SetDisableTarget exec). Both call sites sit inside one 16-byte block.
+inline constexpr std::array<std::uint8_t, 16> kTransformRetargetEntry{
+    0x40, 0x55, 0x53, 0x56, 0x48, 0x8D, 0xAC, 0x24, 0x40, 0xEC, 0xFF, 0xFF, 0xB8, 0xC0, 0x14, 0x00};
+inline constexpr platform::FunctionFact kTransformRetarget{L"BattleAI_TransformCharacter_RetargetDisplayed390", 0x140940950,
+                                                           kTransformRetargetEntry};
+inline constexpr std::uintptr_t kTransformRetargetCall = 0x1417A2AF7;  // E8 54 DE 19 FF
+inline constexpr std::array<std::uint8_t, 16> kScriptLockNearestEntry{
+    0x48, 0x85, 0xC9, 0x0F, 0x84, 0xF9, 0x03, 0x00, 0x00, 0x57, 0x41, 0x56, 0x48, 0x81, 0xEC, 0xC8};
+inline constexpr platform::FunctionFact kScriptLockNearest{L"BattleTarget_ScriptLockNearest_FromExec", 0x14095C8B0,
+                                                           kScriptLockNearestEntry};
+inline constexpr std::uintptr_t kScriptLockNearestCall = 0x141873C31;  // E8 7A 8C 0E FF
+
+// The command menu's target-list end restores the lock and asks the Command camera flavor (row X5): one function in
+// two command-menu state vtables, a second variant in a third slot. Which context runs them for player 2 is read first.
+inline constexpr std::array<std::uint8_t, 16> kCmdMenuRestoreLockEntryA{
+    0x40, 0x53, 0x48, 0x83, 0xEC, 0x20, 0x48, 0x8B, 0xD9, 0xE8, 0x42, 0xE8, 0xF8, 0xFF, 0x84, 0xC0};
+inline constexpr std::array<std::uint8_t, 16> kCmdMenuRestoreLockEntryB{
+    0x40, 0x53, 0x48, 0x83, 0xEC, 0x20, 0x48, 0x8B, 0xD9, 0xE8, 0x52, 0xE6, 0xF8, 0xFF, 0x84, 0xC0};
+inline constexpr platform::FunctionFact kCmdMenuRestoreLockA{L"CmdMenuState_EndTargetList_RestoreLock_Cam13", 0x1414266A0,
+                                                             kCmdMenuRestoreLockEntryA};
+inline constexpr platform::FunctionFact kCmdMenuRestoreLockB{L"CmdMenuState_EndTargetList_RestoreLock_Cam13_B", 0x141426890,
+                                                             kCmdMenuRestoreLockEntryB};
+inline constexpr std::array<platform::SlotFact, 3> kCmdMenuRestoreLockSlots{{
+    {L"command-menu state vtable 0x144BF1D28: restore lock", 0x144BF1D28, kCmdMenuRestoreLockA},
+    {L"command-menu state vtable 0x144BF1E78: restore lock", 0x144BF1E78, kCmdMenuRestoreLockA},
+    {L"command-menu state vtable 0x144BF1E80: restore lock (B)", 0x144BF1E80, kCmdMenuRestoreLockB}}};
+
 // --- The battle switch (RE-battle-switch.md §4) -----------------------------------------------------------------
 // BattleSystem_CycleLeader walks the members from the leader; BattleSystem_CanSwitchLeader counts them. Each fetches
 // a candidate with PartyManager_GetPlayerActor(PM, 0, type, 0); a null answer is the game's own skip branch. The

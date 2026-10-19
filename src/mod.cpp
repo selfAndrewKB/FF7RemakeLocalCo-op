@@ -37,6 +37,7 @@
 #include "players/own_controller.h"
 #include "players/pad_buttons.h"
 #include "players/scopes.h"
+#include "players/camera_override_two.h"
 #include "players/player_two_camera.h"
 #include "players/game_state.h"
 #include "players/session.h"
@@ -59,7 +60,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.16.1-debug-default";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.17.0-lock-camera-ledger";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
@@ -230,6 +231,7 @@ public:
         if (installed_ && !session_.HasPlayerTwo())
         {
             lss::players::player_two_camera::RemoveInputTick();
+            lss::players::camera_override_two::Remove();
             lss::players::own_controller::Remove();
         }
     }

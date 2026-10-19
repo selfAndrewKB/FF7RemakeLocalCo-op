@@ -122,14 +122,11 @@ void Targeting(void* system, float deltaTime)
     {
         return;
     }
-    const std::uint8_t lockOne = Byte(system, facts::kBattleSysLock);
-    std::uint8_t       lockTwo  = 0;
-    std::uint8_t       latchTwo = 0;
     {
         players::scopes::Scope                 scope(kPlayer, kScopes);
         players::pad_buttons::ButtonScope      buttons(1);
         players::player_two_camera::StickScope stick(1, true);
-        platform::ByteScope                    fields(g_fields);
+        const FieldsScope                      fields;
         if (!scope.Held() || !fields.Held())
         {
             return;
@@ -137,20 +134,8 @@ void Targeting(void* system, float deltaTime)
         ++g_runs;
         g_preTick(system);
         reinterpret_cast<SysDtFn>(g_target)(system, deltaTime);
-        lockTwo  = Byte(system, facts::kBattleSysLock);
-        latchTwo = Byte(system, facts::kBattleSysDummyLatch);
-        if (lockTwo != lockOne)
-        {
-            // The game-wide Global.LockOn follows the lock's setter; player 1's lock goes back through it while
-            // player 2's fields are still in, so the parameter is player 1's again.
-            char ignored = 0;
-            platform::CallGuarded(g_setLock, ignored, system, lockOne, std::int32_t{0});
-        }
     }
-    // The setter above wrote player 1's lock (and the dummy-lock latch it derives) into the live bytes the copy took
-    // back: player 2's own go in again.
-    g_fields.Value(0)[facts::kBattleSysLock - facts::kBattleSysTargetFields]       = lockTwo;
-    g_fields.Value(0)[facts::kBattleSysDummyLatch - facts::kBattleSysTargetFields] = latchTwo;
+    const std::uint8_t lockTwo = g_fields.Value(0)[facts::kBattleSysLock - facts::kBattleSysTargetFields];
     if (lockTwo != g_lastLock)
     {
         g_lastLock = lockTwo;
@@ -252,14 +237,35 @@ void OnLeave() noexcept
     End(L"player 2 left");
 }
 
-FieldsScope::FieldsScope() noexcept : held_(g_fields.Defined() && System() == g_fieldsSystem && g_fields.Open()) {}
+FieldsScope::FieldsScope() noexcept : system_(System())
+{
+    if (g_fields.Defined() && system_ != nullptr && system_ == g_fieldsSystem)
+    {
+        lockOne_ = Byte(system_, facts::kBattleSysLock);
+        held_    = g_fields.Open();
+    }
+}
 
 FieldsScope::~FieldsScope()
 {
-    if (held_)
+    if (!held_)
     {
-        g_fields.Close();
+        return;
     }
+    const std::uint8_t lockTwo  = Byte(system_, facts::kBattleSysLock);
+    const std::uint8_t latchTwo = Byte(system_, facts::kBattleSysDummyLatch);
+    if (lockTwo != lockOne_)
+    {
+        // The game-wide Global.LockOn follows the lock's setter; player 1's lock goes back through it while player
+        // 2's fields are still in, so the parameter is player 1's again.
+        char ignored = 0;
+        platform::CallGuarded(g_setLock, ignored, system_, lockOne_, std::int32_t{0});
+    }
+    g_fields.Close();
+    // The setter wrote player 1's lock (and the dummy-lock latch it derives) into the live bytes the copy took back:
+    // player 2's own go in again.
+    g_fields.Value(0)[facts::kBattleSysLock - facts::kBattleSysTargetFields]       = lockTwo;
+    g_fields.Value(0)[facts::kBattleSysDummyLatch - facts::kBattleSysTargetFields] = latchTwo;
 }
 
 }  // namespace lss::battle::targeting_two

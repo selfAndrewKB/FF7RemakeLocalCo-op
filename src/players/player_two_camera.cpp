@@ -6,6 +6,7 @@
 #include "platform/log.h"
 #include "platform/verified_code.h"
 #include "platform/vtable_entry.h"
+#include "players/camera_override_two.h"
 #include "players/pad_buttons.h"
 #include "players/scopes.h"
 #include "battle/targeting_two.h"
@@ -59,10 +60,12 @@ platform::VTableEntry g_operatorBeginPlaySlot;
 platform::VTableEntry g_operatorTickSlot;
 platform::VTableEntry g_inputSlot;
 platform::VTableEntry g_moveSlot;
+platform::VTableEntry g_cameraUpdateSlot;
 ActorVoidFn           g_operatorBeginPlay = nullptr;
 ActorFloatFn          g_operatorTick      = nullptr;
 InputFn               g_processInput      = nullptr;
 ActorFloatFn          g_fieldMove         = nullptr;
+ActorFloatFn          g_cameraUpdate      = nullptr;
 
 // The game's input tick for the primary controller (RE-input-p2.md §1): its phase hook is reached through a
 // global function pointer the game sets at runtime, so the pointer is checked every engine tick.
@@ -92,6 +95,7 @@ struct CallCounts
     std::uint32_t input = 0;      // ProcessPlayerInput under the player's scopes
     std::uint32_t move  = 0;      // Tick_FieldMove under the player's scopes
     std::uint32_t operatorTick = 0;
+    std::uint32_t cameraUpdate = 0;  // the camera manager's UpdateCamera under the player's scopes
 };
 std::array<CallCounts, 2> g_counts;
 
@@ -353,6 +357,28 @@ void OperatorTick(void* self, float deltaSeconds)
     g_operatorTicking = 2;
     g_operatorTick(self, deltaSeconds);
     g_operatorTicking = 0;
+    // The owner's camera-override route follows the owner (the tick may have changed it: the LeaderChange flavor).
+    void* owner = nullptr;
+    camera_override_two::Route(Read(static_cast<std::uint8_t*>(self) + facts::kOperatorOwnerChara, owner) ? owner : nullptr);
+}
+
+/// AEndPlayerCameraManager::UpdateCamera: player 2's camera manager updates as the primary player's, with player
+/// 2's member as the leader (the occlusion fade toward the leader, the slot blends that write the primary
+/// controller's rotation; RE-lock-camera-ledger.md row X7).
+void UpdateCamera(void* self, float deltaSeconds)
+{
+    const Players players    = CurrentPlayers();
+    void*         managerTwo = nullptr;
+    if (players.two == nullptr ||
+        !Read(static_cast<std::uint8_t*>(players.two) + facts::kControllerCameraManager, managerTwo) || self != managerTwo)
+    {
+        g_cameraUpdate(self, deltaSeconds);
+        return;
+    }
+    ++g_counts[1].cameraUpdate;
+    const PrimaryScope  primary(players.two);
+    const scopes::Scope leader(1, scopes::Leader);
+    g_cameraUpdate(self, deltaSeconds);
 }
 
 /// AEndPlayerController::ProcessPlayerInput: each player's right stick reaches that player's operator.
@@ -384,6 +410,10 @@ void ProcessPlayerInput(void* self, float deltaSeconds, bool gamePaused)
     const OperatorScope            scope(g_operatorTwo);
     const StickScope               stick(1, true);
     const pad_buttons::ButtonScope buttons(1);
+    // The right stick is the lock's while the leader is locked on a target in range (the stick switches targets
+    // then; the camera does not turn): player 2's lock and leader, not player 1's (RE-lock-camera-ledger.md X1).
+    const scopes::Scope                      leader(1, scopes::Leader);
+    const battle::targeting_two::FieldsScope targets;
     g_processInput(self, deltaSeconds, gamePaused);
 }
 
@@ -410,6 +440,8 @@ void FieldMove(void* self, float deltaSeconds)
     const OperatorScope            scope(g_operatorTwo);  // no-op while player 2 has no operator
     const StickScope               stick(1, true);
     const pad_buttons::ButtonScope buttons(1);
+    // Locked-on movement faces the target (strafes) on player 2's lock, not player 1's (RE-lock-camera-ledger.md X2).
+    const battle::targeting_two::FieldsScope targets;
     g_fieldMove(self, deltaSeconds);
 }
 
@@ -492,7 +524,8 @@ bool Install(const platform::GameImage& image) noexcept
     const auto tick      = platform::FindFunction(image, facts::kOperatorTick.target);
     const auto input     = platform::FindFunction(image, facts::kProcessPlayerInput.target);
     const auto move      = platform::FindFunction(image, facts::kFieldMove.target);
-    if (!beginPlay || !tick || !input || !move)
+    const auto update    = platform::FindFunction(image, facts::kCameraManagerUpdateCamera.target);
+    if (!beginPlay || !tick || !input || !move || !update)
     {
         return false;
     }
@@ -500,23 +533,28 @@ bool Install(const platform::GameImage& image) noexcept
     g_operatorTick      = reinterpret_cast<ActorFloatFn>(*tick);
     g_processInput      = reinterpret_cast<InputFn>(*input);
     g_fieldMove         = reinterpret_cast<ActorFloatFn>(*move);
+    g_cameraUpdate      = reinterpret_cast<ActorFloatFn>(*update);
 
-    // All four or none: a partial set would split one player's state between two cameras.
+    // All five or none: a partial set would split one player's state between two cameras.
     const bool installed =
         platform::ReplaceSlot(image, facts::kOperatorBeginPlay, reinterpret_cast<std::uintptr_t>(&OperatorBeginPlay),
                               g_operatorBeginPlaySlot) &&
         platform::ReplaceSlot(image, facts::kOperatorTick, reinterpret_cast<std::uintptr_t>(&OperatorTick), g_operatorTickSlot) &&
         platform::ReplaceSlot(image, facts::kProcessPlayerInput, reinterpret_cast<std::uintptr_t>(&ProcessPlayerInput),
                               g_inputSlot) &&
-        platform::ReplaceSlot(image, facts::kFieldMove, reinterpret_cast<std::uintptr_t>(&FieldMove), g_moveSlot);
+        platform::ReplaceSlot(image, facts::kFieldMove, reinterpret_cast<std::uintptr_t>(&FieldMove), g_moveSlot) &&
+        platform::ReplaceSlot(image, facts::kCameraManagerUpdateCamera, reinterpret_cast<std::uintptr_t>(&UpdateCamera),
+                              g_cameraUpdateSlot);
     if (!installed)
     {
+        g_cameraUpdateSlot.Restore();
         g_moveSlot.Restore();
         g_inputSlot.Restore();
         g_operatorTickSlot.Restore();
         g_operatorBeginPlaySlot.Restore();
         return false;
     }
+    camera_override_two::Install(image);  // optional: without it player 2's attack cameras stay on player 1's camera
     // Optional: without it player 2's right stick does nothing, and everything else still works.
     if (!Global(image, facts::kWorldTickPhaseHookGlobal, g_phaseHookPointer) ||
         !FindInto(image, facts::kWorldTickPhaseHook, g_phaseHook) || !FindInto(image, facts::kTickPlayerInput, g_tickPlayerInput))
@@ -651,6 +689,10 @@ bool Start(void* playerOneController, void* playerTwoController) noexcept
         const OperatorScope scope(g_operatorTwo);
         owned = platform::CallGuarded(g_setOwnerChara, spawned, member);
     }
+    if (owned)
+    {
+        camera_override_two::Route(member);  // the game's SetOwnerChara just wrote the member's delegate
+    }
     // Moving the new operator off the leader cleared the leader's camera delegate that player 1's operator
     // had bound; the game's own re-apply puts it back.
     void* ownerOne     = nullptr;
@@ -663,6 +705,7 @@ bool Start(void* playerOneController, void* playerTwoController) noexcept
 
 void* Take() noexcept
 {
+    camera_override_two::Route(nullptr);  // the member's delegate holds the game's handler again
     void* operatorTwo = Resolve(g_operatorTwo);
     g_operatorTwo     = {};
     {
@@ -711,8 +754,8 @@ try
         float                sensitivity = 0.0f;
         const auto*          base        = static_cast<const std::uint8_t*>(controllers[i]);
         const bool           read = base != nullptr && Read(base + kControlRotation, rotation) && Read(base + kCameraSensitivity, sensitivity);
-        platform::Log(L"player {}: input calls {}, move calls {}, own operator ticks {}; control rotation {}; camera sensitivity {}",
-                      i + 1, g_counts[i].input, g_counts[i].move, g_counts[i].operatorTick,
+        platform::Log(L"player {}: input calls {}, move calls {}, own operator ticks {}, camera updates in scope {}; control rotation {}; camera sensitivity {}",
+                      i + 1, g_counts[i].input, g_counts[i].move, g_counts[i].operatorTick, g_counts[i].cameraUpdate,
                       read ? std::format(L"P{:.1f} Y{:.1f} R{:.1f}", rotation[0], rotation[1], rotation[2]) : std::wstring(L"unread"),
                       read ? std::format(L"{:.3f}", sensitivity) : std::wstring(L"unread"));
         g_counts[i] = {};
