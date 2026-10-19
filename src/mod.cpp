@@ -17,6 +17,7 @@
 
 #include "battle/command_menu_tick.h"
 #include "battle/command_menu_two.h"
+#include "battle/member_rates.h"
 #include "battle/party_switch.h"
 #include "battle/targeting_two.h"
 #include "control/registry.h"
@@ -57,7 +58,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.14.1-player-trigger";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.15.0-member-rates";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
@@ -213,6 +214,7 @@ public:
         lss::hud::image_entries::Remove();
         lss::hud::ui_targets::Remove();
         lss::players::pad_buttons::Remove();
+        lss::battle::member_rates::Remove();
         lss::battle::targeting_two::Remove();
         lss::battle::party_switch::Remove();
         lss::battle::command_menu_tick::Remove();
@@ -255,6 +257,7 @@ public:
             lss::battle::command_menu_tick::Install(*image);
             lss::battle::party_switch::Install(*image);
             lss::battle::targeting_two::Install(*image);
+            lss::battle::member_rates::Install(*image);
         }
         lss::players::game_state::Install(*image);  // readings only; fine without
         lss::hud::hud_probe::Install(*image);       // logging only; fine without
@@ -298,6 +301,7 @@ private:
         lss::battle::command_menu_tick::Tick();
         lss::battle::party_switch::Tick();
         lss::battle::targeting_two::Tick();
+        lss::battle::member_rates::Tick();
         TickHud();
         remote_.Tick();
     }

@@ -669,6 +669,32 @@ inline constexpr platform::FunctionFact kBattleClearLockAndTarget{L"BattleTarget
 inline constexpr std::uintptr_t kTargetingCallPaused = 0x1409B7009;  // inside a block
 inline constexpr std::uintptr_t kTargetingCallNormal = 0x1409B793F;  // crosses a block
 
+// --- The player's rates for player 2's member (RE-battle-member-two.md §2) -----------------------------------------
+// The eight character battle components share one vtable layout: +0x318 the passive ATB tick (its rate getter +0x310
+// and the guard coefficient test the leader inside it), +0x748 the "ability by the player" flag setter. The enemy's
+// stagger-gauge hit takes the attacker as an argument and has one call site.
+inline constexpr std::array<std::uintptr_t, 8> kBattleCompVTables{
+    0x144B65C48, 0x144B665C8, 0x144B66F48, 0x144B678C8, 0x144B68248, 0x144B68BC8, 0x144B69548, 0x144B69EC8};
+inline constexpr std::uint32_t kBattleCompPassiveAtbSlot = 0x318 / 8;
+inline constexpr std::uint32_t kBattleCompUcpcFlagSlot   = 0x748 / 8;
+inline constexpr std::array<std::uint8_t, 16> kBattleCompTickPassiveAtbEntry{
+    0x41, 0x56, 0x48, 0x83, 0xEC, 0x70, 0x80, 0xB9, 0x11, 0x06, 0x00, 0x00, 0x0D, 0x4C, 0x8B, 0xF1};
+inline constexpr std::array<std::uint8_t, 16> kBattleCompSetUcpcFlagEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x08, 0x57, 0x48, 0x83, 0xEC, 0x20, 0xF3, 0x0F, 0x10, 0x42, 0x2C, 0x48};
+inline constexpr std::array<std::uint8_t, 16> kBattleStaggerRewardsEntry{
+    0x48, 0x8B, 0xC4, 0x48, 0x89, 0x58, 0x20, 0x55, 0x56, 0x57, 0x41, 0x54, 0x41, 0x55, 0x41, 0x56};
+/// BattlePlayerComp_TickPassiveATB(comp, float dt): the passive ATB fill, at the AI-ally coefficient for a non-leader.
+inline constexpr platform::FunctionFact kBattleCompTickPassiveAtb{L"BattlePlayerComp_TickPassiveATB", 0x140986CF0,
+                                                                  kBattleCompTickPassiveAtbEntry};
+/// BattlePlayerComp_Vt748_SetUCPCAbilityFlag(comp, a2, a3): bit 29 of comp+0x168 for the leader's abilities.
+inline constexpr platform::FunctionFact kBattleCompSetUcpcFlag{L"BattlePlayerComp_Vt748_SetUCPCAbilityFlag", 0x1408A3950,
+                                                               kBattleCompSetUcpcFlagEntry};
+/// BattleBurst_OnHit_AddBP_StaggerRewards(burst, attackerChar, hit): the stagger gauge (half for a non-leader's
+/// normal attacks) and the stagger rewards (the leader's or an ability's).
+inline constexpr platform::FunctionFact kBattleStaggerRewards{L"BattleBurst_OnHit_AddBP_StaggerRewards", 0x140966EE0,
+                                                              kBattleStaggerRewardsEntry};
+inline constexpr std::uintptr_t kBattleStaggerRewardsCall = 0x140892DB8;  // its one call site
+
 // --- The battle switch (RE-battle-switch.md §4) -----------------------------------------------------------------
 // BattleSystem_CycleLeader walks the members from the leader; BattleSystem_CanSwitchLeader counts them. Each fetches
 // a candidate with PartyManager_GetPlayerActor(PM, 0, type, 0); a null answer is the game's own skip branch. The
