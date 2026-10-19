@@ -22,6 +22,7 @@
 #include "players/party_seat.h"
 #include "players/player_two_camera.h"
 #include "battle/command_menu_two.h"
+#include "battle/targeting_two.h"
 #include "players/pad_buttons.h"
 #include "players/scopes.h"
 #include "players/split_render.h"
@@ -341,6 +342,7 @@ void Session::TryRejoin() noexcept
 void Session::Forget() noexcept
 {
     playerTwo_ = nullptr;
+    battle::targeting_two::OnLeave();
     battle::command_menu_two::OnLeave();
     scopes::Unbind(1);
     split_render::OnLeave();
@@ -477,7 +479,9 @@ try
     UObject* manager     = Field(controller, facts::kControllerCameraManager);
     UObject* cameraActor = Field(manager, facts::kCameraManagerMainCamera);
     UObject* battleTalk  = Field(controller, facts::kControllerBattleTalkActor);
-    // Player 2's menu lets go of its focus layers first, inside its own context, while its controller exists.
+    // Player 2's lock and target end, and its menu lets go of its focus layers inside its own context, while its
+    // controller and member still exist.
+    battle::targeting_two::OnLeave();
     battle::command_menu_two::OnLeave();
     // Player 2's character goes back to its AI first, through the game's leader funnel.
     if (seatInstalled_ && !party_seat::Unseat(Field((*players)[0], facts::kLocalPlayerController), controller))

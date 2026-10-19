@@ -31,6 +31,7 @@ add_library(LocalSplitScreen SHARED
     src/battle/command_menu_tick.cpp
     src/battle/command_menu_two.cpp
     src/battle/party_switch.cpp
+    src/battle/targeting_two.cpp
     src/hud/hud_probe.cpp
     src/hud/image_entries.cpp
     src/hud/marker_replay.cpp

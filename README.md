@@ -26,9 +26,9 @@ python ../tools/game.py status | launch | quit | relaunch --deploy --label v0.8.
 
 Every module registers its own commands (`src/control/registry.h`), so `help` on the running build is the list.
 Today: `join`, `leave`, `seat on|off`, `console <command>`, `report`, `quit`, `showflags <hex>`, `ao-origin on|off`,
-`bloom-origin on|off`, `distortion-apply on|off`, `pad-buttons on|off`, `menu-two on|off`, `log-level error|warning|info|debug|trace`, `hud.dump roots|shown|all [<text>]`, `hud-band on|off`, `hud-image on|off`, `hud-targets on|off`, `hud-targets-log <renders>`; readings `p2.in`, `p2.state` (out|in|playing),
+`bloom-origin on|off`, `distortion-apply on|off`, `pad-buttons on|off`, `menu-two on|off`, `targeting-two on|off`, `log-level error|warning|info|debug|trace`, `hud.dump roots|shown|all [<text>]`, `hud-band on|off`, `hud-image on|off`, `hud-targets on|off`, `hud-targets-log <renders>`; readings `p2.in`, `p2.state` (out|in|playing),
 `game.state` (title|loading|play|pause|menu|leaving|…), `game.paused`, `game.menu-kind`, `game.location`,
-`field.step` (13 = steady field), `field.running`, `hud.overlay`, `hud.layout`, `pad.events`, `menu-two.state`, `tick`, `version`. The language's own verbs (`src/control/script.h`): `get <name>`, `status`, `help [<name>]`,
+`field.step` (13 = steady field), `field.running`, `hud.overlay`, `hud.layout`, `pad.events`, `menu-two.state`, `targeting-two.runs`, `targeting-two.lock`, `tick`, `version`. The language's own verbs (`src/control/script.h`): `get <name>`, `status`, `help [<name>]`,
 `wait <ticks>`, `wait-until <name> <op> <value> [<ticks>]`, `hold <player> stick <lx> <ly> <rx> <ry> <ticks>`,
 `note <text>`, `abort`. A failure drops the commands queued behind it; queries answer even during a wait.
 
@@ -41,8 +41,8 @@ examine cursors stay out of it. Its content is still player 1's otherwise (minim
 While player 2 is in, each player's sticks and buttons are their own pad's (pad 1 = XInput user 0, also the
 keyboard; pad 2 = user 1): pad 2's presses never open player 1's menus or release its held actions. In battle player
 2 fights through its own command controller: its own command menu and party panel in its half, attacks, guard, dodge
-and its Tactical Mode from pad 2, the world slowed by either menu; neither player's switch lands on the other's
-member. A virtual pad 2 for unattended tests: `python ../tools/pad2.py serve`, then `press A`, `hold RB --ms 2000`,
+and its Tactical Mode from pad 2, the world slowed by either menu, its own lock-on (R3) and target with the lock camera
+on its own view; neither player's switch lands on the other's member. A virtual pad 2 for unattended tests: `python ../tools/pad2.py serve`, then `press A`, `hold RB --ms 2000`,
 `stick L 0 1`.
 
 ## Building

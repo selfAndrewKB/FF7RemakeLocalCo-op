@@ -8,6 +8,7 @@
 #include "platform/vtable_entry.h"
 #include "players/pad_buttons.h"
 #include "players/scopes.h"
+#include "battle/targeting_two.h"
 
 #include <array>
 #include <cstdint>
@@ -341,8 +342,9 @@ void OperatorTick(void* self, float deltaSeconds)
         return;
     }
     ++g_counts[1].operatorTick;
-    const PrimaryScope  primary(players.two);
-    const OperatorScope scope(g_operatorTwo);
+    const PrimaryScope               primary(players.two);
+    const OperatorScope              scope(g_operatorTwo);
+    const battle::targeting_two::FieldsScope targets;  // its lock camera follows player 2's target, not player 1's
     g_operatorTick(self, deltaSeconds);
 }
 

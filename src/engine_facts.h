@@ -633,6 +633,37 @@ inline constexpr std::uint32_t  kGameStatePauseCounter    = 0x4F0;        // AEn
 inline constexpr std::uint32_t  kCharacterBattleComponent = 0xCB0;        // AEndCharacter: the battle player component (`comp`)
 inline constexpr std::uint32_t  kBattleCompInputBufferSlot = 0xE0;        // comp vtable: the leader-only input buffer (comp, dt)
 
+// --- Targeting for player 2 (RE-battle-member-two.md §5, RE-battle.md §2.9) ---------------------------------------
+// The battle system's target fields: the lock (+0x388), the displayed and lock-camera targets, the target-list mode,
+// the stick-switch latch, the dummy-lock option, latch and timer, all in +0x370..+0x3E8. The targeting tick is called
+// twice per battle tick, each after the leader's soft-target pre-tick; the second call crosses a block.
+inline constexpr std::uint32_t kBattleSysTargetFields      = 0x370;
+inline constexpr std::uint32_t kBattleSysTargetFieldsBytes = 0x78;
+inline constexpr std::uint32_t kBattleSysLock              = 0x388;
+inline constexpr std::uint32_t kBattleSysDummyLatch        = 0x3E3;  // the lock setter derives it from +0x3E2 and the lock
+inline constexpr std::array<std::uint8_t, 16> kBattleTargetPreTickEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x08, 0x57, 0x48, 0x83, 0xEC, 0x50, 0x48, 0x8B, 0xF9, 0xE8, 0xAE, 0x71};
+inline constexpr std::array<std::uint8_t, 16> kBattleTickTargetingEntry{
+    0x40, 0x57, 0x48, 0x83, 0xEC, 0x50, 0x0F, 0x29, 0x74, 0x24, 0x40, 0x48, 0x8B, 0xF9, 0x0F, 0x28};
+inline constexpr std::array<std::uint8_t, 16> kBattleSetLockOnEntry{
+    0x40, 0x53, 0x48, 0x83, 0xEC, 0x30, 0x0F, 0xB6, 0x81, 0x88, 0x03, 0x00, 0x00, 0x48, 0x8B, 0xD9};
+inline constexpr std::array<std::uint8_t, 16> kBattleClearLockAndTargetEntry{
+    0x40, 0x53, 0x48, 0x83, 0xEC, 0x40, 0x0F, 0xB6, 0x81, 0x88, 0x03, 0x00, 0x00, 0x48, 0x8B, 0xD9};
+/// BattleTarget_PreTick_LeaderSoftTarget(sys): the leader's soft target (its battle component's target) each tick.
+inline constexpr platform::FunctionFact kBattleTargetPreTick{L"BattleTarget_PreTick_LeaderSoftTarget", 0x1409C0900,
+                                                             kBattleTargetPreTickEntry};
+/// BattleSystem_TickTargeting(sys, float dt): the lock toggle, the dummy-lock camera, the target-list mode, the
+/// locked follow or the stick switch, the displayed target.
+inline constexpr platform::FunctionFact kBattleTickTargeting{L"BattleSystem_TickTargeting", 0x1409C21F0,
+                                                             kBattleTickTargetingEntry};
+/// BattleSystem_SetLockOn388(sys, u8 on, a3): the lock; on change posts the named parameter Global.LockOn.
+inline constexpr platform::FunctionFact kBattleSetLockOn{L"BattleSystem_SetLockOn388", 0x1409BD6E0, kBattleSetLockOnEntry};
+/// BattleTarget_ClearLockAndTarget(sys, a2, a3): the lock off (posting the parameter) and the displayed target null.
+inline constexpr platform::FunctionFact kBattleClearLockAndTarget{L"BattleTarget_ClearLockAndTarget", 0x1409BD770,
+                                                                  kBattleClearLockAndTargetEntry};
+inline constexpr std::uintptr_t kTargetingCallPaused = 0x1409B7009;  // inside a block
+inline constexpr std::uintptr_t kTargetingCallNormal = 0x1409B793F;  // crosses a block
+
 // --- The battle switch (RE-battle-switch.md §4) -----------------------------------------------------------------
 // BattleSystem_CycleLeader walks the members from the leader; BattleSystem_CanSwitchLeader counts them. Each fetches
 // a candidate with PartyManager_GetPlayerActor(PM, 0, type, 0); a null answer is the game's own skip branch. The
