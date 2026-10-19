@@ -295,6 +295,31 @@ bool FindInto(const platform::GameImage& image, const platform::FunctionFact& fa
     return out != nullptr;
 }
 
+/// The bytes that gate each controller's input poll (RE-ko-leader-input.md §3.1): menu allowed (+0x3D5), input
+/// live (+0x420), the battle HUD mode (+0x348), the cached leader ordinal (+0x28); and the game state's pause counter.
+std::wstring GatesReading() noexcept
+{
+    const auto fields = [](const void* ctrl) {
+        if (ctrl == nullptr)
+        {
+            return std::wstring(L"none");
+        }
+        std::int32_t ordinal = -1;
+        Read(static_cast<const std::uint8_t*>(ctrl) + facts::kCommandCtrlLeaderOrdinal, ordinal);
+        return std::format(L"allowed {} live {} hud {} ordinal {}", Byte(ctrl, facts::kCommandCtrlMenuAllowed),
+                           Byte(ctrl, facts::kCommandCtrlInputLive), Byte(ctrl, facts::kCommandCtrlBattleHudMode), ordinal);
+    };
+    void*         gameMode = nullptr;
+    std::uint8_t* state    = nullptr;
+    std::int32_t  paused   = -1;
+    if (Read(g_gameMode, gameMode) && gameMode != nullptr && Read(static_cast<std::uint8_t*>(gameMode) + facts::kGameModeGameState, state) &&
+        state != nullptr)
+    {
+        Read(state + facts::kGameStatePauseCounter, paused);
+    }
+    return std::format(L"ctrl1 {}; ctrl2 {}; pause counter {}", fields(Ctrl1()), fields(g_ctrl), paused);
+}
+
 /// Each controller's cached leader ordinal and member count, and the party's slot types.
 std::wstring LeaderReading() noexcept
 {
@@ -386,6 +411,10 @@ bool Install(const platform::GameImage& image) noexcept
                        .help = L"each command controller's cached leader ordinal and member count, and the party's slot types "
                                L"(the poll reads no input while the member at its ordinal is KO'd)",
                        .get  = [] { return control::Value{LeaderReading()}; }});
+    control::Register({.name = L"menu-two.gates", .shape = control::Shape::Text,
+                       .help = L"the bytes gating each controller's input poll (menu allowed, input live, battle HUD mode, "
+                               L"cached leader ordinal) and the game state's pause counter",
+                       .get  = [] { return control::Value{GatesReading()}; }});
     control::Register({.name = L"menu-two.state", .shape = control::Shape::Word, .words = {L"none", L"built", L"ready"},
                        .help = L"player 2's command controller: none, built, or ready (set up)",
                        .get  = [] { return control::Value{std::wstring(g_ctrl == nullptr ? L"none" : Ready() ? L"ready" : L"built")}; }});
@@ -467,6 +496,9 @@ void Tick(bool playerTwoPlays) noexcept
     const std::uint8_t live    = Byte(ctrl1, facts::kCommandCtrlInputLive);
     if (Byte(g_ctrl, facts::kCommandCtrlMenuAllowed) != allowed)
     {
+        // Off closes both menus' polls (the game's own gate 4 of RE-ko-leader-input.md §3.1): a script or event
+        // that closes player 1's menu closes player 2's too, so each change is logged.
+        platform::LogDebug(L"command menu 2: menu allowed {} on player 2's controller (copied from the game's)", allowed);
         platform::WriteGuarded(static_cast<std::uint8_t*>(g_ctrl) + facts::kCommandCtrlMenuAllowed, &allowed, 1);
     }
     if (Byte(g_ctrl, facts::kCommandCtrlInputLive) != live)
