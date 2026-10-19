@@ -783,6 +783,57 @@ inline constexpr std::array<std::uint8_t, 16> kGameFreeEntry{
     0x48, 0x85, 0xC9, 0x74, 0x2E, 0x53, 0x48, 0x83, 0xEC, 0x20, 0x48, 0x8B, 0xD9, 0x48, 0x8B, 0x0D};
 inline constexpr platform::FunctionFact kGameFree{L"FMemory::Free", 0x1416C0370, kGameFreeEntry};
 
+// --- The battle sequence cameras (RE-seq-camera-two.md) --------------------------------------------------------
+// The request lists at `[sys+0x78]`: two singly linked lists of 48-byte entries (+0x08 weak sequence actor, +0x19
+// active byte, +0x20 next). A sequence actor's camera actor at +0x468; the per-view state the game keeps once:
+// the camera actor's history block (its seven latch bytes first), the sequence's blend pose (the primary camera
+// manager's cached POV block), its cut one-shot, its play state and its blend-out delta latch and delta.
+inline constexpr std::uint32_t kBattleSysCamRequests     = 0x78;
+inline constexpr std::uint32_t kSeqListOneHead           = 0x08;
+inline constexpr std::uint32_t kSeqListTwoHead           = 0x28;
+inline constexpr std::uint32_t kSeqEntrySequenceWeak     = 0x08;
+inline constexpr std::uint32_t kSeqEntryActive           = 0x19;
+inline constexpr std::uint32_t kSeqEntryNext             = 0x20;
+inline constexpr std::uint32_t kSeqCameraActor           = 0x468;
+inline constexpr std::uint32_t kSeqBlendPose             = 0x550;
+inline constexpr std::uint32_t kSeqBlendPoseBytes        = 0x30;
+inline constexpr std::uint32_t kSeqCutOneShot            = 0x580;
+inline constexpr std::uint32_t kSeqPlayState             = 0x584;
+inline constexpr std::uint8_t  kSeqPlayStateStopped      = 2;
+inline constexpr std::uint32_t kSeqBlendOutDelta         = 0x598;  // the latch (4) and the delta (+0x59C..+0x5B3)
+inline constexpr std::uint32_t kSeqBlendOutDeltaBytes    = 0x1C;
+inline constexpr std::uint32_t kSeqCameraHistory         = 0xBF0;
+inline constexpr std::uint32_t kSeqCameraHistoryBytes    = 0xB8;
+inline constexpr std::uint32_t kSeqCameraLatchBytes      = 7;
+inline constexpr std::uint32_t kSeqOutPoseActiveWeak     = 0x38;   // the operator's out pose (op+0x3A8): the active camera weak (index, serial), valid byte at +0x40
+inline constexpr std::uint32_t kCameraManagerCachePointer = 0x22F8;  // AEndPlayerCameraManager: the cached view, when set
+inline constexpr std::uint32_t kCameraManagerInlineCache  = 0x1E48;  // else its inline cache
+inline constexpr std::uint32_t kCameraCachePov            = 0x480;   // the POV block inside the cache (0x30 bytes)
+
+inline constexpr std::array<std::uint8_t, 16> kSeqApplyEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x18, 0x55, 0x56, 0x57, 0x41, 0x54, 0x41, 0x55, 0x41, 0x56, 0x41, 0x57};
+inline constexpr platform::FunctionFact kSeqApply{L"BattleCamRequests_ApplySequenceOverride", 0x140A15D30, kSeqApplyEntry};
+inline constexpr std::uintptr_t kSeqApplyCall = 0x140FDEFE8;  // E8 43 6D A3 FF in the operator tick, inside its block
+inline constexpr std::array<std::uint8_t, 16> kSeqEvalEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x6C, 0x24, 0x10, 0x48, 0x89, 0x74, 0x24, 0x18, 0x57};
+inline constexpr platform::FunctionFact kSeqEval{L"BattleCamRequest_EvalSequenceOverride", 0x140A16470, kSeqEvalEntry};
+inline constexpr std::uintptr_t kSeqEvalCall = 0x140A15DE4;  // E8 87 06 00 00 in ApplySequenceOverride, inside its block
+inline constexpr std::array<std::uint8_t, 16> kSeqCutChangeEntry{
+    0x48, 0x8B, 0xC4, 0x53, 0x48, 0x81, 0xEC, 0x90, 0x00, 0x00, 0x00, 0x80, 0xB9, 0xB4, 0x05, 0x00};
+inline constexpr platform::FunctionFact kSeqCutChange{L"AEndBattleLevelSequenceActor::ApplyCutChange", 0x140A12FE0, kSeqCutChangeEntry};
+inline constexpr std::uintptr_t kSeqCutChangeCall = 0x140A16EC5;  // E8 16 C1 FF FF in OnCutChange_PrimaryPCMPose, inside its block
+inline constexpr std::array<std::uint8_t, 16> kSeqJumpToCutEntry{
+    0x48, 0x8B, 0xC4, 0x4C, 0x89, 0x48, 0x20, 0x4C, 0x89, 0x40, 0x18, 0x48, 0x89, 0x48, 0x08, 0x55};
+inline constexpr platform::FunctionFact kSeqJumpToCut{L"AEndBattleLevelSequenceActor::JumpToCut_CapturePrimaryPose", 0x140A11900, kSeqJumpToCutEntry};
+inline constexpr std::uintptr_t kSeqJumpToCutCall = 0x140A14EAA;  // E8 51 CA FF FF in BattleCamRequests_ForOwner_JumpToCut, inside its block
+inline constexpr std::array<std::uint8_t, 16> kSeqCutFirstPlayerEntry{
+    0x48, 0x83, 0xEC, 0x28, 0x48, 0x8B, 0x0D, 0x35, 0x5D, 0x81, 0x04, 0x48, 0x85, 0xC9, 0x75, 0x04};
+inline constexpr platform::FunctionFact kSeqCutFirstPlayer{L"Camera_SetCutBit_FirstPCPCM", 0x140FD3D70, kSeqCutFirstPlayerEntry};
+inline constexpr std::uintptr_t kSeqCutRaiseCall = 0x140A15E2D;  // E8 3E DF 5B 00 in ApplySequenceOverride; crosses a block
+inline constexpr std::array<std::uint8_t, 16> kSeqCutPrimaryEntry{
+    0x48, 0x83, 0xEC, 0x28, 0xE8, 0x37, 0x4B, 0x8E, 0x00, 0x48, 0x85, 0xC0, 0x74, 0x0A, 0x81, 0x88};
+inline constexpr platform::FunctionFact kSeqCutPrimary{L"PrimaryPCM_SetCameraCutBit400", 0x140DB29E0, kSeqCutPrimaryEntry};
+
 // --- The battle switch (RE-battle-switch.md §4) -----------------------------------------------------------------
 // BattleSystem_CycleLeader walks the members from the leader; BattleSystem_CanSwitchLeader counts them. Each fetches
 // a candidate with PartyManager_GetPlayerActor(PM, 0, type, 0); a null answer is the game's own skip branch. The

@@ -1,0 +1,437 @@
+#include "battle/sequence_camera_two.h"
+
+#include "control/registry.h"
+#include "engine_facts.h"
+#include "platform/call_redirect.h"
+#include "platform/guarded.h"
+#include "platform/image.h"
+#include "platform/log.h"
+#include "platform/verified_code.h"
+#include "players/player_two_camera.h"
+#include "players/scopes.h"
+
+#include <array>
+#include <cstdint>
+#include <cstring>
+#include <format>
+
+namespace lss::battle::sequence_camera_two {
+
+namespace {
+
+using ApplyFn     = std::int64_t (*)(void* requests, void* outPose, void* aimLeap, void* eyeLeap, std::uint32_t dt, void* owner, void* view);
+using EvalFn      = char (*)(void* a1, void* outPose, void* a3, void* a4, void* a5, void* a6, std::uint32_t dt, void* view, std::uint32_t a9, void* entry);
+using CutChangeFn = std::int64_t (*)(void* sequence, float time, void* params, void* pose);
+using JumpToCutFn = char (*)(void* sequence, std::uint8_t kind, void* a3, void* a4);
+using CutFn       = std::int64_t (*)();
+
+constexpr int kPlayer = 1;
+
+/// Player 2's copy of one sequence's per-view state.
+struct View
+{
+    void*         sequence = nullptr;
+    std::uint8_t  camera[facts::kSeqCameraHistoryBytes]{};  // the camera actor's history block
+    std::uint8_t  blend[facts::kSeqBlendPoseBytes]{};       // the blend pose: player 2's camera manager's view
+    std::uint8_t  cut = 0;                                  // the cut one-shot
+    std::uint8_t  delta[facts::kSeqBlendOutDeltaBytes]{};   // the blend-out delta latch and delta
+    bool          stopCaptured = false;                     // the blend pose taken at player 2's first evaluation after a stop
+    std::uint32_t lastFrame    = 0;
+};
+
+/// One entry's active byte as each operator's tick left it this frame.
+struct Active
+{
+    const void*   entry = nullptr;
+    std::uint32_t frame = 0;
+    std::uint8_t  bytes[2]{};
+    bool          seen[2]{};
+};
+
+// Set at install, then only read.
+void**                 g_system       = nullptr;
+std::uintptr_t         g_apply        = 0;
+std::uintptr_t         g_eval         = 0;
+std::uintptr_t         g_cutChange    = 0;
+std::uintptr_t         g_jumpToCut    = 0;
+std::uintptr_t         g_cut          = 0;
+std::uintptr_t         g_cutSite      = 0;
+std::uintptr_t         g_primaryCut   = 0;
+platform::CallRedirect g_applyCall;
+platform::CallRedirect g_evalCall;
+platform::CallRedirect g_cutChangeCall;
+platform::CallRedirect g_jumpToCutCall;
+platform::CallRedirect g_cutCall;
+bool                   g_cutPlaced = false;
+
+// Game thread.
+std::uint32_t         g_frame   = 1;
+int                   g_firstOp = 0;        // the operator that evaluated first this frame (1 or 2), 0 before
+std::uint8_t          g_firstActive[12]{};  // its out pose's active camera weak (index, serial) and valid byte
+std::array<View, 8>   g_views;
+std::array<Active, 8> g_actives;
+std::uint32_t g_swaps = 0, g_seeds = 0, g_cutsTwo = 0, g_captures = 0, g_unions = 0;
+bool          g_loggedSwap = false, g_loggedCut = false;
+
+template <class T>
+bool Read(const void* address, T& out) noexcept
+{
+    return address != nullptr && platform::CopyGuarded(&out, address, sizeof(T));
+}
+
+bool Copy(void* to, const void* from, std::size_t bytes) noexcept
+{
+    std::uint8_t temp[0x100];
+    return bytes <= sizeof(temp) && platform::CopyGuarded(temp, from, bytes) && platform::WriteGuarded(to, temp, bytes);
+}
+
+void* Sequence(const void* entry) noexcept
+{
+    std::int32_t pair[2]{};
+    return Read(static_cast<const std::uint8_t*>(entry) + facts::kSeqEntrySequenceWeak, pair) ? players::player_two_camera::ObjectOf(pair)
+                                                                                                : nullptr;
+}
+
+void* CameraActor(const void* sequence) noexcept
+{
+    void* camera = nullptr;
+    return Read(static_cast<const std::uint8_t*>(sequence) + facts::kSeqCameraActor, camera) ? camera : nullptr;
+}
+
+/// Player 2's camera manager's cached view (the game's own read of the primary's: the cache pointer, else the inline
+/// cache, then the POV block). False if player 2 has no controller.
+bool PlayerTwoView(std::uint8_t (&out)[facts::kSeqBlendPoseBytes]) noexcept
+{
+    void*         controller = players::scopes::Controller(kPlayer);
+    std::uint8_t* manager    = nullptr;
+    std::uint8_t* cache      = nullptr;
+    if (controller == nullptr || !Read(static_cast<std::uint8_t*>(controller) + facts::kControllerCameraManager, manager) ||
+        manager == nullptr || !Read(manager + facts::kCameraManagerCachePointer, cache))
+    {
+        return false;
+    }
+    if (cache == nullptr)
+    {
+        cache = manager + facts::kCameraManagerInlineCache;
+    }
+    return platform::CopyGuarded(out, cache + facts::kCameraCachePov, sizeof(out));
+}
+
+/// Player 2's copy for `sequence`, made fresh (zero latches, the live blend pose) when new.
+View& ViewFor(void* sequence) noexcept
+{
+    View* oldest = &g_views[0];
+    for (View& view : g_views)
+    {
+        if (view.sequence == sequence)
+        {
+            view.lastFrame = g_frame;
+            return view;
+        }
+        if (view.lastFrame < oldest->lastFrame)
+        {
+            oldest = &view;
+        }
+    }
+    *oldest          = View{};
+    oldest->sequence = sequence;
+    oldest->lastFrame = g_frame;
+    platform::CopyGuarded(oldest->blend, static_cast<const std::uint8_t*>(sequence) + facts::kSeqBlendPose, sizeof(oldest->blend));
+    return *oldest;
+}
+
+/// The game captured a pose into `sequence` (a cut, a jump): player 2's copy takes player 2's view, its latches start
+/// again, its cut one-shot is the game's.
+void Captured(void* sequence, const wchar_t* why) noexcept
+{
+    if (sequence == nullptr || players::scopes::Member(kPlayer) == nullptr)
+    {
+        return;
+    }
+    View& view = ViewFor(sequence);
+    if (!PlayerTwoView(view.blend))
+    {
+        platform::CopyGuarded(view.blend, static_cast<const std::uint8_t*>(sequence) + facts::kSeqBlendPose, sizeof(view.blend));
+    }
+    Read(static_cast<const std::uint8_t*>(sequence) + facts::kSeqCutOneShot, view.cut);
+    std::memset(view.camera, 0, facts::kSeqCameraLatchBytes);
+    std::memset(view.delta, 0, sizeof(view.delta));
+    view.stopCaptured = false;
+    ++g_captures;
+    platform::LogTrace(L"sequence camera 2: player 2's copy refreshed at {} (cut one-shot {})", why, view.cut);
+}
+
+/// BattleCamRequests_ApplySequenceOverride at the operator tick: the second operator of a frame is seeded with the
+/// first's active camera, so the game's tail applies the union of both views' world state.
+std::int64_t Apply(void* requests, void* outPose, void* aimLeap, void* eyeLeap, std::uint32_t dt, void* owner, void* view)
+{
+    const int  op       = players::player_two_camera::OperatorTicking() == 2 ? 2 : 1;
+    auto* const active  = static_cast<std::uint8_t*>(outPose) + facts::kSeqOutPoseActiveWeak;
+    const bool  twoIn   = players::scopes::Member(kPlayer) != nullptr;
+    if (twoIn && g_firstOp != 0 && g_firstOp != op && g_firstActive[8] != 0)
+    {
+        if (platform::WriteGuarded(active, g_firstActive, sizeof(g_firstActive)))
+        {
+            ++g_seeds;
+        }
+    }
+    const std::int64_t result = reinterpret_cast<ApplyFn>(g_apply)(requests, outPose, aimLeap, eyeLeap, dt, owner, view);
+    if (twoIn && g_firstOp == 0)
+    {
+        g_firstOp = op;
+        if (!platform::CopyGuarded(g_firstActive, active, sizeof(g_firstActive)))
+        {
+            std::memset(g_firstActive, 0, sizeof(g_firstActive));
+        }
+    }
+    return result;
+}
+
+/// BattleCamRequest_EvalSequenceOverride for one entry: in player 2's operator's tick, with player 2's copy of the
+/// camera actor's history and the sequence's blend, cut and delta fields in.
+char Eval(void* a1, void* outPose, void* a3, void* a4, void* a5, void* a6, std::uint32_t dt, void* view, std::uint32_t a9, void* entry)
+{
+    if (players::player_two_camera::OperatorTicking() != 2)
+    {
+        return reinterpret_cast<EvalFn>(g_eval)(a1, outPose, a3, a4, a5, a6, dt, view, a9, entry);
+    }
+    void* sequence = Sequence(entry);
+    void* camera   = sequence != nullptr ? CameraActor(sequence) : nullptr;
+    if (sequence == nullptr || camera == nullptr)
+    {
+        return reinterpret_cast<EvalFn>(g_eval)(a1, outPose, a3, a4, a5, a6, dt, view, a9, entry);
+    }
+    auto* const seq = static_cast<std::uint8_t*>(sequence);
+    auto* const cam = static_cast<std::uint8_t*>(camera);
+    View&       mine = ViewFor(sequence);
+    std::uint8_t state = 0;
+    if (Read(seq + facts::kSeqPlayState, state) && state == facts::kSeqPlayStateStopped)
+    {
+        if (!mine.stopCaptured)
+        {
+            mine.stopCaptured = true;  // the game took player 1's view at the stop; player 2's copy takes its own now
+            if (PlayerTwoView(mine.blend))
+            {
+                ++g_captures;
+            }
+        }
+    }
+    else
+    {
+        mine.stopCaptured = false;
+    }
+    // Player 1's bytes out, player 2's in; after the call player 2's back out, player 1's in.
+    View live{};
+    const bool held = platform::CopyGuarded(live.camera, cam + facts::kSeqCameraHistory, sizeof(live.camera)) &&
+                      platform::CopyGuarded(live.blend, seq + facts::kSeqBlendPose, sizeof(live.blend)) &&
+                      Read(seq + facts::kSeqCutOneShot, live.cut) &&
+                      platform::CopyGuarded(live.delta, seq + facts::kSeqBlendOutDelta, sizeof(live.delta)) &&
+                      platform::WriteGuarded(cam + facts::kSeqCameraHistory, mine.camera, sizeof(mine.camera)) &&
+                      platform::WriteGuarded(seq + facts::kSeqBlendPose, mine.blend, sizeof(mine.blend)) &&
+                      platform::WriteGuarded(seq + facts::kSeqCutOneShot, &mine.cut, sizeof(mine.cut)) &&
+                      platform::WriteGuarded(seq + facts::kSeqBlendOutDelta, mine.delta, sizeof(mine.delta));
+    if (!held)
+    {
+        platform::Log(L"sequence camera 2: player 2's copy could not go in; this evaluation runs on player 1's state");
+        return reinterpret_cast<EvalFn>(g_eval)(a1, outPose, a3, a4, a5, a6, dt, view, a9, entry);
+    }
+    ++g_swaps;
+    if (!g_loggedSwap)
+    {
+        g_loggedSwap = true;
+        platform::LogDebug(L"sequence camera 2: player 2's operator evaluates sequence cameras on its own copy of their state");
+    }
+    const char result = reinterpret_cast<EvalFn>(g_eval)(a1, outPose, a3, a4, a5, a6, dt, view, a9, entry);
+    platform::CopyGuarded(mine.camera, cam + facts::kSeqCameraHistory, sizeof(mine.camera));
+    platform::CopyGuarded(mine.blend, seq + facts::kSeqBlendPose, sizeof(mine.blend));
+    Read(seq + facts::kSeqCutOneShot, mine.cut);
+    platform::CopyGuarded(mine.delta, seq + facts::kSeqBlendOutDelta, sizeof(mine.delta));
+    platform::WriteGuarded(cam + facts::kSeqCameraHistory, live.camera, sizeof(live.camera));
+    platform::WriteGuarded(seq + facts::kSeqBlendPose, live.blend, sizeof(live.blend));
+    platform::WriteGuarded(seq + facts::kSeqCutOneShot, &live.cut, sizeof(live.cut));
+    platform::WriteGuarded(seq + facts::kSeqBlendOutDelta, live.delta, sizeof(live.delta));
+    return result;
+}
+
+/// AEndBattleLevelSequenceActor::ApplyCutChange (a cut starts: the game captures player 1's view): player 2's copy too.
+std::int64_t CutChange(void* sequence, float time, void* params, void* pose)
+{
+    const std::int64_t result = reinterpret_cast<CutChangeFn>(g_cutChange)(sequence, time, params, pose);
+    Captured(sequence, L"a cut");
+    return result;
+}
+
+/// AEndBattleLevelSequenceActor::JumpToCut: the same.
+char JumpToCut(void* sequence, std::uint8_t kind, void* a3, void* a4)
+{
+    const char result = reinterpret_cast<JumpToCutFn>(g_jumpToCut)(sequence, kind, a3, a4);
+    Captured(sequence, L"a jump");
+    return result;
+}
+
+/// The cut raised by the evaluation: in player 2's operator's tick, the game's primary-scoped cut (player 2's camera
+/// manager, the primary there) instead of the first player's.
+std::int64_t Cut()
+{
+    if (players::player_two_camera::OperatorTicking() != 2)
+    {
+        return reinterpret_cast<CutFn>(g_cut)();
+    }
+    ++g_cutsTwo;
+    if (!g_loggedCut)
+    {
+        g_loggedCut = true;
+        platform::LogDebug(L"sequence camera 2: a sequence cut in player 2's tick went to player 2's camera manager");
+    }
+    return reinterpret_cast<CutFn>(g_primaryCut)();
+}
+
+/// Both request lists of the battle system, entry by entry.
+template <class Fn>
+void ForEachEntry(Fn&& fn) noexcept
+{
+    std::uint8_t* system = nullptr;
+    std::uint8_t* lists  = nullptr;
+    if (g_system == nullptr || !Read(g_system, system) || system == nullptr || !Read(system + facts::kBattleSysCamRequests, lists) || lists == nullptr)
+    {
+        return;
+    }
+    for (const std::uint32_t head : {facts::kSeqListOneHead, facts::kSeqListTwoHead})
+    {
+        std::uint8_t* entry = nullptr;
+        if (!Read(lists + head, entry))
+        {
+            continue;
+        }
+        for (int guard = 0; entry != nullptr && guard < 64; ++guard)
+        {
+            fn(entry);
+            std::uint8_t* next = nullptr;
+            entry = Read(entry + facts::kSeqEntryNext, next) ? next : nullptr;
+        }
+    }
+}
+
+}  // namespace
+
+bool Install(const platform::GameImage& image) noexcept
+{
+    const auto system     = image.Rebase(facts::kBattleSystemGlobal);
+    const auto apply      = platform::FindFunction(image, facts::kSeqApply);
+    const auto applySite  = image.Rebase(facts::kSeqApplyCall, 5);
+    const auto eval       = platform::FindFunction(image, facts::kSeqEval);
+    const auto evalSite   = image.Rebase(facts::kSeqEvalCall, 5);
+    const auto cutChange  = platform::FindFunction(image, facts::kSeqCutChange);
+    const auto cutSite    = image.Rebase(facts::kSeqCutChangeCall, 5);
+    const auto jump       = platform::FindFunction(image, facts::kSeqJumpToCut);
+    const auto jumpSite   = image.Rebase(facts::kSeqJumpToCutCall, 5);
+    const auto cut        = platform::FindFunction(image, facts::kSeqCutFirstPlayer);
+    const auto cutRaise   = image.Rebase(facts::kSeqCutRaiseCall, 5);
+    const auto primaryCut = platform::FindFunction(image, facts::kSeqCutPrimary);
+    if (!system || !apply || !applySite || !eval || !evalSite || !cutChange || !cutSite || !jump || !jumpSite || !cut || !cutRaise || !primaryCut)
+    {
+        platform::Log(L"sequence camera 2: an engine check failed; sequence cameras keep one state for both views");
+        return false;
+    }
+    g_system     = reinterpret_cast<void**>(*system);
+    g_apply      = *apply;
+    g_eval       = *eval;
+    g_cutChange  = *cutChange;
+    g_jumpToCut  = *jump;
+    g_cut        = *cut;
+    g_cutSite    = *cutRaise;
+    g_primaryCut = *primaryCut;
+    const bool installed = g_evalCall.Install(*evalSite, g_eval, reinterpret_cast<std::uintptr_t>(&Eval)) &&
+                           g_cutChangeCall.Install(*cutSite, g_cutChange, reinterpret_cast<std::uintptr_t>(&CutChange)) &&
+                           g_jumpToCutCall.Install(*jumpSite, g_jumpToCut, reinterpret_cast<std::uintptr_t>(&JumpToCut)) &&
+                           g_applyCall.Install(*applySite, g_apply, reinterpret_cast<std::uintptr_t>(&Apply));
+    if (!installed)
+    {
+        Remove();
+        platform::Log(L"sequence camera 2: a call could not be redirected; sequence cameras keep one state for both views");
+        return false;
+    }
+    control::Register({.name = L"sequence-camera-two", .shape = control::Shape::Text,
+                       .help = L"sequence cameras on player 2's own state: evaluations swapped, world-state seeds, cuts to player 2, captures, active-byte unions",
+                       .get  = [] {
+                           return control::Value{std::format(L"swaps {}, seeds {}, cuts to player 2 {}, captures {}, unions {}", g_swaps, g_seeds,
+                                                             g_cutsTwo, g_captures, g_unions)};
+                       }});
+    platform::Log(L"sequence camera 2: installed; player 2's operator evaluates sequence cameras on its own copy of their state");
+    return true;
+}
+
+void Remove() noexcept
+{
+    g_cutCall.Restore();
+    g_applyCall.Restore();
+    g_jumpToCutCall.Restore();
+    g_cutChangeCall.Restore();
+    g_evalCall.Restore();
+}
+
+void Tick() noexcept
+{
+    ++g_frame;
+    g_firstOp = 0;
+    if (!g_cutPlaced && g_cutSite != 0)
+    {
+        g_cutPlaced = true;
+        if (!g_cutCall.InstallFromOwnThread(g_cutSite, g_cut, reinterpret_cast<std::uintptr_t>(&Cut)))
+        {
+            platform::Log(L"sequence camera 2: the cut call could not be redirected; a cut in player 2's tick cuts player 1's view");
+        }
+    }
+}
+
+void AfterOperatorTick(int player) noexcept
+{
+    if (player != 1 && player != 2)
+    {
+        return;
+    }
+    if (players::scopes::Member(kPlayer) == nullptr)
+    {
+        return;
+    }
+    ForEachEntry([player](std::uint8_t* entry) {
+        std::uint8_t active = 0;
+        if (!Read(entry + facts::kSeqEntryActive, active))
+        {
+            return;
+        }
+        Active* slot   = nullptr;
+        Active* oldest = &g_actives[0];
+        for (Active& record : g_actives)
+        {
+            if (record.entry == entry && record.frame == g_frame)
+            {
+                slot = &record;
+                break;
+            }
+            if (record.frame < oldest->frame)
+            {
+                oldest = &record;
+            }
+        }
+        if (slot == nullptr)
+        {
+            slot  = oldest;
+            *slot = Active{};
+            slot->entry = entry;
+            slot->frame = g_frame;
+        }
+        slot->bytes[player - 1] = active;
+        slot->seen[player - 1]  = true;
+        if (slot->seen[0] && slot->seen[1])
+        {
+            const std::uint8_t either = slot->bytes[0] | slot->bytes[1];
+            if (either != active && platform::WriteGuarded(entry + facts::kSeqEntryActive, &either, sizeof(either)))
+            {
+                ++g_unions;
+            }
+        }
+    });
+}
+
+}  // namespace lss::battle::sequence_camera_two

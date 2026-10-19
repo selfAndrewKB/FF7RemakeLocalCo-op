@@ -9,6 +9,7 @@
 #include "players/camera_override_two.h"
 #include "players/pad_buttons.h"
 #include "players/scopes.h"
+#include "battle/sequence_camera_two.h"
 #include "battle/targeting_two.h"
 
 #include <array>
@@ -344,11 +345,16 @@ void OperatorTick(void* self, float deltaSeconds)
     if (players.two == nullptr || self != Resolve(g_operatorTwo))
     {
         g_operatorTick(self, deltaSeconds);
+        if (players.two != nullptr && self == PlayerOneOperator())
+        {
+            battle::sequence_camera_two::AfterOperatorTick(1);
+        }
         return;
     }
     ++g_counts[1].operatorTick;
     const PrimaryScope               primary(players.two);
     const OperatorScope              scope(g_operatorTwo);
+    const StickScope                 stick(1, true);  // a sequence shot's input offset reads the stick (RE-seq-camera-two.md L-H)
     // Its leader is player 2's member: the battle camera requests, the move and camera-input checks and the battle
     // sequence overrides the tick reads are keyed on the party leader (RE-lock-camera-two.md §1.4), as the lock
     // camera follows player 2's target, not player 1's.
@@ -357,6 +363,7 @@ void OperatorTick(void* self, float deltaSeconds)
     g_operatorTicking = 2;
     g_operatorTick(self, deltaSeconds);
     g_operatorTicking = 0;
+    battle::sequence_camera_two::AfterOperatorTick(2);
     // The owner's camera-override route follows the owner (the tick may have changed it: the LeaderChange flavor).
     void* owner = nullptr;
     camera_override_two::Route(Read(static_cast<std::uint8_t*>(self) + facts::kOperatorOwnerChara, owner) ? owner : nullptr);
