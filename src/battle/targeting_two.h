@@ -37,6 +37,9 @@ void Tick() noexcept;
 /// Player 2 leaves: its lock and target ended.
 void OnLeave() noexcept;
 
+/// Player 2's lock byte from its copy (0 when it has none).
+std::uint8_t PlayerTwoLock() noexcept;
+
 /// Player 2's target fields in the battle system while it lives (nothing outside a battle, or before player 2's
 /// first targeting run): for every game call made for player 2 that reads or writes the lock, the displayed target
 /// or the target-list mode (the targeting run, the operator tick, the input and movement steps, the command

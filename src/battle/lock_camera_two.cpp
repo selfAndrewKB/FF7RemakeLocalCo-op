@@ -5,6 +5,7 @@
 #include "control/registry.h"
 #include "engine_facts.h"
 #include "platform/call_redirect.h"
+#include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
 #include "platform/verified_code.h"
@@ -12,13 +13,18 @@
 #include "players/player_two_camera.h"
 #include "players/scopes.h"
 
+#include <algorithm>
 #include <array>
+#include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <format>
 
 namespace lss::battle::lock_camera_two {
 
 namespace {
+
+using platform::Read;
 
 using FindRotationFn    = char (*)(void* requests, float* outRotation, void* owner, void* view, void* params, char idFiltered);
 using TransformFn       = void (*)(void* a1, void* a2, void* a3, void* a4);
@@ -48,6 +54,39 @@ std::uint32_t g_transforms = 0;  // the game's call repeated for player 2
 std::uint32_t g_lockNearests = 0;
 std::uint32_t g_restores[4]{};   // the target-list end: ctrl1's tick, ctrl2's tick, a pad-2 key event, elsewhere
 bool          g_restoreLogged[4]{};
+
+// Set at install, then only read.
+std::uint64_t* g_frameStamp = nullptr;  // the operators' write-back frame stamp (one global)
+void**         g_gameMode   = nullptr;
+
+/// Player 2's operator tick, read around it (RE-lock-camera-ledger.md L1, L2, L5; nothing is changed).
+struct FrameReadings
+{
+    std::uint32_t ticks            = 0;
+    std::uint32_t controlRewritten = 0;     // at the tick's start the controller's yaw was not the yaw the last tick wrote back
+    float         controlRewriteMax = 0.0f;
+    std::uint32_t writeBackSkipped = 0;     // the frame stamp suppressed this tick's write-back (stamp + 1 >= frame)
+    std::uint32_t ownerNotTwo      = 0;     // the member's controller was not player 2's
+    std::uint32_t moves            = 0;     // ticks that moved the final yaw
+    float         moveMax          = 0.0f;
+    std::uint32_t reversals        = 0;     // the yaw's direction reversed between two consecutive moving ticks
+    std::uint32_t stickWhileLocked = 0;     // input steps that added rotation input while player 2 was locked
+    bool          haveLast         = false;
+    float         lastFinalYaw     = 0.0f;
+    float         lastStep         = 0.0f;
+    std::uint32_t lastStepTick     = 0;
+    std::array<std::uint32_t, 4>          reversalTicks{};  // the latest reversals' ticks (a ring)
+    std::size_t                           ring = 0;
+    std::chrono::steady_clock::time_point lastBurstLog{};
+};
+FrameReadings g_frames;
+
+float WrapDegrees(float degrees) noexcept
+{
+    while (degrees > 180.0f) degrees -= 360.0f;
+    while (degrees < -180.0f) degrees += 360.0f;
+    return degrees;
+}
 
 /// BattleCamRequests_FindActiveRotation at the operator tick's Lock-state call: counted per operator.
 char FindRotation(void* requests, float* outRotation, void* owner, void* view, void* params, char idFiltered)
@@ -176,6 +215,21 @@ bool Install(const platform::GameImage& image) noexcept
     {
         platform::Log(L"lock camera 2: a target-list end slot could not be replaced; its context reading is partial");
     }
+    if (const auto stamp = image.Rebase(facts::kOperatorFrameStamp, sizeof(std::uint64_t)))
+    {
+        g_frameStamp = reinterpret_cast<std::uint64_t*>(*stamp);
+    }
+    if (const auto mode = image.Rebase(facts::kGameModeGlobal, sizeof(void*)))
+    {
+        g_gameMode = reinterpret_cast<void**>(*mode);
+    }
+    control::Register({.name = L"lock-camera-two.frames", .shape = control::Shape::Text,
+                       .help = L"player 2's operator tick read around it: ticks, yaw moves (max deg), reversals, control yaw rewritten between ticks (max deg), write-back skipped, owner not player 2's, stick input while locked",
+                       .get  = [] {
+                           return control::Value{std::format(L"ticks {}, moves {} (max {:.2f}), reversals {}, control rewritten {} (max {:.2f}), write-back skipped {}, owner not player 2's {}, stick while locked {}",
+                                                             g_frames.ticks, g_frames.moves, g_frames.moveMax, g_frames.reversals, g_frames.controlRewritten,
+                                                             g_frames.controlRewriteMax, g_frames.writeBackSkipped, g_frames.ownerNotTwo, g_frames.stickWhileLocked)};
+                       }});
     control::Register({.name = L"lock-camera-two.requests", .shape = control::Shape::Text,
                        .help = L"battle camera requests that re-aimed a lock camera: in player 2's operator tick, in any other",
                        .get  = [] { return control::Value{std::format(L"player 2's operator {}, other {}", g_hits[1], g_hits[0])}; }});
@@ -197,6 +251,85 @@ void Remove() noexcept
     g_lockNearestCall.Restore();
     g_transformCall.Restore();
     g_requestCall.Restore();
+}
+
+void BeforeOperatorTick(void* operatorTwo, void* controllerTwo) noexcept
+{
+    ++g_frames.ticks;
+    std::uint64_t stamp    = 0;
+    std::uint64_t frame    = 0;
+    void*         gameMode = nullptr;
+    if (g_frameStamp != nullptr && g_gameMode != nullptr && Read(g_frameStamp, stamp) && Read(g_gameMode, gameMode) && gameMode != nullptr &&
+        Read(static_cast<std::uint8_t*>(gameMode) + facts::kGameModeFrameCounter, frame) && stamp + 1 >= frame)
+    {
+        ++g_frames.writeBackSkipped;
+    }
+    void* owner           = nullptr;
+    void* ownerController = nullptr;
+    if (Read(static_cast<std::uint8_t*>(operatorTwo) + facts::kOperatorOwnerChara, owner) && owner != nullptr &&
+        Read(static_cast<std::uint8_t*>(owner) + facts::kPawnController, ownerController) && ownerController != controllerTwo)
+    {
+        ++g_frames.ownerNotTwo;
+    }
+    std::array<float, 3> control{};
+    if (g_frames.haveLast && controllerTwo != nullptr &&
+        Read(static_cast<std::uint8_t*>(controllerTwo) + facts::kControllerControlRotation, control))
+    {
+        const float delta = std::fabs(WrapDegrees(control[1] - g_frames.lastFinalYaw));
+        if (delta > 0.01f)
+        {
+            ++g_frames.controlRewritten;
+            g_frames.controlRewriteMax = std::max(g_frames.controlRewriteMax, delta);
+        }
+    }
+}
+
+void AfterOperatorTick(void* operatorTwo) noexcept
+{
+    std::array<float, 2> final{};
+    if (!Read(static_cast<std::uint8_t*>(operatorTwo) + facts::kOperatorFinalRotation, final))
+    {
+        return;
+    }
+    if (g_frames.haveLast)
+    {
+        const float step = WrapDegrees(final[1] - g_frames.lastFinalYaw);
+        if (std::fabs(step) > 0.05f)
+        {
+            ++g_frames.moves;
+            g_frames.moveMax = std::max(g_frames.moveMax, std::fabs(step));
+            if (g_frames.lastStepTick + 1 == g_frames.ticks && (step > 0.0f) != (g_frames.lastStep > 0.0f))
+            {
+                ++g_frames.reversals;
+                g_frames.reversalTicks[g_frames.ring % g_frames.reversalTicks.size()] = g_frames.ticks;
+                ++g_frames.ring;
+                // A burst: the four latest reversals within forty ticks (a stutter, not a single turn-around).
+                const std::uint32_t oldest = g_frames.reversalTicks[g_frames.ring % g_frames.reversalTicks.size()];
+                const auto          now    = std::chrono::steady_clock::now();
+                if (g_frames.ring >= g_frames.reversalTicks.size() && g_frames.ticks - oldest <= 40 && now - g_frames.lastBurstLog > std::chrono::seconds(2))
+                {
+                    g_frames.lastBurstLog = now;
+                    platform::LogDebug(L"lock camera 2: player 2's lock camera reversed its yaw 4 times in {} ticks (steps {:.2f} then {:.2f} deg; so far control rewritten {}, write-back skipped {}, owner not player 2's {}, stick while locked {})",
+                                       g_frames.ticks - oldest, g_frames.lastStep, step, g_frames.controlRewritten, g_frames.writeBackSkipped,
+                                       g_frames.ownerNotTwo, g_frames.stickWhileLocked);
+                }
+            }
+            g_frames.lastStep     = step;
+            g_frames.lastStepTick = g_frames.ticks;
+        }
+    }
+    g_frames.haveLast     = true;
+    g_frames.lastFinalYaw = final[1];
+}
+
+void AfterInput(void* controllerTwo) noexcept
+{
+    std::array<float, 2> input{};
+    if (controllerTwo != nullptr && targeting_two::PlayerTwoLock() != 0 &&
+        Read(static_cast<std::uint8_t*>(controllerTwo) + facts::kControllerRotationInput, input) && (input[0] != 0.0f || input[1] != 0.0f))
+    {
+        ++g_frames.stickWhileLocked;
+    }
 }
 
 void Tick() noexcept

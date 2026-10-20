@@ -9,6 +9,7 @@
 #include "players/camera_override_two.h"
 #include "players/pad_buttons.h"
 #include "players/scopes.h"
+#include "battle/lock_camera_two.h"
 #include "battle/sequence_camera_two.h"
 #include "battle/targeting_two.h"
 
@@ -355,7 +356,9 @@ void OperatorTick(void* self, float deltaSeconds)
     const scopes::Scope              leader(1, scopes::Leader);
     const battle::targeting_two::FieldsScope targets;
     g_operatorTicking = 2;
+    battle::lock_camera_two::BeforeOperatorTick(self, players.two);
     g_operatorTick(self, deltaSeconds);
+    battle::lock_camera_two::AfterOperatorTick(self);
     g_operatorTicking = 0;
     battle::sequence_camera_two::AfterOperatorTick(2);
     // The owner's camera-override route follows the owner (the tick may have changed it: the LeaderChange flavor).
@@ -416,6 +419,7 @@ void ProcessPlayerInput(void* self, float deltaSeconds, bool gamePaused)
     const scopes::Scope                      leader(1, scopes::Leader);
     const battle::targeting_two::FieldsScope targets;
     g_processInput(self, deltaSeconds, gamePaused);
+    battle::lock_camera_two::AfterInput(self);
 }
 
 /// AEndPlayerController::Tick_FieldMove: each player's left stick moves only that player's character. Player
@@ -743,7 +747,6 @@ try
 {
     // Diagnostic fields of each controller: its control rotation (stock AController) and the camera
     // sensitivity the game's ProcessPlayerInput scales the right stick by (RE-camera.md §9.3).
-    constexpr std::uint32_t kControlRotation   = 0x3A8;
     constexpr std::uint32_t kCameraSensitivity = 0x9E8;
     const Players players = CurrentPlayers();
     void* const   controllers[2] = {players.one, players.two};
@@ -752,7 +755,7 @@ try
         std::array<float, 3> rotation{};
         float                sensitivity = 0.0f;
         const auto*          base        = static_cast<const std::uint8_t*>(controllers[i]);
-        const bool           read = base != nullptr && Read(base + kControlRotation, rotation) && Read(base + kCameraSensitivity, sensitivity);
+        const bool           read = base != nullptr && Read(base + facts::kControllerControlRotation, rotation) && Read(base + kCameraSensitivity, sensitivity);
         platform::Log(L"player {}: input calls {}, move calls {}, own operator ticks {}, camera updates in scope {}; control rotation {}; camera sensitivity {}",
                       i + 1, g_counts[i].input, g_counts[i].move, g_counts[i].operatorTick, g_counts[i].cameraUpdate,
                       read ? std::format(L"P{:.1f} Y{:.1f} R{:.1f}", rotation[0], rotation[1], rotation[2]) : std::wstring(L"unread"),

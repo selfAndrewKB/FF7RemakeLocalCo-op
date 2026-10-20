@@ -236,6 +236,11 @@ void OnLeave() noexcept
     End(L"player 2 left");
 }
 
+std::uint8_t PlayerTwoLock() noexcept
+{
+    return g_fields.Defined() ? g_fields.Value(0)[facts::kBattleSysLock - facts::kBattleSysTargetFields] : std::uint8_t{0};
+}
+
 FieldsScope::FieldsScope() noexcept : system_(System())
 {
     if (g_fields.Defined() && system_ != nullptr && system_ == g_fieldsSystem)
