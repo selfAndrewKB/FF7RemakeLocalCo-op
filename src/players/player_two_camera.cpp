@@ -7,6 +7,7 @@
 #include "platform/verified_code.h"
 #include "platform/vtable_entry.h"
 #include "players/camera_override_two.h"
+#include "players/nav_area_two.h"
 #include "players/operator_battle_mode.h"
 #include "players/pad_buttons.h"
 #include "players/scopes.h"
@@ -562,6 +563,7 @@ bool Install(const platform::GameImage& image) noexcept
     }
     camera_override_two::Install(image);  // optional: without it player 2's attack cameras stay on player 1's camera
     operator_battle_mode::Install(image);  // optional: without it player 2's camera plays battles on the field setting
+    nav_area_two::Install(image);          // optional: without it player 2's InDoor settings reach player 1's operator
     // Optional: without it player 2's right stick does nothing, and everything else still works.
     if (!Global(image, facts::kWorldTickPhaseHookGlobal, g_phaseHookPointer) ||
         !FindInto(image, facts::kWorldTickPhaseHook, g_phaseHook) || !FindInto(image, facts::kTickPlayerInput, g_tickPlayerInput))

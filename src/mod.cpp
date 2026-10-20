@@ -40,6 +40,7 @@
 #include "players/pad_buttons.h"
 #include "players/scopes.h"
 #include "players/camera_override_two.h"
+#include "players/nav_area_two.h"
 #include "players/operator_battle_mode.h"
 #include "players/player_two_camera.h"
 #include "players/game_state.h"
@@ -63,7 +64,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.23.0-operator-battle-mode";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.23.1-nav-area-two";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
@@ -227,6 +228,7 @@ public:
         if (installed_ && !session_.HasPlayerTwo())
         {
             lss::players::player_two_camera::RemoveInputTick();
+            lss::players::nav_area_two::Remove();
             lss::players::operator_battle_mode::Remove();
             lss::players::camera_override_two::Remove();
             lss::players::own_controller::Remove();
