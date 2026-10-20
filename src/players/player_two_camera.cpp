@@ -7,6 +7,7 @@
 #include "platform/verified_code.h"
 #include "platform/vtable_entry.h"
 #include "players/camera_override_two.h"
+#include "players/operator_battle_mode.h"
 #include "players/pad_buttons.h"
 #include "players/scopes.h"
 #include "battle/lock_camera_two.h"
@@ -560,6 +561,7 @@ bool Install(const platform::GameImage& image) noexcept
         return false;
     }
     camera_override_two::Install(image);  // optional: without it player 2's attack cameras stay on player 1's camera
+    operator_battle_mode::Install(image);  // optional: without it player 2's camera plays battles on the field setting
     // Optional: without it player 2's right stick does nothing, and everything else still works.
     if (!Global(image, facts::kWorldTickPhaseHookGlobal, g_phaseHookPointer) ||
         !FindInto(image, facts::kWorldTickPhaseHook, g_phaseHook) || !FindInto(image, facts::kTickPlayerInput, g_tickPlayerInput))
@@ -695,6 +697,7 @@ bool Start(void* playerOneController, void* playerTwoController, void* member) n
     if (owned)
     {
         camera_override_two::Route(member);  // the game's SetOwnerChara just wrote the member's delegate
+        operator_battle_mode::OnOperatorStarted(spawned, operatorOne);  // a join mid-battle
     }
     // Moving the new operator off the leader cleared the leader's camera delegate that player 1's operator
     // had bound; the game's own re-apply puts it back.
@@ -740,6 +743,16 @@ void ReleaseStick(unsigned user) noexcept
 int OperatorTicking() noexcept
 {
     return g_operatorTicking;
+}
+
+void* OperatorOne() noexcept
+{
+    return PlayerOneOperator();
+}
+
+void* OperatorTwo() noexcept
+{
+    return Resolve(g_operatorTwo);
 }
 
 void LogCounts() noexcept

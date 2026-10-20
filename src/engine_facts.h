@@ -737,6 +737,61 @@ inline constexpr std::array<std::uint8_t, 16> kTransformRetargetEntry{
 inline constexpr platform::FunctionFact kTransformRetarget{L"BattleAI_TransformCharacter_RetargetDisplayed390", 0x140940950,
                                                            kTransformRetargetEntry};
 inline constexpr std::uintptr_t kTransformRetargetCall = 0x1417A2AF7;  // E8 54 DE 19 FF
+
+// The field camera operator's battle mode (RE-operator-settings-two.md §2.3): one function enters it on the root
+// operator (the Battle setting pushed, SpaceOffset off, TargetLength and TargetOffset restarted, the battle scales and
+// pitch limits selected), called from the encounter manager's state change, the field on/off table's battle-on branch
+// and a field step; the battle-off branch of the on/off table leaves it inline, starting with the Battle request's
+// pop. Each call site sits inside one 16-byte block.
+inline constexpr std::array<std::uint8_t, 16> kFieldCameraEnterBattleModeEntry{
+    0x48, 0x83, 0xEC, 0x68, 0x48, 0x8B, 0x05, 0x25, 0xBA, 0x81, 0x04, 0x8B, 0x90, 0xB4, 0x09, 0x00};
+inline constexpr platform::FunctionFact kFieldCameraEnterBattleMode{L"FieldCamera_EnterBattleMode", 0x140FCDFA0,
+                                                                    kFieldCameraEnterBattleModeEntry};
+inline constexpr std::array<std::uintptr_t, 3> kFieldCameraEnterBattleModeCalls{
+    0x140FB0101,   // EndEncountManager_OnStateChange (state 2)
+    0x141140947,   // EndFieldOnOffTable_ApplyChange, battle on
+    0x140F98DE7};  // the field step (sub_140F98B60)
+inline constexpr std::array<std::uint8_t, 16> kCameraSettingPopRequestEntry{
+    0x40, 0x53, 0x48, 0x83, 0xEC, 0x20, 0x44, 0x8B, 0x52, 0x28, 0x48, 0x8B, 0xDA, 0x41, 0x83, 0xEA};
+inline constexpr platform::FunctionFact kCameraSettingPopRequest{L"FEndCameraSetting::PopRequest", 0x140FE0A30,
+                                                                 kCameraSettingPopRequestEntry};
+inline constexpr std::uintptr_t kCameraSettingPopRequestBattleEndCall = 0x141140A85;  // E8 A6 FF E9 FF, the battle-off block's pop
+inline constexpr std::array<std::uint8_t, 16> kOperatorSetStateFreeEntry{
+    0x40, 0x57, 0x48, 0x83, 0xEC, 0x20, 0x80, 0xB9, 0x59, 0x06, 0x00, 0x00, 0x00, 0x48, 0x8B, 0xF9};
+inline constexpr platform::FunctionFact kOperatorSetStateFree{L"AEndFieldCameraOperator::SetStateFree", 0x140FE0AE0,
+                                                              kOperatorSetStateFreeEntry};
+inline constexpr std::array<std::uint8_t, 16> kOperatorResetBattleMoveFollowEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x18, 0x55, 0x48, 0x83, 0xEC, 0x20, 0x48, 0x8B, 0x1D, 0x1F, 0xAF, 0x86};
+inline constexpr platform::FunctionFact kOperatorResetBattleMoveFollow{L"AEndFieldCameraOperator::ResetBattleMoveFollowElapsed",
+                                                                       0x140FE16A0, kOperatorResetBattleMoveFollowEntry};
+inline constexpr std::uint32_t kOperatorBattleMode          = 0x5D8;  // i32: 0 field, 1 battle
+inline constexpr std::uint32_t kOperatorSettingBattle       = 0x600;  // FEndCameraSetting* "Battle" (the five start at +0x5E0)
+inline constexpr std::uint32_t kOperatorSettingRequests     = 0x28;   // a setting's request count (+0x30 its active byte)
+inline constexpr std::uint32_t kOperatorFlavors             = 0x6C0;  // 29 flavor objects, 8 bytes each, by type
+inline constexpr std::uint32_t kFlavorActive                = 0x38;   // a flavor object's active byte
+inline constexpr std::uint32_t kFlavorMoveFollow            = 2;
+inline constexpr std::uint32_t kFlavorSpaceOffset           = 3;
+inline constexpr std::uint32_t kFlavorTargetLength          = 4;
+inline constexpr std::uint32_t kFlavorTargetOffset          = 5;
+inline constexpr std::uint32_t kOperatorSpaceOffsetByRow    = 0x7A8;  // u8: the SpaceOffset flavor follows the active setting row
+inline constexpr std::uint32_t kOperatorDistanceOptionPtr   = 0x8C0;  // u8*: the active camera-distance option byte
+inline constexpr std::uint32_t kOperatorFieldDistanceOption = 0x8BA;  // u8 (+0x8BB the battle one)
+inline constexpr std::uint32_t kOperatorActiveScales        = 0x8F8;  // 3 float*: the active FOV/length/height scales
+inline constexpr std::uint32_t kOperatorFieldScales         = 0x8C8;  // 3 float*: CameraLengthFieldScale* (+0x8E0 the battle set)
+inline constexpr std::uint32_t kOperatorActivePitchLimits   = 0x930;  // 2 float*: the active pitch limits
+inline constexpr std::uint32_t kOperatorFieldPitchLimits    = 0x910;  // 2 float*: CameraDefaultPitchLimitMin/Max (+0x920 the battle pair)
+inline constexpr std::uint32_t kOptionSpaceOffsetInField    = 0xB69BF;  // u8 in the data singleton: SpaceOffset follows the row in field mode
+
+// The controller's nav-area component (RE-operator-settings-two.md §2.5): its tick diffs its controller's own
+// leader's nav areas and pushes or pops the InDoor/Town camera settings on the root operator, writing the leader
+// actor's and the primary controller's bytes too. The controller's component sits at +0x6F0, its controller at +0xF8.
+inline constexpr std::uintptr_t kNavAreaComponentVTable = 0x144C15DD8;  // EndPlayerExistNavAreaComponent
+inline constexpr std::array<std::uint8_t, 16> kNavAreaComponentTickEntry{
+    0x40, 0x53, 0x48, 0x83, 0xEC, 0x30, 0x0F, 0x29, 0x74, 0x24, 0x20, 0x48, 0x8B, 0xD9, 0x0F, 0x28};
+inline constexpr platform::SlotFact kNavAreaComponentTick{
+    L"EndPlayerExistNavAreaComponent::TickComponent (slot 102)", kNavAreaComponentVTable + 102 * 8,
+    {L"EndPlayerExistNavAreaComponent::TickComponent", 0x1415F9F80, kNavAreaComponentTickEntry}};
+inline constexpr std::uint32_t kNavAreaComponentController = 0xF8;  // the owning End player controller, set at BeginPlay
 inline constexpr std::array<std::uint8_t, 16> kScriptLockNearestEntry{
     0x48, 0x85, 0xC9, 0x0F, 0x84, 0xF9, 0x03, 0x00, 0x00, 0x57, 0x41, 0x56, 0x48, 0x81, 0xEC, 0xC8};
 inline constexpr platform::FunctionFact kScriptLockNearest{L"BattleTarget_ScriptLockNearest_FromExec", 0x14095C8B0,

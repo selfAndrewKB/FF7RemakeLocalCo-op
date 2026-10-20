@@ -70,6 +70,7 @@ add_library(LocalSplitScreen SHARED
     src/players/party_seat.cpp
     src/players/player_trigger.cpp
     src/players/camera_override_two.cpp
+    src/players/operator_battle_mode.cpp
     src/players/player_two_camera.cpp
     src/players/scopes.cpp
     src/players/session.cpp
