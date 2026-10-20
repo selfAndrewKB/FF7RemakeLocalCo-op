@@ -700,6 +700,7 @@ bool Start(void* playerOneController, void* playerTwoController, void* member) n
     {
         camera_override_two::Route(member);  // the game's SetOwnerChara just wrote the member's delegate
         operator_battle_mode::OnOperatorStarted(spawned, operatorOne);  // a join mid-battle
+        nav_area_two::OnOperatorStarted(playerTwoController);           // the volumes entered before the spawn
     }
     // Moving the new operator off the leader cleared the leader's camera delegate that player 1's operator
     // had bound; the game's own re-apply puts it back.

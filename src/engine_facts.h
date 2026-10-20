@@ -766,6 +766,8 @@ inline constexpr platform::FunctionFact kOperatorResetBattleMoveFollow{L"AEndFie
                                                                        0x140FE16A0, kOperatorResetBattleMoveFollowEntry};
 inline constexpr std::uint32_t kOperatorBattleMode          = 0x5D8;  // i32: 0 field, 1 battle
 inline constexpr std::uint32_t kOperatorSettingBattle       = 0x600;  // FEndCameraSetting* "Battle" (the five start at +0x5E0)
+inline constexpr std::uint32_t kOperatorSettingTown    = 0x5E8;  // FEndCameraSetting: the Town setting (nav-area volumes, type 0)
+inline constexpr std::uint32_t kOperatorSettingInDoor  = 0x5F0;  // FEndCameraSetting: the InDoor setting (nav-area volumes, types 1, 2)
 inline constexpr std::uint32_t kOperatorSettingRequests     = 0x28;   // a setting's request count (+0x30 its active byte)
 inline constexpr std::uint32_t kOperatorFlavors             = 0x6C0;  // 29 flavor objects, 8 bytes each, by type
 inline constexpr std::uint32_t kFlavorActive                = 0x38;   // a flavor object's active byte
@@ -792,6 +794,25 @@ inline constexpr platform::SlotFact kNavAreaComponentTick{
     L"EndPlayerExistNavAreaComponent::TickComponent (slot 102)", kNavAreaComponentVTable + 102 * 8,
     {L"EndPlayerExistNavAreaComponent::TickComponent", 0x1415F9F80, kNavAreaComponentTickEntry}};
 inline constexpr std::uint32_t kNavAreaComponentController = 0xF8;  // the owning End player controller, set at BeginPlay
+inline constexpr std::uint32_t kControllerNavAreaComponent = 0x6F0;  // AEndPlayerController.PlayerExistNavAreaComponent
+// The component's map of entered volumes, TMap<FName, AActor*> keyed by the volume's Tags[0]
+// (RE-nav-area-reenter.md §4). The diff is its only writer; nothing in the game forgets it short of a new component.
+inline constexpr std::uint32_t kNavAreaEnteredMap        = 0x100;  // elements of 24 bytes: key, actor, two hash links
+inline constexpr std::uint32_t kNavAreaEnteredNum        = 0x108;  // ArrayNum (free slots included)
+inline constexpr std::uint32_t kNavAreaEnteredBitsInline = 0x110;  // AllocationFlags, inline words
+inline constexpr std::uint32_t kNavAreaEnteredBitsHeap   = 0x120;  // AllocationFlags heap pointer, 0 = inline
+inline constexpr std::uint32_t kNavAreaEnteredNumBits    = 0x128;
+inline constexpr std::uint32_t kNavAreaEnteredElement    = 24;
+// (component, float dt): the diff the tick tail-jumps to; the game's own camera reset runs it out of band at dt 0.
+inline constexpr std::array<std::uint8_t, 16> kNavAreaRefreshFromLeaderEntry{
+    0x4C, 0x8B, 0xDC, 0x55, 0x41, 0x54, 0x49, 0x8D, 0xAB, 0x38, 0xFF, 0xFF, 0xFF, 0x48, 0x81, 0xEC};
+inline constexpr platform::FunctionFact kNavAreaRefreshFromLeader{
+    L"EndPlayerExistNavAreaComponent::RefreshFromLeader", 0x1415F9FB0, kNavAreaRefreshFromLeaderEntry};
+// (map, FName key) -> 1 if removed: the instantiation the diff itself uses to forget a left volume.
+inline constexpr std::array<std::uint8_t, 16> kNavAreaMapRemoveKeyEntry{
+    0x48, 0x83, 0xEC, 0x28, 0x8B, 0x41, 0x08, 0x4C, 0x8B, 0xD9, 0x3B, 0x41, 0x34, 0x0F, 0x84, 0xF5};
+inline constexpr platform::FunctionFact kNavAreaMapRemoveKey{
+    L"TMap<FName, AActor*>::Remove (the nav-area map's instantiation)", 0x140AEAC80, kNavAreaMapRemoveKeyEntry};
 inline constexpr std::array<std::uint8_t, 16> kScriptLockNearestEntry{
     0x48, 0x85, 0xC9, 0x0F, 0x84, 0xF9, 0x03, 0x00, 0x00, 0x57, 0x41, 0x56, 0x48, 0x81, 0xEC, 0xC8};
 inline constexpr platform::FunctionFact kScriptLockNearest{L"BattleTarget_ScriptLockNearest_FromExec", 0x14095C8B0,

@@ -174,13 +174,18 @@ std::wstring Describe(void* cameraOperator) noexcept
     {
         return L"none";
     }
-    void*        battle   = nullptr;
-    std::int32_t requests = -1;
-    if (Read(Bytes(cameraOperator) + facts::kOperatorSettingBattle, battle) && battle != nullptr)
-    {
-        Read(Bytes(battle) + facts::kOperatorSettingRequests, requests);
-    }
-    return std::format(L"mode {} (Battle requests {}, SpaceOffset {}, TargetLength {})", Mode(cameraOperator), requests,
+    // A setting's request count: -1 when the setting cannot be read.
+    const auto requests = [cameraOperator](std::uint32_t setting) {
+        void*        object = nullptr;
+        std::int32_t count  = -1;
+        if (Read(Bytes(cameraOperator) + setting, object) && object != nullptr)
+        {
+            Read(Bytes(object) + facts::kOperatorSettingRequests, count);
+        }
+        return count;
+    };
+    return std::format(L"mode {} (Battle requests {}, InDoor {}, Town {}, SpaceOffset {}, TargetLength {})", Mode(cameraOperator),
+                       requests(facts::kOperatorSettingBattle), requests(facts::kOperatorSettingInDoor), requests(facts::kOperatorSettingTown),
                        FlavorActive(cameraOperator, facts::kFlavorSpaceOffset) ? L"on" : L"off",
                        FlavorActive(cameraOperator, facts::kFlavorTargetLength) ? L"on" : L"off");
 }
