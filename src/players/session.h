@@ -65,6 +65,9 @@ public:
     RC::Unreal::UObject* LocalPlayer(int index) const noexcept;
     /// Player 2 holds its member.
     bool Seated() const noexcept;
+    /// Player 2's member is with its AI while the game's leader is (a scene, a field action, the field control
+    /// lock); the seat is kept and comes back with the game's return.
+    bool HandedToAi() const noexcept { return handedToAi_; }
     /// The member player 2 plays (type and row), or why it waits for one; for the `p2.member` reading.
     std::wstring MemberReading() const noexcept;
     /// Every deployed member's AI detail; for the `party.ai` reading.

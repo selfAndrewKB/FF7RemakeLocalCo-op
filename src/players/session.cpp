@@ -879,7 +879,10 @@ try
     }
     if (Seated())
     {
-        return std::format(L"playing type {}", party_seat::MemberType(kSeat));
+        const auto type = party_seat::MemberType(kSeat);
+        return handedToAi_ ? std::format(L"handed type {} (with the game's leader, lock {:#x})", type,
+                                         party_member::ControlLockMask())
+                           : std::format(L"playing type {}", type);
     }
     auto* players = LocalPlayers(gameInstance_);
     if (!seatInstalled_ || players == nullptr || players->Num() < 2)

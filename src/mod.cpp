@@ -64,7 +64,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.25.1-lead-free";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.25.2-handed-reading";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
@@ -141,10 +141,14 @@ void RegisterSessionCommands(lss::players::Session& session)
               .get  = [&session] { return Value{session.RejoinPending()}; }});
     Register({.name  = L"p2.state",
               .shape = Shape::Word,
-              .words = {L"out", L"in", L"playing"},
-              .help  = L"out, in (waiting for its party member), or playing (holds it)",
+              .words = {L"out", L"in", L"playing", L"handed"},
+              .help  = L"out, in (waiting for its party member), playing (holds it), or handed (its member is with its AI "
+                       L"while the game's leader is: a scene, a field action, the lock; the seat is kept)",
               .get   = [&session] {
-                  return Value{std::wstring(!session.HasPlayerTwo() ? L"out" : session.Seated() ? L"playing" : L"in")};
+                  return Value{std::wstring(!session.HasPlayerTwo() ? L"out"
+                                            : !session.Seated()     ? L"in"
+                                            : session.HandedToAi()  ? L"handed"
+                                                                    : L"playing")};
               }});
     Register({.name  = L"showflags",
               .shape = Shape::Hex,
