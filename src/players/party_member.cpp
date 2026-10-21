@@ -6,6 +6,7 @@
 #include "platform/log.h"
 #include "platform/verified_code.h"
 #include "players/field_hold.h"
+#include "players/lead_gate.h"
 
 #include <cstdint>
 #include <format>
@@ -108,6 +109,8 @@ Wait FieldWait(void* member) noexcept
     {
     case field_hold::Hold::Free:
         return Wait::None;
+    case field_hold::Hold::Lead:
+        return lead_gate::Guide(member, ai) ? Wait::Guide : Wait::None;
     case field_hold::Hold::NoState:
         return Wait::NoFieldAi;
     default:
@@ -116,6 +119,11 @@ Wait FieldWait(void* member) noexcept
 }
 
 }  // namespace
+
+Wait HoldWait(void* member) noexcept
+{
+    return member == nullptr ? Wait::None : FieldWait(member);
+}
 
 std::uint8_t ActorMode(const void* member) noexcept
 {
@@ -275,6 +283,8 @@ const wchar_t* WhyHeldByScript(void* member) noexcept
         return L"in a cutscene or event (the cinema actor mode)";
     case Wait::AiHeld:
         return L"held by a story script (a script layer of its field AI, or a one-shot kind)";
+    case Wait::Guide:
+        return L"a guide lead (a level step waits on its arrival, or the story's marker rides on it): its AI walks it";
     default:
         return nullptr;  // an event lock alone is the game's hand-back (party_events); the rest holds nothing
     }
@@ -388,6 +398,8 @@ const wchar_t* Describe(Wait wait) noexcept
         return L"an event holds the field";
     case Wait::AiHeld:
         return L"a story script holds its field AI (a script layer, or a one-shot kind)";
+    case Wait::Guide:
+        return L"its AI walks a guide lead (a level step waits on its arrival, or the story's marker rides on it)";
     case Wait::NoFieldAi:
         return L"its field AI has no state yet";
     case Wait::Unread:

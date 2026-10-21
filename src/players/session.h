@@ -15,7 +15,9 @@
 // hands its leader to its AI (an event, a field action, the field control lock) the member is handed to its AI
 // and taken back when the game takes its leader back, once no script still holds the member; a story script that
 // takes it (a script layer of its field AI, a one-shot kind, the cinema modes: players/field_hold.h) gets it back
-// until it is free again. A periodic check backs the funnels up (the return on the game's own leader state), and a
+// until it is free again; a guide lead (players/lead_gate.h) gets it the same way the game's leader hand does, the
+// seat and player 2's camera kept on it, until the lead ends. A periodic check backs the funnels up (the return on
+// the game's own leader state), and a
 // member destroyed under player 2 (a retry rebuilds the party without a field exit) is let go of without a call.
 // Leave: the member given back first, then the actors player 2's controller and camera manager spawned, which the
 // engine never destroys, are destroyed, then UGameInstance::RemoveLocalPlayer. The engine's own list is the
@@ -100,6 +102,9 @@ private:
     void TrySeat() noexcept;
     /// Player 2's member is no longer its to play: given back, and chosen again next tick.
     void ReleaseMember(const wchar_t* why) noexcept;
+    /// A guide lead: the member to its AI with the seat kept (the game's own hand), and back at the lead's end.
+    void HandForGuide(void* member) noexcept;
+    void ReturnFromGuide(void* member) noexcept;
     /// The party order, the member's existence and its AI's hold, checked while player 2 holds a member.
     void FollowSlot() noexcept;
     /// The game's party funnels (players/party_events.h).
@@ -121,7 +126,8 @@ private:
     bool                 cameraInstalled_   = false;
     bool                 seatInstalled_     = false;
     bool                 eventsInstalled_   = false;
-    bool                 handedToAi_        = false;    // player 2's member is with its AI, as the game's leader is
+    bool                 handedToAi_        = false;    // player 2's member is with its AI, as the game's leader is, or for a guide lead
+    bool                 guideHand_         = false;    // the hand is for a guide lead: it ends with the lead, not the game's return
     bool                 returnWaitLogged_  = false;    // the game took its leader back while a script still held the member
     std::int32_t         memberWeak_[2]     = {-1, 0};  // the seated member, to notice it destroyed
     std::uint32_t        waitLogged_        = 0;        // the wait last logged (type, reason, ordinal), 0 none

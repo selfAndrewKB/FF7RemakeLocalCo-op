@@ -63,6 +63,7 @@ add_library(LocalSplitScreen SHARED
     src/platform/vtable_entry.cpp
     src/players/field_exit.cpp
     src/players/game_state.cpp
+    src/players/lead_gate.cpp
     src/players/own_controller.cpp
     src/players/pad_buttons.cpp
     src/players/pad_presence.cpp

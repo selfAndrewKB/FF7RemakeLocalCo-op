@@ -45,6 +45,7 @@
 #include "players/operator_battle_mode.h"
 #include "players/player_two_camera.h"
 #include "players/game_state.h"
+#include "players/lead_gate.h"
 #include "players/session.h"
 #include "players/split_render.h"
 #include "engine_facts.h"
@@ -65,7 +66,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.25.3-pads-reading";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.26.0-guide-lead";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
@@ -144,7 +145,7 @@ void RegisterSessionCommands(lss::players::Session& session)
               .shape = Shape::Word,
               .words = {L"out", L"in", L"playing", L"handed"},
               .help  = L"out, in (waiting for its party member), playing (holds it), or handed (its member is with its AI "
-                       L"while the game's leader is: a scene, a field action, the lock; the seat is kept)",
+                       L"while the game's leader is: a scene, a field action, the lock; or for a guide lead; the seat is kept)",
               .get   = [&session] {
                   return Value{std::wstring(!session.HasPlayerTwo() ? L"out"
                                             : !session.Seated()     ? L"in"
@@ -260,6 +261,7 @@ public:
         }
         lss::players::pad_buttons::Install(*image);  // optional: without it every pad presses player 1's buttons
         lss::players::pad_presence::Register();      // diagnostics: which XInput users have a pad
+        lss::players::lead_gate::Install(*image);    // optional: without it a LEAD on player 2's member stays the player's
         // Player 2's own battle: its command menu, ticked in its scopes, and the switch rules. Each optional.
         if (lss::players::scopes::Install(*image) && lss::battle::command_menu_two::Install(*image))
         {

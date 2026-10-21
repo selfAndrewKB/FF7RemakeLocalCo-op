@@ -11,12 +11,13 @@
 // one-shot animation, the unread ESCAPE_POSITION, or any request on a script layer. A request written on a
 // player-held member runs its enter and one update and freezes until the give-back; only SINGLE_ANIMATION's exit
 // reports finished to the scripts, so nothing else stalls while held.
-// LEAD is staging too (the user, 2026-10-21): the level writes it as often to walk a member to a mark in step with
-// the player ("walk up to the console", twice on the Ch. 7 reactor walk) as to make the member a guide the player
-// follows. The handler is the same code either way; what differs is level data, whether the level's next step waits
-// on the lead's arrival. The kind cannot tell the two apart, so LEAD is free; a guide on a held member would wait
-// (its logic tick needs a pawn) until something else hands the member back. The level step's arrival wait is the
-// game's own test for the give-back (research/RE-script-release.md, the arrival signal's consumer): an IDA pass.
+// LEAD on the level layer is the one kind this rule cannot settle (the user, 2026-10-21): the level writes it as
+// often to walk a member to a mark in step with the player ("walk up to the console", twice on the Ch. 7 reactor
+// walk) as to make the member a guide the player follows ("follow Tifa", Ch. 3). The handler is the same code either
+// way; what differs is level data: whether a level step waits on the lead's arrival, and whether the story marks
+// the member. A guide on a held member stalls the level (its runner never ticks, the arrival never fires: seen live
+// 2026-10-21), so the rule answers Lead and the caller asks the game's own data (players/lead_gate.h): a guide goes
+// to its AI with the player's view on it, staging stays the player's.
 //
 // Pure (host-tested in tests/field_hold_test.cpp); the actor modes and the event lock are the caller's tests.
 
@@ -51,9 +52,10 @@ enum Kind : std::uint8_t
 
 enum class Hold : std::uint8_t
 {
-    Free,     // the player's: the level's staging (a lead among it) or the follow
+    Free,     // the player's: the level's staging or the follow
     Layer,    // a script layer is active
     Kind,     // a kind that needs the AI: SINGLE_ANIMATION, ESCAPE_POSITION
+    Lead,     // a LEAD on the level layer: staging or a guide, the game's data decides (players/lead_gate.h)
     NoState,  // the field AI has no state yet (wait)
 };
 
@@ -71,6 +73,10 @@ constexpr Hold Of(std::uint8_t layer, std::uint8_t kind) noexcept
     if (kind == kSingleAnimation || kind == kEscapePosition)
     {
         return Hold::Kind;
+    }
+    if (kind == kLead && layer == kLayerLevel)
+    {
+        return Hold::Lead;
     }
     return Hold::Free;
 }

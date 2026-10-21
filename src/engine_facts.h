@@ -1006,6 +1006,67 @@ inline constexpr std::array<std::uint8_t, 16> kSetActorTypeEntry{
     0x48, 0x8B, 0x81, 0x00, 0x0A, 0x00, 0x00, 0x88, 0x90, 0xB8, 0x00, 0x00, 0x00, 0x80, 0xFA, 0x02};
 inline constexpr platform::FunctionFact kSetActorType{L"EndCharacter800_SetActorType", 0x14164DE50, kSetActorTypeEntry};
 
+// --- A guide lead: the level's waiters and the story's marker (RE-lead-arrival-wait.md, RE-navi-icon-target.md) ---
+/// The level state manager ([root+0x138]) keeps one slot per level object and attribute (an object's attribute-4
+/// slot holds its AI setting state); the active slots are a linked list (head at +0x67E1E8, node +8 next, +0x18 the
+/// slot index into the array at +0xEE4A30). A slot: +0 the object FName, +8 the current state FName, +0x10 the
+/// current FEndDataTableStateChange row. A row: StringArgumentList (+0x78, count +0x80; [2] = the arrival trigger of a
+/// Lead/MoveToTarget/FollowActor setting), StateTriggerList (+0x98, count +0xA0; the triggers this state waits on, 8
+/// read), NextStateChange (+0xA8, count +0xB0; FStrings of 16 bytes). [CONFIRMED code, read live 2026-10-21 from
+/// outside the game: Tifa's Lead slot and the timer object waiting on her arrival]
+inline constexpr std::uint32_t  kStateManagerActiveList  = 0x67E1E0;  // the list object (the walk stops back at it)
+inline constexpr std::uint32_t  kStateManagerActiveHead  = 0x67E1E8;
+inline constexpr std::uint32_t  kStateManagerSlots       = 0xEE4A30;  // slot pointers, kStateManagerSlotCount of them
+inline constexpr std::uint32_t  kStateManagerSlotCount   = 0x33F00;
+inline constexpr std::uint32_t  kStateSlotObject         = 0x00;
+inline constexpr std::uint32_t  kStateSlotState          = 0x08;
+inline constexpr std::uint32_t  kStateSlotRow            = 0x10;
+inline constexpr std::uint32_t  kStateRowStringArgs      = 0x78;
+inline constexpr std::uint32_t  kStateRowTriggers        = 0x98;
+inline constexpr std::uint32_t  kStateRowNextStates      = 0xA8;
+inline constexpr std::uint32_t  kStateRowTriggersRead    = 8;
+/// The field AI's LEAD handler ([fa+0xDC0], the kind-7 slot of the handler table at +0xD88): the member's level object
+/// FName (+0x154) and the Lead setting's state FName (+0x15C), the two values its arrival signal passes.
+inline constexpr std::uint32_t  kFieldAiLeadHandler      = 0xDC0;
+inline constexpr std::uint32_t  kLeadHandlerObject       = 0x154;
+inline constexpr std::uint32_t  kLeadHandlerState        = 0x15C;
+/// The three state-trigger data tables (g_DT_StateTrigger; a row looked up through the table's virtual at +0x250
+/// with the FName by value, as StateMgr_FireStateTrigger and StoryFlag_IsSet do) and the FEndDataTableStateTrigger
+/// row: Target scope (+0x0C: 0 Self, 1 Location, 2 ResidentAndLocation, 3 SpecificObject), the direct sets
+/// ObjectIDList (+0x30, count +0x38), AttributeNameList (+0x40), StateChangeIDList (+0x50), SendObject (+0x80, count
+/// +0x88).
+inline constexpr std::uintptr_t kStateTriggerTablesGlobal = 0x1458441F0;
+inline constexpr std::uint32_t  kDataTableFindRowSlot    = 0x250;
+inline constexpr std::uint32_t  kTriggerRowScope         = 0x0C;
+inline constexpr std::uint32_t  kTriggerRowObjects       = 0x30;
+inline constexpr std::uint32_t  kTriggerRowAttributes    = 0x40;
+inline constexpr std::uint32_t  kTriggerRowStates        = 0x50;
+inline constexpr std::uint32_t  kTriggerRowSendObjects   = 0x80;
+inline constexpr std::uint32_t  kTriggerRowDirectSetsMax = 32;
+/// The objective icon registry ([root+0x1F8]: a map of story step FName to a 96-byte record; the sparse array's data
+/// at +8, count +0x10, 24-byte elements with the record at +8): a record's key (+8), its FEndDataTableStory row
+/// (+0x18) and its "icon removed" byte (+0x29, 0 while the icon is shown). The story row's three icon slots:
+/// IconOperationStatus (+0xA0, count +0xA8), TargetObjectID (+0x110, count +0x118), IconInvisibleFlag (+0x120, count
+/// +0x128; a story flag that hides the slot); the fallback InvNaviIcon (flag +0x160, shown while ViewLocationID
+/// +0x168 is set, target +0x17C). The first slot with a target and no set invisible flag is the one shown; its
+/// target is resolved by name every frame (a field point, else the level object: a character). [CONFIRMED code, read
+/// live 2026-10-21: the Ch. 3 record targets opy030_Tifa]
+inline constexpr std::uint32_t  kRootObjectiveIcons      = 0x1F8;
+inline constexpr std::uint32_t  kObjectiveIconRecordKey  = 0x08;
+inline constexpr std::uint32_t  kObjectiveIconRecordRow  = 0x18;
+inline constexpr std::uint32_t  kObjectiveIconRecordGone = 0x29;
+inline constexpr std::uint32_t  kStoryRowIconStatus      = 0xA0;
+inline constexpr std::uint32_t  kStoryRowIconTargets     = 0x110;
+inline constexpr std::uint32_t  kStoryRowIconHideFlags   = 0x120;
+inline constexpr std::uint32_t  kStoryRowInvNaviFlag     = 0x160;
+inline constexpr std::uint32_t  kStoryRowInvNaviShown    = 0x168;
+inline constexpr std::uint32_t  kStoryRowInvNaviTarget   = 0x17C;
+inline constexpr std::uint32_t  kStoryRowIconSlots       = 3;
+/// StoryFlag_IsSet(const FName*): the flag's row in the story-flag tables, then its bit in the save data.
+inline constexpr std::array<std::uint8_t, 16> kStoryFlagIsSetEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x18, 0x48, 0x89, 0x74, 0x24, 0x20, 0x57, 0x48, 0x83, 0xEC, 0x20, 0x48};
+inline constexpr platform::FunctionFact kStoryFlagIsSet{L"StoryFlag_IsSet", 0x140B05060, kStoryFlagIsSetEntry};
+
 // --- The battle target cursor (RE-target-cursor-two.md) --------------------------------------------------------
 /// The one cursor widget's pointer on the battle system (outside the target fields), and the HUD keys the cursor
 /// driver writes each frame: the enemy bar manager's (EndUISystem[27]) displayed target (a weak pointer pair) and

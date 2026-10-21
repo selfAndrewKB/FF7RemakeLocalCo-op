@@ -27,7 +27,7 @@ Every module registers its own commands (`src/control/registry.h`), so `help` on
 Today: `join`, `leave`, `console <command>`, `report`, `quit`, `showflags <hex>`, `ao-origin on|off`,
 `bloom-origin on|off`, `distortion-apply on|off`, `pad-buttons on|off`, `menu-two on|off`, `targeting-two on|off`, `rates-two on|off`, `menu-two.leader`, `menu-two.route`, `lock-camera-two.requests`, `lock-camera-two.restore`, `camera-override-two`, `enemy-leader`, `sequence-camera-two`, `target-cursor-two`, `party-events`, `log-level error|warning|info|debug|trace` (Debug by default; Trace holds the per-frame lines), `hud.dump roots|shown|all [<text>]`, `hud-band on|off`, `hud-image on|off`, `hud-targets on|off`, `hud-targets-log <renders>`; readings `p2.in`, `p2.member`, `p2.state` (out|in|playing|handed),
 `game.state` (title|loading|play|pause|menu|leaving|…), `game.paused`, `game.menu-kind`, `game.location`,
-`field.step` (13 = steady field), `field.running`, `hud.overlay`, `hud.layout`, `pad.events`, `pads` (the XInput users with a pad), `menu-two.state`, `targeting-two.runs`, `targeting-two.lock`, `tick`, `version`. The language's own verbs (`src/control/script.h`): `get <name>`, `status`, `help [<name>]`,
+`field.step` (13 = steady field), `field.running`, `hud.overlay`, `hud.layout`, `pad.events`, `pads` (the XInput users with a pad), `lead.gate` (the last LEAD on player 2's member judged), `menu-two.state`, `targeting-two.runs`, `targeting-two.lock`, `tick`, `version`. The language's own verbs (`src/control/script.h`): `get <name>`, `status`, `help [<name>]`,
 `wait <ticks>`, `wait-until <name> <op> <value> [<ticks>]`, `hold <player> stick <lx> <ly> <rx> <ry> <ticks>`,
 `note <text>`, `abort`. A failure drops the commands queued behind it; queries answer even during a wait.
 
@@ -97,6 +97,9 @@ src/
     own_controller        the End camera manager's BeginPlay, made safe for a second player
     player_two_camera     player 2's field camera operator and the per-player scopes
     party_member          which deployed member a seat plays: the row after player 1's in the party order
+    field_hold.h          the hold rule: which field AI states leave a member a further player's (pure)
+    lead_gate             a LEAD on the member: a guide (to its AI, the player's view on it) or staging, from the
+                          level's waiters on its arrival and the story's objective marker
     party_seat            a seat's controller takes its member through the game's leader funnel
     split_render          the single-player effects in each half (the engine's show-flag force mask)
   render/

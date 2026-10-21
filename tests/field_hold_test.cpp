@@ -25,15 +25,24 @@ using fh::Hold;
 void LevelStagingIsFree()
 {
     // Everything the level writes on layer 1 during gameplay: the stay, the run to a mark, the stand at the end of
-    // a path, the follow, the kinds that never read the player, and LEAD, which walks a member to a mark in step
-    // with the player as often as it makes a guide (the kind cannot tell the two apart; the user, 2026-10-21).
+    // a path, the follow, the kinds that never read the player.
     for (const fh::Kind kind : {fh::kNone, fh::kStay, fh::kFollowTarget, fh::kFollowPosition, fh::kAnimation,
-                                fh::kLead, fh::kWandering, fh::kPatrol, fh::kAccompany, fh::kInterest, fh::kUnique})
+                                fh::kWandering, fh::kPatrol, fh::kAccompany, fh::kInterest, fh::kUnique})
     {
         EXPECT(fh::Of(fh::kLayerLevel, kind) == Hold::Free);
         EXPECT(fh::Of(fh::kLayerStream, kind) == Hold::Free);
     }
     EXPECT(fh::Of(fh::kLayerLevel, fh::kEmpty) == Hold::Free);  // nothing asked
+}
+
+void LeadAsksTheGame()
+{
+    // LEAD on the level layer walks a member to a mark in step with the player as often as it makes a guide; the
+    // kind cannot tell the two apart, so the rule hands the question on (the user, 2026-10-21). Elsewhere it is
+    // what its layer says: the stream's default never leads, the cinema copy is the actor mode's.
+    EXPECT(fh::Of(fh::kLayerLevel, fh::kLead) == Hold::Lead);
+    EXPECT(fh::Of(fh::kLayerStream, fh::kLead) == Hold::Free);
+    EXPECT(fh::Of(5, fh::kLead) == Hold::Layer);
 }
 
 void OneShotsNeedTheAi()
@@ -91,6 +100,7 @@ void NamesCoverTheEnum()
 int main()
 {
     LevelStagingIsFree();
+    LeadAsksTheGame();
     OneShotsNeedTheAi();
     ScriptLayersHold();
     CinemaCopyFollowsItsKind();

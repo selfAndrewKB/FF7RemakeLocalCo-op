@@ -18,6 +18,7 @@
 #include "platform/verified_code.h"
 #include "players/field_exit.h"
 #include "players/game_state.h"
+#include "players/lead_gate.h"
 #include "players/own_controller.h"
 #include "players/party_events.h"
 #include "players/party_member.h"
@@ -394,6 +395,7 @@ void Session::Forget() noexcept
     memberWeak_[1] = 0;
     waitLogged_    = 0;
     handedToAi_    = false;
+    guideHand_     = false;
 }
 
 void Session::Join() noexcept
@@ -560,6 +562,8 @@ try
     }
     memberWeak_[0] = -1;
     memberWeak_[1] = 0;
+    handedToAi_    = false;
+    guideHand_     = false;
     scopes::Unbind(kSeat);
     // Research says nothing destroys these two with their owners; a changed class pointer would mean the
     // memory was reused, and then they are left alone.
@@ -600,7 +604,7 @@ try
                           L"so a party change ends the wait",
                           choice.ordinal, choice.type, party_member::Describe(choice.wait));
             if (choice.wait == party_member::Wait::AiHeld || choice.wait == party_member::Wait::NoFieldAi ||
-                choice.wait == party_member::Wait::Cinema)
+                choice.wait == party_member::Wait::Cinema || choice.wait == party_member::Wait::Guide)
             {
                 // The member's AI as the take test saw it (the actor of the row, read again).
                 platform::Log(L"  the row's member: {}", party_member::AiDetail(party_member::RowActor(kSeat, playerOne)));
@@ -660,10 +664,31 @@ try
     memberWeak_[0] = -1;
     memberWeak_[1] = 0;
     handedToAi_    = false;
+    guideHand_     = false;
 }
 catch (...)
 {
     platform::Log(L"release: an engine lookup raised an exception");
+}
+
+void Session::HandForGuide(void* member) noexcept
+{
+    // The game's own hand (what it does for its leader at an event's start), the seat and player 2's camera operator
+    // kept: the member's AI walks the guide, player 2 watches it, and the seat takes it back at the lead's end.
+    handedToAi_ = party_member::HandToAi(member);
+    guideHand_  = handedToAi_;
+    platform::Log(L"player 2's member (type {}) handed to its AI for a guide lead: {}; player 2's view stays on it, its controller takes "
+                  L"it back at the lead's end (lead gate: {})",
+                  party_seat::MemberType(kSeat), handedToAi_ ? L"yes" : L"NO (the hand faulted; tried again)", lead_gate::Reading());
+}
+
+void Session::ReturnFromGuide(void* member) noexcept
+{
+    handedToAi_ = false;
+    guideHand_  = false;
+    platform::Log(L"player 2's member (type {}) back on its controller: the guide lead ended: {}; the member: {}", party_seat::MemberType(kSeat),
+                  party_member::ReturnTo(member, Field(playerTwo_, facts::kLocalPlayerController)) ? L"yes" : L"NO",
+                  party_member::AiDetail(member));
 }
 
 void Session::FollowSlot() noexcept
@@ -699,6 +724,15 @@ try
     }
     if (handedToAi_)
     {
+        if (guideHand_)
+        {
+            // The lead's end decides: the level's next setting on the member (free), and nothing else holding it.
+            if (party_member::HoldWait(member) == party_member::Wait::None)
+            {
+                ReturnFromGuide(member);
+            }
+            return;
+        }
         // The game's own state decides the return (RE-script-release.md §4: the event bit alone undid a keep-group
         // hand): its leader back with a player controller. The funnel is heard at its entry; this is the backstop,
         // and the retry while a script still held the member at the game's return.
@@ -706,6 +740,11 @@ try
         {
             OnLeaderReturned(this);
         }
+        return;
+    }
+    if (party_member::HoldWait(member) == party_member::Wait::Guide)
+    {
+        HandForGuide(member);
         return;
     }
     if (const wchar_t* why = party_member::WhyHeldByScript(member))
@@ -780,12 +819,13 @@ try
 {
     auto* session = static_cast<Session*>(self);
     void* member  = party_seat::Member(kSeat);
-    if (member == nullptr || !session->handedToAi_ || session->playerTwo_ == nullptr)
+    if (member == nullptr || !session->handedToAi_ || session->guideHand_ || session->playerTwo_ == nullptr)
     {
-        return;
+        return;  // a guide hand ends with the lead (FollowSlot), not with the game's leader
     }
     // The game's leader is back; the member follows once nothing holds it (a scene's own layers can outlast the
-    // lock). The periodic check retries while the game's leader stays with its player.
+    // lock, a guide lead written at the scene's end runs to its mark). The periodic check retries while the game's
+    // leader stays with its player.
     if (const wchar_t* why = party_member::WhyHeldByScript(member))
     {
         if (!session->returnWaitLogged_)
@@ -880,9 +920,9 @@ try
     if (Seated())
     {
         const auto type = party_seat::MemberType(kSeat);
-        return handedToAi_ ? std::format(L"handed type {} (with the game's leader, lock {:#x})", type,
-                                         party_member::ControlLockMask())
-                           : std::format(L"playing type {}", type);
+        return guideHand_   ? std::format(L"handed type {} (a guide lead: its AI walks it, player 2's view on it)", type)
+               : handedToAi_ ? std::format(L"handed type {} (with the game's leader, lock {:#x})", type, party_member::ControlLockMask())
+                             : std::format(L"playing type {}", type);
     }
     auto* players = LocalPlayers(gameInstance_);
     if (!seatInstalled_ || players == nullptr || players->Num() < 2)
