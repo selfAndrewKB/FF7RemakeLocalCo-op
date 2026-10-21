@@ -64,7 +64,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.25.0-script-hold";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.25.1-lead-free";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;

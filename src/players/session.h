@@ -14,9 +14,9 @@
 // (through the same funnel) and chosen again; after a rebuild its PLAYER actor type is set again; when the game
 // hands its leader to its AI (an event, a field action, the field control lock) the member is handed to its AI
 // and taken back when the game takes its leader back, once no script still holds the member; a story script that
-// takes it (a script layer of its field AI, a LEAD, the cinema modes: players/field_hold.h) gets it back until it
-// is free again. A periodic check backs the funnels up (the return on the game's own leader state), and a member
-// destroyed under player 2 (a retry rebuilds the party without a field exit) is let go of without a call.
+// takes it (a script layer of its field AI, a one-shot kind, the cinema modes: players/field_hold.h) gets it back
+// until it is free again. A periodic check backs the funnels up (the return on the game's own leader state), and a
+// member destroyed under player 2 (a retry rebuilds the party without a field exit) is let go of without a call.
 // Leave: the member given back first, then the actors player 2's controller and camera manager spawned, which the
 // engine never destroys, are destroyed, then UGameInstance::RemoveLocalPlayer. The engine's own list is the
 // evidence of both.

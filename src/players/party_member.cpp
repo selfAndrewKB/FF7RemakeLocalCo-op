@@ -274,7 +274,7 @@ const wchar_t* WhyHeldByScript(void* member) noexcept
     case Wait::Cinema:
         return L"in a cutscene or event (the cinema actor mode)";
     case Wait::AiHeld:
-        return L"held by a story script (a script layer of its field AI, or a LEAD or one-shot kind)";
+        return L"held by a story script (a script layer of its field AI, or a one-shot kind)";
     default:
         return nullptr;  // an event lock alone is the game's hand-back (party_events); the rest holds nothing
     }
@@ -387,7 +387,7 @@ const wchar_t* Describe(Wait wait) noexcept
     case Wait::EventLock:
         return L"an event holds the field";
     case Wait::AiHeld:
-        return L"a story script holds its field AI (a script layer, or a LEAD or one-shot kind)";
+        return L"a story script holds its field AI (a script layer, or a one-shot kind)";
     case Wait::NoFieldAi:
         return L"its field AI has no state yet";
     case Wait::Unread:

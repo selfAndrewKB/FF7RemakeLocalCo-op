@@ -24,10 +24,11 @@ using fh::Hold;
 
 void LevelStagingIsFree()
 {
-    // Everything the level writes on layer 1 during gameplay but LEAD: the stay, the run to a mark, the stand at
-    // the end of a path, the follow, and the kinds that never read the player.
+    // Everything the level writes on layer 1 during gameplay: the stay, the run to a mark, the stand at the end of
+    // a path, the follow, the kinds that never read the player, and LEAD, which walks a member to a mark in step
+    // with the player as often as it makes a guide (the kind cannot tell the two apart; the user, 2026-10-21).
     for (const fh::Kind kind : {fh::kNone, fh::kStay, fh::kFollowTarget, fh::kFollowPosition, fh::kAnimation,
-                                fh::kWandering, fh::kPatrol, fh::kAccompany, fh::kInterest, fh::kUnique})
+                                fh::kLead, fh::kWandering, fh::kPatrol, fh::kAccompany, fh::kInterest, fh::kUnique})
     {
         EXPECT(fh::Of(fh::kLayerLevel, kind) == Hold::Free);
         EXPECT(fh::Of(fh::kLayerStream, kind) == Hold::Free);
@@ -35,12 +36,11 @@ void LevelStagingIsFree()
     EXPECT(fh::Of(fh::kLayerLevel, fh::kEmpty) == Hold::Free);  // nothing asked
 }
 
-void LeadAndOneShotsNeedTheAi()
+void OneShotsNeedTheAi()
 {
-    EXPECT(fh::Of(fh::kLayerLevel, fh::kLead) == Hold::Kind);
     EXPECT(fh::Of(fh::kLayerLevel, fh::kSingleAnimation) == Hold::Kind);
     EXPECT(fh::Of(fh::kLayerLevel, fh::kEscapePosition) == Hold::Kind);
-    EXPECT(fh::Of(fh::kLayerStream, fh::kLead) == Hold::Kind);
+    EXPECT(fh::Of(fh::kLayerStream, fh::kSingleAnimation) == Hold::Kind);
 }
 
 void ScriptLayersHold()
@@ -62,12 +62,13 @@ void ScriptLayersHold()
 void CinemaCopyFollowsItsKind()
 {
     // A cutscene's preparation copies the active record into layer 13: a copy of a free kind stays free, a copy
-    // of a LEAD holds; the scene itself is the actor mode, the caller's test.
+    // of a one-shot holds; the scene itself is the actor mode, the caller's test.
     EXPECT(fh::Of(fh::kLayerCinema, fh::kAccompany) == Hold::Free);
     EXPECT(fh::Of(fh::kLayerCinema, fh::kNone) == Hold::Free);
     EXPECT(fh::Of(fh::kLayerCinema, fh::kFollowPosition) == Hold::Free);
-    EXPECT(fh::Of(fh::kLayerCinema, fh::kLead) == Hold::Kind);
+    EXPECT(fh::Of(fh::kLayerCinema, fh::kLead) == Hold::Free);
     EXPECT(fh::Of(fh::kLayerCinema, fh::kSingleAnimation) == Hold::Kind);
+    EXPECT(fh::Of(fh::kLayerCinema, fh::kEscapePosition) == Hold::Kind);
 }
 
 void NoStateWaits()
@@ -90,7 +91,7 @@ void NamesCoverTheEnum()
 int main()
 {
     LevelStagingIsFree();
-    LeadAndOneShotsNeedTheAi();
+    OneShotsNeedTheAi();
     ScriptLayersHold();
     CinemaCopyFollowsItsKind();
     NoStateWaits();

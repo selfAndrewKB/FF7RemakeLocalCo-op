@@ -8,10 +8,15 @@
 // 12 are the scripts' (acts, events, field actions, story moves) and 13 the cinema copy a cutscene's preparation
 // makes of the active record. The user's rule (2026-10-20; research/RE-fieldai-kinds.md): players 2 and 3 keep
 // control through the level's staging, and wait, the member handed back to its AI, only when a script needs it: a
-// LEAD (the member guides the party leader to a point and waits for him: the one layer-1 kind that reads the
-// player), a one-shot animation, the unread ESCAPE_POSITION, or any request on a script layer. A request written
-// on a player-held member runs its enter and one update and freezes until the give-back; only SINGLE_ANIMATION's
-// exit reports finished to the scripts, so nothing else stalls while held.
+// one-shot animation, the unread ESCAPE_POSITION, or any request on a script layer. A request written on a
+// player-held member runs its enter and one update and freezes until the give-back; only SINGLE_ANIMATION's exit
+// reports finished to the scripts, so nothing else stalls while held.
+// LEAD is staging too (the user, 2026-10-21): the level writes it as often to walk a member to a mark in step with
+// the player ("walk up to the console", twice on the Ch. 7 reactor walk) as to make the member a guide the player
+// follows. The handler is the same code either way; what differs is level data, whether the level's next step waits
+// on the lead's arrival. The kind cannot tell the two apart, so LEAD is free; a guide on a held member would wait
+// (its logic tick needs a pawn) until something else hands the member back. The level step's arrival wait is the
+// game's own test for the give-back (research/RE-script-release.md, the arrival signal's consumer): an IDA pass.
 //
 // Pure (host-tested in tests/field_hold_test.cpp); the actor modes and the event lock are the caller's tests.
 
@@ -35,7 +40,7 @@ enum Kind : std::uint8_t
     kFollowPosition  = 4,   // the run to a mark ("MoveToTarget")
     kAnimation       = 5,
     kSingleAnimation = 6,   // the scripts' one-shot move; its exit reports finished
-    kLead            = 7,   // guide the party leader to a point, wait, beckon, fetch
+    kLead            = 7,   // walk to a point and wait for the party leader, beckon, fetch: staging or a guide
     kEscapePosition  = 8,   // no writer found
     kWandering       = 9,
     kPatrol          = 10,
@@ -46,9 +51,9 @@ enum Kind : std::uint8_t
 
 enum class Hold : std::uint8_t
 {
-    Free,     // the player's: the level's staging or the follow
+    Free,     // the player's: the level's staging (a lead among it) or the follow
     Layer,    // a script layer is active
-    Kind,     // a kind that needs the AI: LEAD, SINGLE_ANIMATION, ESCAPE_POSITION
+    Kind,     // a kind that needs the AI: SINGLE_ANIMATION, ESCAPE_POSITION
     NoState,  // the field AI has no state yet (wait)
 };
 
@@ -63,7 +68,7 @@ constexpr Hold Of(std::uint8_t layer, std::uint8_t kind) noexcept
     {
         return Hold::Layer;
     }
-    if (kind == kSingleAnimation || kind == kLead || kind == kEscapePosition)
+    if (kind == kSingleAnimation || kind == kEscapePosition)
     {
         return Hold::Kind;
     }

@@ -9,10 +9,10 @@
 // cycle does; a third player would take the next row. The game's order is the only control: a story party change
 // moves the slot and the session follows it. The row's member is taken only while it is free the way the game
 // hands members to players: nobody else's controller holds it; in the field its AI runs the level's staging or the
-// party's follow (players/field_hold.h: no script layer active, no LEAD or one-shot kind), it is in the FIELD or
+// party's follow (players/field_hold.h: no script layer active, no one-shot kind), it is in the FIELD or
 // CAUTION actor mode and no event holds the field; in battle the BATTLE mode. A story script that takes a held
-// member (a script layer, a LEAD, the cinema modes) gets it back, and the player waits for it. A downed member
-// stays playable, as player 1 stays on a downed leader. With fewer rows than seats (a solo story party) that
+// member (a script layer, a one-shot kind, the cinema modes) gets it back, and the player waits for it. A downed
+// member stays playable, as player 1 stays on a downed leader. With fewer rows than seats (a solo story party) that
 // player has no member and waits.
 //
 // Seat-indexed (seat 1 = player 2); game thread only; every read guarded (a reload tears the party down under them).
@@ -36,7 +36,7 @@ enum class Wait : std::uint8_t
     Held,        // another controller holds the row's member (its PLAYER slot)
     Cinema,      // in a cutscene or an event (the cinema actor modes)
     EventLock,   // an event holds the field
-    AiHeld,      // a script holds its field AI (a script layer, or a LEAD / one-shot kind: field_hold.h)
+    AiHeld,      // a script holds its field AI (a script layer, or a one-shot kind: field_hold.h)
     NoFieldAi,   // its field AI has no state yet
     Unread,      // the party could not be read
 };
