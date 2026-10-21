@@ -1217,4 +1217,57 @@ inline constexpr std::uint32_t kCognitionTimer         = 0x14;  //   time since 
 inline constexpr std::uint32_t kCognitionInterest      = 0x18;  //   interest,
 inline constexpr std::uint32_t kCognitionExperience    = 0x1C;  //   experience (100 after a look)
 
+// --- EnvironmentSet: actors hidden by the ground under the leader (research/RE-picture-variants.md §2, §5, §9) -------
+// Square Enix's EnvironmentSet manager traces down from the party leader each frame, takes the hit surface's material
+// as the area's set, and hides (reason 13) the actors the field's EnvironmentSetWrapper row lists for that set. All
+// three calls below are in EnvSetMgr_TickEvaluate_LeaderDownTrace 0x14165FCA0 (game thread, once per world tick).
+/// IssueDownTrace(unused, const {FName tag; FVector loc}*, unused, unused, FTraceHandle* out): stock async line trace,
+/// object channel 16, 150 m down. Its one call crosses a block.
+inline constexpr std::array<std::uint8_t, 16> kEnvSetIssueTraceEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x74, 0x24, 0x18, 0x48, 0x89, 0x7C, 0x24, 0x20, 0x55};
+inline constexpr platform::FunctionFact kEnvSetIssueTrace{L"EnvSetMgr_IssueDownTrace_Ch16", 0x141661630,
+                                                          kEnvSetIssueTraceEntry};
+inline constexpr std::uintptr_t kEnvSetIssueTraceCall = 0x14166025E;
+/// ReadTraceResult(mgr, const FTraceHandle*, block*) -> 1 when a set was built into the block. The handle is valid only
+/// the frame after it was issued; no hit falls back to the save data's last set name (written on every hit).
+inline constexpr std::array<std::uint8_t, 16> kEnvSetReadResultEntry{
+    0x4C, 0x8B, 0xDC, 0x55, 0x56, 0x57, 0x41, 0x56, 0x49, 0x8D, 0xAB, 0x48, 0xFE, 0xFF, 0xFF, 0x48};
+inline constexpr platform::FunctionFact kEnvSetReadResult{L"EnvSetMgr_ReadTraceResult_ResolveSet", 0x14165E990,
+                                                          kEnvSetReadResultEntry};
+inline constexpr std::uintptr_t kEnvSetReadResultCall = 0x14165FE55;
+/// ApplyActorList(mgr, actor array*, const TArray<FName>* levels): finds each listed actor by (level, name) in the
+/// listed levels only; clears the managed actors the new list drops.
+inline constexpr std::array<std::uint8_t, 16> kEnvSetApplyEntry{
+    0x48, 0x8B, 0xC4, 0x4C, 0x89, 0x40, 0x18, 0x48, 0x89, 0x50, 0x10, 0x48, 0x89, 0x48, 0x08, 0x55};
+inline constexpr platform::FunctionFact kEnvSetApply{L"EnvSetMgr_ApplyActorList_HiddenReason13", 0x1416606A0,
+                                                     kEnvSetApplyEntry};
+inline constexpr std::uintptr_t kEnvSetApplyCall = 0x1416600F7;
+/// EnvSetBlock_Reset(block): empties the lists and ids, keeps the allocations.
+inline constexpr std::array<std::uint8_t, 16> kEnvSetBlockResetEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x10, 0x57, 0x48, 0x83, 0xEC, 0x20, 0x33, 0xFF, 0x48, 0x8B, 0xD9, 0x48};
+inline constexpr platform::FunctionFact kEnvSetBlockReset{L"EnvSetBlock_Reset", 0x1411FF5E0, kEnvSetBlockResetEntry};
+/// The actor array's grow (array*, old count), called by the game's append after it raised the count past the max.
+inline constexpr std::array<std::uint8_t, 16> kEnvSetActorsGrowEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x74, 0x24, 0x10, 0x57, 0x48, 0x83, 0xEC, 0x20, 0x48};
+inline constexpr platform::FunctionFact kEnvSetActorsGrow{L"EnvSetBlock_ActorArray_ResizeGrow", 0x14166A550,
+                                                          kEnvSetActorsGrowEntry};
+inline constexpr std::uintptr_t kEnvSetManagerGlobal  = 0x1457E9A90;  // the manager (for the reading only)
+inline constexpr std::uint32_t  kEnvSetMgrSetIds      = 0x40;   // the applied set's three ids (FName each, +0x48, +0x50)
+inline constexpr std::uint32_t  kEnvSetMgrHoldMode    = 0x858;  // u8: hold mode (the block is replaced after the read)
+inline constexpr std::uint32_t  kEnvSetBlockBytes     = 0x1D0;  // a set block (zero-filled = constructed)
+inline constexpr std::uint32_t  kEnvSetBlockLevels    = 0x08;   //   TArray<FName> LevelList (num +0x10)
+inline constexpr std::uint32_t  kEnvSetBlockIds       = 0x28;   //   the set's three ids
+inline constexpr std::uint32_t  kEnvSetBlockActors    = 0x40;   //   {FName, u32 Hidden} x 32 inline,
+inline constexpr std::uint32_t  kEnvSetBlockActorsHeap = 0x1C0; //   the heap data when grown, num +0x1C8, max +0x1CC
+inline constexpr std::uint32_t  kEnvSetBlockActorsNum = 0x1C8;
+inline constexpr std::uint32_t  kEnvSetBlockActorsMax = 0x1CC;
+/// The save data (SaveDataMgr_Get_cand's singleton [ASSUMPTION: the save data]). While its state is 7, the active data
+/// at +0x880 holds the EnvironmentSet's last set name, char[128], which a hit writes and a no-hit reads.
+inline constexpr std::uintptr_t kSaveDataGlobal       = 0x1457E9768;
+inline constexpr std::uint32_t  kSaveDataActive       = 0x880;
+inline constexpr std::uint32_t  kSaveDataState        = 0x890;
+inline constexpr std::int32_t   kSaveDataStateActive  = 7;
+inline constexpr std::uint32_t  kSaveDataEnvSetName   = 0x480AC;  // from the active data
+inline constexpr std::uint32_t  kSaveDataEnvSetNameBytes = 0x80;
+
 }  // namespace lss::facts
