@@ -66,7 +66,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.26.0-guide-lead";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.27.0-hand-await";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
@@ -121,12 +121,16 @@ private:
 void RegisterSessionCommands(lss::players::Session& session)
 {
     using lss::control::Register;
-    Register({.name = L"join", .help = L"player 2 joins with a controller and camera manager of its own (Ctrl+F7)",
+    Register({.name = L"join",
+              .help = L"player 2 joins on its member with a controller and camera manager of its own (Ctrl+F7); with the member not "
+                      L"free, nothing is made yet and player 2 joins once it is (p2.state awaiting)",
               .set  = [&session](const Value&) {
                   session.Join();
-                  return session.HasPlayerTwo() ? Outcome{} : Outcome{false, L"player 2 did not join (see the log)"};
+                  return session.HasPlayerTwo() ? Outcome{}
+                         : session.Awaiting()   ? Outcome{true, L"player 2 joins once its member is free (see the log; 'leave' stops the wait)"}
+                                                : Outcome{false, L"player 2 did not join (see the log)"};
               }});
-    Register({.name = L"leave", .help = L"player 2 leaves (Ctrl+F8)", .set = [&session](const Value&) {
+    Register({.name = L"leave", .help = L"player 2 leaves, or stops waiting for a member (Ctrl+F8)", .set = [&session](const Value&) {
                   session.Leave();
                   return session.HasPlayerTwo() ? Outcome{false, L"player 2 is still in (see the log)"} : Outcome{};
               }});
@@ -143,11 +147,12 @@ void RegisterSessionCommands(lss::players::Session& session)
               .get  = [&session] { return Value{session.RejoinPending()}; }});
     Register({.name  = L"p2.state",
               .shape = Shape::Word,
-              .words = {L"out", L"in", L"playing", L"handed"},
-              .help  = L"out, in (waiting for its party member), playing (holds it), or handed (its member is with its AI "
-                       L"while the game's leader is: a scene, a field action, the lock; or for a guide lead; the seat is kept)",
+              .words = {L"out", L"awaiting", L"in", L"playing", L"handed"},
+              .help  = L"out, awaiting (asked for; joins once its member is free), in (between a seat and the next, momentary), "
+                       L"playing (holds its member), or handed (its member is with its AI while the game's leader is: a scene, a "
+                       L"field action, the lock; or for the member's own hold: a script, an animation, a guide lead; the seat is kept)",
               .get   = [&session] {
-                  return Value{std::wstring(!session.HasPlayerTwo() ? L"out"
+                  return Value{std::wstring(!session.HasPlayerTwo() ? (session.Awaiting() ? L"awaiting" : L"out")
                                             : !session.Seated()     ? L"in"
                                             : session.HandedToAi()  ? L"handed"
                                                                     : L"playing")};

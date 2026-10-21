@@ -7,10 +7,13 @@
 // settings, written during gameplay to stage the members (a stay, a run to a mark, a lead, the follow); layers 2 to
 // 12 are the scripts' (acts, events, field actions, story moves) and 13 the cinema copy a cutscene's preparation
 // makes of the active record. The user's rule (2026-10-20; research/RE-fieldai-kinds.md): players 2 and 3 keep
-// control through the level's staging, and wait, the member handed back to its AI, only when a script needs it: a
-// one-shot animation, the unread ESCAPE_POSITION, or any request on a script layer. A request written on a
-// player-held member runs its enter and one update and freezes until the give-back; only SINGLE_ANIMATION's exit
-// reports finished to the scripts, so nothing else stalls while held.
+// control through the level's staging, and wait, the member handed to its AI, only when a script needs it: an
+// animation, the unread ESCAPE_POSITION, or any request on a script layer. A request written on a player-held
+// member runs its enter and one update and freezes until the hand; only SINGLE_ANIMATION's exit reports finished
+// to the scripts, so nothing else stalls while held.
+// ANIMATION on the level layer is a scripted animation too (the user, 2026-10-21, after player 2 seated on Tifa in
+// the middle of one and cut it short): both animation kinds hand the member to its AI with the player's view kept
+// on it, until the animation ends.
 // LEAD on the level layer is the one kind this rule cannot settle (the user, 2026-10-21): the level writes it as
 // often to walk a member to a mark in step with the player ("walk up to the console", twice on the Ch. 7 reactor
 // walk) as to make the member a guide the player follows ("follow Tifa", Ch. 3). The handler is the same code either
@@ -52,11 +55,12 @@ enum Kind : std::uint8_t
 
 enum class Hold : std::uint8_t
 {
-    Free,     // the player's: the level's staging or the follow
-    Layer,    // a script layer is active
-    Kind,     // a kind that needs the AI: SINGLE_ANIMATION, ESCAPE_POSITION
-    Lead,     // a LEAD on the level layer: staging or a guide, the game's data decides (players/lead_gate.h)
-    NoState,  // the field AI has no state yet (wait)
+    Free,       // the player's: the level's staging or the follow
+    Animation,  // a scripted animation (ANIMATION, SINGLE_ANIMATION): its AI plays it, the player watches
+    Layer,      // a script layer is active
+    Kind,       // a kind that needs the AI: the unread ESCAPE_POSITION
+    Lead,       // a LEAD on the level layer: staging or a guide, the game's data decides (players/lead_gate.h)
+    NoState,    // the field AI has no state yet (wait)
 };
 
 /// The hold of a field AI state: its active layer and that layer's kind.
@@ -70,7 +74,11 @@ constexpr Hold Of(std::uint8_t layer, std::uint8_t kind) noexcept
     {
         return Hold::Layer;
     }
-    if (kind == kSingleAnimation || kind == kEscapePosition)
+    if (kind == kAnimation || kind == kSingleAnimation)
+    {
+        return Hold::Animation;
+    }
+    if (kind == kEscapePosition)
     {
         return Hold::Kind;
     }

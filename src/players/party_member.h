@@ -9,12 +9,14 @@
 // cycle does; a third player would take the next row. The game's order is the only control: a story party change
 // moves the slot and the session follows it. The row's member is taken only while it is free the way the game
 // hands members to players: nobody else's controller holds it; in the field its AI runs the level's staging or the
-// party's follow (players/field_hold.h: no script layer active, no one-shot kind), it is in the FIELD or
-// CAUTION actor mode and no event holds the field; in battle the BATTLE mode. A story script that takes a held
-// member (a script layer, a one-shot kind, the cinema modes) gets it back, and the player waits for it. A LEAD the
-// level writes on the member is the player's while it is staging and the AI's while it is a guide (the game's own
-// data decides: players/lead_gate.h). A downed member stays playable, as player 1 stays on a downed leader. With
-// fewer rows than seats (a solo story party) that player has no member and waits.
+// party's follow (players/field_hold.h: no script layer active, no animation or one-shot kind), it is in the FIELD
+// or CAUTION actor mode, no event holds the field and the game's own leader is with its player (not handed to its
+// AI for a scene, a field action or the control lock); in battle the BATTLE mode. A story script that takes a held
+// member (a script layer, an animation, the cinema modes) gets it the way the game hands its leader to its AI, the
+// seat and the player's view kept on it, until the hold ends (the user, 2026-10-21). A LEAD the level writes on
+// the member is the player's while it is staging and the AI's while it is a guide (the game's own data decides:
+// players/lead_gate.h). A downed member stays playable, as player 1 stays on a downed leader. With fewer rows than
+// seats (a solo story party) that player has no member and waits.
 //
 // Seat-indexed (seat 1 = player 2); game thread only; every read guarded (a reload tears the party down under them).
 
@@ -35,13 +37,24 @@ enum class Wait : std::uint8_t
     NoSlot,      // the formation has no row for this seat beyond player 1's
     NotLoaded,   // the row names a type with no actor
     Held,        // another controller holds the row's member (its PLAYER slot)
-    Cinema,      // in a cutscene or an event (the cinema actor modes)
-    EventLock,   // an event holds the field
-    AiHeld,      // a script holds its field AI (a script layer, or a one-shot kind: field_hold.h)
-    Guide,       // its AI walks a guide lead (a level step waits on its arrival, or the story marks it: lead_gate.h)
-    NoFieldAi,   // its field AI has no state yet
-    Unread,      // the party could not be read
+    Cinema,       // in a cutscene or an event (the cinema actor modes)
+    EventLock,    // an event holds the field
+    LeaderHanded, // the game's own leader is with its AI (a scene, a field action, the control lock), or unread
+    AiHeld,       // a script holds its field AI (a script layer, or the unread ESCAPE_POSITION kind: field_hold.h)
+    Animation,    // its AI plays a scripted animation (ANIMATION or the one-shot SINGLE_ANIMATION: field_hold.h)
+    Guide,        // its AI walks a guide lead (a level step waits on its arrival, or the story marks it: lead_gate.h)
+    NoFieldAi,    // its field AI has no state yet
+    Unread,       // the party could not be read
 };
+
+/// The waits a seated member's own scripted hold makes: a cutscene mode, a script layer or kind, an animation, a
+/// guide lead. The session answers each with the game's own hand (the member to its AI, the seat and the player's
+/// view kept) and takes the member back when the hold ends. The rest (the event lock, the game's leader handed) is
+/// the game's own hand of its leader, heard by party_events.
+constexpr bool ScriptHold(Wait wait) noexcept
+{
+    return wait == Wait::Cinema || wait == Wait::AiHeld || wait == Wait::Animation || wait == Wait::Guide;
+}
 
 struct Choice
 {
@@ -65,13 +78,14 @@ std::wstring FormationReading(void* playerOneController) noexcept;
 /// formation, or it became player 1's. Null while it still is. `type` is the member's type as taken.
 const wchar_t* WhyNotInSlot(int seat, void* member, std::uint8_t type, void* playerOneController) noexcept;
 
-/// Why a held `member` must go back to its AI now: a cutscene or event mode, a script's hold on its field AI
-/// (field_hold.h), or a guide lead (lead_gate.h). Null while it may stay. (The battle mode holds nothing: the battle
-/// AI never runs a player-held member; an event lock alone is the game's own hand, heard by party_events.)
+/// Why a held `member` must be with its AI now (a ScriptHold wait: a cutscene or event mode, a script's hold on its
+/// field AI, an animation, a guide lead). Null while it may stay. (The battle mode holds nothing: the battle AI
+/// never runs a player-held member; an event lock or the game's leader handed is the game's own hand, heard by
+/// party_events.)
 const wchar_t* WhyHeldByScript(void* member) noexcept;
 
 /// The field take test's wait for a `member` whoever holds it (None: free, or in battle), the reason itself: the
-/// session hands a guide lead's member to its AI keeping its seat, and releases the rest.
+/// session hands a ScriptHold wait's member to its AI keeping its seat, and takes it back at None.
 Wait HoldWait(void* member) noexcept;
 
 /// The member's actor mode byte (facts::kActorMode*; 0 unread).

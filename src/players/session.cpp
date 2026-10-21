@@ -294,7 +294,7 @@ try
     }
     if (!HasPlayerTwo())
     {
-        TryRejoin();
+        TryRejoin();  // after a world change, or for the member player 2 waits on
         return;
     }
     auto* players = LocalPlayers(gameInstance_);
@@ -318,7 +318,14 @@ try
     }
     if (!Seated())
     {
-        TrySeat();
+        // After a release (the row changed, or its member left): the row's member now, or out until one is free. An
+        // unreadable party is a tick's thing, not a wait.
+        party_member::Choice choice;
+        if (!TrySeat(choice) && !Seated() && ticks_ >= seatRetryAt_ && choice.wait != party_member::Wait::Unread)
+        {
+            LogWait(choice, L"player 2 is in without a member");
+            LeaveToAwait(party_member::Describe(choice.wait));
+        }
     }
     else if (ticks_ % kFollowSlotTicks == 0)
     {
@@ -331,8 +338,9 @@ catch (...)
 }
 
 void Session::TryRejoin() noexcept
+try
 {
-    if (!rejoin_.pending)
+    if (!rejoin_.pending && !awaiting_)
     {
         return;
     }
@@ -346,33 +354,113 @@ void Session::TryRejoin() noexcept
     if (!ready)
     {
         rejoin_.steady = false;
+        if (awaiting_ && !rejoin_.pending)
+        {
+            rejoin_.pending = true;  // the field left under the wait: the join after it settles as after any world change
+        }
         return;
     }
-    if (!rejoin_.steady)
+    if (rejoin_.pending)
     {
-        rejoin_.steady = true;
-        rejoin_.since  = now;
-        platform::Log(L"rejoin: the field is back ({}); player 2 joins in {} s if it stays", game.location,
-                      kRejoinSteady.count());
-        return;
+        if (!rejoin_.steady)
+        {
+            rejoin_.steady = true;
+            rejoin_.since  = now;
+            platform::Log(L"rejoin: the field is back ({}); player 2 joins in {} s if it stays", game.location,
+                          kRejoinSteady.count());
+            return;
+        }
+        if (now - rejoin_.since < kRejoinSteady)
+        {
+            return;
+        }
     }
-    if (now - rejoin_.since < kRejoinSteady)
+    const bool wasAwaiting = awaiting_;
+    if (awaiting_)
     {
-        return;
+        // The member first: nothing is created for player 2 until the row's member is free (logged once per reason).
+        if (ticks_ < seatRetryAt_)
+        {
+            return;  // the seat funnel refused the member last time; not tried again before its retry tick
+        }
+        const party_member::Choice choice = party_member::Choose(kSeat, Field((*players)[0], facts::kLocalPlayerController), nullptr, false);
+        if (choice.member == nullptr)
+        {
+            LogWait(choice, L"player 2 joins once its member is free");
+            rejoin_ = Rejoin{};  // the field has settled; the wait goes on without the rejoin's delay
+            return;
+        }
+        awaiting_ = false;  // Join sets it again if the member is gone by then
     }
+    const bool afterWorldChange = rejoin_.pending;
     Join();
     if (!HasPlayerTwo())
     {
-        rejoin_.steady = false;  // another wait, then another try
+        if (awaiting_)
+        {
+            rejoin_ = Rejoin{};  // the join found the member not free after all: the wait goes on
+            return;
+        }
+        // The join itself failed (logged above): a few more tries, each tick for a wait, after the settle for a rejoin.
+        rejoin_.steady = false;
+        awaiting_      = wasAwaiting;
         if (++rejoin_.failures >= kRejoinFailures)
         {
-            rejoin_ = Rejoin{};
-            platform::Log(L"rejoin: player 2 did not join in {} tries (see above); press Ctrl+F7 to join", kRejoinFailures);
+            rejoin_   = Rejoin{};
+            awaiting_ = false;
+            platform::Log(L"{}: player 2 did not join in {} tries (see above); press Ctrl+F7 to join",
+                          afterWorldChange ? L"rejoin" : L"the wait for a member", kRejoinFailures);
         }
         return;
     }
     rejoin_ = Rejoin{};
-    platform::Log(L"rejoin: player 2 is back");
+    if (afterWorldChange)
+    {
+        platform::Log(L"rejoin: player 2 is back");
+    }
+}
+catch (...)
+{
+    platform::Log(L"rejoin: an engine lookup raised an exception");
+}
+
+void Session::LeaveToAwait(const wchar_t* why) noexcept
+{
+    platform::Log(L"player 2 leaves: {}; it joins again once its member is free (Ctrl+F8 stops the wait)", why);
+    if (!TakeOut(false))
+    {
+        platform::Log(L"player 2 could not leave (see above); it stays in without a member");
+        return;
+    }
+    awaiting_ = true;  // the wait's reason stays logged: the join's wait line names it again only when it changes
+}
+
+void Session::LogWait(const party_member::Choice& choice, const wchar_t* who) noexcept
+{
+    const std::uint32_t key = 1u | static_cast<std::uint32_t>(choice.type) << 8 | static_cast<std::uint32_t>(choice.wait) << 16 |
+                              static_cast<std::uint32_t>(choice.ordinal + 1) << 24;
+    if (key == waitLogged_)
+    {
+        return;
+    }
+    if (waitLogged_ == 0)
+    {
+        awaitSince_ = ticks_;
+    }
+    waitLogged_ = key;
+    platform::Log(L"{} (row {} of the party order, type {}): {}; the game's party order chooses it, so a party change ends the wait",
+                  who, choice.ordinal, choice.type, party_member::Describe(choice.wait));
+    if (party_member::ScriptHold(choice.wait) || choice.wait == party_member::Wait::NoFieldAi ||
+        choice.wait == party_member::Wait::LeaderHanded || choice.wait == party_member::Wait::EventLock)
+    {
+        // The member's AI and the lock mask as the take test saw them (the actor of the row, read again).
+        auto* players = LocalPlayers(gameInstance_);
+        if (players != nullptr && players->Num() >= 1)
+        {
+            platform::Log(L"  the row's member: {}",
+                          party_member::AiDetail(party_member::RowActor(kSeat, Field((*players)[0], facts::kLocalPlayerController))));
+        }
+    }
 }
 
 void Session::Forget() noexcept
@@ -395,7 +483,8 @@ void Session::Forget() noexcept
     memberWeak_[1] = 0;
     waitLogged_    = 0;
     handedToAi_    = false;
-    guideHand_     = false;
+    holdHand_      = false;
+    hold_          = party_member::Wait::None;
 }
 
 void Session::Join() noexcept
@@ -404,6 +493,11 @@ try
     if (playerTwo_ != nullptr)
     {
         platform::Log(L"player 2 is already in");
+        return;
+    }
+    if (awaiting_)
+    {
+        platform::Log(L"player 2 already waits for its member to be free (see above; Ctrl+F8 stops the wait)");
         return;
     }
     if (!own_controller::CanRename())
@@ -429,6 +523,19 @@ try
         platform::Log(L"join refused: player 1's controller or camera manager is not the End class the research read ({})",
                       Describe(playerOneController));
         return;
+    }
+    // The member first (the user, 2026-10-21): no controller and camera for player 2 until the row's member is free.
+    // The instance is kept for the wait: found once, it lives as long as the game.
+    gameInstance_ = gameInstance;
+    if (seatInstalled_)
+    {
+        const party_member::Choice choice = party_member::Choose(kSeat, playerOneController, nullptr, false);
+        if (choice.member == nullptr)
+        {
+            awaiting_ = true;
+            LogWait(choice, L"player 2 joins once its member is free");
+            return;
+        }
     }
     auto* function = UObjectGlobals::StaticFindObject<UFunction*>(nullptr, nullptr, STR("/Script/Engine.GameplayStatics:CreatePlayer"));
     auto* statics  = UObjectGlobals::StaticFindObject<UClass*>(nullptr, nullptr, STR("/Script/Engine.GameplayStatics"));
@@ -462,8 +569,8 @@ try
         platform::Log(L"join failed: the engine did not add a local player (count now {})", players->Num());
         return;
     }
-    playerTwo_    = (*players)[1];
-    gameInstance_ = gameInstance;
+    playerTwo_ = (*players)[1];
+    awaiting_  = false;
 
     UObject* playerTwoController = Field(playerTwo_, facts::kLocalPlayerController);
     UObject* managerOne          = Field(playerOneController, facts::kControllerCameraManager);
@@ -475,11 +582,17 @@ try
     split_render::OnJoin();
     pad_buttons::SetPlayers(2);  // from here pad 2's buttons are player 2's
     scopes::BindController(kSeat, playerTwoController);
-    waitLogged_  = 0;
     seatRetryAt_ = 0;
     if (seatInstalled_)
     {
-        TrySeat();  // its member at once when free; else each tick (Tick)
+        party_member::Choice choice;
+        if (!TrySeat(choice) && !Seated() && ticks_ >= seatRetryAt_ && choice.wait != party_member::Wait::Unread)
+        {
+            // The member checked free a moment ago is not any more (a funnel ran in between): out, and the wait. A
+            // seat the funnel refused is not this: player 2 stays in and the seat is tried again at its retry tick.
+            LogWait(choice, L"player 2 joined but its member is not free any more");
+            LeaveToAwait(party_member::Describe(choice.wait));
+        }
     }
     else
     {
@@ -497,6 +610,12 @@ void Session::Leave() noexcept
     {
         rejoin_ = Rejoin{};
         platform::Log(L"player 2 no longer rejoins after the world change");
+    }
+    if (awaiting_)
+    {
+        awaiting_   = false;
+        waitLogged_ = 0;
+        platform::Log(L"player 2 no longer waits for a party member");
     }
     if (playerTwo_ == nullptr)
     {
@@ -563,7 +682,8 @@ try
     memberWeak_[0] = -1;
     memberWeak_[1] = 0;
     handedToAi_    = false;
-    guideHand_     = false;
+    holdHand_      = false;
+    hold_          = party_member::Wait::None;
     scopes::Unbind(kSeat);
     // Research says nothing destroys these two with their owners; a changed class pointer would mean the
     // memory was reused, and then they are left alone.
@@ -582,60 +702,48 @@ catch (...)
     return playerTwo_ == nullptr;
 }
 
-void Session::TrySeat() noexcept
+bool Session::TrySeat(party_member::Choice& choice) noexcept
 try
 {
     auto* players = LocalPlayers(gameInstance_);
     if (playerTwo_ == nullptr || !seatInstalled_ || players == nullptr || !Contains(*players, playerTwo_) || ticks_ < seatRetryAt_)
     {
-        return;
+        choice.wait = party_member::Wait::Unread;
+        return false;
     }
     UObject* playerOne = Field((*players)[0], facts::kLocalPlayerController);
     UObject* playerTwo = Field(playerTwo_, facts::kLocalPlayerController);
-    const party_member::Choice choice = party_member::Choose(kSeat, playerOne, playerTwo, false);
+    choice             = party_member::Choose(kSeat, playerOne, playerTwo, false);
     if (choice.member == nullptr)
     {
-        const std::uint32_t key = 1u | static_cast<std::uint32_t>(choice.type) << 8 | static_cast<std::uint32_t>(choice.wait) << 16 |
-                                  static_cast<std::uint32_t>(choice.ordinal + 1) << 24;
-        if (key != waitLogged_)
-        {
-            waitLogged_ = key;
-            platform::Log(L"player 2 waits for its member (row {} of the party order, type {}): {}; the game's party order chooses it, "
-                          L"so a party change ends the wait",
-                          choice.ordinal, choice.type, party_member::Describe(choice.wait));
-            if (choice.wait == party_member::Wait::AiHeld || choice.wait == party_member::Wait::NoFieldAi ||
-                choice.wait == party_member::Wait::Cinema || choice.wait == party_member::Wait::Guide)
-            {
-                // The member's AI as the take test saw it (the actor of the row, read again).
-                platform::Log(L"  the row's member: {}", party_member::AiDetail(party_member::RowActor(kSeat, playerOne)));
-            }
-        }
-        return;
+        return false;
     }
-    waitLogged_ = 0;
     if (!party_seat::Seat(kSeat, playerOne, playerTwo, choice.member, choice.type))
     {
-        seatRetryAt_ = ticks_ + kSeatRetryTicks;  // the refusal is logged by the seat; tried again later
-        return;
+        seatRetryAt_ = ticks_ + kSeatRetryTicks;  // the refusal is logged by the seat; tried again later, player 2 in
+        return false;
     }
     if (!player_two_camera::WeakPairOf(choice.member, memberWeak_))
     {
         memberWeak_[0] = -1;
         memberWeak_[1] = 0;
     }
-    // After a script's hold: how soon the member came back measures the seat churn between scripts.
+    // After a wait: how long player 2 was without a member (the single view's length).
     platform::Log(L"player 2 plays member type {} (row {} of the party order){}", choice.type, choice.ordinal,
-                  scriptReleaseAt_ == 0 ? L"" : std::format(L", {} ticks after a script's hold gave it back", ticks_ - scriptReleaseAt_));
-    scriptReleaseAt_ = 0;
+                  waitLogged_ == 0 ? L"" : std::format(L", {} ticks after it began to wait for one", ticks_ - awaitSince_));
+    waitLogged_ = 0;
     if (cameraInstalled_ && !player_two_camera::Start(playerOne, playerTwo, choice.member))
     {
         platform::Log(L"player 2 keeps a still camera; each player's sticks are still their own pad's");
     }
     Report();
+    return true;
 }
 catch (...)
 {
     platform::Log(L"seat: an engine lookup raised an exception");
+    choice.wait = party_member::Wait::Unread;
+    return false;
 }
 
 void Session::DestroyOperator() noexcept
@@ -653,7 +761,7 @@ try
     {
         return;
     }
-    platform::Log(L"player 2's member (type {}) is {}: given back, to choose again from the party order",
+    platform::Log(L"player 2's member (type {}) is {}: given back; the row's member next, or player 2 leaves to wait for one",
                   party_seat::MemberType(kSeat), why);
     // Player 2's lock and target end, and its menu lets go of its focus layers inside its own context, while its
     // member still exists; the menu is set up again for the next member by its own tick.
@@ -664,31 +772,36 @@ try
     memberWeak_[0] = -1;
     memberWeak_[1] = 0;
     handedToAi_    = false;
-    guideHand_     = false;
+    holdHand_      = false;
+    hold_          = party_member::Wait::None;
 }
 catch (...)
 {
     platform::Log(L"release: an engine lookup raised an exception");
 }
 
-void Session::HandForGuide(void* member) noexcept
+void Session::HandForHold(void* member, party_member::Wait hold) noexcept
 {
     // The game's own hand (what it does for its leader at an event's start), the seat and player 2's camera operator
-    // kept: the member's AI walks the guide, player 2 watches it, and the seat takes it back at the lead's end.
+    // kept: the member's AI runs the script, player 2 watches it, and the seat takes it back when the hold ends.
     handedToAi_ = party_member::HandToAi(member);
-    guideHand_  = handedToAi_;
-    platform::Log(L"player 2's member (type {}) handed to its AI for a guide lead: {}; player 2's view stays on it, its controller takes "
-                  L"it back at the lead's end (lead gate: {})",
-                  party_seat::MemberType(kSeat), handedToAi_ ? L"yes" : L"NO (the hand faulted; tried again)", lead_gate::Reading());
+    holdHand_   = handedToAi_;
+    hold_       = hold;
+    platform::Log(L"player 2's member (type {}) handed to its AI: {}: {}; player 2's view stays on it, its controller takes it back "
+                  L"when the hold ends{}",
+                  party_seat::MemberType(kSeat), party_member::Describe(hold), handedToAi_ ? L"yes" : L"NO (the hand faulted; tried again)",
+                  hold == party_member::Wait::Guide ? std::format(L" (lead gate: {})", lead_gate::Reading()) : L"");
+    platform::LogDebug(L"  the member: {}", party_member::AiDetail(member));
 }
 
-void Session::ReturnFromGuide(void* member) noexcept
+void Session::ReturnFromHold(void* member) noexcept
 {
     handedToAi_ = false;
-    guideHand_  = false;
-    platform::Log(L"player 2's member (type {}) back on its controller: the guide lead ended: {}; the member: {}", party_seat::MemberType(kSeat),
-                  party_member::ReturnTo(member, Field(playerTwo_, facts::kLocalPlayerController)) ? L"yes" : L"NO",
+    holdHand_   = false;
+    platform::Log(L"player 2's member (type {}) back on its controller: its hold ended ({}): {}; the member: {}", party_seat::MemberType(kSeat),
+                  party_member::Describe(hold_), party_member::ReturnTo(member, Field(playerTwo_, facts::kLocalPlayerController)) ? L"yes" : L"NO",
                   party_member::AiDetail(member));
+    hold_ = party_member::Wait::None;
 }
 
 void Session::FollowSlot() noexcept
@@ -724,12 +837,13 @@ try
     }
     if (handedToAi_)
     {
-        if (guideHand_)
+        if (holdHand_)
         {
-            // The lead's end decides: the level's next setting on the member (free), and nothing else holding it.
+            // The hold's end decides: the member free again (the level's next setting, the scene's end), the game's
+            // leader with its player, and nothing else holding it.
             if (party_member::HoldWait(member) == party_member::Wait::None)
             {
-                ReturnFromGuide(member);
+                ReturnFromHold(member);
             }
             return;
         }
@@ -742,16 +856,20 @@ try
         }
         return;
     }
-    if (party_member::HoldWait(member) == party_member::Wait::Guide)
+    const party_member::Wait hold = party_member::HoldWait(member);
+    if (hold == party_member::Wait::LeaderHanded)
     {
-        HandForGuide(member);
+        // The hand funnel's backstop: the game's leader is with its AI and player 2's member is not (a seat that
+        // landed inside the hand, after the funnel fired: seen live 2026-10-21, Tifa taken mid-animation).
+        platform::Log(L"the game's leader is with its AI (lock {:#x}) and player 2's member is not: the hand was not heard for it; "
+                      L"handed now",
+                      party_member::ControlLockMask());
+        OnLeaderHandedToAi(this);
         return;
     }
-    if (const wchar_t* why = party_member::WhyHeldByScript(member))
+    if (party_member::ScriptHold(hold))
     {
-        platform::LogDebug(L"  the member: {}", party_member::AiDetail(member));
-        scriptReleaseAt_ = ticks_;
-        ReleaseMember(why);
+        HandForHold(member, hold);
     }
 }
 catch (...)
@@ -819,9 +937,9 @@ try
 {
     auto* session = static_cast<Session*>(self);
     void* member  = party_seat::Member(kSeat);
-    if (member == nullptr || !session->handedToAi_ || session->guideHand_ || session->playerTwo_ == nullptr)
+    if (member == nullptr || !session->handedToAi_ || session->holdHand_ || session->playerTwo_ == nullptr)
     {
-        return;  // a guide hand ends with the lead (FollowSlot), not with the game's leader
+        return;  // a hand for the member's own hold ends with the hold (FollowSlot), not with the game's leader
     }
     // The game's leader is back; the member follows once nothing holds it (a scene's own layers can outlast the
     // lock, a guide lead written at the scene's end runs to its mark). The periodic check retries while the game's
@@ -913,19 +1031,28 @@ catch (...)
 std::wstring Session::MemberReading() const noexcept
 try
 {
-    if (playerTwo_ == nullptr)
+    if (playerTwo_ == nullptr && !awaiting_)
     {
         return L"out";
     }
     if (Seated())
     {
         const auto type = party_seat::MemberType(kSeat);
-        return guideHand_   ? std::format(L"handed type {} (a guide lead: its AI walks it, player 2's view on it)", type)
+        return holdHand_    ? std::format(L"handed type {} ({}; player 2's view on it)", type, party_member::Describe(hold_))
                : handedToAi_ ? std::format(L"handed type {} (with the game's leader, lock {:#x})", type, party_member::ControlLockMask())
                              : std::format(L"playing type {}", type);
     }
     auto* players = LocalPlayers(gameInstance_);
-    if (!seatInstalled_ || players == nullptr || players->Num() < 2)
+    if (!seatInstalled_ || players == nullptr || players->Num() < 1)
+    {
+        return L"waiting (no seat)";
+    }
+    if (awaiting_)
+    {
+        const party_member::Choice choice = party_member::Choose(kSeat, Field((*players)[0], facts::kLocalPlayerController), nullptr, false);
+        return std::format(L"awaiting: row {} type {}: {}", choice.ordinal, choice.type, party_member::Describe(choice.wait));
+    }
+    if (players->Num() < 2)
     {
         return L"waiting (no seat)";
     }

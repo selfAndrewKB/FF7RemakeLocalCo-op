@@ -7,8 +7,8 @@ Two-player split-screen for FINAL FANTASY VII REMAKE (Intergrade, UE 4.18), as a
 
 | Keys | What |
 |------|------|
-| Ctrl+F7 | Player 2 joins: own End player controller, camera manager and field camera, and takes the member in the 2nd slot of the party order through the game's leader funnel (with its own copy of the PlayerTrigger); it follows that slot |
-| Ctrl+F8 | Player 2 leaves (also cancels a rejoin after a load) |
+| Ctrl+F7 | Player 2 joins on the member in the 2nd slot of the party order: own End player controller, camera manager and field camera, the member taken through the game's leader funnel (with its own copy of the PlayerTrigger); it follows that slot. With the member not free (a script, an animation, a guide lead, a solo party) nothing is made yet: player 2 joins once it is free, and leaves again when a party change leaves it without one, so no second camera ever floats over an empty half |
+| Ctrl+F8 | Player 2 leaves (also cancels a rejoin after a load, and a wait for a member) |
 | Ctrl+F6 | Log every local player's controller, pawn, camera manager and camera actor, and each player's input, movement and camera call counts |
 
 ## The console
@@ -25,7 +25,7 @@ python ../tools/game.py status | launch | quit | relaunch --deploy --label v0.8.
 
 Every module registers its own commands (`src/control/registry.h`), so `help` on the running build is the list.
 Today: `join`, `leave`, `console <command>`, `report`, `quit`, `showflags <hex>`, `ao-origin on|off`,
-`bloom-origin on|off`, `distortion-apply on|off`, `pad-buttons on|off`, `menu-two on|off`, `targeting-two on|off`, `rates-two on|off`, `menu-two.leader`, `menu-two.route`, `lock-camera-two.requests`, `lock-camera-two.restore`, `camera-override-two`, `enemy-leader`, `sequence-camera-two`, `target-cursor-two`, `party-events`, `log-level error|warning|info|debug|trace` (Debug by default; Trace holds the per-frame lines), `hud.dump roots|shown|all [<text>]`, `hud-band on|off`, `hud-image on|off`, `hud-targets on|off`, `hud-targets-log <renders>`; readings `p2.in`, `p2.member`, `p2.state` (out|in|playing|handed),
+`bloom-origin on|off`, `distortion-apply on|off`, `pad-buttons on|off`, `menu-two on|off`, `targeting-two on|off`, `rates-two on|off`, `menu-two.leader`, `menu-two.route`, `lock-camera-two.requests`, `lock-camera-two.restore`, `camera-override-two`, `enemy-leader`, `sequence-camera-two`, `target-cursor-two`, `party-events`, `log-level error|warning|info|debug|trace` (Debug by default; Trace holds the per-frame lines), `hud.dump roots|shown|all [<text>]`, `hud-band on|off`, `hud-image on|off`, `hud-targets on|off`, `hud-targets-log <renders>`; readings `p2.in`, `p2.member`, `p2.state` (out|awaiting|in|playing|handed),
 `game.state` (title|loading|play|pause|menu|leaving|…), `game.paused`, `game.menu-kind`, `game.location`,
 `field.step` (13 = steady field), `field.running`, `hud.overlay`, `hud.layout`, `pad.events`, `pads` (the XInput users with a pad), `lead.gate` (the last LEAD on player 2's member judged), `menu-two.state`, `targeting-two.runs`, `targeting-two.lock`, `tick`, `version`. The language's own verbs (`src/control/script.h`): `get <name>`, `status`, `help [<name>]`,
 `wait <ticks>`, `wait-until <name> <op> <value> [<ticks>]`, `hold <player> stick <lx> <ly> <rx> <ry> <ticks>`,
@@ -91,13 +91,15 @@ src/
     pass_hide             player 1's field target icons and search arrows transparent in player 2's pass
   players/
     game_state            the game's own state, location and field step as readings, every change logged
-    session               join and leave through UE's local-player path; console commands
+    session               join and leave through UE's local-player path (player 2 exists only with a member: the join
+                          waits outside the game for one); the member's hands to its AI with the seat kept; console commands
     field_exit            player 2 leaves inside the game's field-exit request (retry, load, jump, title);
                           session rejoins once the field is back (two call redirects)
     own_controller        the End camera manager's BeginPlay, made safe for a second player
     player_two_camera     player 2's field camera operator and the per-player scopes
     party_member          which deployed member a seat plays: the row after player 1's in the party order
-    field_hold.h          the hold rule: which field AI states leave a member a further player's (pure)
+    field_hold.h          the hold rule: which field AI states leave a member a further player's, which hand it to its AI
+                          (animations, script layers) and which ask the game's data (LEAD) (pure)
     lead_gate             a LEAD on the member: a guide (to its AI, the player's view on it) or staging, from the
                           level's waiters on its arrival and the story's objective marker
     party_seat            a seat's controller takes its member through the game's leader funnel

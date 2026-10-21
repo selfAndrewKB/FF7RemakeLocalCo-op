@@ -26,8 +26,8 @@ void LevelStagingIsFree()
 {
     // Everything the level writes on layer 1 during gameplay: the stay, the run to a mark, the stand at the end of
     // a path, the follow, the kinds that never read the player.
-    for (const fh::Kind kind : {fh::kNone, fh::kStay, fh::kFollowTarget, fh::kFollowPosition, fh::kAnimation,
-                                fh::kWandering, fh::kPatrol, fh::kAccompany, fh::kInterest, fh::kUnique})
+    for (const fh::Kind kind : {fh::kNone, fh::kStay, fh::kFollowTarget, fh::kFollowPosition, fh::kWandering, fh::kPatrol,
+                                fh::kAccompany, fh::kInterest, fh::kUnique})
     {
         EXPECT(fh::Of(fh::kLayerLevel, kind) == Hold::Free);
         EXPECT(fh::Of(fh::kLayerStream, kind) == Hold::Free);
@@ -45,11 +45,21 @@ void LeadAsksTheGame()
     EXPECT(fh::Of(5, fh::kLead) == Hold::Layer);
 }
 
-void OneShotsNeedTheAi()
+void AnimationsAreWatched()
 {
-    EXPECT(fh::Of(fh::kLayerLevel, fh::kSingleAnimation) == Hold::Kind);
+    // A scripted animation, the level's or a one-shot: the AI plays it and the player watches (the user,
+    // 2026-10-21, after a seat mid-animation cut one short). On a script layer the layer is named first.
+    EXPECT(fh::Of(fh::kLayerLevel, fh::kAnimation) == Hold::Animation);
+    EXPECT(fh::Of(fh::kLayerLevel, fh::kSingleAnimation) == Hold::Animation);
+    EXPECT(fh::Of(fh::kLayerStream, fh::kAnimation) == Hold::Animation);
+    EXPECT(fh::Of(fh::kLayerStream, fh::kSingleAnimation) == Hold::Animation);
+    EXPECT(fh::Of(6, fh::kAnimation) == Hold::Layer);
+}
+
+void EscapeNeedsTheAi()
+{
     EXPECT(fh::Of(fh::kLayerLevel, fh::kEscapePosition) == Hold::Kind);
-    EXPECT(fh::Of(fh::kLayerStream, fh::kSingleAnimation) == Hold::Kind);
+    EXPECT(fh::Of(fh::kLayerStream, fh::kEscapePosition) == Hold::Kind);
 }
 
 void ScriptLayersHold()
@@ -71,12 +81,13 @@ void ScriptLayersHold()
 void CinemaCopyFollowsItsKind()
 {
     // A cutscene's preparation copies the active record into layer 13: a copy of a free kind stays free, a copy
-    // of a one-shot holds; the scene itself is the actor mode, the caller's test.
+    // of an animation is watched, a copy of the escape holds; the scene itself is the actor mode, the caller's test.
     EXPECT(fh::Of(fh::kLayerCinema, fh::kAccompany) == Hold::Free);
     EXPECT(fh::Of(fh::kLayerCinema, fh::kNone) == Hold::Free);
     EXPECT(fh::Of(fh::kLayerCinema, fh::kFollowPosition) == Hold::Free);
     EXPECT(fh::Of(fh::kLayerCinema, fh::kLead) == Hold::Free);
-    EXPECT(fh::Of(fh::kLayerCinema, fh::kSingleAnimation) == Hold::Kind);
+    EXPECT(fh::Of(fh::kLayerCinema, fh::kAnimation) == Hold::Animation);
+    EXPECT(fh::Of(fh::kLayerCinema, fh::kSingleAnimation) == Hold::Animation);
     EXPECT(fh::Of(fh::kLayerCinema, fh::kEscapePosition) == Hold::Kind);
 }
 
@@ -101,7 +112,8 @@ int main()
 {
     LevelStagingIsFree();
     LeadAsksTheGame();
-    OneShotsNeedTheAi();
+    AnimationsAreWatched();
+    EscapeNeedsTheAi();
     ScriptLayersHold();
     CinemaCopyFollowsItsKind();
     NoStateWaits();
