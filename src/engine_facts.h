@@ -1219,7 +1219,8 @@ inline constexpr std::uint32_t kCognitionExperience    = 0x1C;  //   experience 
 
 // --- An NPC's field look-at (research/RE-npc-reactions.md §10, pass S-RMK-NPCLOOK) ----------------------------------
 // The continuous look of an NPC that tracks the player (the user's old man in Sector 5): the field AI's look-at
-// setting from the NPC's row, a struct on the character. Its target name `Leader` resolves once to the party leader.
+// setting from the NPC's row, a struct on the character. Its target name resolves once: `Leader` to the party leader,
+// any other (`Cloud` in Sector 5, v0.32.0 live) through the character registry by name.
 /// FieldAILookAt_Tick(lookAt): in range of the target and not yet requested -> request a look of type 4 (AI) at it
 /// once (and a body turn); out of range -> clear that request. Its per-character call is in the field-action
 /// system's tick, which runs on a worker thread, one character after the other.

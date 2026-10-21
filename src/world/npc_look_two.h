@@ -4,14 +4,15 @@
 // 2026-10-21: "the main guy I have in mind, still only seems to follow Cloud").
 //
 // Some NPCs (the old man in Sector 5) track the player continuously while near. That is not the Curiosity look
-// (world/npc_senses) but the field AI's own look-at setting from the NPC's row: a target name, `Leader` for these,
-// resolved once to the party leader (player 1's character), and a reaction distance that starts the look (and a body
-// turn) and ends it. The mod, before the game's tick of each such look, picks the target the way the game's range
-// test sees it: player 1 when in range, else player 2 when in range, else player 1; on a change it clears the game's
-// request (the game's own clear) and writes the new target where the game's own resolve writes it, so the game's tick
-// requests the look and turns the NPC. Only looks whose row names `Leader` and whose target is one of the players
-// (or player 2's last character) are touched; anything else is the game's alone. Player 2 out: the look goes back
-// to player 1. The tick runs on a worker thread: the players' weak pairs are published by the game thread.
+// (world/npc_senses) but the field AI's own look-at setting from the NPC's row: a target name, resolved once through
+// the character registry (`Cloud`, what the rows in Sector 5 name; v0.32.0, live) or to the party leader (`Leader`),
+// and a reaction distance that starts the look (and a body turn) and ends it. The mod, before the game's tick of each
+// such look, picks the target the way the game's range test sees it: player 1 when in range, else player 2 when in
+// range, else player 1; on a change it clears the game's request (the game's own clear) and writes the new target where
+// the game's own resolve writes it, so the game's tick requests the look and turns the NPC. Only looks whose row names
+// `Leader` or player 1's character (a name the game itself resolved to player 1) and whose target is one of the
+// players (or player 2's last character) are touched; anything else is the game's alone. Player 2 out: the look goes
+// back to player 1. The tick runs on a worker thread: the players' weak pairs are published by the game thread.
 
 #include <string>
 

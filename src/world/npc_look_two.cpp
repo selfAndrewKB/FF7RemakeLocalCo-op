@@ -58,6 +58,52 @@ std::atomic<bool>          g_enabled{true};
 std::atomic<std::uint64_t> g_one{0}, g_two{0}, g_lastTwo{0};
 std::atomic<std::uint64_t> g_toTwo{0}, g_toOne{0}, g_noController{0};
 
+/// The names that mean player 1's character: a row's target name the game itself resolved to player 1 (its registry
+/// lookup by name), each with player 1's weak pair at the time, so a name learned for an earlier leader is not used.
+/// Filled by the workers (claim an empty name, then the owner), emptied by the game thread when player 1 changes.
+constexpr int kNameSlots = 8;
+struct LearnedName
+{
+    std::atomic<std::uint64_t> name{0};
+    std::atomic<std::uint64_t> one{0};
+};
+std::array<LearnedName, kNameSlots> g_oneNames{};
+
+bool NamesPlayerOne(std::uint64_t name, std::uint64_t one) noexcept
+{
+    for (const auto& slot : g_oneNames)
+    {
+        if (slot.name.load(std::memory_order_acquire) == name)
+        {
+            return slot.one.load(std::memory_order_acquire) == one;
+        }
+    }
+    return false;
+}
+
+/// Records that the game aimed a look named `name` at player 1. True the first time (the caller logs it).
+bool LearnName(std::uint64_t name, std::uint64_t one) noexcept
+{
+    for (auto& slot : g_oneNames)
+    {
+        std::uint64_t held = slot.name.load(std::memory_order_acquire);
+        if (held == name)
+        {
+            return false;
+        }
+        if (held == 0 && slot.name.compare_exchange_strong(held, name, std::memory_order_acq_rel))
+        {
+            slot.one.store(one, std::memory_order_release);
+            return true;
+        }
+        if (held == name)
+        {
+            return false;  // another thread put it there first
+        }
+    }
+    return false;  // full: further names stay the game's
+}
+
 // Game thread.
 void* g_oneCharacter = nullptr;
 void* g_twoCharacter = nullptr;
@@ -113,7 +159,7 @@ std::wstring NpcName(const std::uint8_t* npc)
 enum Outcome : int
 {
     kUnreadable,     // a field could not be read
-    kOtherName,      // the row names someone other than `Leader`
+    kOtherName,      // the row names someone other than `Leader` or player 1's character
     kPlace,          // a look at a place
     kLookAway,       // a look away from the target
     kNoPlayers,      // player 1's character not published yet
@@ -201,7 +247,14 @@ Outcome Choose(std::uint8_t* lookAt) noexcept
                            mode, lookAway, reach, Who(current, one, two), one != 0 && InRange(lookAt, one) ? L"yes" : L"no",
                            two != 0 && InRange(lookAt, two) ? L"yes" : L"no");
     }
-    if (name == 0 || name != leader)
+    if (name != 0 && name != leader && mode == 0 && one != 0 && current == one && LearnName(name, one))
+    {
+        // Rows name the character (`Cloud`), and the game resolves the name through its character registry. A look the
+        // game itself aimed at player 1 by that name is a look at the player, as `Leader` is.
+        platform::LogDebug(L"npc look: the target name {} is player 1's character (the game aimed a look by it at "
+                           L"player 1); looks by that name watch either player", NameText(name));
+    }
+    if (name == 0 || (name != leader && !NamesPlayerOne(name, one)))
     {
         return kOtherName;
     }
@@ -334,6 +387,11 @@ void Tick(void* memberOne, void* memberTwo) noexcept
     {
         g_oneCharacter = memberOne;
         g_one.store(WeakOf(memberOne), std::memory_order_release);
+        for (auto& slot : g_oneNames)
+        {
+            slot.one.store(0, std::memory_order_release);  // learned again under the new player 1
+            slot.name.store(0, std::memory_order_release);
+        }
     }
     if (memberTwo != g_twoCharacter)
     {
@@ -360,6 +418,14 @@ void SetEnabled(bool on) noexcept
 std::wstring Reading() noexcept
 try
 {
+    std::wstring names;
+    for (const auto& slot : g_oneNames)
+    {
+        if (const std::uint64_t name = slot.name.load(); name != 0)
+        {
+            names += (names.empty() ? L"" : L" ") + NameText(name);
+        }
+    }
     std::wstring ticks;
     for (int i = 0; i < kOutcomes; ++i)
     {
@@ -367,9 +433,9 @@ try
                              g_outcomes[static_cast<std::size_t>(i)].load());
     }
     return std::format(L"{}; looks turned to player 2 {}, back to player 1 {}; a requested look whose controller was "
-                       L"unreadable {}; NPC looks seen {}; look ticks: {}",
+                       L"unreadable {}; NPC looks seen {}; names that mean player 1 {}; look ticks: {}",
                        g_enabled.load() ? L"on" : L"off", g_toTwo.load(), g_toOne.load(), g_noController.load(),
-                       g_seenCount.load(), ticks);
+                       g_seenCount.load(), names.empty() ? L"none" : names, ticks);
 }
 catch (...)
 {
