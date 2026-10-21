@@ -38,6 +38,7 @@
 #include "platform/log.h"
 #include "players/own_controller.h"
 #include "players/pad_buttons.h"
+#include "players/pad_presence.h"
 #include "players/scopes.h"
 #include "players/camera_override_two.h"
 #include "players/nav_area_two.h"
@@ -64,7 +65,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.25.2-handed-reading";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.25.3-pads-reading";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
@@ -258,6 +259,7 @@ public:
             lss::players::split_render::SetMask(lss::facts::kSplitDisabledFlags, false);
         }
         lss::players::pad_buttons::Install(*image);  // optional: without it every pad presses player 1's buttons
+        lss::players::pad_presence::Register();      // diagnostics: which XInput users have a pad
         // Player 2's own battle: its command menu, ticked in its scopes, and the switch rules. Each optional.
         if (lss::players::scopes::Install(*image) && lss::battle::command_menu_two::Install(*image))
         {
@@ -305,6 +307,7 @@ private:
         }
         lss::players::player_two_camera::MaintainInputTick();
         lss::players::game_state::Tick();  // first: the session and the console read this tick's values
+        lss::players::pad_presence::Tick();
         session_.Tick();
         lss::battle::command_menu_two::Tick(session_.Seated());
         lss::battle::command_menu_tick::Tick();
