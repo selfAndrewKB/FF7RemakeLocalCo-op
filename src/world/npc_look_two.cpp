@@ -10,6 +10,7 @@
 
 #include <Unreal/NameTypes.hpp>
 
+#include <array>
 #include <atomic>
 #include <cstdint>
 #include <cstring>
@@ -108,30 +109,122 @@ std::wstring NpcName(const std::uint8_t* npc)
     }
 }
 
+/// Why a look was left to the game (the reading counts each; a look's first sighting logs its fields once).
+enum Outcome : int
+{
+    kUnreadable,     // a field could not be read
+    kOtherName,      // the row names someone other than `Leader`
+    kPlace,          // a look at a place
+    kLookAway,       // a look away from the target
+    kNoPlayers,      // player 1's character not published yet
+    kUnknownTarget,  // aimed at someone the mod does not know (an earlier leader, or not resolved yet)
+    kKept,           // the pick is the current target
+    kTurned,         // the mod wrote a new target
+    kOutcomes
+};
+constexpr const wchar_t* kOutcomeNames[kOutcomes] = {L"unreadable", L"aimed by name at another", L"at a place",
+                                                     L"looking away", L"no players yet", L"aimed at someone unknown",
+                                                     L"kept", L"turned"};
+std::array<std::atomic<std::uint64_t>, kOutcomes> g_outcomes{};
+
+/// The looks seen so far (their owners' weak pairs), each logged once with its fields. Lock-free insert.
+constexpr int kSeenCap = 256;
+std::array<std::atomic<std::uint64_t>, kSeenCap> g_seen{};
+std::atomic<int> g_seenCount{0};
+
+bool FirstSighting(std::uint64_t ownerWeak) noexcept
+{
+    if (ownerWeak == 0)
+    {
+        return false;
+    }
+    for (auto& slot : g_seen)
+    {
+        std::uint64_t held = slot.load(std::memory_order_acquire);
+        if (held == ownerWeak)
+        {
+            return false;
+        }
+        if (held == 0 && slot.compare_exchange_strong(held, ownerWeak, std::memory_order_acq_rel))
+        {
+            g_seenCount.fetch_add(1, std::memory_order_relaxed);
+            return true;
+        }
+        if (held == ownerWeak)
+        {
+            return false;  // another thread put it there first
+        }
+    }
+    return false;  // full: the rest are counted only
+}
+
+std::wstring NameText(std::uint64_t bits)
+{
+    try
+    {
+        return RC::Unreal::FName(static_cast<std::int64_t>(bits)).ToString();
+    }
+    catch (...)
+    {
+        return L"?";
+    }
+}
+
+const wchar_t* Who(std::uint64_t weak, std::uint64_t one, std::uint64_t two) noexcept
+{
+    return weak == 0 ? L"none" : weak == one ? L"player 1" : weak == two ? L"player 2" : L"another";
+}
+
 /// Before the game's tick of one look: player 1 if in range, else player 2 if in range, else player 1.
-void Pick(std::uint8_t* lookAt) noexcept
+Outcome Choose(std::uint8_t* lookAt) noexcept
 {
     std::uint64_t name = 0, leader = 0, current = 0;
     std::int32_t  mode = 1;
     std::uint8_t  lookAway = 1;
-    if (!Read(lookAt + facts::kFieldLookAtTargetName, name) || !Read(g_leaderName, leader) || name != leader ||
-        name == 0 || !Read(lookAt + facts::kFieldLookAtMode, mode) || mode != 0 ||
-        !Read(lookAt + facts::kFieldLookAtLookAway, lookAway) || lookAway != 0 ||
+    if (!Read(lookAt + facts::kFieldLookAtTargetName, name) || !Read(g_leaderName, leader) ||
+        !Read(lookAt + facts::kFieldLookAtMode, mode) || !Read(lookAt + facts::kFieldLookAtLookAway, lookAway) ||
         !Read(lookAt + facts::kFieldLookAtTarget, current))
     {
-        return;  // not a look at the leader: the game's alone
+        return kUnreadable;
     }
     const std::uint64_t one     = g_one.load(std::memory_order_acquire);
     const std::uint64_t two     = g_enabled.load(std::memory_order_relaxed) ? g_two.load(std::memory_order_acquire) : 0;
     const std::uint64_t lastTwo = g_lastTwo.load(std::memory_order_acquire);
-    if (one == 0 || (current != one && (current == 0 || (current != two && current != lastTwo))))
+    if (std::uint64_t ownerWeak = 0; Read(lookAt + facts::kFieldLookAtOwner, ownerWeak) && FirstSighting(ownerWeak))
     {
-        return;  // aimed at someone the mod does not know (an earlier leader, or not resolved yet): the game's alone
+        float reach = 0.0f;
+        Read(lookAt + facts::kFieldLookAtReach, reach);
+        const std::uint8_t* npc = Resolve(ownerWeak);
+        platform::LogDebug(L"npc look: {} has a field look: target name {}{}, mode {}, look away {}, reach {:.0f}, aimed "
+                           L"at {}; player 1 in reach {}, player 2 in reach {}",
+                           npc != nullptr ? NpcName(npc) : L"?", NameText(name), name == leader ? L" (Leader)" : L"",
+                           mode, lookAway, reach, Who(current, one, two), one != 0 && InRange(lookAt, one) ? L"yes" : L"no",
+                           two != 0 && InRange(lookAt, two) ? L"yes" : L"no");
+    }
+    if (name == 0 || name != leader)
+    {
+        return kOtherName;
+    }
+    if (mode != 0)
+    {
+        return kPlace;
+    }
+    if (lookAway != 0)
+    {
+        return kLookAway;
+    }
+    if (one == 0)
+    {
+        return kNoPlayers;
+    }
+    if (current != one && (current == 0 || (current != two && current != lastTwo)))
+    {
+        return kUnknownTarget;
     }
     const std::uint64_t pick = two != 0 && !InRange(lookAt, one) && InRange(lookAt, two) ? two : one;
     if (pick == current)
     {
-        return;
+        return kKept;
     }
     std::uint8_t requested = 0;
     if (Read(lookAt + facts::kFieldLookAtRequested, requested) && requested != 0)
@@ -150,14 +243,14 @@ void Pick(std::uint8_t* lookAt) noexcept
             !platform::CallGuarded(g_clear, cleared, controller, facts::kLookAtTypeAi))
         {
             g_noController.fetch_add(1, std::memory_order_relaxed);
-            return;
+            return kUnreadable;
         }
         constexpr std::uint8_t kNotRequested = 0;
         platform::WriteGuarded(lookAt + facts::kFieldLookAtRequested, &kNotRequested, 1);
     }
     if (!platform::WriteGuarded(lookAt + facts::kFieldLookAtTarget, &pick, sizeof(pick)))
     {
-        return;
+        return kUnreadable;
     }
     (pick == two ? g_toTwo : g_toOne).fetch_add(1, std::memory_order_relaxed);
     std::uint64_t ownerWeak = 0;
@@ -166,11 +259,12 @@ void Pick(std::uint8_t* lookAt) noexcept
     {
         platform::LogDebug(L"npc look: {} watches player {}", NpcName(npc), pick == two ? 2 : 1);
     }
+    return kTurned;
 }
 
 char LookTick(std::uint8_t* lookAt) noexcept
 {
-    Pick(lookAt);
+    g_outcomes[static_cast<std::size_t>(Choose(lookAt))].fetch_add(1, std::memory_order_relaxed);
     return g_tick(lookAt);
 }
 
@@ -266,9 +360,16 @@ void SetEnabled(bool on) noexcept
 std::wstring Reading() noexcept
 try
 {
+    std::wstring ticks;
+    for (int i = 0; i < kOutcomes; ++i)
+    {
+        ticks += std::format(L"{}{} {}", ticks.empty() ? L"" : L", ", kOutcomeNames[i],
+                             g_outcomes[static_cast<std::size_t>(i)].load());
+    }
     return std::format(L"{}; looks turned to player 2 {}, back to player 1 {}; a requested look whose controller was "
-                       L"unreadable {}",
-                       g_enabled.load() ? L"on" : L"off", g_toTwo.load(), g_toOne.load(), g_noController.load());
+                       L"unreadable {}; NPC looks seen {}; look ticks: {}",
+                       g_enabled.load() ? L"on" : L"off", g_toTwo.load(), g_toOne.load(), g_noController.load(),
+                       g_seenCount.load(), ticks);
 }
 catch (...)
 {

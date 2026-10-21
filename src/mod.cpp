@@ -73,7 +73,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.31.0-npc-look";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.32.0-look-reasons";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;

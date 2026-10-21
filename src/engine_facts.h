@@ -1243,6 +1243,7 @@ inline constexpr std::uint32_t  kFieldLookAtRequested   = 0x0A;  // u8: the look
 inline constexpr std::uint32_t  kFieldLookAtMode        = 0x0C;  // i32: 0 an actor, 1 a place
 inline constexpr std::uint32_t  kFieldLookAtTarget      = 0x10;  // weak pair: the actor looked at
 inline constexpr std::uint32_t  kFieldLookAtTargetName  = 0x18;  // FName: the row's target ("Leader", an actor, a point)
+inline constexpr std::uint32_t  kFieldLookAtReach       = 0x34;  // float: ReactionDistance (the range test's radius)
 inline constexpr std::uint32_t  kFieldLookAtLookAway    = 0x39;  // u8: look away instead
 inline constexpr std::uint32_t  kCharacterLookAtHost    = 0x810; // the look-at controller's host; its vt+0x48 gives it
 inline constexpr std::uint32_t  kLookAtHostController   = 0x48;
