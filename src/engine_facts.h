@@ -1112,4 +1112,35 @@ inline constexpr std::uint32_t kCharacterNoFadeReasons    = 0xFC0;  // AEndChara
 inline constexpr std::uint32_t kCharacterNoFadeReasonsNum = 0xFC8;
 inline constexpr std::uint32_t kMeshNearFarFadeEnabled    = 0x8B0;  // u8 on the skinned mesh: the render near-fade is on
 
+// --- Animation detail judged from two cameras (research/RE-anim-two-views.md, 2026-10-21) --------
+/// The judge EndSkelMeshComp_AnimOptimizationEval(mesh, bool* forceOut, mesh** leadOut, bool cameraCut), slot +0xA48
+/// of UEndSkeletalMeshComponent's and UEndSwitchableSkeletalMeshComponent's vtables (the only two slots holding it),
+/// called serially on the game thread by the allocator's Update, the slot +0x50 of its vtable, at the world's
+/// pre-actor tick. Update reads player 1's camera manager into the snapshot, then judges every registered mesh.
+inline constexpr std::array<std::uint8_t, 16> kAnimJudgeEntry{
+    0x40, 0x55, 0x53, 0x41, 0x54, 0x48, 0x8D, 0x6C, 0x24, 0xB9, 0x48, 0x81, 0xEC, 0xF0, 0x00, 0x00};
+inline constexpr platform::FunctionFact kAnimJudge{L"EndSkelMeshComp_AnimOptimizationEval", 0x1407E0ED0, kAnimJudgeEntry};
+inline constexpr platform::SlotFact kAnimJudgeSlot{L"UEndSkeletalMeshComponent anim judge (slot +0xA48)", 0x144B51D68, kAnimJudge};
+inline constexpr platform::SlotFact kAnimJudgeSwitchableSlot{L"UEndSwitchableSkeletalMeshComponent anim judge (slot +0xA48)",
+                                                             0x144B51230, kAnimJudge};
+inline constexpr std::array<std::uint8_t, 16> kAnimBudgetUpdateEntry{
+    0x40, 0x55, 0x56, 0x57, 0x41, 0x56, 0x48, 0x8D, 0x6C, 0x24, 0xC1, 0x48, 0x81, 0xEC, 0xF8, 0x00};
+inline constexpr platform::FunctionFact kAnimBudgetUpdate{L"AnimBudgetAllocator_Update_SE", 0x143B41540, kAnimBudgetUpdateEntry};
+inline constexpr platform::SlotFact kAnimBudgetUpdateSlot{L"FAnimationBudgetAllocator::Update (slot +0x50)", 0x144F8A980,
+                                                          kAnimBudgetUpdate};
+inline constexpr std::uint32_t kComponentOwner            = 0xE0;    // UActorComponent::OwnerPrivate
+inline constexpr std::uint32_t kComponentWorldLocation    = 0x1B0;   // USceneComponent::ComponentToWorld's translation
+inline constexpr std::uint32_t kMeshBudgetAllocator       = 0x1098;  // USkeletalMeshComponentBudgeted: the allocator
+inline constexpr std::uint32_t kMeshAnimDistance          = 0x14A4;  // UEndSkeletalMeshComponent: the judge's distance (cm)
+inline constexpr std::uint32_t kMeshAnimAngle             = 0x14A8;  //   and angle (radians), written only by the judge
+inline constexpr std::uint32_t kAllocatorMeshCount        = 0x20;    // the allocator's registered meshes (Num)
+inline constexpr std::uint32_t kAllocatorSnapshot         = 0xDC;    // predicted location, forward, speed, turn (32 bytes)
+inline constexpr std::uint32_t kCameraManagerPovLocation  = 0x400;   // APlayerCameraManager: the cached POV location
+inline constexpr std::uint32_t kCameraManagerPovRotation  = 0x40C;   //   and rotation (pitch, yaw, roll degrees)
+inline constexpr std::uint32_t kCameraManagerCutFlags     = 0x1E18;  // AEndPlayerCameraManager: bit 0x400 = a camera cut
+inline constexpr std::uint32_t kCameraManagerCutBit       = 0x400;
+inline constexpr std::uint32_t kCharacterKbd              = 0x1A90;  // AEndCharacter: the KineDriver + Bonamik component
+inline constexpr std::uint32_t kKbdBonamiks               = 0x428;   //   its Bonamik array (data), the first one's mode below
+inline constexpr std::uint32_t kBonamikUpdateMode         = 0x1C9C;  //   0 normal; 1 reduced (out of the camera's cone)
+
 }  // namespace lss::facts

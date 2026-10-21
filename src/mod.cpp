@@ -52,6 +52,7 @@
 #include "render/ao_origin.h"
 #include "render/bloom_origin.h"
 #include "render/distortion_apply.h"
+#include "world/anim_two_views.h"
 #include "world/party_fade.h"
 
 #include <cstdint>
@@ -284,6 +285,7 @@ public:
         }
         lss::players::game_state::Install(*image);  // readings only; fine without
         lss::world::party_fade::Install(*image);    // optional: without it a member near player 2's camera vanishes in both halves
+        lss::world::anim_two_views::Install(*image);  // optional: without it characters near player 2 animate by player 1's camera
         lss::hud::hud_probe::Install(*image);       // logging only; fine without
         lss::hud::overlay_layout::Install(*image);  // optional: without it each half shows the middle of the HUD
         lss::hud::ui_targets::Install(*image);      // optional: without it both halves sample one UI image
@@ -342,10 +344,20 @@ private:
                out.sizeX > 0.0f && out.sizeY > 0.0f && out.sizeX <= 1.0f && out.sizeY <= 1.0f;
     }
 
-    /// The world around two views (world/): party members kept visible near a camera.
+    /// A local player's camera manager (null if unread).
+    void* CameraManagerOf(int index) const noexcept
+    {
+        return lss::platform::ReadPointer(lss::platform::ReadPointer(session_.LocalPlayer(index), lss::facts::kLocalPlayerController),
+                                          lss::facts::kControllerCameraManager);
+    }
+
+    /// The world around two views (world/): party members kept visible near a camera, characters animated by the
+    /// camera that sees them better.
     void TickWorld() noexcept
     {
-        lss::world::party_fade::Tick(session_.HasPlayerTwo());
+        const bool in = session_.HasPlayerTwo();
+        lss::world::party_fade::Tick(in);
+        lss::world::anim_two_views::Tick(in ? CameraManagerOf(1) : nullptr, in ? lss::players::scopes::Member(1) : nullptr);
     }
 
     /// The HUD layout follows the split and each player's view.

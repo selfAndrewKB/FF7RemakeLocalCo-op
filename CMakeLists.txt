@@ -82,6 +82,7 @@ add_library(LocalSplitScreen SHARED
     src/render/ao_origin.cpp
     src/render/bloom_origin.cpp
     src/render/distortion_apply.cpp
+    src/world/anim_two_views.cpp
     src/world/party_fade.cpp
 )
 
@@ -189,3 +190,10 @@ add_executable(FieldHoldTests
 target_include_directories(FieldHoldTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_compile_features(FieldHoldTests PRIVATE cxx_std_20)
 add_test(NAME field_hold COMMAND FieldHoldTests)
+
+add_executable(AnimChoiceTests
+    tests/anim_choice_test.cpp
+)
+target_include_directories(AnimChoiceTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(AnimChoiceTests PRIVATE cxx_std_20)
+add_test(NAME anim_choice COMMAND AnimChoiceTests)

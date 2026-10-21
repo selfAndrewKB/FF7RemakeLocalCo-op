@@ -112,4 +112,7 @@ src/
   world/
     party_fade            party members never vanish near a camera while player 2 is in (the game's own "don't
                           fade" reason list, as for the player's character)
+    anim_two_views        each character's animation judged from the camera that sees it better (two vtable slots
+                          of the judge, one of the budget allocator's Update)
+    anim_choice.h         the camera choice and player 2's snapshot in the game's form (pure, host-tested)
 ```
