@@ -56,6 +56,7 @@
 #include "world/env_sets_two.h"
 #include "world/npc_crowd.h"
 #include "world/npc_detail.h"
+#include "world/npc_look_two.h"
 #include "world/npc_senses.h"
 #include "world/party_fade.h"
 
@@ -72,7 +73,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.30.0-env-sets-two";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.31.0-npc-look";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
@@ -294,6 +295,7 @@ public:
         lss::world::npc_crowd::Install(*image);       // optional: without it the crowd is spawned around player 1 only
         lss::world::npc_senses::Install(*image);      // optional: without it NPCs see nobody beyond player 1's grid
         lss::world::env_sets_two::Install(*image);    // optional: without it only player 1's ground hides the area's actors
+        lss::world::npc_look_two::Install(*image);    // optional: without it NPCs that watch the player watch player 1 only
         lss::hud::hud_probe::Install(*image);       // logging only; fine without
         lss::hud::overlay_layout::Install(*image);  // optional: without it each half shows the middle of the HUD
         lss::hud::ui_targets::Install(*image);      // optional: without it both halves sample one UI image
@@ -379,6 +381,7 @@ private:
         lss::world::npc_crowd::Tick(memberTwo);
         lss::world::npc_senses::Tick(in ? PawnOf(0) : nullptr, memberTwo);
         lss::world::env_sets_two::Tick(memberTwo);
+        lss::world::npc_look_two::Tick(PawnOf(0), memberTwo);  // player 1 known alone too: player 2's looks go back
     }
 
     /// The HUD layout follows the split and each player's view.

@@ -86,6 +86,7 @@ add_library(LocalSplitScreen SHARED
     src/world/env_sets_two.cpp
     src/world/npc_crowd.cpp
     src/world/npc_detail.cpp
+    src/world/npc_look_two.cpp
     src/world/npc_senses.cpp
     src/world/party_fade.cpp
 )
