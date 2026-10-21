@@ -53,6 +53,7 @@
 #include "render/bloom_origin.h"
 #include "render/distortion_apply.h"
 #include "world/anim_two_views.h"
+#include "world/npc_crowd.h"
 #include "world/npc_detail.h"
 #include "world/party_fade.h"
 
@@ -69,7 +70,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.27.0-hand-await";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.28.0-world-two-views";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
@@ -288,6 +289,7 @@ public:
         lss::world::party_fade::Install(*image);    // optional: without it a member near player 2's camera vanishes in both halves
         lss::world::anim_two_views::Install(*image);  // optional: without it characters near player 2 animate by player 1's camera
         lss::world::npc_detail::Install(*image);      // optional: without it NPCs near player 2 pause by player 1's camera
+        lss::world::npc_crowd::Install(*image);       // optional: without it the crowd is spawned around player 1 only
         lss::hud::hud_probe::Install(*image);       // logging only; fine without
         lss::hud::overlay_layout::Install(*image);  // optional: without it each half shows the middle of the HUD
         lss::hud::ui_targets::Install(*image);      // optional: without it both halves sample one UI image
@@ -354,14 +356,16 @@ private:
     }
 
     /// The world around two views (world/): party members kept visible near a camera, characters animated by the
-    /// camera that sees them better, the NPCs near player 2 kept awake.
+    /// camera that sees them better, the NPCs near player 2 kept awake and spawned around it too.
     void TickWorld() noexcept
     {
         const bool in        = session_.HasPlayerTwo();
         void*      cameraTwo = in ? CameraManagerOf(1) : nullptr;
+        void*      memberTwo = in ? lss::players::scopes::Member(1) : nullptr;
         lss::world::party_fade::Tick(in);
-        lss::world::anim_two_views::Tick(cameraTwo, in ? lss::players::scopes::Member(1) : nullptr);
+        lss::world::anim_two_views::Tick(cameraTwo, memberTwo);
         lss::world::npc_detail::Tick(in ? CameraManagerOf(0) : nullptr, cameraTwo);
+        lss::world::npc_crowd::Tick(memberTwo);
     }
 
     /// The HUD layout follows the split and each player's view.

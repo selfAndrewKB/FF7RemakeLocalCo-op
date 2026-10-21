@@ -117,4 +117,5 @@ src/
     anim_choice.h         the camera choice and player 2's snapshot in the game's form (pure, host-tested)
     npc_detail            NPCs player 2's camera needs kept awake and shown (the game's per-NPC minimum level)
     charapop_rule.h       CharaPop's Light/Middle rule for one camera (pure, host-tested; from Rebirth)
+    npc_crowd             each NPC scored from the nearer player, so the crowd spawns around both (one vtable slot)
 ```

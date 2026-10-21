@@ -83,6 +83,7 @@ add_library(LocalSplitScreen SHARED
     src/render/bloom_origin.cpp
     src/render/distortion_apply.cpp
     src/world/anim_two_views.cpp
+    src/world/npc_crowd.cpp
     src/world/npc_detail.cpp
     src/world/party_fade.cpp
 )

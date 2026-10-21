@@ -1151,11 +1151,20 @@ inline constexpr std::array<std::uint8_t, 16> kCharaPopSetMinLevelEntry{
     0x48, 0x81, 0xEC, 0x98, 0x00, 0x00, 0x00, 0x80, 0x3D, 0x72, 0xCC, 0x85, 0x04, 0x00, 0x48, 0x8B};
 inline constexpr platform::FunctionFact kCharaPopSetMinLevel{L"CharaPop_SetEntryMinLODLevel_ByName", 0x140FC8A20,
                                                              kCharaPopSetMinLevelEntry};
+/// The spawn score's distance part, (evaluator, record) -> int: measured from the override centre when its byte is
+/// set, else from the party leader. Slot +8 of the distance evaluator's vtable (its only user is the evaluate list).
+inline constexpr std::array<std::uint8_t, 16> kCharaPopDistanceScoreEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x18, 0x48, 0x89, 0x74, 0x24, 0x20, 0x57, 0x48, 0x81, 0xEC, 0x90, 0x00};
+inline constexpr platform::FunctionFact kCharaPopDistanceScore{L"CharaPopEval_Distance_Evaluate", 0x140F81160,
+                                                               kCharaPopDistanceScoreEntry};
+inline constexpr platform::SlotFact kCharaPopDistanceScoreSlot{L"CharaPop distance evaluator (slot +8)", 0x144BA97C8,
+                                                               kCharaPopDistanceScore};
 inline constexpr std::uint32_t kRootCharaPop             = 0x148;    // g_EndGameRoot: the CharaPop manager
 inline constexpr std::uint32_t kCharaPopRecordsHeap      = 0x40650;  // the 1024 records, when moved to the heap
 inline constexpr std::uint32_t kCharaPopRecordsInline    = 0x4650;   //   else inline here
 inline constexpr std::int32_t  kCharaPopRecordCount      = 1024;
 inline constexpr std::uint32_t kCharaPopRecordBytes      = 0xF0;
+inline constexpr std::uint32_t kCharaPopRecordManager    = 0x00;     // record: its manager
 inline constexpr std::uint32_t kCharaPopRecordState      = 0x40;     //   state (3 fade-in, 4 visible, 5 hiding, 6 hidden, 7 showing, 8 despawn)
 inline constexpr std::uint32_t kCharaPopRecordName       = 0x64;     //   object name (FName): the min-level setter's key
 inline constexpr std::uint32_t kCharaPopRecordCategory   = 0x74;     //   1 hides by distance, 3 enemy
@@ -1176,5 +1185,8 @@ inline constexpr std::uint32_t kCharaPopEnemyInCameraAdd = 0x492DC;
 inline constexpr std::uint32_t kCharaPopOverrideDraw     = 0x49318;  // override: the enable byte, the float at +4
 inline constexpr std::uint32_t kCharaPopOverrideInCamera = 0x49338;
 inline constexpr std::uint32_t kCharaPopOverrideOutCamera = 0x49358;
+inline constexpr std::uint32_t kCharaPopCentre           = 0x498B0;  // override centre: the byte, the FVector at +4 (16 bytes)
+inline constexpr std::uint32_t kCharaPopCentreBytes      = 0x10;
+inline constexpr std::uint32_t kCharaPopEvaluatorScore   = 0x08;     // the distance evaluator's last non-zero score
 
 }  // namespace lss::facts
