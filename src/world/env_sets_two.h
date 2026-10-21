@@ -38,7 +38,8 @@ bool Install(const platform::GameImage& image) noexcept;
 /// otherwise). Places the trace redirect on the first call.
 void Tick(void* memberTwo) noexcept;
 
-/// The switch (`env-sets on|off`, on at start): off drops player 2's entries at the game's next read.
+/// The switch (`env-sets on|off`, off at start since v0.32.0: the game hides world-wide, so player 1 would lose what
+/// player 2's ground hides): off drops player 2's entries at the game's next read.
 void SetEnabled(bool on) noexcept;
 
 /// The `world.env-sets` reading: player 2's set, the actors it adds, the game's re-applies.

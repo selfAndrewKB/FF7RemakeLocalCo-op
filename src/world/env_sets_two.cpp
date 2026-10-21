@@ -65,7 +65,7 @@ std::uint8_t**         g_save    = nullptr;  // &the save data singleton
 std::uint8_t**         g_manager = nullptr;  // &the manager (the reading)
 
 // Game thread only: Tick, and the three calls inside the manager's evaluation.
-bool                   g_enabled   = true;
+bool                   g_enabled   = false;  // the merge (see ReadSet); player 2's set is read either way
 bool                   g_placed    = false;
 void*                  g_two       = nullptr;  // player 2's character while in
 std::uint64_t          g_twoHandle = 0;        // player 2's trace, readable the frame after
@@ -125,13 +125,13 @@ std::wstring EntriesText(const merge::EntryList& list)
     return out.empty() ? L"none" : out;
 }
 
-void Problem(const wchar_t* what) noexcept
+void Problem(std::wstring_view what) noexcept
 try
 {
     if (g_problem != what)
     {
         g_problem = what;
-        if (*what != L'\0')
+        if (!what.empty())
         {
             platform::LogDebug(L"env sets 2: {}", what);
         }
@@ -184,7 +184,7 @@ bool Append(std::uint8_t* block, const Entry& entry) noexcept
 char Issue(void* unused, const TraceArg* arg, std::uint64_t r8, std::uint64_t r9, std::uint64_t* handle) noexcept
 {
     const char result = g_issue(unused, arg, r8, r9, handle);  // player 1's, as the game issues it
-    if (!g_enabled || g_two == nullptr)
+    if (g_two == nullptr)
     {
         g_twoHandle = 0;
         return result;
@@ -251,20 +251,21 @@ bool ReadTwo(void* manager) noexcept
     {
         return false;
     }
-    g_fresh = {};
-    bool fits = true;
-    for (std::int32_t i = 0; i < entryCount && fits; ++i)
+    if (entryCount > merge::kMaxEntries || levelCount > merge::kMaxLevels)
     {
-        fits = g_fresh.entries.Add(entries[i]);
-    }
-    for (std::int32_t i = 0; i < levelCount && fits; ++i)
-    {
-        fits = g_fresh.levels.Add(levels[i]);
-    }
-    if (!fits)
-    {
-        Problem(L"player 2's set lists more than the mod holds; kept the last one");
+        Problem(std::format(L"player 2's set lists {} actors and {} levels, more than the mod holds ({}, {}); kept the "
+                            L"last one",
+                            entryCount, levelCount, merge::kMaxEntries, merge::kMaxLevels));
         return false;
+    }
+    g_fresh = {};
+    for (std::int32_t i = 0; i < entryCount; ++i)
+    {
+        g_fresh.entries.Add(entries[i]);
+    }
+    for (std::int32_t i = 0; i < levelCount; ++i)
+    {
+        g_fresh.levels.Add(levels[i]);
     }
     std::array<std::uint64_t, 3> ids{};
     platform::CopyGuarded(ids.data(), g_twoBlock.data() + facts::kEnvSetBlockIds, sizeof(ids));
@@ -286,13 +287,16 @@ char ReadSet(void* manager, const std::uint64_t* handle, std::uint8_t* block) no
     {
         return one;  // no set built (the game changes nothing), or hold mode (the game replaces the block)
     }
-    const bool present  = g_enabled && g_two != nullptr;
+    // Player 2's set is read whenever player 2 is in (the reading and the log name it); it joins player 1's only
+    // when switched on. Off by default since v0.32.0: the game's apply hides world-wide, so what player 2's ground
+    // hides would vanish from player 1's view too (the user, 2026-10-21); a per-view design is being researched.
+    const bool present  = g_two != nullptr;
     const bool resolved = present && ReadTwo(manager);
     if (!present && g_twoIds != std::array<std::uint64_t, 3>{})
     {
         g_twoIds = {};
     }
-    g_twoSet = merge::NextTwoSet(present, resolved, g_fresh, g_twoSet);
+    g_twoSet = merge::NextTwoSet(present && g_enabled, resolved, g_fresh, g_twoSet);
 
     Entry*       mine = nullptr;
     std::int32_t num  = 0;
@@ -413,7 +417,7 @@ bool Install(const platform::GameImage& image) noexcept
     control::Register({.name  = L"env-sets",
                        .shape = control::Shape::OnOff,
                        .help  = L"the ground under player 2 hides what the area hides, as player 1's does "
-                                L"(world/env_sets_two.h; on)",
+                                L"(world/env_sets_two.h; off: hides world-wide)",
                        .set   = [](const control::Value& value) {
                            SetEnabled(std::get<bool>(value));
                            return control::Outcome{};
@@ -422,7 +426,8 @@ bool Install(const platform::GameImage& image) noexcept
     control::Register({.name = L"world.env-sets", .shape = control::Shape::Text,
                        .help = L"player 2's EnvironmentSet, the actors it adds to player 1's, the game's re-applies",
                        .get  = [] { return control::Value{Reading()}; }});
-    platform::Log(L"env sets 2: read and apply redirected; player 2's trace is placed on the first tick");
+    platform::Log(L"env sets 2: read and apply redirected; player 2's trace is placed on the first tick; player 2's "
+                  L"set is read and logged, not added (env-sets off: the game hides world-wide)");
     return true;
 }
 

@@ -31,7 +31,8 @@ struct Entry
 };
 static_assert(sizeof(Name) == 8 && sizeof(Entry) == 12, "the game's layouts");
 
-/// A bounded list on static storage (the game's own lists hold at most 32 actors; a set names a few levels).
+/// A bounded list on static storage. The game's actor list keeps 32 entries inline and grows on the heap past that;
+/// a set in Sector 5 (v0.31.0, live) listed more than 64, so the bounds are wide.
 template <typename T, int N>
 struct List
 {
@@ -61,8 +62,8 @@ struct List
     }
 };
 
-inline constexpr int kMaxEntries = 64;
-inline constexpr int kMaxLevels  = 64;
+inline constexpr int kMaxEntries = 2048;
+inline constexpr int kMaxLevels  = 256;
 using EntryList = List<Entry, kMaxEntries>;
 using LevelList = List<Name, kMaxLevels>;
 
