@@ -1143,4 +1143,38 @@ inline constexpr std::uint32_t kCharacterKbd              = 0x1A90;  // AEndChar
 inline constexpr std::uint32_t kKbdBonamiks               = 0x428;   //   its Bonamik array (data), the first one's mode below
 inline constexpr std::uint32_t kBonamikUpdateMode         = 0x1C9C;  //   0 normal; 1 reduced (out of the camera's cone)
 
+// --- NPCs near player 2: CharaPop (research/RE-npc-near-player-two.md, 2026-10-21) ---------------
+/// CharaPop_SetEntryMinLODLevel_ByName(const FName* objectName, u8 level, bool evaluateNow) -> found: the entry's
+/// minimum level (3 keeps it awake, shown and fully animated; 0 clears it), the setter event scripts and field-AI
+/// animations use; off the game thread it posts itself to the game thread.
+inline constexpr std::array<std::uint8_t, 16> kCharaPopSetMinLevelEntry{
+    0x48, 0x81, 0xEC, 0x98, 0x00, 0x00, 0x00, 0x80, 0x3D, 0x72, 0xCC, 0x85, 0x04, 0x00, 0x48, 0x8B};
+inline constexpr platform::FunctionFact kCharaPopSetMinLevel{L"CharaPop_SetEntryMinLODLevel_ByName", 0x140FC8A20,
+                                                             kCharaPopSetMinLevelEntry};
+inline constexpr std::uint32_t kRootCharaPop             = 0x148;    // g_EndGameRoot: the CharaPop manager
+inline constexpr std::uint32_t kCharaPopRecordsHeap      = 0x40650;  // the 1024 records, when moved to the heap
+inline constexpr std::uint32_t kCharaPopRecordsInline    = 0x4650;   //   else inline here
+inline constexpr std::int32_t  kCharaPopRecordCount      = 1024;
+inline constexpr std::uint32_t kCharaPopRecordBytes      = 0xF0;
+inline constexpr std::uint32_t kCharaPopRecordState      = 0x40;     //   state (3 fade-in, 4 visible, 5 hiding, 6 hidden, 7 showing, 8 despawn)
+inline constexpr std::uint32_t kCharaPopRecordName       = 0x64;     //   object name (FName): the min-level setter's key
+inline constexpr std::uint32_t kCharaPopRecordCategory   = 0x74;     //   1 hides by distance, 3 enemy
+inline constexpr std::uint32_t kCharaPopRecordInUse      = 0x7C;
+inline constexpr std::uint32_t kCharaPopRecordLevel      = 0xC8;     //   level last evaluated (1 Light, 2 Middle, 3 Heavy)
+inline constexpr std::uint32_t kCharaPopRecordMinLevel   = 0xC9;
+inline constexpr std::uint32_t kCharaPopRecordActor      = 0xD0;
+inline constexpr std::uint32_t kCharaPopFov              = 0x4919C;  // the cone's half-angle (degrees)
+inline constexpr std::uint32_t kCharaPopLightDraw        = 0x491BC;  // Light: draw, in-camera, out-of-camera, should-tick
+inline constexpr std::uint32_t kCharaPopLightInCamera    = 0x491DC;
+inline constexpr std::uint32_t kCharaPopLightOutCamera   = 0x491FC;
+inline constexpr std::uint32_t kCharaPopLightShouldTick  = 0x4921C;
+inline constexpr std::uint32_t kCharaPopMiddleDraw       = 0x4923C;  // Middle: the same four
+inline constexpr std::uint32_t kCharaPopMiddleInCamera   = 0x4925C;
+inline constexpr std::uint32_t kCharaPopMiddleOutCamera  = 0x4927C;
+inline constexpr std::uint32_t kCharaPopMiddleShouldTick = 0x4929C;
+inline constexpr std::uint32_t kCharaPopEnemyInCameraAdd = 0x492DC;
+inline constexpr std::uint32_t kCharaPopOverrideDraw     = 0x49318;  // override: the enable byte, the float at +4
+inline constexpr std::uint32_t kCharaPopOverrideInCamera = 0x49338;
+inline constexpr std::uint32_t kCharaPopOverrideOutCamera = 0x49358;
+
 }  // namespace lss::facts

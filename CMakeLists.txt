@@ -83,6 +83,7 @@ add_library(LocalSplitScreen SHARED
     src/render/bloom_origin.cpp
     src/render/distortion_apply.cpp
     src/world/anim_two_views.cpp
+    src/world/npc_detail.cpp
     src/world/party_fade.cpp
 )
 
@@ -197,3 +198,10 @@ add_executable(AnimChoiceTests
 target_include_directories(AnimChoiceTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_compile_features(AnimChoiceTests PRIVATE cxx_std_20)
 add_test(NAME anim_choice COMMAND AnimChoiceTests)
+
+add_executable(CharaPopRuleTests
+    tests/charapop_rule_test.cpp
+)
+target_include_directories(CharaPopRuleTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(CharaPopRuleTests PRIVATE cxx_std_20)
+add_test(NAME charapop_rule COMMAND CharaPopRuleTests)

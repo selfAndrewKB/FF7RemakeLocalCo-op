@@ -115,4 +115,6 @@ src/
     anim_two_views        each character's animation judged from the camera that sees it better (two vtable slots
                           of the judge, one of the budget allocator's Update)
     anim_choice.h         the camera choice and player 2's snapshot in the game's form (pure, host-tested)
+    npc_detail            NPCs player 2's camera needs kept awake and shown (the game's per-NPC minimum level)
+    charapop_rule.h       CharaPop's Light/Middle rule for one camera (pure, host-tested; from Rebirth)
 ```
