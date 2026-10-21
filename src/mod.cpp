@@ -64,7 +64,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.24.0-nav-area-reenter";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.25.0-script-hold";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;

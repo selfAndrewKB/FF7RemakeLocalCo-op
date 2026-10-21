@@ -8,7 +8,6 @@
 #include "platform/log.h"
 #include "platform/verified_code.h"
 
-#include <array>
 #include <cstdint>
 #include <format>
 #include <span>
@@ -25,16 +24,14 @@ namespace {
 using SetLeaderFn     = std::int64_t (*)(void* partyManager, void* character, std::uint8_t input, std::uint8_t force);
 using SetLeaderToadFn = std::int64_t (*)(void* partyManager, void* character);
 using StreamFn        = std::int64_t (*)(void* partyManager);
-using HandFn          = char (*)();
-using ReturnFn        = std::int64_t (*)(void* stateManager);
+using HandFn          = char (*)(void* unused);
+using ReturnFn        = std::int64_t (*)(void* root);
 
 // Set once at install.
 Listener                g_listener;
-std::uintptr_t          g_setLeader = 0, g_setLeaderToad = 0;
-platform::EntryRedirect g_leader, g_leaderToad;
+std::uintptr_t          g_setLeader = 0, g_setLeaderToad = 0, g_hand = 0, g_return = 0;
+platform::EntryRedirect g_leader, g_leaderToad, g_handEntry, g_returnEntry;
 platform::CallRedirect  g_stream;
-std::array<platform::CallRedirect, 2> g_hands;
-platform::CallRedirect  g_return;
 DWORD                   g_thread = 0;
 bool                    g_placed = false;
 
@@ -93,9 +90,10 @@ std::int64_t FinishStream(void* partyManager)
     return result;
 }
 
-char HandLeaderToAi()
+// The hand reads no argument (it fetches the party manager itself); rcx is passed on untouched all the same.
+char HandLeaderToAi(void* unused)
 {
-    const char result = reinterpret_cast<HandFn>(g_hands[0].Original())();
+    const char result = reinterpret_cast<HandFn>(g_handEntry.Original())(unused);
     if (OnGameThread() && g_listener.leaderHandedToAi != nullptr)
     {
         ++g_counts.handed;
@@ -104,9 +102,9 @@ char HandLeaderToAi()
     return result;
 }
 
-std::int64_t ReturnLeader(void* stateManager)
+std::int64_t ReturnLeader(void* root)
 {
-    const std::int64_t result = reinterpret_cast<ReturnFn>(g_return.Original())(stateManager);
+    const std::int64_t result = reinterpret_cast<ReturnFn>(g_returnEntry.Original())(root);
     if (OnGameThread() && g_listener.leaderReturned != nullptr)
     {
         ++g_counts.returned;
@@ -125,13 +123,7 @@ bool Install(const platform::GameImage& image, const Listener& listener) noexcep
     const auto streamJmp = image.Rebase(facts::kFinishPlayerStreamJump, 5);
     const auto hand      = platform::FindFunction(image, facts::kHandLeaderToAi);
     const auto ret       = platform::FindFunction(image, facts::kReturnLeaderToPc);
-    const auto retCall   = image.Rebase(facts::kReturnLeaderCall, 5);
-    std::array<std::optional<std::uintptr_t>, 2> handCalls;
-    for (std::size_t i = 0; i < handCalls.size(); ++i)
-    {
-        handCalls[i] = image.Rebase(facts::kHandLeaderCalls[i], 5);
-    }
-    if (!setLeader || !setToad || !stream || !streamJmp || !hand || !ret || !retCall || !handCalls[0] || !handCalls[1])
+    if (!setLeader || !setToad || !stream || !streamJmp || !hand || !ret)
     {
         platform::Log(L"party events: an engine check failed; the game's party funnels are not heard");
         return false;
@@ -139,20 +131,16 @@ bool Install(const platform::GameImage& image, const Listener& listener) noexcep
     g_listener      = listener;
     g_setLeader     = *setLeader;
     g_setLeaderToad = *setToad;
-    // The call sites together: a funnel heard by halves would give back at one change and not the next.
-    const bool installed = g_stream.InstallTailJump(*streamJmp, *stream, reinterpret_cast<std::uintptr_t>(&FinishStream)) &&
-                           g_hands[0].Install(*handCalls[0], *hand, reinterpret_cast<std::uintptr_t>(&HandLeaderToAi)) &&
-                           g_hands[1].Install(*handCalls[1], *hand, reinterpret_cast<std::uintptr_t>(&HandLeaderToAi)) &&
-                           g_return.Install(*retCall, *ret, reinterpret_cast<std::uintptr_t>(&ReturnLeader));
-    if (!installed)
+    g_hand          = *hand;
+    g_return        = *ret;
+    if (!g_stream.InstallTailJump(*streamJmp, *stream, reinterpret_cast<std::uintptr_t>(&FinishStream)))
     {
-        Remove();
-        platform::Log(L"party events: a call site could not be redirected; the game's party funnels are not heard");
+        platform::Log(L"party events: the formation rebuild's tail jump could not be redirected; the game's party funnels are not heard");
         return false;
     }
     control::Register({.name = L"party-events", .shape = control::Shape::Text,
                        .help = L"the game's party funnels heard: leader changes, formation rebuilds, the leader handed to its AI "
-                               L"and returned, calls off the game thread",
+                               L"and returned (every site), calls off the game thread",
                        .get  = [] {
                            return control::Value{std::format(L"leader {}, stream {}, handed {}, returned {}, off-thread {}",
                                                              g_counts.leader, g_counts.stream, g_counts.handed, g_counts.returned,
@@ -163,9 +151,8 @@ bool Install(const platform::GameImage& image, const Listener& listener) noexcep
 
 void Remove() noexcept
 {
-    g_return.Restore();
-    g_hands[1].Restore();
-    g_hands[0].Restore();
+    g_returnEntry.Restore();
+    g_handEntry.Restore();
     g_stream.Restore();
     g_leaderToad.Restore();
     g_leader.Restore();
@@ -179,19 +166,28 @@ void Tick() noexcept
     }
     g_placed = true;
     g_thread = GetCurrentThreadId();
-    // The entries open with pushes (position-independent); the game thread alone runs them, and it is here, outside.
+    // The entries open position-independent (pushes, a home-area store, a frame reserve); the game thread alone
+    // runs them, and it is here, outside. The hand's first two instructions go together: six bytes, as the pushes.
     const bool placed = g_leader.Install(g_setLeader, std::span(facts::kSetPartyLeaderEntry.data(), facts::kSetPartyLeaderPushes),
                                          reinterpret_cast<std::uintptr_t>(&SetLeader)) &&
                         g_leaderToad.Install(g_setLeaderToad, std::span(facts::kSetPartyLeaderToadEntry.data(), facts::kSetPartyLeaderToadPushes),
-                                             reinterpret_cast<std::uintptr_t>(&SetLeaderToad));
+                                             reinterpret_cast<std::uintptr_t>(&SetLeaderToad)) &&
+                        g_handEntry.Install(g_hand, std::span(facts::kHandLeaderToAiEntry.data(), facts::kHandLeaderToAiFirst),
+                                            reinterpret_cast<std::uintptr_t>(&HandLeaderToAi)) &&
+                        g_returnEntry.Install(g_return, std::span(facts::kReturnLeaderToPcEntry.data(), facts::kReturnLeaderToPcFirst),
+                                              reinterpret_cast<std::uintptr_t>(&ReturnLeader));
     if (!placed)
     {
+        g_returnEntry.Restore();
+        g_handEntry.Restore();
         g_leaderToad.Restore();
         g_leader.Restore();
-        platform::Log(L"party events: the leader funnel's entries could not be redirected; a leader change onto a further player's member is caught one tick late");
+        platform::Log(L"party events: a funnel's entry could not be redirected; a leader change onto a further player's member is "
+                      L"caught one tick late, and the game's hand-backs go unheard (the per-tick check alone)");
         return;
     }
-    platform::Log(L"party events: installed; the game's leader changes, formation rebuilds and event hand-backs are heard");
+    platform::Log(L"party events: installed; the game's leader changes, formation rebuilds, and its leader's hand to its AI and "
+                  L"return are heard at every site");
 }
 
 }  // namespace lss::players::party_events

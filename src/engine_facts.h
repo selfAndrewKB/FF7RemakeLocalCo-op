@@ -950,18 +950,18 @@ inline constexpr std::uint8_t   kActorModeCaution      = 4;
 inline constexpr std::uint8_t   kActorModeBattle       = 5;
 inline constexpr std::uint8_t   kActorModeCinema       = 7;
 /// AEndFieldAIController: a stack of 15 request layers; the active layer (0 = the party's default layer, 1 = the
-/// level's AI setting, 16 = none) and its kind: 1 Stable (the stream's default) or 11, the level's default AI setting
-/// (a follow with a formation position and gait: Aerith following Cloud in the field reads layer 1 kind 11
-/// [CONFIRMED live 2026-10-19]). Another kind is a script's hold; the layer is not read (a cutscene's preparation
-/// copies the active record into the cinema layer 13 for the members outside the scene).
+/// level's AI settings, 13 = the cinema copy, 16 = none) and its kind, the reflected FFieldAiType (the names and
+/// the hold rule: players/field_hold.h; research/RE-fieldai-kinds.md). Aerith following Cloud in the field reads
+/// layer 1 kind 11 ACCOMPANY [CONFIRMED live 2026-10-19]; the level stages the members on layer 1 during gameplay
+/// (STAY, FOLLOW_POSITION, LEAD, NONE) [CONFIRMED live 2026-10-20].
 inline constexpr std::uint32_t  kFieldAiActiveLayer    = 0xDF8;
 inline constexpr std::uint32_t  kFieldAiActiveKind     = 0x55B8;
-inline constexpr std::uint8_t   kFieldAiKindStable     = 1;
-inline constexpr std::uint8_t   kFieldAiKindDefaultSetting = 11;
 inline constexpr std::uint32_t  kFieldAiLayerRecords   = 0xE00;   // 15 records of 0x4C8 bytes; byte +0 = the kind (0 empty)
 inline constexpr std::uint32_t  kFieldAiLayerBytes     = 0x4C8;
 inline constexpr std::uint32_t  kFieldAiLayers         = 15;
-/// The field control lock mask on the state manager ([root+0x138]): bit 0x100000 while an event holds the field.
+/// The field control lock mask on the state manager ([root+0x138]): the reflected EndFieldExclusion bits (bit
+/// 0x100000 while an event holds the field; research/RE-script-release.md §3). The first bit set hands the game's
+/// leader to its AI, the last bit cleared returns it.
 inline constexpr std::uint32_t  kRootStateManager      = 0x138;
 inline constexpr std::uint32_t  kStateManagerControlLock = 0x11062B0;
 inline constexpr std::uint32_t  kControlLockEvent      = 0x100000;
@@ -983,15 +983,19 @@ inline constexpr platform::FunctionFact kFinishPlayerStream{L"PartyManager_Finis
                                                             kFinishPlayerStreamEntry};
 inline constexpr std::uintptr_t kFinishPlayerStreamJump = 0x141B90183;  // E9 68 07 A6 FF, inside its block
 /// The game's hand of its leader to its AI (the PLAYER slot cleared, the controller reconciled) and the return
-/// (the slot set to the primary controller): the event's start and end, and the field-action tick.
+/// (the slot set to the primary controller): the event's start and end, the field-action tick, and the field
+/// control lock's first set and last clear (research/RE-script-release.md §1; three hand sites and two return sites,
+/// one of each crossing a block, so the functions are heard at their entries). Both open position-independent:
+/// the hand with `push rbx; sub rsp, 20h` (6 bytes, two instructions, the game thread alone runs it), the return
+/// with `mov [rsp+8], rbx` (5).
 inline constexpr std::array<std::uint8_t, 16> kHandLeaderToAiEntry{
     0x40, 0x53, 0x48, 0x83, 0xEC, 0x20, 0xE8, 0xE5, 0x13, 0x66, 0xFF, 0x48, 0x8B, 0xC8, 0x33, 0xD2};
+inline constexpr std::size_t kHandLeaderToAiFirst = 6;
 inline constexpr platform::FunctionFact kHandLeaderToAi{L"Party_HandLeaderToAI_ClearPlayerSlot", 0x140FF66D0, kHandLeaderToAiEntry};
-inline constexpr std::array<std::uintptr_t, 2> kHandLeaderCalls{0x1411215B6, 0x140FF62FB};  // E8 15 51 ED FF, E8 D0 03 00 00
 inline constexpr std::array<std::uint8_t, 16> kReturnLeaderToPcEntry{
     0x48, 0x89, 0x5C, 0x24, 0x08, 0x57, 0x48, 0x83, 0xEC, 0x20, 0x48, 0x8B, 0x81, 0x38, 0x01, 0x00};
+inline constexpr std::size_t kReturnLeaderToPcFirst = 5;
 inline constexpr platform::FunctionFact kReturnLeaderToPc{L"Party_ReturnLeaderToPrimaryPC", 0x140FF6720, kReturnLeaderToPcEntry};
-inline constexpr std::uintptr_t kReturnLeaderCall = 0x141121933;  // E8 E8 4D ED FF, inside its block
 /// The reconcile (char800 vt+0x128: the PLAYER slot wins, else the AI for the mode) and the actor-type setter
 /// (char800 vt+0x110), as the game's own hand-backs and the formation rebuild call them.
 inline constexpr std::array<std::uint8_t, 16> kReconcileControllerEntry{

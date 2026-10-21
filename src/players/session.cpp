@@ -619,7 +619,10 @@ try
         memberWeak_[0] = -1;
         memberWeak_[1] = 0;
     }
-    platform::Log(L"player 2 plays member type {} (row {} of the party order)", choice.type, choice.ordinal);
+    // After a script's hold: how soon the member came back measures the seat churn between scripts.
+    platform::Log(L"player 2 plays member type {} (row {} of the party order){}", choice.type, choice.ordinal,
+                  scriptReleaseAt_ == 0 ? L"" : std::format(L", {} ticks after a script's hold gave it back", ticks_ - scriptReleaseAt_));
+    scriptReleaseAt_ = 0;
     if (cameraInstalled_ && !player_two_camera::Start(playerOne, playerTwo, choice.member))
     {
         platform::Log(L"player 2 keeps a still camera; each player's sticks are still their own pad's");
@@ -696,8 +699,10 @@ try
     }
     if (handedToAi_)
     {
-        // The event's end through the return site the mod does not hear (it crosses a block): the lock is gone.
-        if (!party_member::EventLocked())
+        // The game's own state decides the return (RE-script-release.md §4: the event bit alone undid a keep-group
+        // hand): its leader back with a player controller. The funnel is heard at its entry; this is the backstop,
+        // and the retry while a script still held the member at the game's return.
+        if (party_member::LeaderWithPlayer())
         {
             OnLeaderReturned(this);
         }
@@ -705,6 +710,8 @@ try
     }
     if (const wchar_t* why = party_member::WhyHeldByScript(member))
     {
+        platform::LogDebug(L"  the member: {}", party_member::AiDetail(member));
+        scriptReleaseAt_ = ticks_;
         ReleaseMember(why);
     }
 }
@@ -754,8 +761,18 @@ void Session::OnLeaderHandedToAi(void* self) noexcept
     {
         return;
     }
-    session->handedToAi_ = party_member::HandToAi(member);
-    platform::LogDebug(L"player 2's member handed to its AI with the game's leader (an event): {}", session->handedToAi_ ? L"yes" : L"NO");
+    // A lock set in battle (a boss arena, the colosseum) hands the game's leader there too [UNKNOWN whether the
+    // battle AI then runs it]: the member stays player 2's until a log shows what the game does with its leader.
+    if (party_member::ActorMode(member) == facts::kActorModeBattle)
+    {
+        platform::LogDebug(L"the game handed its leader to its AI in battle (lock {:#x}); player 2's member stays (unread case)",
+                           party_member::ControlLockMask());
+        return;
+    }
+    session->handedToAi_      = party_member::HandToAi(member);
+    session->returnWaitLogged_ = false;
+    platform::LogDebug(L"player 2's member handed to its AI with the game's leader (lock {:#x}): {}; the member: {}",
+                       party_member::ControlLockMask(), session->handedToAi_ ? L"yes" : L"NO", party_member::AiDetail(member));
 }
 
 void Session::OnLeaderReturned(void* self) noexcept
@@ -767,8 +784,20 @@ try
     {
         return;
     }
+    // The game's leader is back; the member follows once nothing holds it (a scene's own layers can outlast the
+    // lock). The periodic check retries while the game's leader stays with its player.
+    if (const wchar_t* why = party_member::WhyHeldByScript(member))
+    {
+        if (!session->returnWaitLogged_)
+        {
+            session->returnWaitLogged_ = true;
+            platform::LogDebug(L"the game took its leader back (lock {:#x}) while player 2's member is still {}; it follows when free: {}",
+                               party_member::ControlLockMask(), why, party_member::AiDetail(member));
+        }
+        return;
+    }
     session->handedToAi_ = false;
-    platform::LogDebug(L"player 2's member back on its controller with the game's leader (the event ended): {}",
+    platform::LogDebug(L"player 2's member back on its controller with the game's leader (lock {:#x}): {}", party_member::ControlLockMask(),
                        party_member::ReturnTo(member, Field(session->playerTwo_, facts::kLocalPlayerController)) ? L"yes" : L"NO");
 }
 catch (...)

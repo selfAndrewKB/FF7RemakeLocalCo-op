@@ -179,3 +179,10 @@ add_executable(InstructionPatchTests
 target_include_directories(InstructionPatchTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_compile_features(InstructionPatchTests PRIVATE cxx_std_20)
 add_test(NAME instruction_patch COMMAND InstructionPatchTests)
+
+add_executable(FieldHoldTests
+    tests/field_hold_test.cpp
+)
+target_include_directories(FieldHoldTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(FieldHoldTests PRIVATE cxx_std_20)
+add_test(NAME field_hold COMMAND FieldHoldTests)

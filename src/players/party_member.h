@@ -8,12 +8,12 @@
 // shows and the battle switch cycles), stepping past player 1's character and the battle-support status as that
 // cycle does; a third player would take the next row. The game's order is the only control: a story party change
 // moves the slot and the session follows it. The row's member is taken only while it is free the way the game
-// hands members to players: nobody else's controller holds it; in the field its AI runs the party's own follow
-// (the stream's Stable layer or the level's default AI setting) with no script layer above, it is in the FIELD or
-// CAUTION actor mode and no event holds
-// the field; in battle the BATTLE mode. A story script that takes a held member (a higher AI layer, the cinema
-// modes) gets it back, and the player waits for it. A downed member stays playable, as player 1 stays on a downed
-// leader. With fewer rows than seats (a solo story party) that player has no member and waits.
+// hands members to players: nobody else's controller holds it; in the field its AI runs the level's staging or the
+// party's follow (players/field_hold.h: no script layer active, no LEAD or one-shot kind), it is in the FIELD or
+// CAUTION actor mode and no event holds the field; in battle the BATTLE mode. A story script that takes a held
+// member (a script layer, a LEAD, the cinema modes) gets it back, and the player waits for it. A downed member
+// stays playable, as player 1 stays on a downed leader. With fewer rows than seats (a solo story party) that
+// player has no member and waits.
 //
 // Seat-indexed (seat 1 = player 2); game thread only; every read guarded (a reload tears the party down under them).
 
@@ -36,7 +36,7 @@ enum class Wait : std::uint8_t
     Held,        // another controller holds the row's member (its PLAYER slot)
     Cinema,      // in a cutscene or an event (the cinema actor modes)
     EventLock,   // an event holds the field
-    AiHeld,      // a script holds its field AI (a layer above the party's default, or another kind)
+    AiHeld,      // a script holds its field AI (a script layer, or a LEAD / one-shot kind: field_hold.h)
     NoFieldAi,   // its field AI has no state yet
     Unread,      // the party could not be read
 };
@@ -63,15 +63,24 @@ std::wstring FormationReading(void* playerOneController) noexcept;
 /// formation, or it became player 1's. Null while it still is. `type` is the member's type as taken.
 const wchar_t* WhyNotInSlot(int seat, void* member, std::uint8_t type, void* playerOneController) noexcept;
 
-/// Why a held `member` must go back to its AI now: a cutscene or event mode, or a script's AI layer. Null while
-/// it may stay. (The battle mode holds nothing: the battle AI never runs a player-held member.)
+/// Why a held `member` must go back to its AI now: a cutscene or event mode, or a script's hold on its field AI
+/// (field_hold.h). Null while it may stay. (The battle mode holds nothing: the battle AI never runs a player-held
+/// member; an event lock alone is the game's own hand, heard by party_events.)
 const wchar_t* WhyHeldByScript(void* member) noexcept;
+
+/// The member's actor mode byte (facts::kActorMode*; 0 unread).
+std::uint8_t ActorMode(const void* member) noexcept;
 
 /// The member's party status is in the formation (PARTY or battle support).
 bool InFormation(std::uint8_t type) noexcept;
 
-/// An event holds the field (the control lock's event bit).
-bool EventLocked() noexcept;
+/// The field control lock mask (0 when free or unread), and whether its event bit is set.
+std::uint32_t ControlLockMask() noexcept;
+bool          EventLocked() noexcept;
+
+/// The game's own leader is with a player controller (its PLAYER slot filled): the game has not handed it to its
+/// AI, or has returned it. False while handed, and when the leader cannot be read.
+bool LeaderWithPlayer() noexcept;
 
 /// The game's own hand of a player-held member to its AI (the PLAYER slot cleared, the controller reconciled), and
 /// the return to `controller`: what it does for its leader at an event's start and end, done for this member.

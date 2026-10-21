@@ -5,6 +5,7 @@
 #include "platform/image.h"
 #include "platform/log.h"
 #include "platform/verified_code.h"
+#include "players/field_hold.h"
 
 #include <cstdint>
 #include <format>
@@ -18,14 +19,15 @@ using platform::Read;
 using platform::ReadPointer;
 
 using GetPlayerActorFn = void* (*)(void* partyManager, std::uint8_t variant, std::uint8_t type, bool alternate);
+using GetPartyLeaderFn = void* (*)(void* partyManager, std::uint8_t variant);
 using ReconcileFn      = std::int64_t (*)(void* character800);
 using SetActorTypeFn   = void (*)(void* character800, std::uint8_t type);
 
 constexpr std::int32_t  kRows             = 3;      // the deployed formation's rows
 constexpr std::uint32_t kControllerLeader = 0x6F8;  // AEndPlayerController::LeaderCharacter
-constexpr std::uint8_t  kFieldAiNoLayer   = 16;
 
 GetPlayerActorFn g_getPlayerActor = nullptr;
+GetPartyLeaderFn g_getPartyLeader = nullptr;
 ReconcileFn      g_reconcile      = nullptr;
 SetActorTypeFn   g_setActorType   = nullptr;
 void**           g_partyManager   = nullptr;
@@ -79,17 +81,11 @@ std::int32_t Anchor(const Party& party) noexcept
     return 0;
 }
 
-std::uint8_t Mode(const void* member) noexcept
-{
-    std::uint8_t mode = 0;
-    Read(static_cast<const std::uint8_t*>(ReadPointer(member, facts::kCharacterActorMode)) + facts::kActorModeMode, mode);
-    return mode;
-}
-
-/// The field take tests of RE-slot-member.md §2.5, as a wait reason; None when the member is free.
+/// The field take tests of RE-slot-member.md §2.5 with the hold rule of field_hold.h, as a wait reason; None when
+/// the member is free.
 Wait FieldWait(void* member) noexcept
 {
-    const std::uint8_t mode = Mode(member);
+    const std::uint8_t mode = ActorMode(member);
     if (mode == facts::kActorModeFieldCinema || mode == facts::kActorModeCinema)
     {
         return Wait::Cinema;
@@ -103,32 +99,46 @@ Wait FieldWait(void* member) noexcept
         return Wait::EventLock;
     }
     const std::uint8_t* ai    = static_cast<const std::uint8_t*>(ReadPointer(member, facts::kCharacterFieldAi));
-    std::uint8_t        layer = kFieldAiNoLayer, kind = 0;
-    if (ai == nullptr || !Read(ai + facts::kFieldAiActiveLayer, layer) || !Read(ai + facts::kFieldAiActiveKind, kind) ||
-        layer == kFieldAiNoLayer)
+    std::uint8_t        layer = field_hold::kNoLayer, kind = 0;
+    if (ai == nullptr || !Read(ai + facts::kFieldAiActiveLayer, layer) || !Read(ai + facts::kFieldAiActiveKind, kind))
     {
         return Wait::NoFieldAi;
     }
-    // The kind decides, not the layer: a cutscene's preparation copies the active layer into the cinema layer (13)
-    // for every party member outside the scene, so the follow is seen there too; the scene itself is the actor mode.
-    return kind == facts::kFieldAiKindStable || kind == facts::kFieldAiKindDefaultSetting ? Wait::None : Wait::AiHeld;
+    switch (field_hold::Of(layer, kind))
+    {
+    case field_hold::Hold::Free:
+        return Wait::None;
+    case field_hold::Hold::NoState:
+        return Wait::NoFieldAi;
+    default:
+        return Wait::AiHeld;
+    }
 }
 
 }  // namespace
 
+std::uint8_t ActorMode(const void* member) noexcept
+{
+    std::uint8_t mode = 0;
+    Read(static_cast<const std::uint8_t*>(ReadPointer(member, facts::kCharacterActorMode)) + facts::kActorModeMode, mode);
+    return mode;
+}
+
 bool Install(const platform::GameImage& image) noexcept
 {
     const auto find      = platform::FindFunction(image, facts::kGetPlayerActor);
+    const auto leader    = platform::FindFunction(image, facts::kGetPartyLeader);
     const auto reconcile = platform::FindFunction(image, facts::kReconcileController);
     const auto setType   = platform::FindFunction(image, facts::kSetActorType);
     const auto party     = image.Rebase(facts::kPartyManagerGlobal, sizeof(void*));
     const auto data      = image.Rebase(facts::kDataSingletonGlobal, sizeof(void*));
     const auto root      = image.Rebase(facts::kEndGameRootGlobal, sizeof(void*));
-    if (!find || !reconcile || !setType || !party || !data || !root)
+    if (!find || !leader || !reconcile || !setType || !party || !data || !root)
     {
         return false;
     }
     g_getPlayerActor = reinterpret_cast<GetPlayerActorFn>(*find);
+    g_getPartyLeader = reinterpret_cast<GetPartyLeaderFn>(*leader);
     g_reconcile      = reinterpret_cast<ReconcileFn>(*reconcile);
     g_setActorType   = reinterpret_cast<SetActorTypeFn>(*setType);
     g_partyManager   = reinterpret_cast<void**>(*party);
@@ -264,7 +274,7 @@ const wchar_t* WhyHeldByScript(void* member) noexcept
     case Wait::Cinema:
         return L"in a cutscene or event (the cinema actor mode)";
     case Wait::AiHeld:
-        return L"held by a story script (a field AI layer above the party's default)";
+        return L"held by a story script (a script layer of its field AI, or a LEAD or one-shot kind)";
     default:
         return nullptr;  // an event lock alone is the game's hand-back (party_events); the rest holds nothing
     }
@@ -278,13 +288,29 @@ bool InFormation(std::uint8_t type) noexcept
            (status == facts::kStatusParty || status == facts::kStatusBattleSupport);
 }
 
-bool EventLocked() noexcept
+std::uint32_t ControlLockMask() noexcept
 {
     std::uint8_t* root = nullptr;
     std::uint8_t* sm   = nullptr;
     std::uint32_t lock = 0;
     return Read(g_root, root) && root != nullptr && Read(root + facts::kRootStateManager, sm) && sm != nullptr &&
-           Read(sm + facts::kStateManagerControlLock, lock) && (lock & facts::kControlLockEvent) != 0;
+                   Read(sm + facts::kStateManagerControlLock, lock)
+               ? lock
+               : 0;
+}
+
+bool EventLocked() noexcept
+{
+    return (ControlLockMask() & facts::kControlLockEvent) != 0;
+}
+
+bool LeaderWithPlayer() noexcept
+{
+    void* manager = nullptr;
+    void* leader  = nullptr;
+    return g_getPartyLeader != nullptr && Read(g_partyManager, manager) && manager != nullptr &&
+           platform::CallGuarded(g_getPartyLeader, leader, manager, std::uint8_t{0}) && leader != nullptr &&
+           ReadPointer(leader, facts::kCharacterPlayerSlot) != nullptr;
 }
 
 bool HandToAi(void* member) noexcept
@@ -336,8 +362,8 @@ try
             kinds += std::format(L"{}{}", i == 0 ? L"" : L" ", k);
         }
     }
-    return std::format(L"mode {}, field AI {}: active layer {} kind {}, layer kinds [{}], event lock {}", Mode(member),
-                       ai == nullptr ? L"none" : L"present", layer, kind, kinds, EventLocked() ? L"on" : L"off");
+    return std::format(L"mode {}, field AI {}: active layer {} kind {} {}, layer kinds [{}], lock {:#x}", ActorMode(member),
+                       ai == nullptr ? L"none" : L"present", layer, kind, field_hold::KindName(kind), kinds, ControlLockMask());
 }
 catch (...)
 {
@@ -361,7 +387,7 @@ const wchar_t* Describe(Wait wait) noexcept
     case Wait::EventLock:
         return L"an event holds the field";
     case Wait::AiHeld:
-        return L"a story script holds its field AI (a layer above the party's default)";
+        return L"a story script holds its field AI (a script layer, or a LEAD or one-shot kind)";
     case Wait::NoFieldAi:
         return L"its field AI has no state yet";
     case Wait::Unread:

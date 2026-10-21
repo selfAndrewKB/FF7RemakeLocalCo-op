@@ -8,10 +8,12 @@
 //   stream   the formation rebuild at the end of every player stream (the one writer of the deployed formation;
 //            story party changes, party applies): heard before and after. After it every member is typed PARTY
 //            again, so a seated member's PLAYER type is re-asserted by the session.
-//   event    the game's hand of the leader to its AI at an event's start (two of three call sites; the third crosses
-//            a block) and its return at the event's end (one of two sites): a further player's member gets the same.
-// The calls are redirected (platform/entry_redirect.h, platform/call_redirect.h); the game's code always runs. Game
-// thread only: a call from another thread passes through unheard (counted).
+//   event    the game's hand of its leader to its AI and its return (RE-script-release.md §1: an event's start and
+//            end, the field-action tick, the field control lock's first set and last clear), heard at the two
+//            functions' entries, so every site counts: a further player's member gets the same.
+// The functions are redirected at their entries (platform/entry_redirect.h; the rebuild at its tail jump,
+// platform/call_redirect.h); the game's code always runs. Game thread only: a call from another thread passes
+// through unheard (counted).
 
 #include <cstdint>
 
@@ -34,7 +36,7 @@ struct Listener
     void* context = nullptr;
 };
 
-/// Resolves the functions and places the call-site redirects. False (logged) if a check fails; the two entry
+/// Resolves the functions and places the rebuild's redirect. False (logged) if a check fails; the four entry
 /// redirects are placed by Tick (from the game thread, outside the functions).
 bool Install(const platform::GameImage& image, const Listener& listener) noexcept;
 void Remove() noexcept;
