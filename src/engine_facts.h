@@ -1094,4 +1094,22 @@ inline constexpr std::array<std::uint8_t, 16> kBattleSuspendEntry{
 inline constexpr std::size_t kBattleSuspendFirstBytes = 5;  // mov r11, rsp; push rbp; push rbx
 inline constexpr platform::FunctionFact kBattleSuspend{L"BattleSystem_Suspend_ReleaseCursorAndIcons", 0x1409B5630, kBattleSuspendEntry};
 
+// --- The world around two views (research/RE-camera-fades.md, 2026-10-21) ------------------------
+/// EndCharacter_ApplyLeaderCameraFade(char, u8 enable, const FName* reason, u8 force, u8 forceOn): adds (enable 0) or
+/// removes (enable 1) a named reason on the character's list of reasons not to near-fade; with any reason listed its
+/// mesh's render near-fade is off, with none it is on at the EndParam distances. The leader change lists "Default" on
+/// the new leader; force 1 skips the leader test; forceOn 1 turns the fade on whatever the list holds (never used here).
+inline constexpr std::array<std::uint8_t, 16> kApplyCameraFadeEntry{
+    0x40, 0x55, 0x53, 0x41, 0x54, 0x41, 0x55, 0x41, 0x57, 0x48, 0x8B, 0xEC, 0x48, 0x83, 0xEC, 0x60};
+inline constexpr platform::FunctionFact kApplyCameraFade{L"EndCharacter_ApplyLeaderCameraFade", 0x14114F5B0, kApplyCameraFadeEntry};
+/// FName::FName(const TCHAR*, EFindName): FNAME_Add (1) makes the name if it is new.
+inline constexpr std::array<std::uint8_t, 16> kNameFromWideEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x08, 0x57, 0x48, 0x83, 0xEC, 0x30, 0x48, 0x8B, 0xD9, 0x48, 0x89, 0x54};
+inline constexpr platform::FunctionFact kNameFromWide{L"FName::FName(const TCHAR*)", 0x141CE8700, kNameFromWideEntry};
+inline constexpr std::int32_t  kNameAdd                   = 1;      // EFindName::FNAME_Add
+inline constexpr std::uint32_t kCharacterMesh             = 0x3D8;  // ACharacter::Mesh
+inline constexpr std::uint32_t kCharacterNoFadeReasons    = 0xFC0;  // AEndCharacter: TArray<FName> data; Num at +0xFC8
+inline constexpr std::uint32_t kCharacterNoFadeReasonsNum = 0xFC8;
+inline constexpr std::uint32_t kMeshNearFarFadeEnabled    = 0x8B0;  // u8 on the skinned mesh: the render near-fade is on
+
 }  // namespace lss::facts

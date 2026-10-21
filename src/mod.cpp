@@ -52,6 +52,7 @@
 #include "render/ao_origin.h"
 #include "render/bloom_origin.h"
 #include "render/distortion_apply.h"
+#include "world/party_fade.h"
 
 #include <cstdint>
 #include <optional>
@@ -282,6 +283,7 @@ public:
             lss::battle::sequence_camera_two::Install(*image);
         }
         lss::players::game_state::Install(*image);  // readings only; fine without
+        lss::world::party_fade::Install(*image);    // optional: without it a member near player 2's camera vanishes in both halves
         lss::hud::hud_probe::Install(*image);       // logging only; fine without
         lss::hud::overlay_layout::Install(*image);  // optional: without it each half shows the middle of the HUD
         lss::hud::ui_targets::Install(*image);      // optional: without it both halves sample one UI image
@@ -325,6 +327,7 @@ private:
         lss::battle::member_rates::Tick();
         lss::battle::enemy_leader::Tick();
         lss::battle::sequence_camera_two::Tick();
+        TickWorld();
         TickHud();
         remote_.Tick();
     }
@@ -337,6 +340,12 @@ private:
                lss::platform::CopyGuarded(&out.originX, player + lss::facts::kLocalPlayerOrigin, 2 * sizeof(float)) &&
                lss::platform::CopyGuarded(&out.sizeX, player + lss::facts::kLocalPlayerSize, 2 * sizeof(float)) &&
                out.sizeX > 0.0f && out.sizeY > 0.0f && out.sizeX <= 1.0f && out.sizeY <= 1.0f;
+    }
+
+    /// The world around two views (world/): party members kept visible near a camera.
+    void TickWorld() noexcept
+    {
+        lss::world::party_fade::Tick(session_.HasPlayerTwo());
     }
 
     /// The HUD layout follows the split and each player's view.
