@@ -55,6 +55,7 @@
 #include "world/anim_two_views.h"
 #include "world/npc_crowd.h"
 #include "world/npc_detail.h"
+#include "world/npc_senses.h"
 #include "world/party_fade.h"
 
 #include <cstdint>
@@ -70,7 +71,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.28.0-world-two-views";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.29.0-npc-senses";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
@@ -290,6 +291,7 @@ public:
         lss::world::anim_two_views::Install(*image);  // optional: without it characters near player 2 animate by player 1's camera
         lss::world::npc_detail::Install(*image);      // optional: without it NPCs near player 2 pause by player 1's camera
         lss::world::npc_crowd::Install(*image);       // optional: without it the crowd is spawned around player 1 only
+        lss::world::npc_senses::Install(*image);      // optional: without it NPCs see nobody beyond player 1's grid
         lss::hud::hud_probe::Install(*image);       // logging only; fine without
         lss::hud::overlay_layout::Install(*image);  // optional: without it each half shows the middle of the HUD
         lss::hud::ui_targets::Install(*image);      // optional: without it both halves sample one UI image
@@ -355,8 +357,15 @@ private:
                                           lss::facts::kControllerCameraManager);
     }
 
+    /// A local player's pawn (player 1's is the character the game centres the NPCs' senses on), or null.
+    void* PawnOf(int index) const noexcept
+    {
+        return lss::platform::ReadPointer(lss::platform::ReadPointer(session_.LocalPlayer(index), lss::facts::kLocalPlayerController),
+                                          lss::facts::kControllerPawn);
+    }
+
     /// The world around two views (world/): party members kept visible near a camera, characters animated by the
-    /// camera that sees them better, the NPCs near player 2 kept awake and spawned around it too.
+    /// camera that sees them better, the NPCs near player 2 kept awake and spawned around it too, and able to see it.
     void TickWorld() noexcept
     {
         const bool in        = session_.HasPlayerTwo();
@@ -366,6 +375,7 @@ private:
         lss::world::anim_two_views::Tick(cameraTwo, memberTwo);
         lss::world::npc_detail::Tick(in ? CameraManagerOf(0) : nullptr, cameraTwo);
         lss::world::npc_crowd::Tick(memberTwo);
+        lss::world::npc_senses::Tick(in ? PawnOf(0) : nullptr, memberTwo);
     }
 
     /// The HUD layout follows the split and each player's view.

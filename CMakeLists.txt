@@ -85,6 +85,7 @@ add_library(LocalSplitScreen SHARED
     src/world/anim_two_views.cpp
     src/world/npc_crowd.cpp
     src/world/npc_detail.cpp
+    src/world/npc_senses.cpp
     src/world/party_fade.cpp
 )
 
@@ -206,3 +207,12 @@ add_executable(CharaPopRuleTests
 target_include_directories(CharaPopRuleTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_compile_features(CharaPopRuleTests PRIVATE cxx_std_20)
 add_test(NAME charapop_rule COMMAND CharaPopRuleTests)
+
+add_executable(NpcSensesCodeTests
+    tests/npc_senses_code_test.cpp
+    src/platform/code_memory.cpp
+    src/platform/code_redirect.cpp
+)
+target_include_directories(NpcSensesCodeTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(NpcSensesCodeTests PRIVATE cxx_std_20)
+add_test(NAME npc_senses_code COMMAND NpcSensesCodeTests)

@@ -118,4 +118,7 @@ src/
     npc_detail            NPCs player 2's camera needs kept awake and shown (the game's per-NPC minimum level)
     charapop_rule.h       CharaPop's Light/Middle rule for one camera (pure, host-tested; from Rebirth)
     npc_crowd             each NPC scored from the nearer player, so the crowd spawns around both (one vtable slot)
+    npc_senses            NPCs see player 2 as they see player 1, player 1's look first (the sensing grid's centre
+                          moved toward player 2 when needed: one code redirect; the look's vtable slot)
+    npc_senses_code.h     the grid's cell rule, the centre choice and its machine code (pure, host-tested by running it)
 ```

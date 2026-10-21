@@ -1189,4 +1189,32 @@ inline constexpr std::uint32_t kCharaPopCentre           = 0x498B0;  // override
 inline constexpr std::uint32_t kCharaPopCentreBytes      = 0x10;
 inline constexpr std::uint32_t kCharaPopEvaluatorScore   = 0x08;     // the distance evaluator's last non-zero score
 
+// --- The NPCs' senses and their look at a passer-by (research/RE-npc-reactions.md, pass S-RMK-NPCREACT) -------------
+// The grid's code site and bytes are in world/npc_senses_code.h. The battle test is the one the grid's battle heat
+// map makes (EndInterMgr_BuildBattleHeat 0x1406B73A0): [[g_EndGameRoot+0x170]+0xE2A9] == 2.
+inline constexpr std::uint32_t kRootFieldBattleState = 0xE2A9;  // u8 on kEndGameRootCharaOwner's object: 2 in battle
+inline constexpr std::uint8_t  kFieldBattleStateBattle = 2;
+/// EndAIIntentionCuriosity_Update(intention, context): an NPC's look at the most interesting character it sees within
+/// its reach; slot 6 of the Curiosity intention's vtable 0x144B24508.
+inline constexpr std::array<std::uint8_t, 16> kCuriosityUpdateEntry{
+    0x40, 0x55, 0x56, 0x41, 0x55, 0x48, 0x8D, 0xAC, 0x24, 0x60, 0xFF, 0xFF, 0xFF, 0x48, 0x81, 0xEC};
+inline constexpr platform::FunctionFact kCuriosityUpdate{L"EndAIIntentionCuriosity_Update", 0x140652DF0,
+                                                         kCuriosityUpdateEntry};
+inline constexpr platform::SlotFact kCuriosityUpdateSlot{L"Curiosity intention (slot 6)", 0x144B24538, kCuriosityUpdate};
+inline constexpr std::uint32_t kCuriositySetting       = 0x10;  // intention: its settings (+0x30 f32 the interest threshold)
+inline constexpr std::uint32_t kCuriosityLooking       = 0x18;  //   u8: a look is running
+inline constexpr std::uint32_t kCuriosityTargetSerial  = 0x34;  //   the target's weak serial (+0x30 its index); 0 = none
+inline constexpr std::uint32_t kCuriosityInterestThreshold = 0x30;
+inline constexpr std::uint32_t kAiContextCharacter     = 0x00;  // the update's context: the NPC
+inline constexpr std::uint32_t kAiContextBoard         = 0x10;  //   its blackboard (the cognition map at +0x48)
+inline constexpr std::uint32_t kBoardCognitions        = 0x48;  // TSparseArray: data, num (+8), inline bits (+0x10),
+inline constexpr std::uint32_t kSparseNum              = 0x08;  //   heap bits (+0x20), bit count (+0x28)
+inline constexpr std::uint32_t kSparseInlineBits       = 0x10;
+inline constexpr std::uint32_t kSparseHeapBits         = 0x20;
+inline constexpr std::uint32_t kSparseBitCount         = 0x28;
+inline constexpr std::uint32_t kCognitionBytes         = 48;    // an entry: the actor (+0), its last seen place (+8),
+inline constexpr std::uint32_t kCognitionTimer         = 0x14;  //   time since last seen (0 = seen this update),
+inline constexpr std::uint32_t kCognitionInterest      = 0x18;  //   interest,
+inline constexpr std::uint32_t kCognitionExperience    = 0x1C;  //   experience (100 after a look)
+
 }  // namespace lss::facts
