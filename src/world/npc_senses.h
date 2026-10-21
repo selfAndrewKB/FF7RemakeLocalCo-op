@@ -18,7 +18,8 @@
 //      candidate's "seen this update" timer set aside for that one call and put back exactly); if that pick finds
 //      nobody (player 1 out of the look's reach), the game's own pick runs as it would have. A look already running
 //      is never taken over. That pick has no effect when it finds nobody (read in IDA), so the second run is the
-//      game's single pick. Game thread only; any other thread gets the game's pick unchanged (counted).
+//      game's single pick. The look runs in each NPC's own AI tick on worker threads (research/RE-npc-reactions.md
+//      §10.5): the players are a snapshot the game thread publishes, and only that NPC's own entries are touched.
 // Everything else (the senses, the interest, the look, the animation) is the game's.
 
 #include <string>

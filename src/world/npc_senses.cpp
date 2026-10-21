@@ -14,6 +14,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <format>
@@ -65,15 +66,16 @@ platform::VTableEntry         g_lookSlot;
 UpdateFn                      g_update = nullptr;
 std::uint8_t**                g_root   = nullptr;  // &g_EndGameRoot
 
-bool          g_enabled    = true;
-void*         g_one        = nullptr;  // player 1's character (game thread)
-void*         g_two        = nullptr;  // player 2's character, while in
+// Written by the game thread; the look reads them on the AI's worker threads (research/RE-npc-reactions.md §10.5).
+std::atomic<bool>  g_enabled{true};
+std::atomic<void*> g_one{nullptr};  // player 1's character
+std::atomic<void*> g_two{nullptr};  // player 2's character, while in
 unsigned long g_gameThread = 0;
 Grid          g_grid       = Grid::Off;
 code::Cell    g_centreNow;
 
-std::uint64_t g_shiftedTicks = 0, g_bothSeen = 0, g_oneFirst = 0, g_gameAfter = 0, g_offThread = 0;
-std::uint64_t g_oneFirstTotal = 0;
+std::uint64_t g_shiftedTicks = 0;  // game thread
+std::atomic<std::uint64_t> g_bothSeen{0}, g_oneFirst{0}, g_gameAfter{0}, g_offThread{0}, g_oneFirstTotal{0};
 std::wstring  g_summary = L"no summary yet";
 std::chrono::steady_clock::time_point g_lastSummary = std::chrono::steady_clock::now();
 
@@ -117,7 +119,8 @@ bool InBattle() noexcept
 Grid Decide(code::Cell& centre) noexcept
 {
     float one[3]{}, two[3]{};
-    if (!g_enabled || g_one == nullptr || g_two == nullptr || !Location(g_one, one) || !Location(g_two, two))
+    if (!g_enabled || g_one.load() == nullptr || g_two.load() == nullptr || !Location(g_one.load(), one) ||
+        !Location(g_two.load(), two))
     {
         return Grid::Off;
     }
@@ -151,18 +154,21 @@ bool Candidate(float timer, float interest, float experience, float threshold) n
     return timer <= kSeenNow && interest >= threshold && interest - experience > 0.0f;
 }
 
+/// Any thread: the look runs in each NPC's own AI tick, on worker threads, one NPC never twice at once. Only this
+/// NPC's cognition entries are touched, around its own look's single call, and never while a look is running (so the
+/// look's current target is never set aside); the save and restore are exact (research/RE-npc-reactions.md §10.5).
 void Update(void* intention, void* context) noexcept
 {
-    if (!g_enabled || g_one == nullptr || g_two == nullptr)
+    void* const one = g_one.load(std::memory_order_acquire);  // this call's snapshot of the players
+    void* const two = g_two.load(std::memory_order_acquire);
+    if (!g_enabled.load(std::memory_order_relaxed) || one == nullptr || two == nullptr)
     {
         g_update(intention, context);
         return;
     }
     if (GetCurrentThreadId() != g_gameThread)
     {
-        ++g_offThread;
-        g_update(intention, context);
-        return;
+        g_offThread.fetch_add(1, std::memory_order_relaxed);  // counted only: the worker threads are the look's own
     }
     auto* const   self    = static_cast<std::uint8_t*>(intention);
     std::uint8_t  looking = 1;
@@ -209,12 +215,12 @@ void Update(void* intention, void* context) noexcept
         {
             continue;
         }
-        if (actor == g_one)
+        if (actor == one)
         {
             oneSeen = true;
             continue;
         }
-        twoSeen = twoSeen || actor == g_two;
+        twoSeen = twoSeen || actor == two;
         aside[asideCount++] = {entry, timer};
     }
     if (!oneSeen || !twoSeen)
@@ -222,7 +228,7 @@ void Update(void* intention, void* context) noexcept
         g_update(intention, context);  // the game's pick: player 1 is not competing with player 2 here
         return;
     }
-    ++g_bothSeen;
+    g_bothSeen.fetch_add(1, std::memory_order_relaxed);
     int written = 0;
     for (; written < asideCount; ++written)
     {
@@ -243,13 +249,13 @@ void Update(void* intention, void* context) noexcept
     serial = 0;
     if (allAside && Read(self + facts::kCuriosityTargetSerial, serial) && serial != 0)
     {
-        ++g_oneFirst;
-        ++g_oneFirstTotal;
+        g_oneFirst.fetch_add(1, std::memory_order_relaxed);
+        g_oneFirstTotal.fetch_add(1, std::memory_order_relaxed);
         platform::LogDebug(L"npc senses: {} looks at player 1 first (player 2 was in its sight too)",
                            ObjectName(ReadPointer(context, facts::kAiContextCharacter)));
         return;
     }
-    ++g_gameAfter;
+    g_gameAfter.fetch_add(1, std::memory_order_relaxed);
     g_update(intention, context);  // player 1 out of the look's reach: the game's own pick
 }
 
@@ -262,16 +268,18 @@ try
         return;
     }
     g_lastSummary = now;
-    if (g_shiftedTicks == 0 && g_bothSeen == 0 && g_offThread == 0)
+    const std::uint64_t bothSeen = g_bothSeen.exchange(0), oneFirst = g_oneFirst.exchange(0);
+    const std::uint64_t gameAfter = g_gameAfter.exchange(0), offThread = g_offThread.exchange(0);
+    if (g_shiftedTicks == 0 && bothSeen == 0 && offThread == 0)
     {
         return;
     }
     g_summary = std::format(L"last minute: grid moved toward player 2 on {} ticks, {} grid writes in all; both players "
                             L"in one NPC's sight {} times, player 1 looked at first {}, the game's own pick after {}; "
-                            L"off the game thread {}",
-                            g_shiftedTicks, g_centre.writes, g_bothSeen, g_oneFirst, g_gameAfter, g_offThread);
+                            L"looks run off the game thread {}",
+                            g_shiftedTicks, g_centre.writes, bothSeen, oneFirst, gameAfter, offThread);
     platform::LogDebug(L"npc senses: {}", g_summary);
-    g_shiftedTicks = g_bothSeen = g_oneFirst = g_gameAfter = g_offThread = 0;
+    g_shiftedTicks = 0;
 }
 catch (...)
 {
@@ -320,7 +328,7 @@ bool Install(const platform::GameImage& image) noexcept
                            SetEnabled(std::get<bool>(value));
                            return control::Outcome{};
                        },
-                       .get = [] { return control::Value{g_enabled}; }});
+                       .get = [] { return control::Value{g_enabled.load()}; }});
     control::Register({.name = L"world.npc-senses", .shape = control::Shape::Text,
                        .help = L"where the NPCs' sensing grid is, and the looks given to player 1 first",
                        .get  = [] { return control::Value{Reading()}; }});
@@ -332,8 +340,8 @@ bool Install(const platform::GameImage& image) noexcept
 void Tick(void* memberOne, void* memberTwo) noexcept
 {
     g_gameThread = GetCurrentThreadId();
-    g_one        = memberOne;
-    g_two        = memberTwo;
+    g_one.store(memberOne, std::memory_order_release);
+    g_two.store(memberTwo, std::memory_order_release);
     if (!g_centreCode.IsInstalled())
     {
         Summarise();
@@ -382,12 +390,12 @@ void SetEnabled(bool on) noexcept
 std::wstring Reading() noexcept
 try
 {
-    return std::format(L"{}; grid {}{}; looks given to player 1 first so far {}; {}", g_enabled ? L"on" : L"off",
+    return std::format(L"{}; grid {}{}; looks given to player 1 first so far {}; {}", g_enabled.load() ? L"on" : L"off",
                        GridText(g_grid),
                        g_grid == Grid::Shifted ? std::format(L" (centre cell ({}, {}, {}))", g_centreNow.x, g_centreNow.y,
                                                              g_centreNow.z)
                                                : std::wstring{},
-                       g_oneFirstTotal, g_summary);
+                       g_oneFirstTotal.load(), g_summary);
 }
 catch (...)
 {
