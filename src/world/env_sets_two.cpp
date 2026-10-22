@@ -7,11 +7,12 @@
 #include "platform/image.h"
 #include "platform/log.h"
 #include "platform/verified_code.h"
-#include "world/env_set_merge.h"
+#include "world/env_set_view.h"
 
 #include <Unreal/NameTypes.hpp>
 
 #include <array>
+#include <chrono>
 #include <cstdint>
 #include <cstring>
 #include <format>
@@ -22,9 +23,9 @@ namespace lss::world::env_sets_two {
 
 namespace {
 
-namespace merge = env_set_merge;
-using merge::Entry;
-using merge::Name;
+namespace view = env_set_view;
+using view::Entry;
+using view::Name;
 using platform::Read;
 using platform::ReadPointer;
 
@@ -38,49 +39,75 @@ struct TraceArg
 };
 static_assert(sizeof(TraceArg) == 0x18);
 
-/// A TArray<FName> as the apply reads it (data and count only).
-struct LevelArray
+/// A TArray of pointers as the engine lays it out.
+struct PointerArray
 {
-    const Name*  data;
+    void**       data;
     std::int32_t num;
     std::int32_t max;
 };
+static_assert(sizeof(PointerArray) == 0x10);
 
-using IssueFn = char (*)(void* unused, const TraceArg* arg, std::uint64_t, std::uint64_t, std::uint64_t* handle);
-using ReadFn  = char (*)(void* manager, const std::uint64_t* handle, std::uint8_t* block);
-using ApplyFn = char (*)(void* manager, void* actors, const LevelArray* levels);
-using ResetFn = void (*)(std::uint8_t* block);
-using GrowFn  = void (*)(std::uint8_t* actors, std::int32_t oldNum);
+using IssueFn     = char (*)(void* unused, const TraceArg* arg, std::uint64_t, std::uint64_t, std::uint64_t* handle);
+using ReadFn      = char (*)(void* manager, const std::uint64_t* handle, std::uint8_t* block);
+using ResetFn     = void (*)(std::uint8_t* block);
+using FindIdFn    = std::int32_t* (*)(void* set, std::int32_t* out, std::uint64_t name);
+using FindActorFn = std::uint8_t* (*)(std::uint64_t level, std::uint64_t name);
+using ResizeFn    = void (*)(PointerArray* array, std::int32_t max);
+using AttachedFn  = void (*)(void* actor, PointerArray* out);
+using FreeFn      = void (*)(void* block);
 
-constexpr int kMaxMergedLevels = 256;  // the game's level request holds up to 256 names
+using Actors = view::List<void*, view::kMaxHidden>;
 
-platform::CallRedirect g_issueCall, g_readCall, g_applyCall;
+constexpr double kRefresh = 1.0;  // seconds between lookups while a set stands: actors that spawn or leave later
+
+platform::CallRedirect g_issueCall, g_readCall;
 std::uintptr_t         g_issueSite = 0, g_issueTarget = 0;
-IssueFn                g_issue   = nullptr;
-ReadFn                 g_read    = nullptr;
-ApplyFn                g_apply   = nullptr;
-ResetFn                g_reset   = nullptr;
-GrowFn                 g_grow    = nullptr;
-std::uint8_t**         g_save    = nullptr;  // &the save data singleton
-std::uint8_t**         g_manager = nullptr;  // &the manager (the reading)
+IssueFn                g_issue     = nullptr;
+ReadFn                 g_read      = nullptr;
+ResetFn                g_reset     = nullptr;
+FindIdFn               g_findId    = nullptr;
+FindActorFn            g_findActor = nullptr;
+ResizeFn               g_resize    = nullptr;
+AttachedFn             g_attached  = nullptr;
+FreeFn                 g_free      = nullptr;
+std::uint8_t**         g_save      = nullptr;  // &the save data singleton
+std::uint8_t**         g_manager   = nullptr;  // &the manager (the reading)
 
-// Game thread only: Tick, and the three calls inside the manager's evaluation.
-bool                   g_enabled   = false;  // the merge (see ReadSet); player 2's set is read either way
-bool                   g_placed    = false;
-void*                  g_two       = nullptr;  // player 2's character while in
-std::uint64_t          g_twoHandle = 0;        // player 2's trace, readable the frame after
+// Game thread only: Tick, and the two calls inside the manager's evaluation.
+bool          g_enabled       = true;
+bool          g_placed        = false;
+void*         g_two           = nullptr;  // player 2's character while in
+std::uint8_t* g_twoController = nullptr;  // and controller
+std::uint64_t g_twoHandle     = 0;        // player 2's trace, readable the frame after
 alignas(16) std::array<std::uint8_t, facts::kEnvSetBlockBytes> g_twoBlock{};  // player 2's set (zero = constructed)
-merge::TwoSet          g_twoSet;               // player 2's set as kept between reads
-merge::TwoSet          g_fresh;
-std::array<std::uint64_t, 3> g_twoIds{};       // player 2's set ids (the reading and the log)
-merge::EntryList       g_added;                // the entries added to player 1's list at this frame's read
-bool                   g_addedThisFrame = false;
-merge::EntryList       g_applied;              // the entries the game last applied for player 2
-merge::LevelList       g_appliedLevels;        // and the levels of the set they came from
-merge::List<Name, kMaxMergedLevels> g_levels;  // the level list handed to the apply
+view::TwoSet  g_fresh;                    // this frame's read
+view::TwoSet  g_kept;                     // the last set read (kept through a no-hit)
+view::Paced   g_paced;                    // the set player 2's view follows
+std::array<std::uint64_t, 3> g_twoIds{};  // the kept set's ids (the reading and the log)
+std::array<std::uint64_t, 3> g_pacedIds{};
+bool          g_due           = false;    // the view's list is to be looked up again
+double        g_lookedUpAt    = -1.0e300;
 
-std::uint64_t g_traces = 0, g_reads = 0, g_forced = 0, g_levelsAdded = 0;
-std::wstring  g_problem;                       // the last thing that stopped player 2's part (logged on change)
+Actors        g_wanted;                   // this lookup's actors
+Actors        g_ours;                     // the actors the mod put in g_oursIn's list
+std::uint8_t* g_oursIn        = nullptr;
+
+std::uint64_t g_traces = 0, g_reads = 0, g_changes = 0, g_writes = 0;
+int           g_notFound = 0, g_hiddenEntries = 0, g_shownButHidden = 0, g_attachedCount = 0;
+std::wstring  g_problem;                  // the last thing that stopped player 2's part (logged on change)
+
+double Now() noexcept
+{
+    return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
+std::uint64_t Bits(Name name) noexcept
+{
+    std::uint64_t bits = 0;
+    std::memcpy(&bits, &name, sizeof(bits));
+    return bits;
+}
 
 void NameText(std::int64_t bits, std::wstring* out) noexcept
 try
@@ -94,10 +121,8 @@ catch (...)
 
 std::wstring Text(Name name)
 {
-    std::int64_t bits = 0;
-    std::memcpy(&bits, &name, sizeof(bits));
     std::wstring text;
-    return platform::CallGuarded(&NameText, bits, &text) && !text.empty() ? text : L"?";
+    return platform::CallGuarded(&NameText, static_cast<std::int64_t>(Bits(name)), &text) && !text.empty() ? text : L"?";
 }
 
 std::wstring IdsText(const std::array<std::uint64_t, 3>& ids)
@@ -111,16 +136,6 @@ std::wstring IdsText(const std::array<std::uint64_t, 3>& ids)
             std::memcpy(&name, &id, sizeof(name));
             out += (out.empty() ? L"" : L" ") + Text(name);
         }
-    }
-    return out.empty() ? L"none" : out;
-}
-
-std::wstring EntriesText(const merge::EntryList& list)
-{
-    std::wstring out;
-    for (const Entry& entry : list.View())
-    {
-        out += std::format(L"{}{} ({})", out.empty() ? L"" : L", ", Text(entry.name), entry.hidden != 0 ? L"hidden" : L"shown");
     }
     return out.empty() ? L"none" : out;
 }
@@ -155,30 +170,6 @@ bool Levels(std::uint8_t* block, const Name*& data, std::int32_t& num) noexcept
     return Read(block + facts::kEnvSetBlockLevels + 8, num) && num >= 0 && (num == 0 || data != nullptr);
 }
 
-/// The game's own append (EnvSetMgr_BuildSetLists_FromTables): raise the count, grow past the max, write the entry.
-bool Append(std::uint8_t* block, const Entry& entry) noexcept
-{
-    std::int32_t num = 0, max = 0;
-    if (!Read(block + facts::kEnvSetBlockActorsNum, num) || !Read(block + facts::kEnvSetBlockActorsMax, max))
-    {
-        return false;
-    }
-    const std::int32_t raised = num + 1;
-    std::memcpy(block + facts::kEnvSetBlockActorsNum, &raised, sizeof(raised));
-    if (raised > max)
-    {
-        g_grow(block + facts::kEnvSetBlockActors, num);
-    }
-    Entry*       data  = nullptr;
-    std::int32_t count = 0;
-    if (!Entries(block, data, count) || count != raised)
-    {
-        return false;
-    }
-    data[num] = entry;
-    return true;
-}
-
 // --- 1. The trace --------------------------------------------------------------------------------------------------
 
 char Issue(void* unused, const TraceArg* arg, std::uint64_t r8, std::uint64_t r9, std::uint64_t* handle) noexcept
@@ -208,7 +199,7 @@ char Issue(void* unused, const TraceArg* arg, std::uint64_t r8, std::uint64_t r9
 
 // --- 2. The read ---------------------------------------------------------------------------------------------------
 
-/// The game's read of player 2's trace into the mod's block, with the save data's set name kept player 1's.
+/// The game's read of player 2's trace into the mod's block (g_fresh), with the save data's set name kept player 1's.
 bool ReadTwo(void* manager) noexcept
 {
     if (g_twoHandle == 0)
@@ -251,14 +242,15 @@ bool ReadTwo(void* manager) noexcept
     {
         return false;
     }
-    if (entryCount > merge::kMaxEntries || levelCount > merge::kMaxLevels)
+    if (entryCount > view::kMaxEntries || levelCount > view::kMaxLevels)
     {
         Problem(std::format(L"player 2's set lists {} actors and {} levels, more than the mod holds ({}, {}); kept the "
                             L"last one",
-                            entryCount, levelCount, merge::kMaxEntries, merge::kMaxLevels));
+                            entryCount, levelCount, view::kMaxEntries, view::kMaxLevels));
         return false;
     }
-    g_fresh = {};
+    g_fresh.entries.count = 0;
+    g_fresh.levels.count  = 0;
     for (std::int32_t i = 0; i < entryCount; ++i)
     {
         g_fresh.entries.Add(entries[i]);
@@ -278,101 +270,202 @@ bool ReadTwo(void* manager) noexcept
     return true;
 }
 
+// --- 3. Player 2's view --------------------------------------------------------------------------------------------
+
+bool AddOnce(Actors& list, void* actor) noexcept
+{
+    for (void* const held : list.View())
+    {
+        if (held == actor)
+        {
+            return true;
+        }
+    }
+    return list.Add(actor);
+}
+
+view::LevelList g_lookupLevels;  // the set's levels that are in the manager's lookup set (this lookup)
+
+/// The levels of player 2's set the game's apply would search: those in the manager's lookup set.
+void LookupLevels(std::uint8_t* manager) noexcept
+{
+    void* const lookup = manager + facts::kEnvSetMgrLookupLevels;
+    g_lookupLevels.count = 0;
+    for (const Name level : g_paced.set.levels.View())
+    {
+        std::int32_t  index = -1;
+        std::int32_t* found = nullptr;
+        if (platform::CallGuarded(g_findId, found, lookup, &index, Bits(level)) && index != -1)
+        {
+            g_lookupLevels.Add(level);
+        }
+    }
+}
+
+/// The actor a set entry names, found as the game's apply finds it: in those levels, by the character registry's
+/// per-level name map.
+std::uint8_t* Find(Name name) noexcept
+{
+    for (const Name level : g_lookupLevels.View())
+    {
+        std::uint8_t* actor = nullptr;
+        if (platform::CallGuarded(g_findActor, actor, Bits(level), Bits(name)) && actor != nullptr)
+        {
+            return actor;
+        }
+    }
+    return nullptr;
+}
+
+/// Every actor attached below `actor` (the game's own hide reaches them through their parent's reasons; the view list
+/// follows one attach level only, so they are listed themselves).
+void AddAttached(void* actor) noexcept
+{
+    PointerArray out{nullptr, 0, 0};
+    if (platform::CallGuarded(g_attached, actor, &out) && out.data != nullptr)
+    {
+        for (std::int32_t i = 0; i < out.num; ++i)
+        {
+            void* child = nullptr;
+            if (Read(out.data + i, child) && child != nullptr && AddOnce(g_wanted, child))
+            {
+                ++g_attachedCount;
+            }
+        }
+    }
+    if (out.data != nullptr)
+    {
+        platform::CallGuarded(g_free, static_cast<void*>(out.data));
+    }
+}
+
+/// The actors player 2's view hides now (g_wanted), with the counts the reading shows.
+bool LookUp(std::uint8_t* manager) noexcept
+{
+    g_wanted.count  = 0;
+    g_notFound      = 0;
+    g_hiddenEntries = 0;
+    g_shownButHidden = 0;
+    g_attachedCount = 0;
+    LookupLevels(manager);
+    for (const Entry& entry : g_paced.set.entries.View())
+    {
+        std::uint8_t* const actor = Find(entry.name);
+        if (entry.hidden == 0)
+        {
+            // Shown in player 2's single player; a hide of player 1's cannot be undone for one view alone.
+            std::uint8_t flags = 0;
+            if (actor != nullptr && Read(actor + facts::kActorHiddenFlags, flags) && (flags & facts::kActorHiddenBit) != 0)
+            {
+                ++g_shownButHidden;
+            }
+            continue;
+        }
+        ++g_hiddenEntries;
+        if (actor == nullptr)
+        {
+            ++g_notFound;  // not loaded or not spawned yet: looked up again at the next refresh
+            continue;
+        }
+        if (!AddOnce(g_wanted, actor))
+        {
+            Problem(L"more actors to hide in player 2's view than the mod holds; the rest stay");
+            return false;
+        }
+        AddAttached(actor);
+    }
+    return true;
+}
+
+/// Player 2's controller's HiddenActors: the mod's earlier entries out, this lookup's in; other code's entries kept.
+bool Write(std::uint8_t* controller) noexcept
+{
+    auto* const  list = reinterpret_cast<PointerArray*>(controller + facts::kControllerHiddenActors);
+    PointerArray now{};
+    if (!Read(list, now) || now.num < 0 || now.max < now.num || (now.num > 0 && now.data == nullptr))
+    {
+        Problem(L"player 2's hidden-actor list is not readable");
+        return false;
+    }
+    if (g_oursIn != controller)
+    {
+        g_ours.count = 0;  // a new controller: nothing of the mod's there
+        std::uint8_t renders = 0;
+        Read(controller + facts::kControllerRenderPrimitives, renders);
+        platform::LogDebug(L"env sets 2: player 2's controller builds its view's hidden list {} (bRenderPrimitiveComponents "
+                           L"{}); {} actors listed before the mod's", renders != 0 ? L"yes" : L"NO", renders, now.num);
+    }
+    // The engine's own list memory, on the game thread, which also builds the views from it.
+    std::int32_t kept = now.num > 0 ? view::RemoveOurs(now.data, now.num, g_ours.View()) : 0;
+    const std::int32_t needed = kept + g_wanted.count;
+    if (needed > now.max)
+    {
+        const std::int32_t num = kept;
+        platform::WriteGuarded(&list->num, &num, sizeof(num));
+        if (!platform::CallGuarded(g_resize, list, needed) || !Read(list, now) || now.max < needed || now.data == nullptr)
+        {
+            g_ours.count = 0;
+            Problem(L"player 2's hidden-actor list could not grow; nothing hidden in player 2's view");
+            return false;
+        }
+    }
+    std::memcpy(now.data + kept, g_wanted.items.data(), sizeof(void*) * static_cast<std::size_t>(g_wanted.count));
+    platform::WriteGuarded(&list->num, &needed, sizeof(needed));
+    g_ours   = g_wanted;
+    g_oursIn = controller;
+    ++g_writes;
+    return true;
+}
+
+void Refresh(std::uint8_t* manager, bool changed) noexcept
+{
+    const double now = Now();
+    if (g_twoController == nullptr || (!changed && !g_due && now - g_lookedUpAt < kRefresh))
+    {
+        return;
+    }
+    g_due        = false;
+    g_lookedUpAt = now;
+    if (!LookUp(manager) || (g_oursIn == g_twoController && g_wanted == g_ours))
+    {
+        return;
+    }
+    if (Write(g_twoController))
+    {
+        platform::LogDebug(L"env sets 2: player 2's view hides {} actors of set {} ({} attached; {} of its {} hidden "
+                           L"entries not found; {} it shows are hidden by player 1's set)",
+                           g_ours.count, IdsText(g_pacedIds), g_attachedCount, g_notFound, g_hiddenEntries,
+                           g_shownButHidden);
+        platform::LogDebug(L"env sets 2: searched {} of the set's {} levels (the ones in the game's lookup set)",
+                           g_lookupLevels.count, g_paced.set.levels.count);
+    }
+}
+
 char ReadSet(void* manager, const std::uint64_t* handle, std::uint8_t* block) noexcept
 {
-    const char one    = g_read(manager, handle, block);  // player 1's, as the game reads it
-    g_addedThisFrame  = false;
+    const char   one  = g_read(manager, handle, block);  // player 1's, as the game reads it
     std::uint8_t hold = 0;
-    if (one == 0 || !Read(static_cast<std::uint8_t*>(manager) + facts::kEnvSetMgrHoldMode, hold) || hold != 0)
-    {
-        return one;  // no set built (the game changes nothing), or hold mode (the game replaces the block)
-    }
-    // Player 2's set is read whenever player 2 is in (the reading and the log name it); it joins player 1's only
-    // when switched on. Off by default since v0.32.0: the game's apply hides world-wide, so what player 2's ground
-    // hides would vanish from player 1's view too (the user, 2026-10-21); a per-view design is being researched.
-    const bool present  = g_two != nullptr;
+    const bool   holding = Read(static_cast<std::uint8_t*>(manager) + facts::kEnvSetMgrHoldMode, hold) && hold != 0;
+    // Hold mode: one scripted set for everyone, nothing for player 2 alone. Off or out: nothing either.
+    const bool present  = g_two != nullptr && g_enabled && !holding;
     const bool resolved = present && ReadTwo(manager);
-    if (!present && g_twoIds != std::array<std::uint64_t, 3>{})
+    if (!present)
     {
         g_twoIds = {};
     }
-    g_twoSet = merge::NextTwoSet(present && g_enabled, resolved, g_fresh, g_twoSet);
-
-    Entry*       mine = nullptr;
-    std::int32_t num  = 0;
-    if (!Entries(block, mine, num))
+    const view::TwoSet& next = view::NextTwoSet(present, resolved, g_fresh, g_kept);
+    if (&next != &g_kept && !(next == g_kept))
     {
-        return one;
+        g_kept = next;
     }
-    merge::EntryList wanted;
-    if (!merge::Extras({mine, static_cast<std::size_t>(num)}, g_twoSet.entries.View(), wanted))
+    const bool changed = view::Pace(g_paced, g_kept, Now());
+    if (changed)
     {
-        Problem(L"too many of player 2's actors to add; none added");
-        wanted.count = 0;
+        ++g_changes;
+        g_pacedIds = present ? g_twoIds : std::array<std::uint64_t, 3>{};
     }
-    g_added = {};
-    for (const Entry& entry : wanted.View())
-    {
-        if (!Append(block, entry))
-        {
-            Problem(L"an actor of player 2's set could not be added to the game's list");
-            break;
-        }
-        g_added.Add(entry);
-    }
-    g_addedThisFrame = true;
-    if (merge::MustApply(g_added, g_applied))
-    {
-        // The game's change test sees a new set id and runs its own change path: copy, apply, level request.
-        constexpr std::uint64_t kNoId = 0;
-        if (platform::WriteGuarded(static_cast<std::uint8_t*>(manager) + facts::kEnvSetMgrSetIds, &kNoId, sizeof(kNoId)))
-        {
-            ++g_forced;
-            platform::LogDebug(L"env sets 2: the game applies its set again; player 2's ground adds {}", EntriesText(g_added));
-        }
-    }
+    Refresh(static_cast<std::uint8_t*>(manager), changed);
     return one;
-}
-
-// --- 3. The apply --------------------------------------------------------------------------------------------------
-
-char Apply(void* manager, void* actors, const LevelArray* levels) noexcept
-{
-    if (g_addedThisFrame)
-    {
-        g_applied       = g_added;
-        g_appliedLevels = g_twoSet.levels;
-        g_addedThisFrame = false;
-    }
-    // Hold mode applies the manager's last list, which still holds the entries last added: their levels stay handed.
-    std::int32_t num  = 0;
-    const Name*  data = nullptr;
-    if (g_applied.count == 0 || g_appliedLevels.count == 0 || levels == nullptr || !Read(&levels->num, num) ||
-        !Read(&levels->data, data) || num < 0 || num > kMaxMergedLevels || (num > 0 && data == nullptr))
-    {
-        return g_apply(manager, actors, levels);
-    }
-    g_levels.count = 0;
-    bool fits = true;
-    for (std::int32_t i = 0; i < num && fits; ++i)
-    {
-        Name level;
-        fits = Read(data + i, level) && g_levels.Add(level);
-    }
-    const int before = g_levels.count;
-    fits = fits && merge::AddMissingLevels(std::span<const Name>{}, g_appliedLevels.View(), g_levels);  // skips listed
-    if (!fits)
-    {
-        Problem(L"the levels to search do not fit; the game's own levels used");
-        return g_apply(manager, actors, levels);
-    }
-    if (g_levels.count == before)
-    {
-        return g_apply(manager, actors, levels);  // player 2's actors are in player 1's levels
-    }
-    g_levelsAdded += static_cast<std::uint64_t>(g_levels.count - before);
-    const LevelArray merged{g_levels.items.data(), g_levels.count, g_levels.count};
-    return g_apply(manager, actors, &merged);
 }
 
 }  // namespace
@@ -381,59 +474,67 @@ bool Install(const platform::GameImage& image) noexcept
 {
     const auto issueCall = image.Rebase(facts::kEnvSetIssueTraceCall, 5);
     const auto readCall  = image.Rebase(facts::kEnvSetReadResultCall, 5);
-    const auto applyCall = image.Rebase(facts::kEnvSetApplyCall, 5);
     const auto issue     = platform::FindFunction(image, facts::kEnvSetIssueTrace);
     const auto read      = platform::FindFunction(image, facts::kEnvSetReadResult);
-    const auto apply     = platform::FindFunction(image, facts::kEnvSetApply);
     const auto reset     = platform::FindFunction(image, facts::kEnvSetBlockReset);
-    const auto grow      = platform::FindFunction(image, facts::kEnvSetActorsGrow);
+    const auto findId    = platform::FindFunction(image, facts::kTSetNameFind);
+    const auto findActor = platform::FindFunction(image, facts::kFindActorByName);
+    const auto resize    = platform::FindFunction(image, facts::kPointerArrayResize);
+    const auto attached  = platform::FindFunction(image, facts::kGetAttachedActors);
+    const auto release   = platform::FindFunction(image, facts::kGameFree);
     const auto save      = image.Rebase(facts::kSaveDataGlobal, sizeof(void*));
     const auto manager   = image.Rebase(facts::kEnvSetManagerGlobal, sizeof(void*));
-    if (!issueCall || !readCall || !applyCall || !issue || !read || !apply || !reset || !grow || !save || !manager)
+    if (!issueCall || !readCall || !issue || !read || !reset || !findId || !findActor || !resize || !attached ||
+        !release || !save || !manager)
     {
-        platform::LogWarning(L"env sets 2: the EnvironmentSet code is not what the research read; only player 1's ground "
-                             L"hides the area's actors");
+        platform::LogWarning(L"env sets 2: the EnvironmentSet code is not what the research read; player 2's view shows "
+                             L"what player 1's ground leaves");
         return false;
     }
-    g_issue   = reinterpret_cast<IssueFn>(*issue);
-    g_read    = reinterpret_cast<ReadFn>(*read);
-    g_apply   = reinterpret_cast<ApplyFn>(*apply);
-    g_reset   = reinterpret_cast<ResetFn>(*reset);
-    g_grow    = reinterpret_cast<GrowFn>(*grow);
-    g_save    = reinterpret_cast<std::uint8_t**>(*save);
-    g_manager = reinterpret_cast<std::uint8_t**>(*manager);
-    // The apply first: a read that adds entries must never reach an apply that cannot find them.
-    if (!g_applyCall.Install(*applyCall, *apply, reinterpret_cast<std::uintptr_t>(&Apply)) ||
-        !g_readCall.Install(*readCall, *read, reinterpret_cast<std::uintptr_t>(&ReadSet)))
+    g_issue     = reinterpret_cast<IssueFn>(*issue);
+    g_read      = reinterpret_cast<ReadFn>(*read);
+    g_reset     = reinterpret_cast<ResetFn>(*reset);
+    g_findId    = reinterpret_cast<FindIdFn>(*findId);
+    g_findActor = reinterpret_cast<FindActorFn>(*findActor);
+    g_resize    = reinterpret_cast<ResizeFn>(*resize);
+    g_attached  = reinterpret_cast<AttachedFn>(*attached);
+    g_free      = reinterpret_cast<FreeFn>(*release);
+    g_save      = reinterpret_cast<std::uint8_t**>(*save);
+    g_manager   = reinterpret_cast<std::uint8_t**>(*manager);
+    if (!g_readCall.Install(*readCall, *read, reinterpret_cast<std::uintptr_t>(&ReadSet)))
     {
-        g_readCall.Restore();
-        g_applyCall.Restore();
-        platform::LogWarning(L"env sets 2: the read or the apply could not be redirected; only player 1's ground hides "
-                             L"the area's actors");
+        platform::LogWarning(L"env sets 2: the read could not be redirected; player 2's view shows what player 1's "
+                             L"ground leaves");
         return false;
     }
     g_issueSite   = *issueCall;
     g_issueTarget = *issue;
     control::Register({.name  = L"env-sets",
                        .shape = control::Shape::OnOff,
-                       .help  = L"the ground under player 2 hides what the area hides, as player 1's does "
-                                L"(world/env_sets_two.h; off: hides world-wide)",
+                       .help  = L"player 2's view hides what the area hides under player 2, as player 1's does "
+                                L"(world/env_sets_two.h; on)",
                        .set   = [](const control::Value& value) {
                            SetEnabled(std::get<bool>(value));
                            return control::Outcome{};
                        },
                        .get = [] { return control::Value{g_enabled}; }});
     control::Register({.name = L"world.env-sets", .shape = control::Shape::Text,
-                       .help = L"player 2's EnvironmentSet, the actors it adds to player 1's, the game's re-applies",
+                       .help = L"player 2's EnvironmentSet and the actors hidden in player 2's view",
                        .get  = [] { return control::Value{Reading()}; }});
-    platform::Log(L"env sets 2: read and apply redirected; player 2's trace is placed on the first tick; player 2's "
-                  L"set is read and logged, not added (env-sets off: the game hides world-wide)");
+    platform::Log(L"env sets 2: the read is redirected; player 2's trace is placed on the first tick; player 2's view "
+                  L"hides what player 2's ground hides (the world stays player 1's)");
     return true;
 }
 
-void Tick(void* memberTwo) noexcept
+void Tick(void* memberTwo, void* controllerTwo) noexcept
 {
-    g_two = memberTwo;
+    std::uint8_t* const controller = memberTwo != nullptr ? static_cast<std::uint8_t*>(controllerTwo) : nullptr;
+    if (controller != g_twoController)
+    {
+        g_due = true;  // a join (a new controller): its list is filled at the next read
+    }
+    g_two           = memberTwo;
+    g_twoController = controller;
     if (g_placed || g_issueSite == 0)
     {
         return;
@@ -441,18 +542,20 @@ void Tick(void* memberTwo) noexcept
     g_placed = true;  // once, whatever the outcome; outside the world tick, as the crossing call needs
     if (g_issueCall.InstallFromOwnThread(g_issueSite, g_issueTarget, reinterpret_cast<std::uintptr_t>(&Issue)))
     {
-        platform::Log(L"env sets 2: the trace is redirected; the ground under player 2 hides what the area hides");
+        platform::Log(L"env sets 2: the trace is redirected; player 2's view hides what player 2's ground hides");
     }
     else
     {
-        platform::LogWarning(L"env sets 2: the trace could not be redirected; only player 1's ground hides the area's actors");
+        platform::LogWarning(L"env sets 2: the trace could not be redirected; player 2's view shows what player 1's "
+                             L"ground leaves");
     }
 }
 
 void SetEnabled(bool on) noexcept
 {
     g_enabled = on;
-    platform::Log(L"env sets 2 {}", on ? L"on" : L"off (player 2's actors are dropped at the game's next read)");
+    g_due     = true;
+    platform::Log(L"env sets 2 {}", on ? L"on" : L"off (player 2's view hides nothing of its own from the next read)");
 }
 
 std::wstring Reading() noexcept
@@ -464,10 +567,12 @@ try
     {
         platform::CopyGuarded(oneIds.data(), manager + facts::kEnvSetMgrSetIds, sizeof(oneIds));
     }
-    return std::format(L"{}; trace {}; applied set {}; player 2's set {}; added for player 2: {}; player 2's traces {}, "
-                       L"reads {}, the game re-applied {} times, levels handed to the apply {}{}",
-                       g_enabled ? L"on" : L"off", g_issueCall.IsInstalled() ? L"placed" : L"not placed", IdsText(oneIds),
-                       IdsText(g_twoIds), EntriesText(g_applied), g_traces, g_reads, g_forced, g_levelsAdded,
+    return std::format(L"{}; trace {}; player 1's set {}; player 2's ground {}; player 2's view follows {} (changes {}): "
+                       L"hides {} actors ({} attached), {} of {} hidden entries not found, {} shown entries hidden by "
+                       L"player 1's set; list writes {}; player 2's traces {}, reads {}{}",
+                       g_enabled ? L"on" : L"off", g_issueCall.IsInstalled() ? L"placed" : L"not placed",
+                       IdsText(oneIds), IdsText(g_twoIds), IdsText(g_pacedIds), g_changes, g_ours.count, g_attachedCount,
+                       g_notFound, g_hiddenEntries, g_shownButHidden, g_writes, g_traces, g_reads,
                        g_problem.empty() ? std::wstring{} : L"; last problem: " + g_problem);
 }
 catch (...)

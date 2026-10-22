@@ -121,4 +121,7 @@ src/
     npc_senses            NPCs see player 2 as they see player 1, player 1's look first (the sensing grid's centre
                           moved toward player 2 when needed: one code redirect; the look's vtable slot)
     npc_senses_code.h     the grid's cell rule, the centre choice and its machine code (pure, host-tested by running it)
+    env_sets_two          player 2's view hides what the area hides under player 2 (the game's area trace and read
+                          run again for player 2; the engine's per-player hidden list); the world stays player 1's
+    env_set_view.h        player 2's set kept and paced, the list edit (pure, host-tested)
 ```

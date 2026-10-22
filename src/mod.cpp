@@ -72,7 +72,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.34.0-no-npc-look";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.35.0-view-hides-two";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
@@ -362,8 +362,13 @@ private:
     /// A local player's pawn (player 1's is the character the game centres the NPCs' senses on), or null.
     void* PawnOf(int index) const noexcept
     {
-        return lss::platform::ReadPointer(lss::platform::ReadPointer(session_.LocalPlayer(index), lss::facts::kLocalPlayerController),
-                                          lss::facts::kControllerPawn);
+        return lss::platform::ReadPointer(ControllerOf(index), lss::facts::kControllerPawn);
+    }
+
+    /// A local player's controller, or null.
+    void* ControllerOf(int index) const noexcept
+    {
+        return lss::platform::ReadPointer(session_.LocalPlayer(index), lss::facts::kLocalPlayerController);
     }
 
     /// The world around two views (world/): party members kept visible near a camera, characters animated by the
@@ -378,7 +383,7 @@ private:
         lss::world::npc_detail::Tick(in ? CameraManagerOf(0) : nullptr, cameraTwo);
         lss::world::npc_crowd::Tick(memberTwo);
         lss::world::npc_senses::Tick(in ? PawnOf(0) : nullptr, memberTwo);
-        lss::world::env_sets_two::Tick(memberTwo);
+        lss::world::env_sets_two::Tick(memberTwo, in ? ControllerOf(1) : nullptr);
     }
 
     /// The HUD layout follows the split and each player's view.

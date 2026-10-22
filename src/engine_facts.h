@@ -1217,10 +1217,10 @@ inline constexpr std::uint32_t kCognitionTimer         = 0x14;  //   time since 
 inline constexpr std::uint32_t kCognitionInterest      = 0x18;  //   interest,
 inline constexpr std::uint32_t kCognitionExperience    = 0x1C;  //   experience (100 after a look)
 
-// --- EnvironmentSet: actors hidden by the ground under the leader (research/RE-picture-variants.md §2, §5, §9) -------
+// --- EnvironmentSet: actors hidden by the ground under the leader (research/RE-picture-variants.md §2, §5, §9, §10) --
 // Square Enix's EnvironmentSet manager traces down from the party leader each frame, takes the hit surface's material
-// as the area's set, and hides (reason 13) the actors the field's EnvironmentSetWrapper row lists for that set. All
-// three calls below are in EnvSetMgr_TickEvaluate_LeaderDownTrace 0x14165FCA0 (game thread, once per world tick).
+// as the area's set, and hides (reason 13, world-wide) the actors the field's EnvironmentSetWrapper row lists for that
+// set. Both calls below are in EnvSetMgr_TickEvaluate_LeaderDownTrace 0x14165FCA0 (game thread, once per world tick).
 /// IssueDownTrace(unused, const {FName tag; FVector loc}*, unused, unused, FTraceHandle* out): stock async line trace,
 /// object channel 16, 150 m down. Its one call crosses a block.
 inline constexpr std::array<std::uint8_t, 16> kEnvSetIssueTraceEntry{
@@ -1235,25 +1235,14 @@ inline constexpr std::array<std::uint8_t, 16> kEnvSetReadResultEntry{
 inline constexpr platform::FunctionFact kEnvSetReadResult{L"EnvSetMgr_ReadTraceResult_ResolveSet", 0x14165E990,
                                                           kEnvSetReadResultEntry};
 inline constexpr std::uintptr_t kEnvSetReadResultCall = 0x14165FE55;
-/// ApplyActorList(mgr, actor array*, const TArray<FName>* levels): finds each listed actor by (level, name) in the
-/// listed levels only; clears the managed actors the new list drops.
-inline constexpr std::array<std::uint8_t, 16> kEnvSetApplyEntry{
-    0x48, 0x8B, 0xC4, 0x4C, 0x89, 0x40, 0x18, 0x48, 0x89, 0x50, 0x10, 0x48, 0x89, 0x48, 0x08, 0x55};
-inline constexpr platform::FunctionFact kEnvSetApply{L"EnvSetMgr_ApplyActorList_HiddenReason13", 0x1416606A0,
-                                                     kEnvSetApplyEntry};
-inline constexpr std::uintptr_t kEnvSetApplyCall = 0x1416600F7;
 /// EnvSetBlock_Reset(block): empties the lists and ids, keeps the allocations.
 inline constexpr std::array<std::uint8_t, 16> kEnvSetBlockResetEntry{
     0x48, 0x89, 0x5C, 0x24, 0x10, 0x57, 0x48, 0x83, 0xEC, 0x20, 0x33, 0xFF, 0x48, 0x8B, 0xD9, 0x48};
 inline constexpr platform::FunctionFact kEnvSetBlockReset{L"EnvSetBlock_Reset", 0x1411FF5E0, kEnvSetBlockResetEntry};
-/// The actor array's grow (array*, old count), called by the game's append after it raised the count past the max.
-inline constexpr std::array<std::uint8_t, 16> kEnvSetActorsGrowEntry{
-    0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x74, 0x24, 0x10, 0x57, 0x48, 0x83, 0xEC, 0x20, 0x48};
-inline constexpr platform::FunctionFact kEnvSetActorsGrow{L"EnvSetBlock_ActorArray_ResizeGrow", 0x14166A550,
-                                                          kEnvSetActorsGrowEntry};
 inline constexpr std::uintptr_t kEnvSetManagerGlobal  = 0x1457E9A90;  // the manager (for the reading only)
 inline constexpr std::uint32_t  kEnvSetMgrSetIds      = 0x40;   // the applied set's three ids (FName each, +0x48, +0x50)
 inline constexpr std::uint32_t  kEnvSetMgrHoldMode    = 0x858;  // u8: hold mode (the block is replaced after the read)
+inline constexpr std::uint32_t  kEnvSetMgrLookupLevels = 0x708; // TSet<FName>: the levels the apply looks actors up in
 inline constexpr std::uint32_t  kEnvSetBlockBytes     = 0x1D0;  // a set block (zero-filled = constructed)
 inline constexpr std::uint32_t  kEnvSetBlockLevels    = 0x08;   //   TArray<FName> LevelList (num +0x10)
 inline constexpr std::uint32_t  kEnvSetBlockIds       = 0x28;   //   the set's three ids
@@ -1261,6 +1250,36 @@ inline constexpr std::uint32_t  kEnvSetBlockActors    = 0x40;   //   {FName, u32
 inline constexpr std::uint32_t  kEnvSetBlockActorsHeap = 0x1C0; //   the heap data when grown, num +0x1C8, max +0x1CC
 inline constexpr std::uint32_t  kEnvSetBlockActorsNum = 0x1C8;
 inline constexpr std::uint32_t  kEnvSetBlockActorsMax = 0x1CC;
+/// How the game's apply finds a listed actor: for each level of the set's list that is in the manager's lookup set,
+/// CharaRegistry_FindActorByName(level, name) (the per-level name map of Square Enix's character registry).
+inline constexpr std::array<std::uint8_t, 16> kTSetNameFindEntry{
+    0x48, 0x89, 0x74, 0x24, 0x08, 0x48, 0x89, 0x7C, 0x24, 0x10, 0x8B, 0x41, 0x08, 0x48, 0x8B, 0xFA};
+/// TSet<FName>::FindId(set, i32* out, FName): *out = the element's index or -1; returns out.
+inline constexpr platform::FunctionFact kTSetNameFind{L"TSet_FName_FindIndex", 0x1406C7110, kTSetNameFindEntry};
+inline constexpr std::array<std::uint8_t, 16> kFindActorByNameEntry{
+    0x40, 0x53, 0x48, 0x83, 0xEC, 0x20, 0x48, 0x8B, 0xDA, 0x48, 0x85, 0xC9, 0x0F, 0x84, 0xAB, 0x00};
+/// CharaRegistry_FindActorByName(FName level, FName name) -> actor or null.
+inline constexpr platform::FunctionFact kFindActorByName{L"CharaRegistry_FindActorByName", 0x1416C7CE0,
+                                                         kFindActorByNameEntry};
+
+// --- A player's hidden actors (stock UE 4.18; research/RE-picture-variants.md §10.2) ---------------------------------
+// ULocalPlayer::CalcSceneView calls APlayerController::BuildHiddenComponentList (0x143018F8F, when bRenderPrimitive-
+// Components) for that player's view only: the primitive components of each listed actor and their direct attach
+// children leave that view. The engine compacts null entries; Square Enix does not override the update virtuals.
+inline constexpr std::uint32_t kControllerHiddenActors    = 0x440;  // TArray<AActor*> HiddenActors (num +0x448, max +0x44C)
+inline constexpr std::uint32_t kControllerRenderPrimitives = 0x460; // u8 bRenderPrimitiveComponents (1 from the ctor)
+inline constexpr std::uint32_t kActorHiddenFlags          = 0x84;   // u8: bHidden is bit 0x02 (SetActorHiddenInGame)
+inline constexpr std::uint8_t  kActorHiddenBit            = 0x02;
+/// TArray<8-byte element, FDefaultAllocator>::ResizeTo(array, new max): GMalloc's quantize, then its realloc.
+inline constexpr std::array<std::uint8_t, 16> kPointerArrayResizeEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x10, 0x57, 0x48, 0x83, 0xEC, 0x20, 0x48, 0x63, 0xDA, 0x48, 0x8B, 0xF9};
+inline constexpr platform::FunctionFact kPointerArrayResize{L"TArray_Ptr_ResizeTo", 0x14067C430, kPointerArrayResizeEntry};
+/// AActor::GetAttachedActors(actor, TArray<AActor*>* out): every actor attached below this one (the out array is
+/// emptied first and grown with GMalloc; the caller frees it).
+inline constexpr std::array<std::uint8_t, 16> kGetAttachedActorsEntry{
+    0x40, 0x55, 0x53, 0x41, 0x54, 0x41, 0x55, 0x48, 0x8D, 0xAC, 0x24, 0x28, 0xFF, 0xFF, 0xFF, 0x48};
+inline constexpr platform::FunctionFact kGetAttachedActors{L"AActor::GetAttachedActors", 0x142C8EB50,
+                                                           kGetAttachedActorsEntry};
 /// The save data (SaveDataMgr_Get_cand's singleton [ASSUMPTION: the save data]). While its state is 7, the active data
 /// at +0x880 holds the EnvironmentSet's last set name, char[128], which a hit writes and a no-hit reads.
 inline constexpr std::uintptr_t kSaveDataGlobal       = 0x1457E9768;

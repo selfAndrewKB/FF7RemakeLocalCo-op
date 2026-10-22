@@ -218,9 +218,9 @@ target_include_directories(NpcSensesCodeTests PRIVATE "${CMAKE_CURRENT_SOURCE_DI
 target_compile_features(NpcSensesCodeTests PRIVATE cxx_std_20)
 add_test(NAME npc_senses_code COMMAND NpcSensesCodeTests)
 
-add_executable(EnvSetMergeTests
-    tests/env_set_merge_test.cpp
+add_executable(EnvSetViewTests
+    tests/env_set_view_test.cpp
 )
-target_include_directories(EnvSetMergeTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
-target_compile_features(EnvSetMergeTests PRIVATE cxx_std_20)
-add_test(NAME env_set_merge COMMAND EnvSetMergeTests)
+target_include_directories(EnvSetViewTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(EnvSetViewTests PRIVATE cxx_std_20)
+add_test(NAME env_set_view COMMAND EnvSetViewTests)
