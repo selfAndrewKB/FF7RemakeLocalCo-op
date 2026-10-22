@@ -400,9 +400,9 @@ void Session::LogFormation(const party_member::Choice& choice) noexcept
         return;
     }
     formationLogged_ = choice.formation;
-    platform::LogDebug(L"party member: the formation under the wait reads types {} {} {}, field leader type {} (seat {}'s row: ordinal {} type {}: {})",
+    platform::LogDebug(L"party member: the formation under the wait reads types {} {} {}, field leader type {} (player {}'s row: ordinal {} type {}: {})",
                        choice.formation & 0xFF, (choice.formation >> 8) & 0xFF, (choice.formation >> 16) & 0xFF,
-                       choice.formation >> 24, kSeat, choice.ordinal, choice.type, party_member::Describe(choice.wait));
+                       choice.formation >> 24, kSeat + 1, choice.ordinal, choice.type, party_member::Describe(choice.wait));
 }
 
 void Session::Forget() noexcept

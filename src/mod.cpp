@@ -80,7 +80,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.44.4-mirror-at-leave";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.44.5-guest-row";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;

@@ -35,6 +35,8 @@ enum class Wait : std::uint8_t
 {
     None,        // `member` is the one to take
     NoSlot,      // the formation has no row for this seat beyond player 1's
+    Support,     // the rows beyond player 1's hold only battle-support members (PARTY_Battle_Support: guests the game
+                 // fights with and skips in its own switch cycle; Barret before the opening's switch tutorial ends)
     NotLoaded,   // the row names a type with no actor
     Held,        // another controller holds the row's member (its PLAYER slot)
     Cinema,       // in a cutscene or an event (the cinema actor modes)

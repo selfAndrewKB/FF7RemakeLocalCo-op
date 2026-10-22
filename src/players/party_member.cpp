@@ -177,14 +177,20 @@ Choice Choose(int seat, void* playerOneController, void* taker, bool log) noexce
                        static_cast<std::uint32_t>(party.types[2]) << 16 | static_cast<std::uint32_t>(party.fieldLeader) << 24;
     // The rows after the field leader's, in the formation's order, wrapping; the seat-th one not player 1's and not
     // a battle-support member is this seat's. Temporary states are waited on, never stepped over.
-    const std::int32_t anchor = Anchor(party);
-    std::int32_t       free   = 0;
+    const std::int32_t anchor  = Anchor(party);
+    std::int32_t       free    = 0;
+    bool               support = false;  // a row skipped for its battle-support status (the wait's reason with no row)
     for (std::int32_t step = 1; step < kRows; ++step)
     {
         const std::int32_t ordinal = (anchor + step) % kRows;
         const std::uint8_t type    = party.types[ordinal];
-        if (type >= facts::kPlayerTypeNone || party.statuses[type] == facts::kStatusBattleSupport)
+        if (type >= facts::kPlayerTypeNone)
         {
+            continue;
+        }
+        if (party.statuses[type] == facts::kStatusBattleSupport)
+        {
+            support = true;
             continue;
         }
         void* actor = ActorOfType(party, type);
@@ -215,6 +221,10 @@ Choice Choose(int seat, void* playerOneController, void* taker, bool log) noexce
             choice.member = actor;
         }
         break;
+    }
+    if (choice.ordinal < 0 && support)
+    {
+        choice.wait = Wait::Support;  // the user's Barret case (2026-10-22 11:10): types 0 1 9 read as a solo party
     }
     if (log)
     {
@@ -279,7 +289,7 @@ const wchar_t* WhyNotInSlot(int seat, void* member, std::uint8_t type, void* pla
         return L"no longer in the deployed formation";
     }
     const Choice slot = Choose(seat, playerOneController, nullptr, false);
-    if (slot.wait != Wait::Unread && slot.wait != Wait::NoSlot && slot.type != type)
+    if (slot.wait != Wait::Unread && slot.wait != Wait::NoSlot && slot.wait != Wait::Support && slot.type != type)
     {
         return L"no longer in this seat's row of the party order";
     }
@@ -401,6 +411,8 @@ const wchar_t* Describe(Wait wait) noexcept
         return L"free to take";
     case Wait::NoSlot:
         return L"no row beyond player 1's (a solo party)";
+    case Wait::Support:
+        return L"the rows beyond player 1's hold only battle-support members (guests the game fights with, not deployed members)";
     case Wait::NotLoaded:
         return L"its character is not loaded";
     case Wait::Held:
