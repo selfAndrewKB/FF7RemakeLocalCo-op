@@ -424,7 +424,7 @@ void OperatorTick(void* self, float deltaSeconds)
     // In battle the seat's UI context too: the Command camera flavor frames the target the seat's own list cursor is
     // on, read from the UI slot and the focus path inside this tick (battle/command_camera_two.h).
     const battle::command_camera_two::TickScope ui(seat);
-    const battle::targeting_two::FieldsScope targets;  // one instance (plan/seats.md step 3)
+    const battle::targeting_two::FieldsScope targets(seat);
     g_tickingSeat = seat;
     battle::lock_camera_two::BeforeOperatorTick(self, controller);  // one instance
     g_operatorTick(self, deltaSeconds);
@@ -509,7 +509,7 @@ void ProcessPlayerInput(void* self, float deltaSeconds, bool gamePaused)
     // The right stick is the lock's while the leader is locked on a target in range (the stick switches targets
     // then; the camera does not turn): the seat's lock and leader, not player 1's (RE-lock-camera-ledger.md X1).
     const scopes::Scope                      leader(seat, scopes::Leader);
-    const battle::targeting_two::FieldsScope targets;  // one instance (plan/seats.md step 3)
+    const battle::targeting_two::FieldsScope targets(seat);
     g_processInput(self, deltaSeconds, gamePaused);
     battle::lock_camera_two::AfterInput(self);
 }
@@ -543,7 +543,7 @@ void FieldMove(void* self, float deltaSeconds)
     const StickScope               stick(static_cast<std::uint32_t>(seat), true);
     const pad_buttons::ButtonScope buttons(seat);
     // Locked-on movement faces the target (strafes) on the seat's lock, not player 1's (RE-lock-camera-ledger.md X2).
-    const battle::targeting_two::FieldsScope targets;  // one instance
+    const battle::targeting_two::FieldsScope targets(seat);
     g_fieldMove(self, deltaSeconds);
 }
 

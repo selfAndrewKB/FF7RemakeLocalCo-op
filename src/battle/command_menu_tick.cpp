@@ -111,8 +111,8 @@ void RunInputBuffer(int seat, float deltaTime) noexcept
     }
 }
 
-/// The seat's controller ticked inside the seat's scopes, with its pad's buttons and sticks and (seat 1's copy, until
-/// targeting_two's own conversion) its target fields, then the game's input buffer for its member.
+/// The seat's controller ticked inside the seat's scopes, with its pad's buttons and sticks and its target fields,
+/// then the game's input buffer for its member.
 void TickSeat(int seat, float deltaTime)
 {
     void* ctrl = command_menu_two::Controller(seat);
@@ -125,8 +125,7 @@ void TickSeat(int seat, float deltaTime)
     players::player_two_camera::StickScope stick(static_cast<std::uint32_t>(seat), true);
     // A command executed here aims at the displayed target and re-locks the camera on it while the member is the
     // leader and locked on: the seat's target fields, not player 1's (RE-lock-camera-ledger.md row X4).
-    const targeting_two::FieldsScope targets;
-    static_assert(kSeatsBuilt == 1, "TickSeat swaps in seat 1's target fields until targeting_two is per seat (plan/seats.md step 3)");
+    const targeting_two::FieldsScope targets(seat);
     if (!scope.Held())
     {
         return;

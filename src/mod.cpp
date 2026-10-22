@@ -83,7 +83,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.51.0-command-tick-by-seat";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.52.0-targeting-by-seat";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;

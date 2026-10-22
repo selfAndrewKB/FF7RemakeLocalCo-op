@@ -174,7 +174,7 @@ void LineOfSight(void* system)
         return;
     }
     const players::scopes::Scope     scope(kPlayer, players::scopes::Primary | players::scopes::Leader);
-    const targeting_two::FieldsScope fields;
+    const targeting_two::FieldsScope fields(kPlayer);
     const platform::ByteScope        copy(g_copy);
     if (scope.Held() && fields.Held() && copy.Held())
     {

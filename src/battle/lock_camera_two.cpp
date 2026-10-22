@@ -121,7 +121,7 @@ void Transform(void* a1, void* a2, void* a3, void* a4)
         return;
     }
     const players::scopes::Scope     scope(kPlayer, kTwoContexts);
-    const targeting_two::FieldsScope targets;
+    const targeting_two::FieldsScope targets(kPlayer);
     if (scope.Held())
     {
         ++g_transforms;
@@ -139,7 +139,7 @@ void LockNearest(void* a1, char a2, char a3, char a4, char a5)
         return;
     }
     const players::scopes::Scope     scope(kPlayer, kTwoContexts);
-    const targeting_two::FieldsScope targets;
+    const targeting_two::FieldsScope targets(kPlayer);
     if (scope.Held())
     {
         ++g_lockNearests;
@@ -330,7 +330,7 @@ void AfterOperatorTick(void* operatorTwo) noexcept
 void AfterInput(void* controllerTwo) noexcept
 {
     std::array<float, 2> input{};
-    if (controllerTwo != nullptr && targeting_two::PlayerTwoLock() != 0 &&
+    if (controllerTwo != nullptr && targeting_two::Lock(kPlayer) != 0 &&
         Read(static_cast<std::uint8_t*>(controllerTwo) + facts::kControllerRotationInput, input) && (input[0] != 0.0f || input[1] != 0.0f))
     {
         ++g_frames.stickWhileLocked;
