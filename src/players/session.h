@@ -34,6 +34,7 @@
 // The modules a seat drives are one instance each today (player 2's); plan/seats.md step 3 makes them per seat.
 
 #include "players/party_member.h"
+#include "players/seats.h"
 
 #include <chrono>
 #include <cstdint>
@@ -48,10 +49,6 @@ class GameImage;
 }
 
 namespace lss::players {
-
-/// The further players built: seats 1..kSeatsBuilt (seat 1 = player 2). The modules behind them are sized by
-/// scopes::kMaxPlayers; the seats are wired one at a time (plan/seats.md step 6 wires seat 2).
-inline constexpr int kSeatsBuilt = 1;
 
 class Session
 {
@@ -147,7 +144,7 @@ private:
         std::int32_t ControllerId() const noexcept { return index; }
     };
 
-    static bool Valid(int seat) noexcept { return seat >= 1 && seat <= kSeatsBuilt; }
+    static bool Valid(int seat) noexcept { return SeatBuilt(seat); }
 
     static void OnFieldExit(void* self, const wchar_t* caller) noexcept;
     /// Leave's work for one seat. A world change cannot wait: it takes the player out even if the member's release

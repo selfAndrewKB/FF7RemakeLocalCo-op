@@ -11,6 +11,7 @@
 #include "players/operator_battle_mode.h"
 #include "players/pad_buttons.h"
 #include "players/scopes.h"
+#include "players/seats.h"
 #include "views/scene_camera_two.h"
 #include "battle/lock_camera_two.h"
 #include "battle/sequence_camera_two.h"
@@ -45,6 +46,8 @@ using ActorFloatFn     = void (*)(void* self, float deltaSeconds);
 using InputFn          = void (*)(void* self, float deltaSeconds, bool gamePaused);
 using PhaseHookFn      = void (*)(void* world, void* context, std::int32_t phase, bool start);
 
+constexpr int kPlayers = scopes::kMaxPlayers;  // index 0 = player 1, index s = seat s
+
 // Set once at install, then only read.
 void**           g_partyManager   = nullptr;  // the global holding the party manager pointer
 std::uint8_t**   g_root           = nullptr;
@@ -77,15 +80,23 @@ ActorFloatFn          g_cameraUpdate      = nullptr;
 std::uintptr_t* g_phaseHookPointer = nullptr;
 PhaseHookFn     g_phaseHook        = nullptr;
 InputFn         g_tickPlayerInput  = nullptr;
-int             g_operatorTicking  = 0;  // 2 while player 2's operator ticks
+int             g_operatorTicking  = 0;  // the player number whose own operator ticks (2 for seat 1), else 0
 bool            g_phaseHookLogged  = false;
 
 // Game thread only (set by Start from the engine tick; the wrappers act only on that thread).
-DWORD g_gameThread  = 0;
-Weak  g_playerOne;              // player 1's controller while player 2 is in (resolved at each use)
-Weak  g_playerTwo;              // player 2's controller while player 2 is in
-Weak  g_operatorTwo;            // player 2's operator
-bool  g_spawning    = false;
+DWORD g_gameThread = 0;
+Weak  g_playerOne;  // player 1's controller while a seat is in (resolved at each use)
+bool  g_spawning = false;
+
+/// One seat's camera: its controller and its operator, as weak pairs (a controller the engine destroyed or
+/// replaced resolves to null, so the scopes stop applying).
+struct SeatCamera
+{
+    Weak controller;
+    Weak cameraOperator;
+    bool noPlayerInputLogged = false;
+};
+std::array<SeatCamera, kPlayers> g_seats;  // index = seat; [0] unused (player 1 is the game's)
 
 // Test input and diagnostics, game thread only.
 struct StickHold
@@ -93,7 +104,7 @@ struct StickHold
     bool                 active = false;
     std::array<float, 4> axes{};
 };
-std::array<StickHold, 2> g_holds;
+std::array<StickHold, kPlayers> g_holds;  // index = XInput user
 
 struct CallCounts
 {
@@ -102,9 +113,9 @@ struct CallCounts
     std::uint32_t operatorTick = 0;
     std::uint32_t cameraUpdate = 0;  // the camera manager's UpdateCamera under the player's scopes
 };
-std::array<CallCounts, 2> g_counts;
+std::array<CallCounts, kPlayers> g_counts;  // index 0 = player 1, s = seat s
 
-/// Player 1's input step this frame: the game's arguments, for player 2's step right after it.
+/// Player 1's input step this frame: the game's arguments, for each seat's step right after it.
 struct PrimaryInput
 {
     bool  ran    = false;
@@ -112,7 +123,6 @@ struct PrimaryInput
     bool  paused = false;
 };
 PrimaryInput g_primaryInput;
-bool         g_noPlayerInputLogged = false;
 
 constexpr std::uint32_t kItemBytes       = 0x18;  // FUObjectItem: Object +0, Flags +8, SerialNumber +0x10
 constexpr std::uint32_t kItemFlags       = 0x08;
@@ -254,7 +264,7 @@ public:
         void* now = nullptr;
         if (field_ != nullptr && Read(field_, now) && now == wrote_ && !platform::WriteGuarded(field_, &saved_, sizeof(saved_)))
         {
-            platform::Log(L"player 2's camera: the primary controller could not be put back");
+            platform::Log(L"a seat's camera: the primary controller could not be put back");
         }
     }
     PrimaryScope(const PrimaryScope&)            = delete;
@@ -285,7 +295,7 @@ public:
         if (pair_ != nullptr && Read(pair_, now) && now.index == wrote_.index && now.serial == wrote_.serial &&
             !platform::WriteGuarded(pair_, &saved_, sizeof(saved_)))
         {
-            platform::Log(L"player 2's camera: the operator pair could not be put back");
+            platform::Log(L"a seat's camera: the operator pair could not be put back");
         }
     }
     OperatorScope(const OperatorScope&)            = delete;
@@ -297,6 +307,70 @@ private:
     Weak          wrote_;
 };
 
+// --- The seats as the replacements see them ----------------------------------------------------------------
+
+/// A seat is in: its controller resolves (game thread only; off it nothing is a seat's).
+bool AnySeatIn() noexcept
+{
+    if (!OnGameThread())
+    {
+        return false;
+    }
+    for (int seat = 1; seat <= kSeatsBuilt; ++seat)
+    {
+        if (Resolve(g_seats[seat].controller) != nullptr)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+/// The seat whose controller is `self`, else 0.
+int SeatOfController(const void* self) noexcept
+{
+    for (int seat = 1; self != nullptr && seat <= kSeatsBuilt; ++seat)
+    {
+        if (Resolve(g_seats[seat].controller) == self)
+        {
+            return seat;
+        }
+    }
+    return 0;
+}
+
+/// The seat whose own operator is `self`, else 0.
+int SeatOfOperator(const void* self) noexcept
+{
+    for (int seat = 1; self != nullptr && seat <= kSeatsBuilt; ++seat)
+    {
+        if (Resolve(g_seats[seat].cameraOperator) == self)
+        {
+            return seat;
+        }
+    }
+    return 0;
+}
+
+/// The seat whose controller's camera manager is `self`, else 0.
+int SeatOfManager(const void* self) noexcept
+{
+    for (int seat = 1; self != nullptr && seat <= kSeatsBuilt; ++seat)
+    {
+        void* controller = Resolve(g_seats[seat].controller);
+        if (controller != nullptr && platform::ReadPointer(controller, facts::kControllerCameraManager) == self)
+        {
+            return seat;
+        }
+    }
+    return 0;
+}
+
+void* PlayerOne() noexcept
+{
+    return OnGameThread() ? Resolve(g_playerOne) : nullptr;
+}
+
 // --- The slot replacements -----------------------------------------------------------------------------
 
 // The engine's own functions are called unguarded from these replacements, as the engine calls them. A fault
@@ -304,22 +378,9 @@ private:
 // state. If something further up handles it, unwinding runs the scopes' destructors, which put every swapped
 // value back.
 
-/// Player 1's and player 2's controllers while player 2 is in, resolved through their weak pairs (a
-/// controller the engine destroyed or replaced resolves to null, so the scopes stop applying).
-struct Players
-{
-    void* one = nullptr;
-    void* two = nullptr;
-};
-
-Players CurrentPlayers() noexcept
-{
-    return OnGameThread() ? Players{Resolve(g_playerOne), Resolve(g_playerTwo)} : Players{};
-}
-
-/// AEndFieldCameraOperator::BeginPlay. Player 2's operator begins play inside the spawn Start makes, with
-/// PartyManager+0 already naming player 2; here the root's pair names it too, so the leader delegate and the
-/// owner the game picks are bound through player 2's controller.
+/// AEndFieldCameraOperator::BeginPlay. A seat's operator begins play inside the spawn Start makes, with
+/// PartyManager+0 already naming the seat's controller; here the root's pair names it too, so the leader delegate
+/// and the owner the game picks are bound through the seat's controller.
 void OperatorBeginPlay(void* self)
 {
     if (!OnGameThread() || !g_spawning || self == PlayerOneOperator())
@@ -330,52 +391,51 @@ void OperatorBeginPlay(void* self)
     const Weak weak = MakeWeak(self);
     if (weak.serial == 0)
     {
-        platform::Log(L"player 2's camera: no weak pair for the new operator; it begins play as player 1's would");
+        platform::Log(L"a seat's camera: no weak pair for the new operator; it begins play as player 1's would");
     }
     const OperatorScope scope(weak);
     g_operatorBeginPlay(self);
 }
 
-/// AEndFieldCameraOperator::Tick. Player 2's operator ticks as the primary one, for player 2.
+/// AEndFieldCameraOperator::Tick. A seat's operator ticks as the primary one, for that seat.
 void OperatorTick(void* self, float deltaSeconds)
 {
-    const Players players = CurrentPlayers();
-    if (players.two == nullptr || self != Resolve(g_operatorTwo))
+    const int seat = AnySeatIn() ? SeatOfOperator(self) : 0;
+    if (seat == 0)
     {
         g_operatorTick(self, deltaSeconds);
-        if (players.two != nullptr && self == PlayerOneOperator())
+        if (AnySeatIn() && self == PlayerOneOperator())
         {
             battle::sequence_camera_two::AfterOperatorTick(1);
         }
         return;
     }
-    ++g_counts[1].operatorTick;
-    const PrimaryScope               primary(players.two);
-    const OperatorScope              scope(g_operatorTwo);
-    const StickScope                 stick(1, true);  // a sequence shot's input offset reads the stick (RE-seq-camera-two.md L-H)
-    // Its leader is player 2's member: the battle camera requests, the move and camera-input checks and the battle
+    ++g_counts[seat].operatorTick;
+    void* const                      controller = Resolve(g_seats[seat].controller);
+    const PrimaryScope               primary(controller);
+    const OperatorScope              scope(g_seats[seat].cameraOperator);
+    const StickScope                 stick(static_cast<std::uint32_t>(seat), true);  // a sequence shot's input offset reads the stick (RE-seq-camera-two.md L-H)
+    // Its leader is the seat's member: the battle camera requests, the move and camera-input checks and the battle
     // sequence overrides the tick reads are keyed on the party leader (RE-lock-camera-two.md §1.4), as the lock
-    // camera follows player 2's target, not player 1's.
-    const scopes::Scope              leader(1, scopes::Leader);
-    const battle::targeting_two::FieldsScope targets;
-    g_operatorTicking = 2;
-    battle::lock_camera_two::BeforeOperatorTick(self, players.two);
+    // camera follows the seat's target, not player 1's.
+    const scopes::Scope              leader(seat, scopes::Leader);
+    const battle::targeting_two::FieldsScope targets;  // one instance (plan/seats.md step 3)
+    g_operatorTicking = seat + 1;
+    battle::lock_camera_two::BeforeOperatorTick(self, controller);  // one instance
     g_operatorTick(self, deltaSeconds);
     battle::lock_camera_two::AfterOperatorTick(self);
     g_operatorTicking = 0;
-    battle::sequence_camera_two::AfterOperatorTick(2);
+    battle::sequence_camera_two::AfterOperatorTick(seat + 1);
     // The owner's camera-override route follows the owner (the tick may have changed it: the LeaderChange flavor).
     void* owner = nullptr;
     camera_override_two::Route(Read(static_cast<std::uint8_t*>(self) + facts::kOperatorOwnerChara, owner) ? owner : nullptr);
 }
 
-/// AEndPlayerCameraManager::UpdateCamera: player 2's camera manager updates as the primary player's, with player
-/// 2's member as the leader (the occlusion fade toward the leader, the slot blends that write the primary
+/// AEndPlayerCameraManager::UpdateCamera: a seat's camera manager updates as the primary player's, with the seat's
+/// member as the leader (the occlusion fade toward the leader, the slot blends that write the primary
 /// controller's rotation; RE-lock-camera-ledger.md row X7).
 void UpdateCamera(void* self, float deltaSeconds)
 {
-    const Players players    = CurrentPlayers();
-    void*         managerTwo = nullptr;
     if (void* mirror = views::scene_camera_two::MirrorManager(); mirror != nullptr && self == mirror)
     {
         // The mirror player's manager (views/mirror_player): every slot of player 1's set on it, under the mirror's
@@ -385,10 +445,12 @@ void UpdateCamera(void* self, float deltaSeconds)
         g_cameraUpdate(self, deltaSeconds);
         return;
     }
-    if (players.two == nullptr ||
-        !Read(static_cast<std::uint8_t*>(players.two) + facts::kControllerCameraManager, managerTwo) || self != managerTwo)
+    const bool  seatsIn = AnySeatIn();
+    void* const one     = PlayerOne();
+    const int   seat    = seatsIn ? SeatOfManager(self) : 0;
+    if (seat == 0)
     {
-        if ((players.two != nullptr && self == platform::ReadPointer(players.one, facts::kControllerCameraManager)) ||
+        if ((seatsIn && self == platform::ReadPointer(one, facts::kControllerCameraManager)) ||
             (self != nullptr && self == views::scene_camera_two::MirrorSource()))
         {
             views::scene_camera_two::BeforeUpdateCamera(self, nullptr);  // player 1's: its camera cut noted for this frame
@@ -396,25 +458,24 @@ void UpdateCamera(void* self, float deltaSeconds)
         g_cameraUpdate(self, deltaSeconds);
         return;
     }
-    ++g_counts[1].cameraUpdate;
-    const PrimaryScope  primary(players.two);
-    const scopes::Scope leader(1, scopes::Leader);
-    // A scene's camera (slots player 1's manager was given this frame) onto player 2's, with the game's own setters,
-    // inside the scope so the primary-scoped ones reach player 2's manager.
-    views::scene_camera_two::BeforeUpdateCamera(platform::ReadPointer(players.one, facts::kControllerCameraManager), self);
+    ++g_counts[seat].cameraUpdate;
+    const PrimaryScope  primary(Resolve(g_seats[seat].controller));
+    const scopes::Scope leader(seat, scopes::Leader);
+    // A scene's camera (slots player 1's manager was given this frame) onto the seat's, with the game's own setters,
+    // inside the scope so the primary-scoped ones reach the seat's manager.
+    views::scene_camera_two::BeforeUpdateCamera(platform::ReadPointer(one, facts::kControllerCameraManager), self);  // one instance
     g_cameraUpdate(self, deltaSeconds);
 }
 
 /// AEndPlayerController::ProcessPlayerInput: each player's right stick reaches that player's operator.
 void ProcessPlayerInput(void* self, float deltaSeconds, bool gamePaused)
 {
-    const Players players = CurrentPlayers();
-    if (players.two == nullptr || (self != players.one && self != players.two))
+    if (!AnySeatIn())
     {
         g_processInput(self, deltaSeconds, gamePaused);
         return;
     }
-    if (self == players.one)
+    if (self == PlayerOne())
     {
         ++g_counts[0].input;
         g_primaryInput = {true, deltaSeconds, gamePaused};
@@ -422,57 +483,69 @@ void ProcessPlayerInput(void* self, float deltaSeconds, bool gamePaused)
         g_processInput(self, deltaSeconds, gamePaused);
         return;
     }
-    ++g_counts[1].input;
-    if (Resolve(g_operatorTwo) == nullptr)
+    const int seat = SeatOfController(self);
+    if (seat == 0)
     {
-        // Without its own operator, player 2's stick would reach player 1's: a still stick instead.
+        g_processInput(self, deltaSeconds, gamePaused);
+        return;
+    }
+    ++g_counts[seat].input;
+    if (Resolve(g_seats[seat].cameraOperator) == nullptr)
+    {
+        // Without its own operator, the seat's stick would reach player 1's: a still stick instead.
         const StickScope stick(UINT32_MAX, true);
         g_processInput(self, deltaSeconds, gamePaused);
         return;
     }
-    const PrimaryScope             primary(players.two);
-    const OperatorScope            scope(g_operatorTwo);
-    const StickScope               stick(1, true);
-    const pad_buttons::ButtonScope buttons(1);
+    const PrimaryScope             primary(self);
+    const OperatorScope            scope(g_seats[seat].cameraOperator);
+    const StickScope               stick(static_cast<std::uint32_t>(seat), true);
+    const pad_buttons::ButtonScope buttons(seat);
     // The right stick is the lock's while the leader is locked on a target in range (the stick switches targets
-    // then; the camera does not turn): player 2's lock and leader, not player 1's (RE-lock-camera-ledger.md X1).
-    const scopes::Scope                      leader(1, scopes::Leader);
-    const battle::targeting_two::FieldsScope targets;
+    // then; the camera does not turn): the seat's lock and leader, not player 1's (RE-lock-camera-ledger.md X1).
+    const scopes::Scope                      leader(seat, scopes::Leader);
+    const battle::targeting_two::FieldsScope targets;  // one instance (plan/seats.md step 3)
     g_processInput(self, deltaSeconds, gamePaused);
     battle::lock_camera_two::AfterInput(self);
 }
 
-/// AEndPlayerController::Tick_FieldMove: each player's left stick moves only that player's character. Player
-/// 2's movement also takes its direction from player 2's camera (the game reads the primary controller's camera
-/// manager for the basis) and marks player 2's operator (the game writes flags on "the" operator).
+/// AEndPlayerController::Tick_FieldMove: each player's left stick moves only that player's character. A seat's
+/// movement also takes its direction from the seat's camera (the game reads the primary controller's camera
+/// manager for the basis) and marks the seat's operator (the game writes flags on "the" operator).
 void FieldMove(void* self, float deltaSeconds)
 {
-    const Players players = CurrentPlayers();
-    if (players.two == nullptr || (self != players.one && self != players.two))
+    if (!AnySeatIn())
     {
         g_fieldMove(self, deltaSeconds);
         return;
     }
-    if (self == players.one)
+    if (self == PlayerOne())
     {
         ++g_counts[0].move;
         const StickScope stick(0, false);
         g_fieldMove(self, deltaSeconds);
         return;
     }
-    ++g_counts[1].move;
-    const PrimaryScope             primary(players.two);
-    const OperatorScope            scope(g_operatorTwo);  // no-op while player 2 has no operator
-    const StickScope               stick(1, true);
-    const pad_buttons::ButtonScope buttons(1);
-    // Locked-on movement faces the target (strafes) on player 2's lock, not player 1's (RE-lock-camera-ledger.md X2).
-    const battle::targeting_two::FieldsScope targets;
+    const int seat = SeatOfController(self);
+    if (seat == 0)
+    {
+        g_fieldMove(self, deltaSeconds);
+        return;
+    }
+    ++g_counts[seat].move;
+    const PrimaryScope             primary(self);
+    const OperatorScope            scope(g_seats[seat].cameraOperator);  // no-op while the seat has no operator
+    const StickScope               stick(static_cast<std::uint32_t>(seat), true);
+    const pad_buttons::ButtonScope buttons(seat);
+    // Locked-on movement faces the target (strafes) on the seat's lock, not player 1's (RE-lock-camera-ledger.md X2).
+    const battle::targeting_two::FieldsScope targets;  // one instance
     g_fieldMove(self, deltaSeconds);
 }
 
 /// The game's world-tick phase hook. At phase 1's start it ticks the primary controller's input (the only
-/// controller whose input the game ticks during play). Right after it, player 2's controller gets the same input
-/// step with the same arguments; the ProcessPlayerInput replacement then scopes it to player 2's operator and pad.
+/// controller whose input the game ticks during play). Right after it, each seat's controller gets the same input
+/// step with the same arguments, in seat order; the ProcessPlayerInput replacement then scopes it to the seat's
+/// operator and pad.
 void PhaseHook(void* world, void* context, std::int32_t phase, bool start)
 {
     g_phaseHook(world, context, phase, start);
@@ -482,27 +555,35 @@ void PhaseHook(void* world, void* context, std::int32_t phase, bool start)
     }
     const PrimaryInput primary = g_primaryInput;
     g_primaryInput             = {};
-    const Players players      = CurrentPlayers();
-    void*         playerInput  = nullptr;
-    if (players.two == nullptr)
+    if (!AnySeatIn())
     {
         return;
     }
-    if (!Read(static_cast<std::uint8_t*>(players.two) + facts::kControllerPlayerInput, playerInput) || playerInput == nullptr)
+    for (int seat = 1; seat <= kSeatsBuilt && g_tickPlayerInput != nullptr; ++seat)
     {
-        if (!g_noPlayerInputLogged)
+        void* controller  = Resolve(g_seats[seat].controller);
+        void* playerInput = nullptr;
+        if (controller == nullptr)
         {
-            platform::Log(L"player 2's input: the controller has no PlayerInput object; its input step is skipped");
-            g_noPlayerInputLogged = true;
+            continue;
         }
-        return;
-    }
-    // Unlike the replacements above, the engine never makes this call itself (it ticks only the primary
-    // controller's input), so it is guarded like the mod's other calls: a fault turns player 2's input step off.
-    if (!platform::CallGuarded(g_tickPlayerInput, players.two, primary.dt, primary.paused))
-    {
-        g_tickPlayerInput = nullptr;
-        platform::Log(L"player 2's input: the input step RAISED AN EXCEPTION; player 2's input step is off until the game restarts");
+        if (!Read(static_cast<std::uint8_t*>(controller) + facts::kControllerPlayerInput, playerInput) || playerInput == nullptr)
+        {
+            if (!g_seats[seat].noPlayerInputLogged)
+            {
+                platform::Log(L"{}'s input: the controller has no PlayerInput object; its input step is skipped", SeatName(seat));
+                g_seats[seat].noPlayerInputLogged = true;
+            }
+            continue;
+        }
+        // Unlike the replacements above, the engine never makes this call itself (it ticks only the primary
+        // controller's input), so it is guarded like the mod's other calls: a fault turns the seats' input step off.
+        if (!platform::CallGuarded(g_tickPlayerInput, controller, primary.dt, primary.paused))
+        {
+            g_tickPlayerInput = nullptr;
+            platform::Log(L"{}'s input: the input step RAISED AN EXCEPTION; every seat's input step is off until the game restarts",
+                          SeatName(seat));
+        }
     }
 }
 
@@ -540,7 +621,7 @@ bool Install(const platform::GameImage& image) noexcept
         !FindInto(image, facts::kSetOwnerChara, g_setOwnerChara) ||
         !FindInto(image, facts::kAllocateSerialNumber, g_allocateSerial))
     {
-        platform::Log(L"player 2's camera: an engine check failed; player 2 keeps a still camera");
+        platform::Log(L"the seats' cameras: an engine check failed; a seat keeps a still camera");
         return false;
     }
     g_objectArray = reinterpret_cast<void*>(*array);
@@ -582,12 +663,12 @@ bool Install(const platform::GameImage& image) noexcept
     camera_override_two::Install(image);  // optional: without it player 2's attack cameras stay on player 1's camera
     operator_battle_mode::Install(image);  // optional: without it player 2's camera plays battles on the field setting
     nav_area_two::Install(image);          // optional: without it player 2's InDoor settings reach player 1's operator
-    // Optional: without it player 2's right stick does nothing, and everything else still works.
+    // Optional: without it a seat's right stick does nothing, and everything else still works.
     if (!Global(image, facts::kWorldTickPhaseHookGlobal, g_phaseHookPointer) ||
         !FindInto(image, facts::kWorldTickPhaseHook, g_phaseHook) || !FindInto(image, facts::kTickPlayerInput, g_tickPlayerInput))
     {
         g_phaseHookPointer = nullptr;
-        platform::Log(L"player 2's input: the game's input tick could not be verified; player 2's right stick stays unused");
+        platform::Log(L"the seats' input: the game's input tick could not be verified; a seat's right stick stays unused");
     }
     return true;
 }
@@ -609,13 +690,13 @@ void MaintainInputTick() noexcept
         const bool swapped = platform::WriteGuarded(g_phaseHookPointer, &ours, sizeof(ours));
         if (swapped || !g_phaseHookLogged)
         {
-            platform::Log(L"player 2's input: the game's world-tick phase hook {}", swapped ? L"is wrapped (player 2's input step follows player 1's)" : L"could NOT be wrapped");
+            platform::Log(L"the seats' input: the game's world-tick phase hook {}", swapped ? L"is wrapped (each seat's input step follows player 1's)" : L"could NOT be wrapped");
         }
         g_phaseHookLogged = !swapped;
     }
     else if (current != 0 && !g_phaseHookLogged)
     {
-        platform::Log(L"player 2's input: the world-tick phase hook points somewhere unexpected; left alone");
+        platform::Log(L"the seats' input: the world-tick phase hook points somewhere unexpected; left alone");
         g_phaseHookLogged = true;
     }
 }
@@ -631,12 +712,18 @@ void RemoveInputTick() noexcept
     }
 }
 
-bool Start(void* playerOneController, void* playerTwoController, void* member) noexcept
+bool Start(int seat, void* playerOneController, void* seatController, void* member) noexcept
 {
-    g_gameThread          = GetCurrentThreadId();
-    g_noPlayerInputLogged = false;
-    g_playerOne           = MakeWeak(playerOneController);
-    g_playerTwo  = MakeWeak(playerTwoController);  // from here each player's sticks are their own pad's
+    if (!SeatBuilt(seat))
+    {
+        platform::Log(L"a seat's camera: seat {} is not built; still camera", seat);
+        return false;
+    }
+    const wchar_t* name = SeatName(seat);
+    g_gameThread        = GetCurrentThreadId();
+    g_playerOne         = MakeWeak(playerOneController);
+    g_seats[seat]       = {};
+    g_seats[seat].controller = MakeWeak(seatController);  // from here each player's sticks are their own pad's
 
     void* operatorOne = PlayerOneOperator();
     void* manager     = nullptr;
@@ -644,12 +731,12 @@ bool Start(void* playerOneController, void* playerTwoController, void* member) n
     if (operatorOne == nullptr || !Read(g_partyManager, manager) || manager == nullptr || !Read(g_gameMode, gameMode) ||
         gameMode == nullptr)
     {
-        platform::Log(L"player 2's camera: no field camera operator or party manager (not in the field?); still camera");
+        platform::Log(L"{}'s camera: no field camera operator or party manager (not in the field?); still camera", name);
         return false;
     }
     if (member == nullptr)
     {
-        platform::Log(L"player 2's camera: no member to follow; still camera");
+        platform::Log(L"{}'s camera: no member to follow; still camera", name);
         return false;
     }
     void*      world    = nullptr;
@@ -660,7 +747,7 @@ bool Start(void* playerOneController, void* playerTwoController, void* member) n
         !platform::CallGuarded(getWorld, world, gameMode) || world == nullptr ||
         !platform::CallGuarded(g_staticClass, type) || type == nullptr)
     {
-        platform::Log(L"player 2's camera: the world or the operator class could not be found; still camera");
+        platform::Log(L"{}'s camera: the world or the operator class could not be found; still camera", name);
         return false;
     }
 
@@ -670,7 +757,7 @@ bool Start(void* playerOneController, void* playerTwoController, void* member) n
     std::uint32_t                             none = 0;
     if (!Read(g_nameNone, none))
     {
-        platform::Log(L"player 2's camera: NAME_None could not be read; still camera");
+        platform::Log(L"{}'s camera: NAME_None could not be read; still camera", name);
         return false;
     }
     std::memcpy(parameters.data(), &none, sizeof(none));
@@ -683,13 +770,13 @@ bool Start(void* playerOneController, void* playerTwoController, void* member) n
     std::uint8_t  corrections = 0;
     if (!Read(g_frameStamp, stamp) || !Read(g_corrections, corrections))
     {
-        platform::Log(L"player 2's camera: the operator globals could not be read; still camera");
+        platform::Log(L"{}'s camera: the operator globals could not be read; still camera", name);
         return false;
     }
     void*               spawned     = nullptr;
     bool                called      = false;
     {
-        const PrimaryScope primary(playerTwoController);  // BeginPlay runs inside the spawn
+        const PrimaryScope primary(seatController);  // BeginPlay runs inside the spawn
         g_spawning = true;
         called     = platform::CallGuarded(g_spawnActor, spawned, world, type, static_cast<const void*>(nullptr),
                                            static_cast<const void*>(parameters.data()));
@@ -699,49 +786,56 @@ bool Start(void* playerOneController, void* playerTwoController, void* member) n
     platform::WriteGuarded(g_corrections, &corrections, sizeof(corrections));
     if (!called || spawned == nullptr)
     {
-        platform::Log(L"player 2's camera: the operator spawn {}; still camera", called ? L"returned nothing" : L"RAISED AN EXCEPTION");
+        platform::Log(L"{}'s camera: the operator spawn {}; still camera", name, called ? L"returned nothing" : L"RAISED AN EXCEPTION");
         return false;
     }
-    g_operatorTwo = MakeWeak(spawned);
+    g_seats[seat].cameraOperator = MakeWeak(spawned);
     {
-        const std::int32_t pair[2]{g_operatorTwo.index, g_operatorTwo.serial};
-        scopes::BindOperator(1, pair);  // the operator the game's camera and menu code finds in player 2's scopes
+        const std::int32_t pair[2]{g_seats[seat].cameraOperator.index, g_seats[seat].cameraOperator.serial};
+        scopes::BindOperator(seat, pair);  // the operator the game's camera and menu code finds in the seat's scopes
     }
 
     bool owned = false;
     {
-        const PrimaryScope  primary(playerTwoController);
-        const OperatorScope scope(g_operatorTwo);
+        const PrimaryScope  primary(seatController);
+        const OperatorScope scope(g_seats[seat].cameraOperator);
         owned = platform::CallGuarded(g_setOwnerChara, spawned, member);
     }
     if (owned)
     {
-        camera_override_two::Route(member);  // the game's SetOwnerChara just wrote the member's delegate
+        camera_override_two::Route(member);  // the game's SetOwnerChara just wrote the member's delegate (one route today)
         operator_battle_mode::OnOperatorStarted(spawned, operatorOne);  // a join mid-battle
-        nav_area_two::OnOperatorStarted(playerTwoController);           // the volumes entered before the spawn
+        nav_area_two::OnOperatorStarted(seatController);                // the volumes entered before the spawn
     }
     // Moving the new operator off the leader cleared the leader's camera delegate that player 1's operator
     // had bound; the game's own re-apply puts it back.
     void* ownerOne     = nullptr;
     const bool reowned = Read(static_cast<std::uint8_t*>(operatorOne) + facts::kOperatorOwnerChara, ownerOne) &&
                          ownerOne != nullptr && platform::CallGuarded(g_setOwnerChara, operatorOne, ownerOne);
-    platform::Log(L"player 2's camera: own operator spawned (index {}), following player 2's member {}; player 1's operator {}",
-                  g_operatorTwo.index, owned ? L"yes" : L"NO (the owner call raised)", reowned ? L"re-applied" : L"NOT re-applied");
+    platform::Log(L"{}'s camera: own operator spawned (index {}), following {}'s member {}; player 1's operator {}", name,
+                  g_seats[seat].cameraOperator.index, name, owned ? L"yes" : L"NO (the owner call raised)",
+                  reowned ? L"re-applied" : L"NOT re-applied");
     return owned;
 }
 
-void* Take() noexcept
+void* Take(int seat) noexcept
 {
-    camera_override_two::Route(nullptr);  // the member's delegate holds the game's handler again
-    void* operatorTwo = Resolve(g_operatorTwo);
-    g_operatorTwo     = {};
+    if (!SeatBuilt(seat))
+    {
+        return nullptr;
+    }
+    camera_override_two::Route(nullptr);  // the member's delegate holds the game's handler again (one route today)
+    void* cameraOperator = Resolve(g_seats[seat].cameraOperator);
+    g_seats[seat]        = {};
     {
         const std::int32_t none[2]{-1, 0};
-        scopes::BindOperator(1, none);
+        scopes::BindOperator(seat, none);
     }
-    g_playerOne       = {};
-    g_playerTwo       = {};
-    return operatorTwo;
+    if (!AnySeatIn())
+    {
+        g_playerOne = {};  // player 1's controller is kept only while a seat needs the scopes
+    }
+    return cameraOperator;
 }
 
 void HoldStick(unsigned user, const float (&axes)[4]) noexcept
@@ -771,9 +865,9 @@ void* OperatorOne() noexcept
     return PlayerOneOperator();
 }
 
-void* OperatorTwo() noexcept
+void* Operator(int seat) noexcept
 {
-    return Resolve(g_operatorTwo);
+    return SeatBuilt(seat) ? Resolve(g_seats[seat].cameraOperator) : nullptr;
 }
 
 void LogCounts() noexcept
@@ -782,13 +876,12 @@ try
     // Diagnostic fields of each controller: its control rotation (stock AController) and the camera
     // sensitivity the game's ProcessPlayerInput scales the right stick by (RE-camera.md §9.3).
     constexpr std::uint32_t kCameraSensitivity = 0x9E8;
-    const Players players = CurrentPlayers();
-    void* const   controllers[2] = {players.one, players.two};
-    for (std::size_t i = 0; i < g_counts.size(); ++i)
+    for (int i = 0; i <= kSeatsBuilt; ++i)
     {
+        void* const          controller = i == 0 ? PlayerOne() : (OnGameThread() ? Resolve(g_seats[i].controller) : nullptr);
         std::array<float, 3> rotation{};
         float                sensitivity = 0.0f;
-        const auto*          base        = static_cast<const std::uint8_t*>(controllers[i]);
+        const auto*          base        = static_cast<const std::uint8_t*>(controller);
         const bool           read = base != nullptr && Read(base + facts::kControllerControlRotation, rotation) && Read(base + kCameraSensitivity, sensitivity);
         platform::Log(L"player {}: input calls {}, move calls {}, own operator ticks {}, camera updates in scope {}; control rotation {}; camera sensitivity {}",
                       i + 1, g_counts[i].input, g_counts[i].move, g_counts[i].operatorTick, g_counts[i].cameraUpdate,

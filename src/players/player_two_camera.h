@@ -2,22 +2,26 @@
 
 #include <cstdint>
 
-// Player 2's own field camera: a second AEndFieldCameraOperator, driven by the game's own code.
+// Each seat's own field camera: a further AEndFieldCameraOperator per seat, driven by the game's own code.
 //
 // The game has one field camera operator (a world actor, g_EndGameRoot+0x9B0) that follows the party leader
 // and writes the primary camera manager's pose slot 24 each tick; PartyManager+0 names the primary controller.
-// Player 2's camera is the same operator class, spawned with the game's own spawn call and parameters, and run
+// A seat's camera is the same operator class, spawned with the game's own spawn call and parameters, and run
 // with two globals swapped for the length of each of its calls (Remake/Documentation/research/RE-camera.md
 // §9.6, RE-impl-facts-v0.2.md):
-//   - PartyManager+0 = player 2's controller, so the operator reads player 2's control rotation and writes
-//     player 2's camera manager;
-//   - the root's operator weak pair = player 2's operator, so the game's own "the operator" lookups inside
-//     those calls find player 2's.
-// The same two swaps hold around player 2's ProcessPlayerInput, where the right stick reaches "the operator".
+//   - PartyManager+0 = the seat's controller, so the operator reads that controller's control rotation and
+//     writes that player's camera manager;
+//   - the root's operator weak pair = the seat's operator, so the game's own "the operator" lookups inside
+//     those calls find it.
+// The same two swaps hold around the seat's ProcessPlayerInput, where the right stick reaches "the operator".
 // Each player's stick calls see only that player's pad: the input object merges every pad into one value
 // per frame, so for the length of a controller's input and movement calls the merged value is replaced by
-// that player's pad record, and put back after (pad 1 = XInput user 0, pad 2 = user 1).
-// All of this runs on the game thread.
+// that player's pad record, and put back after (pad 1 = XInput user 0, a seat's pad = user `seat`).
+// The slot replacements find the seat from the object they are handed (its controller, operator or camera
+// manager), so one set of replacements serves every seat. All of this runs on the game thread.
+// Seats: players/seats.h (one wired today, player 2); the battle modules this one calls around a tick
+// (lock camera, sequence cameras, targeting, the override route) are one instance each until their own step
+// of plan/seats.md.
 
 namespace lss::platform {
 class GameImage;
@@ -37,15 +41,15 @@ void* ObjectOf(const std::int32_t (&pair)[2]) noexcept;
 /// (logged) if anything differs.
 bool Install(const platform::GameImage& image) noexcept;
 
-/// Game thread, once player 2's controller holds `member`: spawns player 2's operator and points it at the
+/// Game thread, once the seat's controller holds `member`: spawns the seat's operator and points it at the
 /// member. False (logged) if the field has no operator or the spawn failed.
-bool Start(void* playerOneController, void* playerTwoController, void* member) noexcept;
+bool Start(int seat, void* playerOneController, void* seatController, void* member) noexcept;
 
-/// Game thread, before player 2's controller is removed: forgets player 2's operator and returns it (or
+/// Game thread, before the seat's controller is removed: forgets the seat's operator and returns it (or
 /// null if it is gone) for the caller to destroy.
-void* Take() noexcept;
+void* Take(int seat) noexcept;
 
-/// Game thread, every engine tick: keeps the game's world-tick phase hook wrapped, so that player 2's
+/// Game thread, every engine tick: keeps the game's world-tick phase hook wrapped, so that each seat's
 /// controller gets the game's input step right after player 1's (the game ticks only the primary controller's
 /// input; RE-input-p2.md §1). The game sets that hook pointer at runtime, hence the per-tick check.
 void MaintainInputTick() noexcept;
@@ -53,19 +57,21 @@ void MaintainInputTick() noexcept;
 void RemoveInputTick() noexcept;
 
 /// Test input (control scripts): while held, `user`'s stick record reads these values (LX, LY, RX, RY,
-/// -1..1) inside that player's stick scopes, in place of the pad. Only acts while player 2 is in. Game thread.
+/// -1..1) inside that player's stick scopes, in place of the pad. Only acts while that seat is in. Game thread.
 void HoldStick(unsigned user, const float (&axes)[4]) noexcept;
 void ReleaseStick(unsigned user) noexcept;
 
 /// Logs how often each player's input, movement and camera calls ran since the last report. Game thread.
 void LogCounts() noexcept;
 
-/// 2 while player 2's operator's Tick runs (inside its scopes), else 0.
+/// The player number (2 for seat 1) whose own operator's Tick runs now (inside its scopes), else 0.
 int OperatorTicking() noexcept;
 
-/// Player 1's field camera operator (the field root's), and player 2's own; null when none.
+/// Player 1's field camera operator (the field root's), and a seat's own; null when none.
 void* OperatorOne() noexcept;
-void* OperatorTwo() noexcept;
+void* Operator(int seat) noexcept;
+/// Seat 1's operator (the callers of one instance, plan/seats.md step 3).
+inline void* OperatorTwo() noexcept { return Operator(1); }
 
 /// The merged stick replaced by one pad's record for its lifetime (`user` = XInput user: 0 pad 1, 1 pad 2; a pad not
 /// connected reads still). `clearKeys` also clears the key-driven stick (the keyboard is player 1's). The game

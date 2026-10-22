@@ -52,8 +52,6 @@ using RC::Unreal::UFunction;
 using RC::Unreal::UObject;
 namespace UObjectGlobals = RC::Unreal::UObjectGlobals;
 
-static_assert(kSeatsBuilt >= 1 && kSeatsBuilt < scopes::kMaxPlayers, "the seats are numbered within the scopes' players");
-
 /// The field is back after a world change (RE-lifecycle-world.md §8): play state, the steady step, running. The
 /// entry's step 12 re-reconciles every non-leader controller, so a join before step 13 would be undone.
 constexpr std::uint8_t kStatePlay  = 6;
@@ -67,9 +65,6 @@ constexpr int                  kRejoinFailures = 3;
 /// checked under a held member every this many ticks (cheap guarded reads).
 constexpr std::uint32_t kSeatRetryTicks  = 60;
 constexpr std::uint32_t kFollowSlotTicks = 10;
-
-/// "player N" by seat (seat 0 would be player 1); the lines of a seat name it so three players read apart.
-constexpr const wchar_t* kSeatNames[scopes::kMaxPlayers] = {L"player 1", L"player 2", L"player 3", L"player 4"};
 
 UObject* Field(const void* object, std::uint32_t offset) noexcept
 {
@@ -130,7 +125,7 @@ catch (...)
 
 const wchar_t* Session::Seat::Name() const noexcept
 {
-    return index >= 0 && index < scopes::kMaxPlayers ? kSeatNames[index] : L"a player";
+    return SeatName(index);
 }
 
 Session::Session() noexcept
@@ -461,7 +456,7 @@ void Session::Forget(Seat& seat) noexcept
     pad_buttons::SetPlayers(1 + Count());
     if (cameraInstalled_)
     {
-        player_two_camera::Take();  // forgotten, not destroyed: it belonged to the old world (one operator today)
+        player_two_camera::Take(seat.index);  // forgotten, not destroyed: it belonged to the old world
     }
     if (seatInstalled_)
     {
@@ -720,7 +715,7 @@ try
     platform::Log(L"{} plays member type {} (row {} of the party order){}", seat.Name(), choice.type, choice.ordinal,
                   seat.waitLogged == 0 ? L"" : std::format(L", {} ticks after it began to wait for one", ticks_ - seat.awaitSince));
     seat.waitLogged = 0;
-    if (cameraInstalled_ && !player_two_camera::Start(playerOne, seatController, choice.member))
+    if (cameraInstalled_ && !player_two_camera::Start(seat.index, playerOne, seatController, choice.member))
     {
         platform::Log(L"{} keeps a still camera; each player's sticks are still their own pad's", seat.Name());
     }
@@ -736,7 +731,7 @@ catch (...)
 
 void Session::DestroyOperator(Seat& seat) noexcept
 {
-    UObject*   operatorSeat = cameraInstalled_ ? static_cast<UObject*>(player_two_camera::Take()) : nullptr;  // one operator today
+    UObject*   operatorSeat = cameraInstalled_ ? static_cast<UObject*>(player_two_camera::Take(seat.index)) : nullptr;
     const bool operatorGone = operatorSeat != nullptr && CallNoParams(operatorSeat, STR("/Script/Engine.Actor:K2_DestroyActor"));
     platform::Log(L"{}'s camera operator {}", seat.Name(), operatorSeat == nullptr ? L"was not running" : operatorGone ? L"destroyed" : L"NOT DESTROYED");
 }
