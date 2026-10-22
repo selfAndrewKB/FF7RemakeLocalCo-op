@@ -1371,4 +1371,56 @@ inline constexpr std::int32_t   kSaveDataStateActive  = 7;
 inline constexpr std::uint32_t  kSaveDataEnvSetName   = 0x480AC;  // from the active data
 inline constexpr std::uint32_t  kSaveDataEnvSetNameBytes = 0x80;
 
+// --- The game window, the resolution and the Borderless letterbox (research/RE-multi-monitor-views.md, reviewed by
+// hand 2026-10-21 §13; RE-view-size-fov.md §7.2) ----------------------------------------------------------------
+inline constexpr std::uintptr_t kGEngine                   = 0x145831188;  // UEngine* GEngine
+inline constexpr std::uint32_t  kGameEngineViewportWindow  = 0x1078;       // UGameEngine::GameViewportWindow (TWeakPtr<SWindow>: object; referencer +0x1080)
+inline constexpr std::uint32_t  kSWindowNativeWindow       = 0x6B8;        // SWindow::NativeWindow (TSharedPtr<FGenericWindow>: object)
+inline constexpr std::uint32_t  kEngineGameViewport        = 0x980;        // UEngine::GameViewport (UGameViewportClient*)
+inline constexpr std::uint32_t  kViewportClientViewport    = 0xA0;         // UGameViewportClient::Viewport (FViewport*)
+inline constexpr std::uint32_t  kViewportSizeX             = 0xB8;         // FViewport::SizeX; SizeY +0xBC
+/// FWindowsWindow's vtable (30 slots; stock 4.18 order, confirmed slot by slot). Written only by FWindowsWindow_Make.
+inline constexpr std::uintptr_t kWindowsWindowVTable            = 0x144D26828;
+inline constexpr std::size_t    kWindowsWindowSlotReshapeWindow = 1;
+inline constexpr std::size_t    kWindowsWindowSlotSetWindowMode = 12;
+inline constexpr std::size_t    kWindowsWindowSlotGetWindowMode = 13;
+inline constexpr std::size_t    kWindowsWindowSlotGetOSWindowHandle = 24;
+/// FWindowsWindow::ReshapeWindow(X, Y, W, H): GetWindowInfo, the OS border added when the definition has one,
+/// SetWindowPos; no clamp to a monitor (bytes 15-16 start a rel32, so 14 are checked).
+inline constexpr std::array<std::uint8_t, 14> kWindowsWindowReshapeWindowEntry{
+    0x4C, 0x8B, 0xDC, 0x53, 0x48, 0x81, 0xEC, 0xD0, 0x00, 0x00, 0x00, 0x48, 0x8B, 0x05};
+inline constexpr platform::FunctionFact kWindowsWindowReshapeWindow{L"FWindowsWindow::ReshapeWindow", 0x141D2DD90,
+                                                                    kWindowsWindowReshapeWindowEntry};
+/// FWindowsWindow::GetWindowMode: `mov eax, [rcx+38h]; ret` (a shared body).
+inline constexpr std::array<std::uint8_t, 4> kWindowsWindowGetWindowModeEntry{0x8B, 0x41, 0x38, 0xC3};
+inline constexpr platform::FunctionFact      kWindowsWindowGetWindowMode{L"FWindowsWindow::GetWindowMode", 0x14088C540,
+                                                                         kWindowsWindowGetWindowModeEntry};
+/// FWindowsWindow::GetOSWindowHandle: `mov rax, [rcx+28h]; ret` (COMDAT-folded with a CRT accessor).
+inline constexpr std::array<std::uint8_t, 5> kWindowsWindowGetOSWindowHandleEntry{0x48, 0x8B, 0x41, 0x28, 0xC3};
+inline constexpr platform::FunctionFact      kWindowsWindowGetOSWindowHandle{L"FWindowsWindow::GetOSWindowHandle", 0x141C148A0,
+                                                                             kWindowsWindowGetOSWindowHandleEntry};
+/// UKismetSystemLibrary::execSetWindowTitle: the witness of the chain (reads +0x1078/+0x1080 and calls SWindow::SetTitle).
+inline constexpr std::array<std::uint8_t, 16> kSetWindowTitleExecEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x6C, 0x24, 0x10, 0x48, 0x89, 0x74, 0x24, 0x18, 0x57};
+inline constexpr platform::FunctionFact kSetWindowTitleExec{L"UKismetSystemLibrary::execSetWindowTitle", 0x1435C3AF0,
+                                                            kSetWindowTitleExecEntry};
+/// FSystemResolution::RequestResolutionChange(W, H, EWindowMode): formats "WxH{f|wf|w}" into r.SetRes at console
+/// priority; the engine applies it on its next frame (UpdateSystemResolution -> ResizeFrame). Writes nothing to disk.
+inline constexpr std::array<std::uint8_t, 16> kRequestResolutionChangeEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x74, 0x24, 0x10, 0x48, 0x89, 0x7C, 0x24, 0x18, 0x4C};
+inline constexpr platform::FunctionFact kRequestResolutionChange{L"FSystemResolution::RequestResolutionChange", 0x143326EB0,
+                                                                 kRequestResolutionChangeEntry};
+/// GSystemResolution: ResX, ResY +4, WindowMode +8 (0 Fullscreen, 1 WindowedFullscreen = the game's Borderless and
+/// Fullscreen options, 2 Windowed). One writer: FSystemResolution::UpdateSystemResolution.
+inline constexpr std::uintptr_t kSystemResolution           = 0x1453E3AE0;
+inline constexpr std::uint32_t  kSystemResolutionWindowMode = 0x8;
+/// The 321 copies of `cmp dword [GSystemResolution.WindowMode], 1` (83 3D rel32 01): the final tonemap pass's own
+/// and one in each of its 320 pixel-shader setter permutations, each followed by a jnz over the single-view fit.
+inline constexpr std::uintptr_t kLetterboxFirstCompare = 0x14228BF96;
+inline constexpr std::uintptr_t kLetterboxLastCompare  = 0x14251767C;
+inline constexpr std::size_t    kLetterboxCompares     = 321;
+/// UGameMapsSettings (reflection dump EngineSettings.hpp): TwoPlayerSplitscreenLayout, 0 Horizontal (top and
+/// bottom), 1 Vertical (side by side); read by UGameViewportClient::UpdateActiveSplitscreenType every layout pass.
+inline constexpr std::uint32_t kGameMapsTwoPlayerLayout = 0x69;
+
 }  // namespace lss::facts

@@ -83,6 +83,9 @@ add_library(LocalSplitScreen SHARED
     src/render/ao_origin.cpp
     src/render/bloom_origin.cpp
     src/render/distortion_apply.cpp
+    src/views/letterbox_patch.cpp
+    src/views/monitor_row.cpp
+    src/views/window_span.cpp
     src/world/anim_two_views.cpp
     src/world/env_sets_two.cpp
     src/world/npc_crowd.cpp
@@ -239,6 +242,14 @@ add_executable(CoinChoiceTests
 target_include_directories(CoinChoiceTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_compile_features(CoinChoiceTests PRIVATE cxx_std_20)
 add_test(NAME coin_choice COMMAND CoinChoiceTests)
+
+add_executable(MonitorRowTests
+    tests/monitor_row_test.cpp
+    src/views/monitor_row.cpp
+)
+target_include_directories(MonitorRowTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(MonitorRowTests PRIVATE cxx_std_20)
+add_test(NAME monitor_row COMMAND MonitorRowTests)
 
 add_executable(TypeAnswerCodeTests
     tests/type_answer_code_test.cpp

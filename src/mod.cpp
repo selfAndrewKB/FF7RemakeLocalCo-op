@@ -53,6 +53,8 @@
 #include "render/ao_origin.h"
 #include "render/bloom_origin.h"
 #include "render/distortion_apply.h"
+#include "views/letterbox_patch.h"
+#include "views/window_span.h"
 #include "world/anim_two_views.h"
 #include "world/env_sets_two.h"
 #include "world/npc_crowd.h"
@@ -73,7 +75,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.36.0-enemy-coin";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.37.0-monitor-span";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
@@ -219,6 +221,8 @@ public:
             Hook::UnregisterCallback(tickCallback_);
         }
         remote_.Close();
+        lss::views::window_span::Leave(L"the mod unloads");
+        lss::views::letterbox_patch::Restore();
         lss::hud::hud_probe::Remove();
         lss::hud::root_placement::Remove();
         lss::hud::overlay_layout::Remove();
@@ -272,6 +276,9 @@ public:
         {
             lss::players::split_render::SetMask(lss::facts::kSplitDisabledFlags, false);
         }
+        // Optional: without them split in Borderless keeps the game's letterbox, and the window stays on one monitor.
+        lss::views::letterbox_patch::Install(*image);
+        lss::views::window_span::Install(*image);
         lss::players::pad_buttons::Install(*image);  // optional: without it every pad presses player 1's buttons
         lss::players::pad_presence::Register();      // diagnostics: which XInput users have a pad
         lss::players::lead_gate::Install(*image);    // optional: without it a LEAD on player 2's member stays the player's
@@ -309,7 +316,7 @@ public:
         const Hook::FCallbackOptions options{false, false, STR("LocalSplitScreen"), STR("player intent")};
         tickCallback_ = Hook::RegisterEngineTickPreCallback(
             [this](Hook::TCallbackIterationData<void>&, RC::Unreal::UEngine*, float, bool) { OnEngineTick(); }, options);
-        Log(L"ready: every engine check passed. Ctrl+F7 adds player 2 (it takes the 2nd party slot's member), Ctrl+F8 removes player 2, Ctrl+F6 reports");
+        Log(L"ready: every engine check passed. Ctrl+F7 adds player 2 (it takes the 2nd party slot's member), Ctrl+F8 removes player 2, Ctrl+F6 reports, Ctrl+F2 toggles the window span");
     }
 
 private:
@@ -327,10 +334,16 @@ private:
         {
             session_.Status();
         }
+        if (Pressed(VK_F2, spanWasDown_))
+        {
+            lss::views::window_span::Toggle();
+        }
         lss::players::player_two_camera::MaintainInputTick();
         lss::players::game_state::Tick();  // first: the session and the console read this tick's values
         lss::players::pad_presence::Tick();
         session_.Tick();
+        lss::views::letterbox_patch::Tick(session_.HasPlayerTwo());
+        lss::views::window_span::Tick(session_.HasPlayerTwo());
         lss::battle::command_menu_two::Tick(session_.Seated());
         lss::battle::command_menu_tick::Tick();
         lss::battle::party_switch::Tick();
@@ -418,6 +431,7 @@ private:
     bool                  joinWasDown_   = false;
     bool                  leaveWasDown_  = false;
     bool                  reportWasDown_ = false;
+    bool                  spanWasDown_   = false;
     Hook::GlobalCallbackId tickCallback_ = Hook::ERROR_ID;
 };
 

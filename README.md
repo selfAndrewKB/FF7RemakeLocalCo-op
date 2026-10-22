@@ -124,6 +124,11 @@ src/
     env_sets_two          player 2's view hides what the area hides under player 2 (the game's area trace and read
                           run again for player 2; the engine's per-player hidden list); the world stays player 1's
     env_set_view.h        player 2's set kept and paced, the list edit (pure, host-tested)
+  views/
+    window_span           the game window across a row of equal monitors, one full view per player: the game's own
+                          resolution request for the row, then the engine's window reshape; held, put back at the leave
+    monitor_row.h         which monitors a spanned window may cover (pure, host-tested; from Rebirth, any row)
+    letterbox_patch       the Borderless single-view letterbox off while two views exist (321 one-byte immediates)
   battle/ (the coin)
     enemy_coin            enemies share their attention between the humans: a coin per enemy decision at the game's
                           own decision gate, the script natives answered from it, both humans "the player" for the
