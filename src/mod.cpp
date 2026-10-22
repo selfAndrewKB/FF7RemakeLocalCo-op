@@ -55,6 +55,7 @@
 #include "render/distortion_apply.h"
 #include "views/letterbox_patch.h"
 #include "views/display_align.h"
+#include "views/scene_camera_two.h"
 #include "views/window_span.h"
 #include "world/anim_two_views.h"
 #include "world/env_sets_two.h"
@@ -76,7 +77,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.38.2-view-rect-override";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.40.0-scene-camera-two";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
@@ -224,6 +225,7 @@ public:
         remote_.Close();
         lss::views::window_span::Leave(L"the mod unloads");
         lss::views::display_align::Restore();  // the leave's ticks never come: the monitors go back now
+        lss::views::scene_camera_two::Remove();
         lss::views::letterbox_patch::Restore();
         lss::hud::hud_probe::Remove();
         lss::hud::root_placement::Remove();
@@ -281,6 +283,7 @@ public:
         // Optional: without them split in Borderless keeps the game's letterbox, and the window stays on one monitor.
         lss::views::letterbox_patch::Install(*image);
         lss::views::window_span::Install(*image);
+        lss::views::scene_camera_two::Install(*image);  // readings only; fine without
         lss::players::pad_buttons::Install(*image);  // optional: without it every pad presses player 1's buttons
         lss::players::pad_presence::Register();      // diagnostics: which XInput users have a pad
         lss::players::lead_gate::Install(*image);    // optional: without it a LEAD on player 2's member stays the player's
@@ -346,6 +349,7 @@ private:
         session_.Tick();
         lss::views::letterbox_patch::Tick(session_.HasPlayerTwo());
         lss::views::window_span::Tick(session_.HasPlayerTwo());
+        lss::views::scene_camera_two::Tick(CameraManagerOf(0), session_.HasPlayerTwo() ? CameraManagerOf(1) : nullptr);
         lss::battle::command_menu_two::Tick(session_.Seated());
         lss::battle::command_menu_tick::Tick();
         lss::battle::party_switch::Tick();

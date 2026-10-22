@@ -131,6 +131,9 @@ src/
                           from Rebirth, any row, tops within 32 px)
     display_align         a row monitor moved to the row's top for the Windows session (the display-configuration
                           API, nothing saved), put back at the leave
+    scene_camera_two      a cutscene, talk or event camera on player 2's view too: player 1's manager's scene slots
+                          set on player 2's manager with the game's own setters while the scene holds the players
+                          (its blends seeded from player 2's own field camera, its cut and end reset repeated)
     letterbox_patch       the Borderless single-view letterbox off while two views exist (321 one-byte immediates)
   battle/ (the coin)
     enemy_coin            enemies share their attention between the humans: a coin per enemy decision at the game's

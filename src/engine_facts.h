@@ -1434,4 +1434,59 @@ inline constexpr std::size_t    kViewRectOverrideImmediate = 8;  // the cmp's im
 /// bottom), 1 Vertical (side by side); read by UGameViewportClient::UpdateActiveSplitscreenType every layout pass.
 inline constexpr std::uint32_t kGameMapsTwoPlayerLayout = 0x69;
 
+// --- The camera manager's pose slots and the scene signals (research/RE-camera.md §2.2-2.4, RE-lifecycle-world.md) --
+/// AEndPlayerCameraManager keeps 25 pose slots (48 bytes each) inline at +0x1E48 (its own SetCameraSlot 0x141687EB0
+/// reads them there); each frame the lowest active slot wins (24 = the field camera, always on). The field camera
+/// writes 24, a cutscene starts in 6 and ends through 3/5/7 reading 8/14/18, events use 16-18, minigames 20.
+inline constexpr std::uint32_t kCameraManagerSlots        = 0x1E48;
+inline constexpr std::uint32_t kCameraSlotBytes           = 48;
+inline constexpr std::uint32_t kCameraSlotCount           = 25;
+inline constexpr std::uint32_t kCameraSlotFov             = 0x24;  // float
+inline constexpr std::uint32_t kCameraSlotActive          = 0x2C;  // byte
+inline constexpr std::uint32_t kCameraSlotBlendRecords    = 0x2308;  // 25 blend records, 60 bytes each (kind, ms, rates, interps)
+inline constexpr std::uint32_t kCameraSlotBlendBytes      = 60;
+inline constexpr std::uint32_t kCameraManagerCurrentSlot  = 0x29E8;  // byte: the slot shown (UpdateCamera 0x1416871B4)
+/// AEndPlayerCameraManager::SetCameraSlot(this, u8 slot, const FEndCameraSlot*): the 48-byte copy into the inline table.
+inline constexpr std::array<std::uint8_t, 16> kCameraManagerSetSlotEntry{
+    0x80, 0xFA, 0x19, 0x73, 0x44, 0x41, 0x0F, 0x10, 0x00, 0x48, 0x8D, 0x81, 0x48, 0x1E, 0x00, 0x00};
+inline constexpr platform::FunctionFact kCameraManagerSetSlot{L"AEndPlayerCameraManager::SetCameraSlot", 0x141687EB0,
+                                                              kCameraManagerSetSlotEntry};
+/// PrimaryPCM_SetCameraSlotBlend(u8 slot, const record*): the 60-byte record into the primary manager's table (the
+/// manager the primary controller names: player 2's inside its primary scope); slots 13/16 also refresh +0x2A2D.
+inline constexpr std::array<std::uint8_t, 16> kPrimarySetSlotBlendEntry{
+    0x48, 0x89, 0x6C, 0x24, 0x10, 0x48, 0x89, 0x74, 0x24, 0x18, 0x57, 0x48, 0x83, 0xEC, 0x20, 0x48};
+inline constexpr platform::FunctionFact kPrimarySetSlotBlend{L"PrimaryPCM_SetCameraSlotBlend", 0x141696990,
+                                                             kPrimarySetSlotBlendEntry};
+/// AEndPlayerCameraManager::ResetSlotsToField24(this): every active byte cleared, slot 24 on, the view target its own
+/// main camera. The cutscene's end (EV/MV) calls it on the primary controller's manager at 0x140ADFBE9 (E8 rel32).
+inline constexpr std::array<std::uint8_t, 16> kCameraManagerResetSlotsEntry{
+    0x48, 0x83, 0xEC, 0x38, 0x4C, 0x8B, 0x81, 0xF8, 0x22, 0x00, 0x00, 0x4C, 0x8D, 0x99, 0x48, 0x1E};
+inline constexpr platform::FunctionFact kCameraManagerResetSlots{L"AEndPlayerCameraManager::ResetSlotsToField24", 0x141687E00,
+                                                                 kCameraManagerResetSlotsEntry};
+inline constexpr std::uintptr_t kCutsceneEndResetCall = 0x140ADFBE9;  // E8 12 82 BA 00 in CutsceneInstance_End_ResetCharaPopOverride
+inline constexpr std::uint32_t kCameraManagerBlendRunning = 0x29F9;  // byte (0x1416873BF)
+inline constexpr std::uint32_t kCameraManagerPendingCut   = 0x2A38;  // byte (0x141687192)
+/// ACameraActor (stock 4.18): CameraComponent +0x380; UCameraComponent: FieldOfView +0x2B0, AspectRatio +0x2C0,
+/// bConstrainAspectRatio = bit 0 of +0x2C4 (ACameraActor::Ctor 0x142DC66F3).
+inline constexpr std::uint32_t kCameraActorComponent      = 0x380;
+inline constexpr std::uint32_t kCameraComponentFov        = 0x2B0;
+inline constexpr std::uint32_t kCameraComponentAspect     = 0x2C0;
+inline constexpr std::uint32_t kCameraComponentFlags      = 0x2C4;
+/// The cutscene manager (one native object, allocated on first use; the global holds its pointer): "a cutscene is
+/// playing" = EndCutsceneMgr_IsPlaying_ByNameOrAny(mgr, 0) (the reflected UEndCutAPI::IsPlaying); the skip byte
+/// at +0x410 fast-forwards the scene under a black fade.
+inline constexpr std::uintptr_t kCutsceneManagerGlobal = 0x1457E9758;
+inline constexpr std::uint32_t  kCutsceneSkip          = 0x410;
+inline constexpr std::array<std::uint8_t, 16> kCutsceneIsPlayingEntry{
+    0x40, 0x55, 0x53, 0x48, 0x8D, 0x6C, 0x24, 0xB1, 0x48, 0x81, 0xEC, 0x98, 0x00, 0x00, 0x00, 0x48};
+inline constexpr platform::FunctionFact kCutsceneIsPlaying{L"EndCutsceneMgr_IsPlaying_ByNameOrAny", 0x140A99610,
+                                                           kCutsceneIsPlayingEntry};
+/// The state manager (ROOT+0x138) holds the field control lock mask (the game's own IsEnableFieldControler reads it
+/// with the counter) and the on/off table (one dword counter per id: 12 ShowSkipPauseMenu = a skippable scene,
+/// 39/40/53 a held black screen, 41 the loading screen). kRootStateManager (0x138) is above.
+inline constexpr std::uint32_t kFieldControlLockMask    = 0x11062B0;  // dword
+inline constexpr std::uint32_t kFieldControlLockCounter = 0x1109C88;  // dword
+inline constexpr std::uint32_t kOnOffTable              = 0x11063B4;  // dword per id, 92 ids
+inline constexpr std::uint32_t kOnOffCount              = 92;
+
 }  // namespace lss::facts

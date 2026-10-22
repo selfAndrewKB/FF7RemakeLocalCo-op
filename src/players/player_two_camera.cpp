@@ -11,6 +11,7 @@
 #include "players/operator_battle_mode.h"
 #include "players/pad_buttons.h"
 #include "players/scopes.h"
+#include "views/scene_camera_two.h"
 #include "battle/lock_camera_two.h"
 #include "battle/sequence_camera_two.h"
 #include "battle/targeting_two.h"
@@ -378,12 +379,19 @@ void UpdateCamera(void* self, float deltaSeconds)
     if (players.two == nullptr ||
         !Read(static_cast<std::uint8_t*>(players.two) + facts::kControllerCameraManager, managerTwo) || self != managerTwo)
     {
+        if (players.two != nullptr && self == platform::ReadPointer(players.one, facts::kControllerCameraManager))
+        {
+            views::scene_camera_two::BeforeUpdateCamera(self, nullptr);  // player 1's: its camera cut noted for this frame
+        }
         g_cameraUpdate(self, deltaSeconds);
         return;
     }
     ++g_counts[1].cameraUpdate;
     const PrimaryScope  primary(players.two);
     const scopes::Scope leader(1, scopes::Leader);
+    // A scene's camera (slots player 1's manager was given this frame) onto player 2's, with the game's own setters,
+    // inside the scope so the primary-scoped ones reach player 2's manager.
+    views::scene_camera_two::BeforeUpdateCamera(platform::ReadPointer(players.one, facts::kControllerCameraManager), self);
     g_cameraUpdate(self, deltaSeconds);
 }
 
