@@ -276,6 +276,19 @@ Monitors Collect(HWND game) noexcept
     return monitors;
 }
 
+/// Every monitor as read: device, rect, DPI, the game's marked.
+std::wstring DesktopText(const Monitors& monitors)
+{
+    std::wstring text;
+    for (std::size_t i = 0; i < monitors.list.size(); ++i)
+    {
+        const auto& m = monitors.list[i];
+        text += std::format(L"{}{} {} {} dpi{}", i ? L", " : L"", monitors.devices[i], RectText(m.rect), 
+                            i == monitors.gameAt ? L"(the game's)" : L"", m.dpi);
+    }
+    return text;
+}
+
 /// The choice's moves as the display API takes them: each monitor by the device name its rect was listed with.
 std::vector<display_align::Move> MovesFor(const monitor_row::Choice& choice, const Monitors& monitors)
 {
@@ -577,8 +590,9 @@ bool Enter(std::int32_t columns) noexcept
         }
         g_step      = Step::LiningUp;
         g_stepTicks = 0;
-        platform::Log(L"window span: lining up the row ({}); the entry follows once the desktop reads as the row",
-                      display_align::Reading());
+        platform::Log(L"window span: lining up the row ({}); the entry follows once the desktop reads as the row; the "
+                      L"desktop before: {}",
+                      display_align::Reading(), DesktopText(monitors));
         return true;
     }
     return Proceed(*window, choice);
@@ -680,9 +694,9 @@ void Tick(bool playerTwoIn) noexcept
             else if (g_stepTicks > kLineUpTicks)
             {
                 platform::LogWarning(L"window span: after the line-up the desktop still does not read as the row ({}) after "
-                                     L"{} ticks; the monitors are put back",
+                                     L"{} ticks; the monitors are put back; the desktop now: {}",
                                      choice.ok ? std::format(L"{} move(s) still listed", choice.moves.size()) : choice.why,
-                                     g_stepTicks);
+                                     g_stepTicks, DesktopText(monitors));
                 display_align::Restore();
                 Forget();
             }
