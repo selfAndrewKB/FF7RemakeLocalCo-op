@@ -62,6 +62,7 @@ struct Choice
     std::uint8_t type    = 9;   // the row's player type (facts::kPlayerTypeNone with no row)
     std::int32_t ordinal = -1;  // its ordinal in the formation
     Wait         wait    = Wait::NoSlot;
+    std::uint32_t formation = 0;  // the formation as read: types[0] | types[1] << 8 | types[2] << 16 | field leader << 24; 0 unread
 };
 
 /// The member seat `seat` plays now, or why it waits. `taker` is that seat's controller (a member it already

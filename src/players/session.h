@@ -121,6 +121,7 @@ private:
     void LeaveToAwait(const wchar_t* why) noexcept;
     /// The wait for a member, logged once per reason (the row, its type, the reason).
     void LogWait(const party_member::Choice& choice, const wchar_t* who) noexcept;
+    void LogFormation(const party_member::Choice& choice) noexcept;  // at Debug, once per formation change under the wait
     /// Player 2 is gone by the engine's hand: the mod's own records of it are dropped, nothing is touched.
     void Forget() noexcept;
     /// Player 2 takes its slot's member if it is free now. False with the wait in `choice`.
@@ -166,6 +167,7 @@ private:
     std::uint32_t        waitLogged_        = 0;        // the wait last logged (type, reason, ordinal), 0 none
     std::uint32_t        seatRetryAt_       = 0;        // the tick a refused seat is tried again
     std::uint32_t        awaitSince_        = 0;        // the tick the wait for a member began (0 none): the wait's length in the join line
+    std::uint32_t        formationLogged_   = 0;        // the formation last logged under the wait (party_member::Choice::formation), 0 none
     std::uint32_t        ticks_             = 0;
 };
 

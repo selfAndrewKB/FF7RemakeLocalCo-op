@@ -173,6 +173,8 @@ Choice Choose(int seat, void* playerOneController, void* taker, bool log) noexce
         choice.wait = Wait::Unread;
         return choice;
     }
+    choice.formation = static_cast<std::uint32_t>(party.types[0]) | static_cast<std::uint32_t>(party.types[1]) << 8 |
+                       static_cast<std::uint32_t>(party.types[2]) << 16 | static_cast<std::uint32_t>(party.fieldLeader) << 24;
     // The rows after the field leader's, in the formation's order, wrapping; the seat-th one not player 1's and not
     // a battle-support member is this seat's. Temporary states are waited on, never stepped over.
     const std::int32_t anchor = Anchor(party);

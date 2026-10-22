@@ -307,6 +307,7 @@ try
             return;  // the seat funnel refused the member last time; not tried again before its retry tick
         }
         const party_member::Choice choice = party_member::Choose(kSeat, Field((*players)[0], facts::kLocalPlayerController), nullptr, false);
+        LogFormation(choice);
         if (choice.member == nullptr)
         {
             LogWait(choice, L"player 2 joins once its member is free");
@@ -386,6 +387,20 @@ void Session::LogWait(const party_member::Choice& choice, const wchar_t* who) no
     }
 }
 
+void Session::LogFormation(const party_member::Choice& choice) noexcept
+{
+    // The wait's own line names only the seat's row and its reason, so a formation that changes without changing
+    // them (Barret entering the party order, the game's leader moving) was invisible in the 2026-10-22 10:30 log.
+    if (choice.formation == 0 || choice.formation == formationLogged_)
+    {
+        return;
+    }
+    formationLogged_ = choice.formation;
+    platform::LogDebug(L"party member: the formation under the wait reads types {} {} {}, field leader type {} (seat {}'s row: ordinal {} type {}: {})",
+                       choice.formation & 0xFF, (choice.formation >> 8) & 0xFF, (choice.formation >> 16) & 0xFF,
+                       choice.formation >> 24, kSeat, choice.ordinal, choice.type, party_member::Describe(choice.wait));
+}
+
 void Session::Forget() noexcept
 {
     playerTwo_ = nullptr;
@@ -405,6 +420,7 @@ void Session::Forget() noexcept
     memberWeak_[0] = -1;
     memberWeak_[1] = 0;
     waitLogged_    = 0;
+    formationLogged_ = 0;
     handedToAi_    = false;
     holdHand_      = false;
     hold_          = party_member::Wait::None;
