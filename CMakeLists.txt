@@ -85,6 +85,7 @@ add_library(LocalSplitScreen SHARED
     src/render/ao_origin.cpp
     src/render/bloom_origin.cpp
     src/render/distortion_apply.cpp
+    src/render/movie_frame.cpp
     src/views/letterbox_patch.cpp
     src/views/display_align.cpp
     src/views/mirror_player.cpp

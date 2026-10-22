@@ -7,6 +7,7 @@
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
+#include "render/movie_frame.h"
 
 #include <atomic>
 #include <cstdint>
@@ -159,7 +160,11 @@ void PostProcess(void* postProcessing, void* commandList, void* view, void* velo
     {
         platform::Log(L"HUD targets: post-process view {} (player {}) samples {}", view, player + 1, Member());
     }
+    // The movie frame's release at the end of this call runs only for the family's last view (render/movie_frame.h);
+    // a view the UI loop did not list releases as the game does.
+    render::movie_frame::BeginView(player < 0 || g_render.views[1] == nullptr || view == g_render.views[1]);
     reinterpret_cast<PostProcessFn>(g_postCall.Original())(postProcessing, commandList, view, velocity);
+    render::movie_frame::EndView();
     if (player >= 0 && ++g_render.composited >= (g_render.views[1] != nullptr ? 2 : 1))
     {
         ReleaseHeld();  // the member keeps its own reference, which the game releases at the next Render start

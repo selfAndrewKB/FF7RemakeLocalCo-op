@@ -394,6 +394,17 @@ inline constexpr std::uintptr_t kPostProcessCall         = 0x1421E8400;  // Rend
 inline constexpr std::uintptr_t kPostProcessProcess      = 0x14251C230;  // (this, RHICmdList, View, VelocityRT&)
 inline constexpr std::uintptr_t kSceneRenderTargetsGlobal = 0x145923AD0; // FSceneRenderTargets (static object)
 inline constexpr std::uint32_t  kSceneTargetsInGameUI    = 0x110;        // TRefCountPtr<IPooledRenderTarget>
+/// The movie frame for every view (research/RE-movie-view.md §2.5, reviewed in IDA 2026-10-22): FPostProcessing::Process
+/// ends with an unconditional release of the composite source FSceneRenderTargets+0x120 (the media texture's frame,
+/// set once per frame; its only code caller), so the second view's final pass binds the black fallback. The call is
+/// redirected (rcx = &FSceneRenderTargets) and deferred to the family's last view, the game's own guard for its other
+/// per-family target at 0x14251DCCE.
+inline constexpr std::uintptr_t kCompositeReleaseCall    = 0x14251E168;  // E8 43 A5 FF FF, inside block 0x14251E160
+inline constexpr std::array<std::uint8_t, 16> kCompositeReleaseEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x10, 0x57, 0x48, 0x83, 0xEC, 0x20, 0x48, 0x8B, 0x99, 0x20, 0x01, 0x00};
+inline constexpr platform::FunctionFact kCompositeRelease{L"SceneRenderTargets__ReleaseCompositeHDR_120", 0x1425186B0,
+                                                          kCompositeReleaseEntry};
+inline constexpr std::uint32_t  kSceneTargetsCompositeHdr = 0x120;       // TRefCountPtr<FRHITexture>: the movie frame
 
 // Player 2's HUD image (RE-hud-overlay-pass.md §2, §3, §4; RE-hud-two-images.md §2.3, §3).
 inline constexpr std::array<std::uint8_t, 16> kOverlayRenderEntry{

@@ -54,6 +54,7 @@
 #include "render/ao_origin.h"
 #include "render/bloom_origin.h"
 #include "render/distortion_apply.h"
+#include "render/movie_frame.h"
 #include "views/letterbox_patch.h"
 #include "views/display_align.h"
 #include "views/mirror_player.h"
@@ -79,7 +80,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.43.0-preset";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.44.0-movie-frame";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
@@ -238,6 +239,7 @@ public:
         lss::hud::minimap_two::Remove();
         lss::hud::image_entries::Remove();
         lss::hud::ui_targets::Remove();
+        lss::render::movie_frame::Remove();
         lss::players::pad_buttons::Remove();
         lss::battle::sequence_camera_two::Remove();
         lss::battle::target_cursor_two::Remove();
@@ -320,6 +322,7 @@ public:
         lss::hud::hud_probe::Install(*image);       // logging only; fine without
         lss::hud::overlay_layout::Install(*image);  // optional: without it each half shows the middle of the HUD
         lss::hud::ui_targets::Install(*image);      // optional: without it both halves sample one UI image
+        lss::render::movie_frame::Install(*image);  // optional: without it a movie shows in the first view only
         if (lss::hud::image_entries::Install(*image) && lss::hud::minimap_two::Install(*image))  // optional: player 2's image
         {
             lss::hud::second_image::Install(*image) && lss::hud::marker_replay::Install(*image);
