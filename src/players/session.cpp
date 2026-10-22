@@ -196,9 +196,8 @@ UObject* Session::Controller(const Seat& seat) const noexcept
 
 void Session::EndMemberModules(const Seat& seat) noexcept
 {
-    (void)seat;                           // the modules are one instance each (plan/seats.md step 3): seat 1's
-    battle::targeting_two::OnLeave();
-    battle::command_menu_two::OnLeave();
+    battle::targeting_two::OnLeave();  // one instance (seat 1's) until its step of plan/seats.md step 3
+    battle::command_menu_two::OnLeave(seat.index);
 }
 
 void Session::OnFieldExit(void* self, const wchar_t* caller) noexcept

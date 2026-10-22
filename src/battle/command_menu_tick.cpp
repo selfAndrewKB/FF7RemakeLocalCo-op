@@ -102,8 +102,8 @@ void TickControllers(void* controller, float deltaTime)
     g_ticking = 1;
     reinterpret_cast<TickFn>(g_tickTarget)(controller, deltaTime);
     g_ticking = 0;
-    void* two = command_menu_two::Controller();
-    if (!g_enabled || two == nullptr || controller != Ctrl1() || !command_menu_two::Ready() ||
+    void* two = command_menu_two::Controller(kPlayer);
+    if (!g_enabled || two == nullptr || controller != Ctrl1() || !command_menu_two::Ready(kPlayer) ||
         players::scopes::Member(kPlayer) == nullptr)
     {
         return;
@@ -155,7 +155,7 @@ bool EnterEventContext(unsigned user) noexcept
     {
         return false;
     }
-    if (!command_menu_two::Ready())
+    if (!command_menu_two::Ready(kPlayer))
     {
         ++g_routing.notReady;
         NoteRouting(false, L"player 2's menu is not set up");

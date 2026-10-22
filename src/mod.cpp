@@ -82,7 +82,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.48.0-enemy-bar-by-column";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.49.0-command-menu-by-seat";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
@@ -376,7 +376,10 @@ private:
         lss::views::window_span::Tick(playersIn > 1);
         lss::views::mirror_player::Tick(playersIn, lss::views::window_span::Held() ? lss::views::window_span::Columns() : 0);
         lss::views::scene_camera_two::Tick(CameraManagerOf(0), session_.In(kSeatOne) ? CameraManagerOf(1) : nullptr);  // seat 1 today
-        lss::battle::command_menu_two::Tick(session_.Seated(kSeatOne));
+        for (int seat = 1; seat <= lss::players::kSeatsBuilt; ++seat)
+        {
+            lss::battle::command_menu_two::Tick(seat, session_.Seated(seat));
+        }
         lss::battle::command_menu_tick::Tick();
         lss::battle::party_switch::Tick();
         lss::battle::targeting_two::Tick();

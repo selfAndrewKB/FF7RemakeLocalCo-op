@@ -11,11 +11,13 @@
 #include "platform/vtable_entry.h"
 #include "players/player_two_camera.h"
 #include "players/scopes.h"
+#include "players/seats.h"
 
 #include <array>
 #include <cstdint>
 #include <cstring>
 #include <format>
+#include <optional>
 #include <span>
 #include <string>
 
@@ -24,7 +26,9 @@ namespace lss::battle::command_menu_two {
 namespace {
 
 using platform::Read;
-
+using players::kSeatsBuilt;
+using players::SeatBuilt;
+using players::SeatName;
 
 using MallocFn        = void* (*)(void* allocator, std::uint64_t size, std::uint32_t alignment);
 using CtorFn          = void* (*)(void* controller);
@@ -39,12 +43,13 @@ using NativeTickFn    = std::int64_t (*)(void* widget, const void* geometry, flo
 using SetColorFn      = void (*)(void* widget, const float* color);
 using GetWorldFn      = void* (*)(void* gameMode);
 
-constexpr int kPlayer = 1;  // seat index of player 2 (players/scopes.h)
-/// Every scope a call on player 2's controller runs in: its focus context, the UI slot, the primary, the leader and
+/// Every scope a call on a seat's controller runs in: its focus context, the UI slot, the primary, the leader and
 /// the camera operator (menu camera flavours), the UI filters' latches.
 constexpr unsigned kScopes = players::scopes::All;
 /// ResetAll needs no member: its layer pop and capture removal act on the focus context, its slot write on the world.
 constexpr unsigned kResetScopes = players::scopes::Focus | players::scopes::UiSlot | players::scopes::Latches | players::scopes::Primary;
+/// The two roots a controller owns: the command menu and the field menu (the party panel).
+constexpr std::array<std::uint32_t, 2> kRoots{facts::kCommandCtrlMenuWeak, facts::kCommandCtrlFieldMenuWeak};
 
 // Set once at install.
 void**            g_gmalloc  = nullptr;
@@ -64,19 +69,22 @@ platform::EntryRedirect g_hudMode, g_lists, g_menuAllowed;
 platform::VTableEntry   g_nativeTickSlot;
 NativeTickFn            g_nativeTick = nullptr;
 
-// Game thread.
-void* g_ctrl      = nullptr;  // player 2's controller, once built (kept for the game's life)
-bool  g_plays     = false;
-bool  g_enabled   = true;
-int   g_column    = hud::overlay_pass::kSingle;  // the column whose pass runs (hud/overlay_pass.h)
-/// The two roots a controller owns: the command menu and the field menu (the party panel).
-constexpr std::array<std::uint32_t, 2> kRoots{facts::kCommandCtrlMenuWeak, facts::kCommandCtrlFieldMenuWeak};
-alignas(16) float g_colorOne[kRoots.size()][4]{};  // player 1's roots' colours while transparent in player 2's pass
-bool              g_swapped[kRoots.size()]{};      // which pair player 2's pass swapped this frame
-bool              g_borrowLogged = false;
-bool  g_skippedLogged = false;
-std::int32_t g_ordinalTwo = -1;  // player 2's controller's cached leader ordinal, as last seen
-std::uint32_t g_skipped = 0;  // command menu NativeTicks skipped in player 2's pass
+// Game thread. Index = seat ([0] unused): each seat's controller and what its pass and its tick keep.
+struct Seat
+{
+    void*        ctrl        = nullptr;  // the seat's controller, once built (kept for the game's life)
+    bool         plays       = false;    // the seat's player holds a member (the session's word, each tick)
+    bool         buildFailed = false;    // the allocation or the constructor failed once: no retry every tick
+    alignas(16) float colorOne[kRoots.size()][4]{};  // player 1's roots' colours while transparent in this seat's pass
+    bool         swapped[kRoots.size()]{};           // which pair this seat's pass swapped this frame
+    bool         borrowLogged = false;
+    std::int32_t ordinal      = -1;      // the controller's cached leader ordinal, as last seen
+};
+std::array<Seat, players::scopes::kMaxPlayers> g_seats;
+bool          g_enabled       = true;
+int           g_column        = hud::overlay_pass::kSingle;  // the column whose pass runs (hud/overlay_pass.h)
+bool          g_skippedLogged = false;
+std::uint32_t g_skipped       = 0;  // command menu NativeTicks skipped in the further columns' passes
 
 std::uint8_t* Ctrl1() noexcept
 {
@@ -91,6 +99,12 @@ std::uint8_t Byte(const void* object, std::uint32_t offset) noexcept
     return value;
 }
 
+/// The seat's controller is built and its Setup ran.
+bool ReadyOf(const Seat& seat) noexcept
+{
+    return seat.ctrl != nullptr && Byte(seat.ctrl, facts::kCommandCtrlSetUp) != 0;
+}
+
 /// A controller's widget (Command_C at +0x300, Status_C at +0x2F8), or null.
 void* Root(const void* controller, std::uint32_t weakOffset) noexcept
 {
@@ -98,6 +112,19 @@ void* Root(const void* controller, std::uint32_t weakOffset) noexcept
     return controller != nullptr && Read(static_cast<const std::uint8_t*>(controller) + weakOffset, pair)
                ? players::player_two_camera::ObjectOf(pair)
                : nullptr;
+}
+
+/// The seat whose controller's command menu `widget` is, or 0 for none (the game's, or no seat's).
+int SeatOfMenu(const void* widget) noexcept
+{
+    for (int seat = 1; widget != nullptr && seat <= kSeatsBuilt; ++seat)
+    {
+        if (g_seats[seat].ctrl != nullptr && widget == Root(g_seats[seat].ctrl, facts::kCommandCtrlMenuWeak))
+        {
+            return seat;
+        }
+    }
+    return 0;
 }
 
 void Tint(void* widget, const float (&color)[4]) noexcept
@@ -138,27 +165,27 @@ void* World() noexcept
                : nullptr;
 }
 
-/// Setup on player 2's controller inside its scopes. False if the scopes could not open or the call faulted.
-bool SetupTwo(void* world) noexcept
+/// Setup on the seat's controller inside its scopes. False if the scopes could not open or the call faulted.
+bool SetupSeat(int seat, void* world) noexcept
 {
-    players::scopes::Scope scope(kPlayer, kScopes);
+    players::scopes::Scope scope(seat, kScopes);
     std::uint64_t          result = 0;
     if (!scope.Held())
     {
-        platform::LogDebug(L"command menu 2: Setup skipped (player 2's scopes could not open)");
+        platform::LogDebug(L"command menu 2: Setup skipped ({}'s scopes could not open)", SeatName(seat));
         return false;
     }
-    if (!platform::CallGuarded(g_setup, result, g_ctrl, world))
+    if (!platform::CallGuarded(g_setup, result, g_seats[seat].ctrl, world))
     {
-        platform::Log(L"command menu 2: Setup on player 2's controller RAISED AN EXCEPTION");
+        platform::Log(L"command menu 2: Setup on {}'s controller RAISED AN EXCEPTION", SeatName(seat));
         return false;
     }
     return true;
 }
 
-/// Builds player 2's controller with the game's three calls (the ctor registers it with the GC referencer, so it
-/// is never freed; a later player 2 reuses it).
-bool Build() noexcept
+/// Builds the seat's controller with the game's three calls (the ctor registers it with the GC referencer, so it is
+/// never freed; the seat's later players reuse it).
+bool Build(int seat) noexcept
 {
     void*    allocator = nullptr;
     void**   vtable    = nullptr;
@@ -170,24 +197,44 @@ bool Build() noexcept
         !platform::CallGuarded(malloc, memory, allocator, std::uint64_t{facts::kCommandCtrlSize}, std::uint32_t{0}) ||
         memory == nullptr || !platform::CallGuarded(g_ctor, built, memory) || built == nullptr)
     {
-        platform::Log(L"command menu 2: player 2's controller could not be allocated or constructed; player 2 has no menu");
+        platform::Log(L"command menu 2: {}'s controller could not be allocated or constructed; {} has no menu", SeatName(seat),
+                      SeatName(seat));
         return false;
     }
-    g_ctrl = built;
-    players::scopes::BindCommandController(kPlayer, g_ctrl);
-    platform::Log(L"command menu 2: player 2's controller built ({:#x})", reinterpret_cast<std::uintptr_t>(g_ctrl));
+    g_seats[seat].ctrl = built;
+    players::scopes::BindCommandController(seat, built);
+    platform::Log(L"command menu 2: {}'s controller built ({:#x})", SeatName(seat), reinterpret_cast<std::uintptr_t>(built));
     return true;
 }
 
-// --- The game's calls, each made again on player 2's controller ---------------------------------------------------
+/// `fn(seat)` for every built seat whose controller is set up (the game's call is repeated on each).
+template <class Fn>
+void ForEachReady(Fn&& fn) noexcept
+{
+    for (int seat = 1; seat <= kSeatsBuilt; ++seat)
+    {
+        if (ReadyOf(g_seats[seat]))
+        {
+            fn(seat);
+        }
+    }
+}
+
+// --- The game's calls, each made again on every seat's controller -------------------------------------------------
 
 std::uint64_t Setup(void* controller, void* world)
 {
     const std::uint64_t result = g_setup(controller, world);
-    if (controller == Ctrl1() && g_ctrl != nullptr && g_plays && g_enabled)
+    if (controller == Ctrl1() && g_enabled)
     {
-        platform::LogDebug(L"command menu 2: the game's Setup, repeated on player 2's controller");
-        SetupTwo(world);
+        for (int seat = 1; seat <= kSeatsBuilt; ++seat)
+        {
+            if (g_seats[seat].ctrl != nullptr && g_seats[seat].plays)
+            {
+                platform::LogDebug(L"command menu 2: the game's Setup, repeated on {}'s controller", SeatName(seat));
+                SetupSeat(seat, world);
+            }
+        }
     }
     return result;
 }
@@ -195,13 +242,21 @@ std::uint64_t Setup(void* controller, void* world)
 void ResetAll(void* controller)
 {
     g_resetAll(controller);
-    if (controller == Ctrl1() && g_ctrl != nullptr && g_enabled)
+    if (controller != Ctrl1() || !g_enabled)
     {
-        players::scopes::Scope scope(kPlayer, kResetScopes);
-        if (scope.Held())  // unbound (no player 2): the controller was already reset at the leave
+        return;
+    }
+    for (int seat = 1; seat <= kSeatsBuilt; ++seat)
+    {
+        if (g_seats[seat].ctrl == nullptr)
         {
-            platform::LogDebug(L"command menu 2: the game's ResetAll, repeated on player 2's controller");
-            platform::CallGuarded(g_resetAll, g_ctrl);
+            continue;
+        }
+        players::scopes::Scope scope(seat, kResetScopes);
+        if (scope.Held())  // unbound (the seat has no player): the controller was already reset at the leave
+        {
+            platform::LogDebug(L"command menu 2: the game's ResetAll, repeated on {}'s controller", SeatName(seat));
+            platform::CallGuarded(g_resetAll, g_seats[seat].ctrl);
         }
     }
 }
@@ -209,63 +264,75 @@ void ResetAll(void* controller)
 void SetHudMode(void* controller, std::uint8_t mode)
 {
     reinterpret_cast<HudModeFn>(g_hudMode.Original())(controller, mode);
-    if (controller == Ctrl1() && Ready() && g_enabled)
+    if (controller != Ctrl1() || !g_enabled)
     {
-        players::scopes::Scope scope(kPlayer, kScopes);
+        return;
+    }
+    ForEachReady([mode](int seat) {
+        players::scopes::Scope scope(seat, kScopes);
         if (scope.Held())
         {
-            platform::LogDebug(L"command menu 2: battle HUD mode {} on player 2's controller", mode);
-            platform::CallGuarded(reinterpret_cast<HudModeFn>(g_hudMode.Original()), g_ctrl, mode);
+            platform::LogDebug(L"command menu 2: battle HUD mode {} on {}'s controller", mode, SeatName(seat));
+            platform::CallGuarded(reinterpret_cast<HudModeFn>(g_hudMode.Original()), g_seats[seat].ctrl, mode);
         }
-    }
+    });
 }
 
 std::uint64_t Rebuild(void* partyList, std::uint64_t a2)
 {
     const std::uint64_t result = reinterpret_cast<RebuildFn>(g_rebuildCall.Original())(partyList, a2);
-    if (Ctrl1() != nullptr && partyList == Ctrl1() + facts::kCommandCtrlPartyList && Ready() && g_enabled)
+    if (Ctrl1() == nullptr || partyList != Ctrl1() + facts::kCommandCtrlPartyList || !g_enabled)
     {
-        players::scopes::Scope scope(kPlayer, kScopes);
+        return result;
+    }
+    ForEachReady([](int seat) {
+        players::scopes::Scope scope(seat, kScopes);
         if (scope.Held())
         {
-            platform::LogDebug(L"command menu 2: the party panel rebuilt on player 2's controller");
-            platform::CallGuarded(g_refresh, g_ctrl);  // its own pass through here: a different list, the game's call only
+            platform::LogDebug(L"command menu 2: the party panel rebuilt on {}'s controller", SeatName(seat));
+            platform::CallGuarded(g_refresh, g_seats[seat].ctrl);  // its own pass through here: a different list, the game's call only
         }
-    }
+    });
     return result;
 }
 
 void RebuildLists(void* commandLists, std::uint64_t a2)
 {
     reinterpret_cast<ListsFn>(g_lists.Original())(commandLists, a2);
-    if (Ctrl1() != nullptr && commandLists == Ctrl1() + facts::kCommandCtrlCommandLists && Ready() && g_enabled)
+    if (Ctrl1() == nullptr || commandLists != Ctrl1() + facts::kCommandCtrlCommandLists || !g_enabled)
     {
-        players::scopes::Scope scope(kPlayer, kScopes);
+        return;
+    }
+    ForEachReady([a2](int seat) {
+        players::scopes::Scope scope(seat, kScopes);
         if (scope.Held())
         {
             platform::CallGuarded(reinterpret_cast<ListsFn>(g_lists.Original()),
-                                  static_cast<void*>(static_cast<std::uint8_t*>(g_ctrl) + facts::kCommandCtrlCommandLists), a2);
+                                  static_cast<void*>(static_cast<std::uint8_t*>(g_seats[seat].ctrl) + facts::kCommandCtrlCommandLists), a2);
         }
-    }
+    });
 }
 
 double SetMenuAllowed(void* controller, std::uint8_t on, std::uint8_t keep, std::uint8_t a4)
 {
     const double result = reinterpret_cast<MenuAllowedFn>(g_menuAllowed.Original())(controller, on, keep, a4);
-    if (controller == Ctrl1() && Ready() && g_enabled)
+    if (controller != Ctrl1() || !g_enabled)
     {
-        players::scopes::Scope scope(kPlayer, kScopes);
+        return result;
+    }
+    ForEachReady([on, keep, a4](int seat) {
+        players::scopes::Scope scope(seat, kScopes);
         if (scope.Held())
         {
             double ignored = 0.0;
-            platform::CallGuarded(reinterpret_cast<MenuAllowedFn>(g_menuAllowed.Original()), ignored, g_ctrl, on, keep, a4);
+            platform::CallGuarded(reinterpret_cast<MenuAllowedFn>(g_menuAllowed.Original()), ignored, g_seats[seat].ctrl, on, keep, a4);
         }
-    }
+    });
     return result;
 }
 
 /// UEndFieldCommandMenu::NativeTick: once per frame per command menu. The further columns' passes (the first paints)
-/// are skipped for every command menu; player 2's own menu ticks inside player 2's scopes.
+/// are skipped for every command menu; a seat's own menu ticks inside that seat's scopes.
 std::int64_t NativeTick(void* widget, const void* geometry, float deltaTime)
 {
     if (g_column >= 1 && g_enabled)
@@ -274,13 +341,13 @@ std::int64_t NativeTick(void* widget, const void* geometry, float deltaTime)
         if (!g_skippedLogged)
         {
             g_skippedLogged = true;
-            platform::Log(L"command menu 2: a command menu's key-state advance in player 2's pass was skipped (one advance per frame)");
+            platform::Log(L"command menu 2: a command menu's key-state advance in a further column's pass was skipped (one advance per frame)");
         }
         return 0;
     }
-    if (g_ctrl != nullptr && widget == Root(g_ctrl, facts::kCommandCtrlMenuWeak) && g_enabled)
+    if (const int seat = g_enabled ? SeatOfMenu(widget) : 0; seat != 0)
     {
-        players::scopes::Scope scope(kPlayer, kScopes);
+        players::scopes::Scope scope(seat, kScopes);
         return g_nativeTick(widget, geometry, deltaTime);
     }
     return g_nativeTick(widget, geometry, deltaTime);
@@ -316,7 +383,12 @@ std::wstring GatesReading() noexcept
     {
         Read(state + facts::kGameStatePauseCounter, paused);
     }
-    return std::format(L"ctrl1 {}; ctrl2 {}; pause counter {}", fields(Ctrl1()), fields(g_ctrl), paused);
+    std::wstring text = std::format(L"player 1 {}", fields(Ctrl1()));
+    for (int seat = 1; seat <= kSeatsBuilt; ++seat)
+    {
+        text += std::format(L"; {} {}", SeatName(seat), fields(g_seats[seat].ctrl));
+    }
+    return text + std::format(L"; pause counter {}", paused);
 }
 
 /// Each controller's cached leader ordinal and member count, and the party's slot types.
@@ -333,7 +405,12 @@ std::wstring LeaderReading() noexcept
     };
     std::uint8_t slots[3]{9, 9, 9};
     Read(reinterpret_cast<const void*>(players::scopes::PartyManagerAddress() + facts::kPartySlotTypes), slots);
-    return std::format(L"ctrl1 {}, ctrl2 {}; party slot types {} {} {}", fields(Ctrl1()), fields(g_ctrl), slots[0], slots[1], slots[2]);
+    std::wstring text = std::format(L"player 1 {}", fields(Ctrl1()));
+    for (int seat = 1; seat <= kSeatsBuilt; ++seat)
+    {
+        text += std::format(L", {} {}", SeatName(seat), fields(g_seats[seat].ctrl));
+    }
+    return text + std::format(L"; party slot types {} {} {}", slots[0], slots[1], slots[2]);
 }
 
 }  // namespace
@@ -367,7 +444,7 @@ bool Install(const platform::GameImage& image) noexcept
         !FindInto(image, facts::kCommandCtrlSetInputLive, g_setInputLive) ||
         !FindInto(image, facts::kCommandMenuNativeTick.target, g_nativeTick))
     {
-        platform::Log(L"command menu 2: an engine check failed; player 2 has no command menu");
+        platform::Log(L"command menu 2: an engine check failed; the seats have no command menu");
         return false;
     }
     g_gmalloc  = reinterpret_cast<void**>(*gmalloc);
@@ -394,12 +471,12 @@ bool Install(const platform::GameImage& image) noexcept
     if (!installed)
     {
         Remove();
-        platform::Log(L"command menu 2: a redirect could not be placed; player 2 has no command menu");
+        platform::Log(L"command menu 2: a redirect could not be placed; the seats have no command menu");
         return false;
     }
     control::Register({.name  = L"menu-two",
                        .shape = control::Shape::OnOff,
-                       .help  = L"player 2's own command menu follows the game's (battle/command_menu_two.h; on)",
+                       .help  = L"each seat's own command menu follows the game's (battle/command_menu_two.h; on)",
                        .set   = [](const control::Value& value) {
                            g_enabled = std::get<bool>(value);
                            platform::Log(L"command menu 2 {}", g_enabled ? L"on" : L"off");
@@ -415,9 +492,12 @@ bool Install(const platform::GameImage& image) noexcept
                                L"cached leader ordinal) and the game state's pause counter",
                        .get  = [] { return control::Value{GatesReading()}; }});
     control::Register({.name = L"menu-two.state", .shape = control::Shape::Word, .words = {L"none", L"built", L"ready"},
-                       .help = L"player 2's command controller: none, built, or ready (set up)",
-                       .get  = [] { return control::Value{std::wstring(g_ctrl == nullptr ? L"none" : Ready() ? L"ready" : L"built")}; }});
-    platform::Log(L"command menu 2: installed; the game's controller calls are repeated on player 2's");
+                       .help = L"player 2's command controller: none, built, or ready (set up); seat 1 (plan/seats.md step 7 generalises the readings)",
+                       .get  = [] {
+                           const Seat& seat = g_seats[1];
+                           return control::Value{std::wstring(seat.ctrl == nullptr ? L"none" : ReadyOf(seat) ? L"ready" : L"built")};
+                       }});
+    platform::Log(L"command menu 2: installed; the game's controller calls are repeated on each seat's");
     return true;
 }
 
@@ -436,166 +516,182 @@ void Remove() noexcept
     g_setupCall.Restore();
 }
 
-void Tick(bool playerTwoPlays) noexcept
+void Tick(int seat, bool seatPlays) noexcept
 {
-    g_plays = playerTwoPlays;
-    if (!g_enabled || !g_plays || g_ctor == nullptr)
+    if (!SeatBuilt(seat))
     {
         return;
     }
-    std::uint8_t* ctrl1 = Ctrl1();
+    Seat& s = g_seats[seat];
+    s.plays = seatPlays;
+    if (!g_enabled || !s.plays || g_ctor == nullptr || s.buildFailed)
+    {
+        return;
+    }
+    const wchar_t* name  = SeatName(seat);
+    std::uint8_t*  ctrl1 = Ctrl1();
     if (ctrl1 == nullptr || Byte(ctrl1, facts::kCommandCtrlSetUp) == 0)
     {
-        return;  // the game's own controller is not set up yet (a load, the title): neither is player 2's
+        return;  // the game's own controller is not set up yet (a load, the title): neither is the seat's
     }
-    if (g_ctrl == nullptr && !Build())
+    if (s.ctrl == nullptr && !Build(seat))
     {
-        g_ctor = nullptr;  // once: no retry every tick
+        s.buildFailed = true;  // once: no retry every tick
         return;
     }
-    if (players::scopes::CommandController(kPlayer) == nullptr)
+    if (players::scopes::CommandController(seat) == nullptr)
     {
-        players::scopes::BindCommandController(kPlayer, g_ctrl);  // a new player 2: a fresh focus copy
+        players::scopes::BindCommandController(seat, s.ctrl);  // the seat's new player: a fresh focus copy
     }
-    if (!Ready())
+    if (!ReadyOf(s))
     {
         void* world = World();
-        if (world != nullptr && SetupTwo(world))
+        if (world != nullptr && SetupSeat(seat, world))
         {
-            if (Ready())
+            if (ReadyOf(s))
             {
-                // Its roots start transparent; they show only in player 2's pass.
+                // Its roots start transparent; they show only in the seat's own pass.
                 for (const std::uint32_t root : kRoots)
                 {
-                    Transparent(Root(g_ctrl, root));
+                    Transparent(Root(s.ctrl, root));
                 }
-                g_borrowLogged = false;
-                platform::Log(L"command menu 2: player 2's controller set up (its menu {} and panel {} in player 2's context; path set {})",
-                              Root(g_ctrl, facts::kCommandCtrlMenuWeak) != nullptr ? L"built" : L"MISSING",
-                              Root(g_ctrl, facts::kCommandCtrlFieldMenuWeak) != nullptr ? L"built" : L"MISSING",
-                              players::scopes::FocusPathSet(kPlayer) ? L"yes" : L"NO");
+                s.borrowLogged = false;
+                platform::Log(L"command menu 2: {}'s controller set up (its menu {} and panel {} in {}'s context; path set {})", name,
+                              Root(s.ctrl, facts::kCommandCtrlMenuWeak) != nullptr ? L"built" : L"MISSING",
+                              Root(s.ctrl, facts::kCommandCtrlFieldMenuWeak) != nullptr ? L"built" : L"MISSING", name,
+                              players::scopes::FocusPathSet(seat) ? L"yes" : L"NO");
             }
             else
             {
-                platform::LogDebug(L"command menu 2: Setup deferred by the game (pending {})", Byte(g_ctrl, facts::kCommandCtrlSetupPending));
+                platform::LogDebug(L"command menu 2: {}'s Setup deferred by the game (pending {})", name, Byte(s.ctrl, facts::kCommandCtrlSetupPending));
             }
         }
         return;
     }
     // The ordinal the controller's own tick caches (its poll stops while that member is KO'd): a change is logged.
     std::int32_t ordinal = -1;
-    if (Read(static_cast<const std::uint8_t*>(g_ctrl) + facts::kCommandCtrlLeaderOrdinal, ordinal) && ordinal != g_ordinalTwo)
+    if (Read(static_cast<const std::uint8_t*>(s.ctrl) + facts::kCommandCtrlLeaderOrdinal, ordinal) && ordinal != s.ordinal)
     {
-        g_ordinalTwo = ordinal;
-        platform::LogDebug(L"command menu 2: player 2's controller now caches leader ordinal {} (player 2's member type {}, {})",
-                           ordinal, players::scopes::MemberType(kPlayer), LeaderReading());
+        s.ordinal = ordinal;
+        platform::LogDebug(L"command menu 2: {}'s controller now caches leader ordinal {} ({}'s member type {}, {})", name, ordinal, name,
+                           players::scopes::MemberType(seat), LeaderReading());
     }
-    // The battle HUD mode the game set on its controller while player 2 had no member (a battle begun in a cutscene
+    // The battle HUD mode the game set on its controller while the seat had no member (a battle begun in a cutscene
     // that took the member): the setter's repeat needs a set-up controller, so the mode is caught up here through the
     // same setter (the skill's lesson: the second instance misses events while its player is out; replay them).
     const std::uint8_t hudMode = Byte(ctrl1, facts::kCommandCtrlBattleHudMode);
-    if (Byte(g_ctrl, facts::kCommandCtrlBattleHudMode) != hudMode)
+    if (Byte(s.ctrl, facts::kCommandCtrlBattleHudMode) != hudMode)
     {
-        players::scopes::Scope scope(kPlayer, kScopes);
+        players::scopes::Scope scope(seat, kScopes);
         if (scope.Held())
         {
-            platform::LogDebug(L"command menu 2: battle HUD mode {} caught up on player 2's controller (set while player 2 had no member)", hudMode);
-            platform::CallGuarded(reinterpret_cast<HudModeFn>(g_hudMode.Original()), g_ctrl, hudMode);
+            platform::LogDebug(L"command menu 2: battle HUD mode {} caught up on {}'s controller (set while {} had no member)", hudMode, name, name);
+            platform::CallGuarded(reinterpret_cast<HudModeFn>(g_hudMode.Original()), s.ctrl, hudMode);
         }
     }
     // The two bytes the game writes directly on its own controller.
     const std::uint8_t allowed = Byte(ctrl1, facts::kCommandCtrlMenuAllowed);
     const std::uint8_t live    = Byte(ctrl1, facts::kCommandCtrlInputLive);
-    if (Byte(g_ctrl, facts::kCommandCtrlMenuAllowed) != allowed)
+    if (Byte(s.ctrl, facts::kCommandCtrlMenuAllowed) != allowed)
     {
         // Off closes both menus' polls (the game's own gate 4 of RE-ko-leader-input.md §3.1): a script or event
-        // that closes player 1's menu closes player 2's too, so each change is logged.
-        platform::LogDebug(L"command menu 2: menu allowed {} on player 2's controller (copied from the game's)", allowed);
-        platform::WriteGuarded(static_cast<std::uint8_t*>(g_ctrl) + facts::kCommandCtrlMenuAllowed, &allowed, 1);
+        // that closes player 1's menu closes the seat's too, so each change is logged.
+        platform::LogDebug(L"command menu 2: menu allowed {} on {}'s controller (copied from the game's)", allowed, name);
+        platform::WriteGuarded(static_cast<std::uint8_t*>(s.ctrl) + facts::kCommandCtrlMenuAllowed, &allowed, 1);
     }
-    if (Byte(g_ctrl, facts::kCommandCtrlInputLive) != live)
+    if (Byte(s.ctrl, facts::kCommandCtrlInputLive) != live)
     {
-        players::scopes::Scope scope(kPlayer, kScopes);
+        players::scopes::Scope scope(seat, kScopes);
         if (scope.Held())
         {
-            platform::LogDebug(L"command menu 2: input live {} on player 2's controller", live);
-            platform::CallGuarded(g_setInputLive, g_ctrl, live, std::uint64_t{0});
+            platform::LogDebug(L"command menu 2: input live {} on {}'s controller", live, name);
+            platform::CallGuarded(g_setInputLive, s.ctrl, live, std::uint64_t{0});
         }
     }
 }
 
-void OnLeave() noexcept
+void OnLeave(int seat) noexcept
 {
-    g_plays = false;
-    if (g_ctrl == nullptr)
+    if (!SeatBuilt(seat))
     {
         return;
     }
-    // ResetAll inside player 2's own context pops its layers from its own copy and clears its set-up bytes, so the
-    // next player 2's Setup pushes them into a fresh context.
-    if (Ready())
+    Seat& s   = g_seats[seat];
+    s.plays   = false;
+    s.ordinal = -1;  // the seat's next player's ordinal is logged afresh
+    if (s.ctrl == nullptr)
     {
-        players::scopes::Scope scope(kPlayer, kResetScopes);
+        return;
+    }
+    // ResetAll inside the seat's own context pops its layers from its own copy and clears its set-up bytes, so the
+    // seat's next player's Setup pushes them into a fresh context.
+    if (ReadyOf(s))
+    {
+        players::scopes::Scope scope(seat, kResetScopes);
         if (scope.Held())
         {
-            platform::CallGuarded(g_resetAll, g_ctrl);
+            platform::CallGuarded(g_resetAll, s.ctrl);
         }
     }
-    players::scopes::BindCommandController(kPlayer, nullptr);
-    platform::LogDebug(L"command menu 2: player 2's controller reset for the next player 2");
+    players::scopes::BindCommandController(seat, nullptr);
+    platform::LogDebug(L"command menu 2: {}'s controller reset for the seat's next player", SeatName(seat));
 }
 
-void* Controller() noexcept
+void* Controller(int seat) noexcept
 {
-    return g_ctrl;
+    return SeatBuilt(seat) ? g_seats[seat].ctrl : nullptr;
 }
 
-bool Ready() noexcept
+bool Ready(int seat) noexcept
 {
-    return g_ctrl != nullptr && Byte(g_ctrl, facts::kCommandCtrlSetUp) != 0;
+    return SeatBuilt(seat) && ReadyOf(g_seats[seat]);
 }
 
 void BeginPass(int column) noexcept
 {
     g_column = column;
-    // Every further column shows player 2's menu until the module keeps one per seat (plan/seats.md step 3).
-    if (column < 1 || !Ready() || !g_enabled)
+    // A further column is its seat's (hud/overlay_pass.h): that seat's menu shows in it, the other seats' stay
+    // transparent (nothing gives them a colour outside their own pass).
+    const int seat = column;
+    if (column < 1 || !Ready(seat) || !g_enabled)
     {
         return;
     }
-    // Player 2's roots take player 1's roots' colours for the pass (the game's fades on player 1's carry over,
+    // The seat's roots take player 1's roots' colours for the pass (the game's fades on player 1's carry over,
     // and a root that outlives a leave keeps no stale colour of its own); player 1's go transparent.
+    Seat& s = g_seats[seat];
     for (std::size_t i = 0; i < kRoots.size(); ++i)
     {
         void* one = Root(Ctrl1(), kRoots[i]);
-        void* two = Root(g_ctrl, kRoots[i]);
-        g_swapped[i] = one != nullptr && two != nullptr && Colour(one, g_colorOne[i]);
-        if (!g_swapped[i])
+        void* own = Root(s.ctrl, kRoots[i]);
+        s.swapped[i] = one != nullptr && own != nullptr && Colour(one, s.colorOne[i]);
+        if (!s.swapped[i])
         {
             continue;
         }
-        Tint(two, g_colorOne[i]);
+        Tint(own, s.colorOne[i]);
         Transparent(one);
     }
-    if (!g_borrowLogged && (g_swapped[0] || g_swapped[1]))
+    if (!s.borrowLogged && (s.swapped[0] || s.swapped[1]))
     {
-        g_borrowLogged = true;
-        platform::LogDebug(L"command menu 2: player 2's roots take player 1's colours in its pass (menu alpha {:.2f}, panel alpha {:.2f})",
-                           g_swapped[0] ? g_colorOne[0][3] : -1.0f, g_swapped[1] ? g_colorOne[1][3] : -1.0f);
+        s.borrowLogged = true;
+        platform::LogDebug(L"command menu 2: {}'s roots take player 1's colours in its pass (menu alpha {:.2f}, panel alpha {:.2f})", SeatName(seat),
+                           s.swapped[0] ? s.colorOne[0][3] : -1.0f, s.swapped[1] ? s.colorOne[1][3] : -1.0f);
     }
 }
 
 void EndPass() noexcept
 {
-    if (g_column >= 1)
+    if (SeatBuilt(g_column))
     {
+        Seat& s = g_seats[g_column];
         for (std::size_t i = 0; i < kRoots.size(); ++i)
         {
-            if (g_swapped[i])
+            if (s.swapped[i])
             {
-                g_swapped[i] = false;
-                Tint(Root(Ctrl1(), kRoots[i]), g_colorOne[i]);
-                Transparent(Root(g_ctrl, kRoots[i]));
+                s.swapped[i] = false;
+                Tint(Root(Ctrl1(), kRoots[i]), s.colorOne[i]);
+                Transparent(Root(s.ctrl, kRoots[i]));
             }
         }
     }
