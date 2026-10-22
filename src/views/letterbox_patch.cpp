@@ -29,7 +29,7 @@ constexpr std::uint8_t kGameImmediate = 1;     // EWindowMode::WindowedFullscree
 constexpr std::uint8_t kNeverImmediate = 7;    // no window mode (0 Fullscreen, 1 WindowedFullscreen, 2 Windowed)
 
 bool                        g_installed = false;
-bool                        g_on        = true;   // the switch: the patch follows player 2 while on
+bool                        g_on        = true;   // the switch: the patch follows the want (player 2 in, or the span held) while on
 bool                        g_applied   = false;
 std::vector<std::uintptr_t> g_sites;              // live addresses of the immediates: the 321 compares', then the
                                                   // view-rect override's (CalcSceneView)
@@ -159,8 +159,9 @@ bool Install(const platform::GameImage& image) noexcept
     g_installed  = true;
     control::Register({.name  = L"letterbox-patch",
                        .shape = control::Shape::OnOff,
-                       .help  = L"the Borderless letterbox is switched off while player 2 is in (on by default); off keeps "
-                                L"the game's compares even in split",
+                       .help  = L"the Borderless letterbox is switched off while player 2 is in or the span is held (on by "
+                                L"default); off keeps the game's compares: in split the last view covers the window, with "
+                                L"one view the game pillarboxes it into the window's middle",
                        .set   = [](const control::Value& v) {
                            g_on = std::get<bool>(v);
                            if (!g_on && g_applied)
@@ -174,25 +175,25 @@ bool Install(const platform::GameImage& image) noexcept
                        .help = L"the window-mode compares found and how many are patched now",
                        .get  = [] { return control::Value{Reading()}; }});
     platform::Log(L"letterbox patch: ready; {} window-mode compares found between {:#x} and {:#x}, and CalcSceneView's "
-                  L"view-rect override at {:#x}; patched while player 2 is in",
+                  L"view-rect override at {:#x}; patched while player 2 is in or the span is held",
                   g_sites.size() - 1, g_rangeStart, g_rangeStart + g_rangeBytes, *override);
     return true;
 }
 
-void Tick(bool playerTwoIn) noexcept
+void Tick(bool wanted) noexcept
 {
     if (!g_installed)
     {
         return;
     }
-    const bool want = g_on && playerTwoIn;
+    const bool want = g_on && wanted;
     if (want && !g_applied)
     {
         Apply();
     }
     else if (!want && g_applied)
     {
-        Lift(L"player 2 is out");
+        Lift(L"player 2 is out and the span is not held");
     }
 }
 

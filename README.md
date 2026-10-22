@@ -25,7 +25,7 @@ python ../tools/game.py status | launch | quit | relaunch --deploy --label v0.8.
 
 Every module registers its own commands (`src/control/registry.h`), so `help` on the running build is the list.
 Today: `join`, `leave`, `console <command>`, `report`, `quit`, `showflags <hex>`, `ao-origin on|off`,
-`bloom-origin on|off`, `distortion-apply on|off`, `pad-buttons on|off`, `menu-two on|off`, `targeting-two on|off`, `rates-two on|off`, `menu-two.leader`, `menu-two.route`, `lock-camera-two.requests`, `lock-camera-two.restore`, `camera-override-two`, `enemy-leader`, `sequence-camera-two`, `target-cursor-two`, `party-events`, `log-level error|warning|info|debug|trace` (Debug by default; Trace holds the per-frame lines), `hud.dump roots|shown|all [<text>]`, `hud-band on|off`, `hud-image on|off`, `hud-targets on|off`, `hud-targets-log <renders>`; readings `p2.in`, `p2.member`, `p2.state` (out|awaiting|in|playing|handed),
+`bloom-origin on|off`, `distortion-apply on|off`, `pad-buttons on|off`, `menu-two on|off`, `targeting-two on|off`, `rates-two on|off`, `menu-two.leader`, `menu-two.route`, `window-span on|off`, `window-span.hold on|off` (the span with any player count, kept through loading screens), `lock-camera-two.requests`, `lock-camera-two.restore`, `camera-override-two`, `enemy-leader`, `sequence-camera-two`, `target-cursor-two`, `party-events`, `log-level error|warning|info|debug|trace` (Debug by default; Trace holds the per-frame lines), `hud.dump roots|shown|all [<text>]`, `hud-band on|off`, `hud-image on|off`, `hud-targets on|off`, `hud-targets-log <renders>`; readings `p2.in`, `p2.member`, `p2.state` (out|awaiting|in|playing|handed),
 `game.state` (title|loading|play|pause|menu|leaving|…), `game.paused`, `game.menu-kind`, `game.location`,
 `field.step` (13 = steady field), `field.running`, `hud.overlay`, `hud.layout`, `pad.events`, `pads` (the XInput users with a pad), `lead.gate` (the last LEAD on player 2's member judged), `menu-two.state`, `targeting-two.runs`, `targeting-two.lock`, `tick`, `version`. The language's own verbs (`src/control/script.h`): `get <name>`, `status`, `help [<name>]`,
 `wait <ticks>`, `wait-until <name> <op> <value> [<ticks>]`, `hold <player> stick <lx> <ly> <rx> <ry> <ticks>`,
@@ -126,7 +126,8 @@ src/
     env_set_view.h        player 2's set kept and paced, the list edit (pure, host-tested)
   views/
     window_span           the game window across a row of equal monitors, one full view per player: the game's own
-                          resolution request for the row, then the engine's window reshape; held, put back at the leave
+                          resolution request for the row, then the engine's window reshape; held, put back at the leave;
+                          the hold keeps the span with any player count (loading screens, the main menu, movies)
     monitor_row.h         which monitors a spanned window may cover, and which to line up first (pure, host-tested;
                           from Rebirth, any row, tops within 32 px)
     display_align         a row monitor moved to the row's top for the Windows session (the display-configuration

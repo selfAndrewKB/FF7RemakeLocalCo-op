@@ -77,7 +77,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.40.0-scene-camera-two";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.41.0-span-held";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
@@ -347,7 +347,7 @@ private:
         lss::players::game_state::Tick();  // first: the session and the console read this tick's values
         lss::players::pad_presence::Tick();
         session_.Tick();
-        lss::views::letterbox_patch::Tick(session_.HasPlayerTwo());
+        lss::views::letterbox_patch::Tick(session_.HasPlayerTwo() || lss::views::window_span::Held());
         lss::views::window_span::Tick(session_.HasPlayerTwo());
         lss::views::scene_camera_two::Tick(CameraManagerOf(0), session_.HasPlayerTwo() ? CameraManagerOf(1) : nullptr);
         lss::battle::command_menu_two::Tick(session_.Seated());

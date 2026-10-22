@@ -79,6 +79,8 @@ RequestResolutionFn g_request      = nullptr;  // live
 const std::int32_t* g_systemRes    = nullptr;  // GSystemResolution, live (read only)
 bool                g_auto         = true;     // enter on player 2's join
 bool                g_autoTried    = false;    // one try per join
+bool                g_held         = false;    // the hold: the span with any player count, kept when player 2 leaves
+bool                g_holdTried    = false;    // one try per switch-on
 bool                g_playerTwoIn  = false;
 
 Step          g_step = Step::Out;
@@ -462,13 +464,38 @@ bool Install(const platform::GameImage& image) noexcept
                            return control::Outcome{};
                        },
                        .get = [] { return control::Value{g_auto}; }});
+    control::Register({.name  = L"window-span.hold",
+                       .shape = control::Shape::OnOff,
+                       .help  = L"on: the window spans the row now with any player count and stays spanned when player 2 "
+                                L"leaves (loading screens, the main menu, movies); off: back to following player 2 (leaves "
+                                L"now if player 2 is out)",
+                       .set   = [](const control::Value& v) {
+                           g_held = std::get<bool>(v);
+                           if (g_held)
+                           {
+                               g_holdTried = true;
+                               if (g_step == Step::Out && !Enter(kColumnsBuilt))
+                               {
+                                   return control::Outcome{false, L"the span could not be entered (see the log)"};
+                               }
+                               platform::Log(L"window span: held (with any player count, kept when player 2 leaves)");
+                               return control::Outcome{};
+                           }
+                           platform::Log(L"window span: the hold is off; the span follows player 2 again");
+                           if (!g_playerTwoIn)
+                           {
+                               Leave(L"the hold switched off with player 2 out");
+                           }
+                           return control::Outcome{};
+                       },
+                       .get = [] { return control::Value{g_held}; }});
     control::Register({.name = L"window-span.state", .shape = control::Shape::Text,
                        .help = L"the span's step, the window and the resolution",
                        .get  = [] { return control::Value{Reading()}; }});
     const auto res = ReadResolution();
     platform::Log(L"window span: ready (on by default: with player 2 in, the window spans a row of equal monitors through "
-                  L"the game's resolution request and the engine's window reshape; Ctrl+F2 toggles); the game's resolution "
-                  L"is {} now",
+                  L"the game's resolution request and the engine's window reshape; Ctrl+F2 toggles; window-span.hold on "
+                  L"spans with any player count); the game's resolution is {} now",
                   ResolutionText(res));
     return true;
 }
@@ -587,7 +614,13 @@ void Toggle() noexcept
     {
         g_auto      = true;
         g_autoTried = true;
-        Enter(g_playerTwoIn ? kColumnsBuilt : 1);
+        if (!g_playerTwoIn && !g_held)
+        {
+            platform::Log(L"window span: Ctrl+F2 with player 2 out: the span enters on the join (window-span.hold on "
+                          L"spans now)");
+            return;
+        }
+        Enter(kColumnsBuilt);
     }
 }
 
@@ -604,14 +637,19 @@ void Tick(bool playerTwoIn) noexcept
         {
             g_autoTried = false;
         }
-        else if (g_auto && !g_autoTried)
+        if (g_held && !g_holdTried)
+        {
+            g_holdTried = true;
+            Enter(kColumnsBuilt);
+        }
+        else if (playerTwoIn && g_auto && !g_autoTried)
         {
             g_autoTried = true;
             Enter(kColumnsBuilt);
         }
         return;
     }
-    if (!playerTwoIn && g_step != Step::Leaving)
+    if (!playerTwoIn && !g_held && g_step != Step::Leaving)
     {
         Leave(L"player 2 is out");
     }
@@ -757,13 +795,19 @@ std::wstring Reading() noexcept
     }
     if (g_step == Step::Out)
     {
-        return std::format(L"out; auto {}; entries {}; the resolution {}", g_auto ? L"on" : L"off", g_entries,
-                           ResolutionText(ReadResolution()));
+        return std::format(L"out; auto {}; hold {}; entries {}; the resolution {}", g_auto ? L"on" : L"off",
+                           g_held ? L"on" : L"off", g_entries, ResolutionText(ReadResolution()));
     }
-    return std::format(L"{} ({} columns, row {}); the window's client area {}; the resolution {}; the viewport {}; re-applies {}{}",
-                       StepName(g_step), g_columns, RectText(g_target), RectText(IsWindow(g_hwnd) ? ClientRect(g_hwnd) : Rect{}),
-                       ResolutionText(ReadResolution()), ViewportText(), g_reapplies,
-                       display_align::Moved() ? std::format(L"; monitors lined up: {}", display_align::Reading()) : L"");
+    return std::format(L"{} ({} columns, row {}; hold {}; player 2 {}); the window's client area {}; the resolution {}; "
+                       L"the viewport {}; re-applies {}{}",
+                       StepName(g_step), g_columns, RectText(g_target), g_held ? L"on" : L"off", g_playerTwoIn ? L"in" : L"out",
+                       RectText(IsWindow(g_hwnd) ? ClientRect(g_hwnd) : Rect{}), ResolutionText(ReadResolution()), ViewportText(),
+                       g_reapplies, display_align::Moved() ? std::format(L"; monitors lined up: {}", display_align::Reading()) : L"");
+}
+
+bool Held() noexcept
+{
+    return g_held;
 }
 
 }  // namespace lss::views::window_span

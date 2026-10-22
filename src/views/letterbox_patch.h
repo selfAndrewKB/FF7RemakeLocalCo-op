@@ -40,7 +40,7 @@ namespace lss::views::letterbox_patch {
 bool Install(const platform::GameImage& image) noexcept;
 
 /// Game thread, each engine tick: the patch is on while player 2 is in (and the switch is on), off otherwise.
-void Tick(bool playerTwoIn) noexcept;
+void Tick(bool wanted) noexcept;
 
 /// Puts every immediate back (unload).
 void Restore() noexcept;

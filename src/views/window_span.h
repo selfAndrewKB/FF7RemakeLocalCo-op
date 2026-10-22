@@ -24,7 +24,10 @@
 //
 // Entered on player 2's join when a row of equal monitors qualifies (`window-span on`, the default), or by the
 // command / Ctrl+F2; left by the command, with player 2, and at the mod's end. The number of columns is the number
-// of seated players (two today). A row monitor a few pixels off the row's top is lined up first, for the Windows
+// of seated players (two today). The hold (`window-span.hold on`, v0.41.0) spans the row with any player count and
+// keeps it when player 2 leaves (a loading screen, the main menu, a movie): the first step of the multi-monitor
+// presentation modes (plan/topics/views.md). With one view the letterbox patch decides the look: applied, the one
+// view fills the row; lifted, the game's own Borderless pillarbox puts it in the window's middle. A row monitor a few pixels off the row's top is lined up first, for the Windows
 // session, and put back at the leave (views/display_align; v0.38.0); no display mode or scaling is ever changed: a
 // row that does not qualify is logged with the reason and what to change. Game thread only. Logged at Info on each
 // step and change, at Debug for the status.
@@ -59,6 +62,9 @@ void Tick(bool playerTwoIn) noexcept;
 
 /// The span is in (or entering).
 bool In() noexcept;
+
+/// The hold is on: the span stays with any player count (`window-span.hold`).
+bool Held() noexcept;
 
 /// The `window-span.state` reading.
 std::wstring Reading() noexcept;
