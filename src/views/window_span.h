@@ -25,9 +25,11 @@
 // Entered on player 2's join when a row of equal monitors qualifies (`window-span on`, the default), or by the
 // command / Ctrl+F2; left by the command, with player 2, and at the mod's end. The number of columns is the number
 // of seated players (two today). The hold (`window-span.hold on`, v0.41.0) spans the row with any player count and
-// keeps it when player 2 leaves (a loading screen, the main menu, a movie): the first step of the multi-monitor
-// presentation modes (plan/topics/views.md). With one view the letterbox patch decides the look: applied, the one
-// view fills the row; lifted, the game's own Borderless pillarbox puts it in the window's middle. A row monitor a few pixels off the row's top is lined up first, for the Windows
+// keeps it when player 2 leaves (a loading screen, the main menu, a movie): the multi-monitor presentation modes
+// (plan/topics/views.md); the mirror player (views/mirror_player, v0.42.0) fills the empty column under it. The
+// preset `[Views] multi-monitor = off | on | auto` in LocalSplitScreen.ini (v0.43.0; platform/settings) sets the
+// start: `on` holds from the first steady frame of the game (the title), `off` leaves the span to the command,
+// `auto` (the default) is the join rule. A row monitor a few pixels off the row's top is lined up first, for the Windows
 // session, and put back at the leave (views/display_align; v0.38.0); no display mode or scaling is ever changed: a
 // row that does not qualify is logged with the reason and what to change. Game thread only. Logged at Info on each
 // step and change, at Debug for the status.
@@ -68,6 +70,10 @@ bool Held() noexcept;
 
 /// The columns the span is in with (0 when out): one per real player, the rest the mirror player's.
 std::int32_t Columns() noexcept;
+
+/// The preset from the settings file (`off`, `on`, `auto`; anything else reads as `auto` with a warning), applied
+/// before the first tick: `on` holds the span from the game's first steady frame, `off` turns the join rule off.
+void SetPreset(const std::wstring& preset, const std::wstring& file) noexcept;
 
 /// The `window-span.state` reading.
 std::wstring Reading() noexcept;

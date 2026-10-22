@@ -37,6 +37,7 @@
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
+#include "platform/settings.h"
 #include "players/own_controller.h"
 #include "players/pad_buttons.h"
 #include "players/pad_presence.h"
@@ -78,7 +79,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.42.1-row-anchor";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.43.0-preset";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
@@ -323,6 +324,9 @@ public:
         {
             lss::hud::second_image::Install(*image) && lss::hud::marker_replay::Install(*image);
         }
+        // The settings file: the one preset today, applied before the first tick.
+        lss::views::window_span::SetPreset(lss::platform::settings::Read(L"Views", L"multi-monitor", L"auto"),
+                                           lss::platform::settings::Path());
         RegisterSessionCommands(session_);
         remote_.Open();
         const Hook::FCallbackOptions options{false, false, STR("LocalSplitScreen"), STR("player intent")};

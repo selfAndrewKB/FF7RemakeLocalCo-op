@@ -59,7 +59,11 @@ cmake --build build --config Game__Shipping__Win64 --target LocalSplitScreen
 UE4SS v3.0.1 (the build Rebirth uses) with the RE-UE4SS custom config `Final Fantasy 7 Remake`, and
 **`HookLoadMap = 0`** in `UE4SS-settings.ini` (with it on, every exit crashes). Copy
 `build/Game__Shipping__Win64/LocalSplitScreen.dll` to `<game>/End/Binaries/Win64/ue4ss/Mods/LocalSplitScreen/dlls/main.dll`
-and add `LocalSplitScreen : 1` to `Mods/mods.txt`. Close the game first.
+and add `LocalSplitScreen : 1` to `Mods/mods.txt`. Close the game first. `LocalSplitScreen.ini` goes next to the
+`dlls` folder (`tools/game.py relaunch --deploy` copies it when none is there): `[Views] multi-monitor = off | on |
+auto`. `on` spans a row of equal monitors from the start and keeps the span whatever the player count (the title,
+loading screens, the field and the menus on every monitor; the empty column mirrors player 1's picture until
+player 2 joins); `auto` (the default) spans while player 2 is in; `off` leaves it to the console and Ctrl+F2.
 
 ## Layout
 
@@ -67,7 +71,8 @@ and add `LocalSplitScreen : 1` to `Mods/mods.txt`. Close the game first.
 src/
   mod.cpp                 UE4SS entry point, keys on the engine tick
   engine_facts.h          every address, offset and expected byte string, with its research doc
-  platform/               image, verified functions and vtable slots, guards, log (shared design with Rebirth's)
+  platform/               image, verified functions and vtable slots, guards, log (shared design with Rebirth's);
+                          settings (LocalSplitScreen.ini next to the dlls folder)
   control/
     registry              every command a module registers: name, argument shape, set, get, help
     script                the language: a line against the registry, plus the runner's own verbs

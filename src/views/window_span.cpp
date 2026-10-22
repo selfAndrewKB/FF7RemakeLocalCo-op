@@ -11,6 +11,7 @@
 #include "platform/image.h"
 #include "platform/log.h"
 #include "platform/verified_code.h"
+#include "players/game_state.h"
 #include "views/display_align.h"
 #include "views/monitor_row.h"
 
@@ -52,6 +53,7 @@ constexpr std::uint32_t kReshapeSettleTicks     = 2;    // the window's rect is 
 constexpr std::uint32_t kReshapeRetryTicks      = 60;
 constexpr std::uint32_t kLineUpTicks            = 120;  // the desktop read as the row after a move: live 2 ms was too soon
 constexpr std::int32_t  kColumnsBuilt           = 2;    // the third column needs the third view and the layout-table write
+constexpr std::uint8_t  kStatePlay              = 6;    // the game's play state (the title is one): the preset's hold waits for it
 constexpr std::uint8_t  kLayoutSideBySide       = 1;    // ETwoPlayerSplitScreenType::Vertical
 constexpr const wchar_t* kGameMapsSettingsPath  = L"/Script/EngineSettings.Default__GameMapsSettings";
 
@@ -80,7 +82,8 @@ const std::int32_t* g_systemRes    = nullptr;  // GSystemResolution, live (read 
 bool                g_auto         = true;     // enter on player 2's join
 bool                g_autoTried    = false;    // one try per join
 bool                g_held         = false;    // the hold: the span with any player count, kept when player 2 leaves
-bool                g_holdTried    = false;    // one try per switch-on
+bool                g_holdTried    = false;    // one try per switch-on (the preset's waits for the game's first steady frame)
+bool                g_holdPreset   = false;    // the hold came from the settings file: its try waits for the window and the play state
 bool                g_playerTwoIn  = false;
 
 Step          g_step = Step::Out;
@@ -643,6 +646,31 @@ std::int32_t Columns() noexcept
     return In() ? g_columns : 0;
 }
 
+void SetPreset(const std::wstring& preset, const std::wstring& file) noexcept
+{
+    if (preset == L"on")
+    {
+        g_held       = true;
+        g_holdPreset = true;
+        platform::Log(L"window span: the preset multi-monitor = on ({}): the span is held from the game's first steady frame, with "
+                      L"any player count; the mirror player fills the empty column",
+                      file);
+    }
+    else if (preset == L"off")
+    {
+        g_auto = false;
+        platform::Log(L"window span: the preset multi-monitor = off ({}): no span until window-span on, window-span.hold on or Ctrl+F2", file);
+    }
+    else if (preset == L"auto")
+    {
+        platform::Log(L"window span: the preset multi-monitor = auto ({}): the span with player 2", file);
+    }
+    else
+    {
+        platform::LogWarning(L"window span: the preset multi-monitor = '{}' ({}) is not off, on or auto; read as auto", preset, file);
+    }
+}
+
 void Tick(bool playerTwoIn) noexcept
 {
     if (!g_installed)
@@ -658,8 +686,14 @@ void Tick(bool playerTwoIn) noexcept
         }
         if (g_held && !g_holdTried)
         {
-            g_holdTried = true;
-            Enter(kColumnsBuilt);
+            // The preset's hold waits for the game window and the play state (the title is one): a request during
+            // the boot would find no window, and one try is all a hold gets.
+            const wchar_t* why = L"";
+            if (!g_holdPreset || (FindNativeWindow(&why) && players::game_state::Current().state == kStatePlay))
+            {
+                g_holdTried = true;
+                Enter(kColumnsBuilt);
+            }
         }
         else if (playerTwoIn && g_auto && !g_autoTried)
         {

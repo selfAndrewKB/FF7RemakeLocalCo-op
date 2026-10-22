@@ -57,6 +57,7 @@ add_library(LocalSplitScreen SHARED
     src/platform/instruction_patch.cpp
     src/platform/log.cpp
     src/platform/module_pin.cpp
+    src/platform/settings.cpp
     src/platform/code_memory.cpp
     src/platform/code_redirect.cpp
     src/platform/entry_redirect.cpp
