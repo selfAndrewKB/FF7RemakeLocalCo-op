@@ -2,6 +2,7 @@
 
 #include "engine_facts.h"
 #include "hud/image_code.h"
+#include "hud/overlay_pass.h"
 #include "platform/call_redirect.h"
 #include "platform/code_redirect.h"
 #include "platform/guarded.h"
@@ -23,9 +24,10 @@ using InitFn      = void (*)(void* resource);
 
 platform::CallRedirect  g_drawCall;
 platform::CodeRedirect  g_buffersCode;
-alignas(16) image_code::EntryTable g_table;  // read by the render-thread code; entries written by the game thread
-std::uintptr_t g_oneEntries[4] = {};          // player 1's pool-2 entries (game thread writes, render thread reads)
+alignas(16) image_code::EntryTable g_table;  // column 1's: read by the render-thread code; entries written by the game thread
+std::uintptr_t g_columnZero[4] = {};          // column 0's pool-2 entries (game thread writes, render thread reads)
 bool                    g_installed = false;
+bool                    g_ungatedLogged = false;  // a column beyond the one table (step 5), told once
 
 // Live addresses.
 void* const*   g_malloc       = nullptr;  // &GMalloc
@@ -37,9 +39,9 @@ std::atomic<bool> g_ready{false};
 std::atomic<bool> g_failed{false};
 
 // Render thread only.
-int  g_view          = -1;     // the player whose view's UI pass is drawing now
-bool g_sawPlayerTwo  = false;  // player 2's entry came first in this pass (the slot holds both)
-std::uint32_t g_skipped[2] = {};  // draws skipped per view, for the log
+int  g_view         = -1;     // the column whose view's UI pass is drawing now
+bool g_sawFurther   = false;  // a further column's entry has been seen in this view's pass (the slot holds every column's)
+std::uint32_t g_skipped[overlay_pass::kMaxColumns] = {};  // draws skipped per view, for the log
 
 /// One buffer the way FEndMenuRenderer's constructor makes pool 2's: 64 bytes, the game's vtable, +8 = 4, capacity
 /// at +0x38, then InitResource (vt+0x28) on this, the render thread.
@@ -81,7 +83,7 @@ void MakeBuffers() noexcept
     if (vb == nullptr || ib == nullptr)
     {
         g_failed.store(true, std::memory_order_relaxed);
-        platform::Log(L"HUD image: player 2's vertex/index buffers could not be made; player 2's image stays off");
+        platform::Log(L"HUD image: the second column's vertex/index buffers could not be made; player 2's image stays off");
         return;
     }
     void* rhiVertex = nullptr;
@@ -91,8 +93,8 @@ void MakeBuffers() noexcept
     g_table.vertexBuffer = reinterpret_cast<std::uintptr_t>(vb);
     g_table.indexBuffer  = reinterpret_cast<std::uintptr_t>(ib);
     g_ready.store(true, std::memory_order_release);  // after the table: the game thread records entries only then
-    platform::Log(L"HUD image: player 2's vertex/index buffers made on the render thread (RHI buffers {} / {})", rhiVertex,
-                  rhiIndex);
+    platform::Log(L"HUD image: the second column's vertex/index buffers made on the render thread (RHI buffers {} / {})",
+                  rhiVertex, rhiIndex);
 }
 
 /// Whether `batch` is one of `entries`' batches: the draw call is given [entry+0x80] + 0x50 (RE-hud-two-images.md §2.3).
@@ -126,7 +128,7 @@ bool Record(std::uintptr_t (&entries)[4], std::uintptr_t entry) noexcept
         if (slot == 0)
         {
             reinterpret_cast<std::atomic<std::uintptr_t>&>(slot).store(entry, std::memory_order_release);
-            platform::LogDebug(L"HUD image: player {}'s layer entry {:#x} recorded", &entries == &g_table.entries ? 2 : 1, entry);
+            platform::LogDebug(L"HUD image: column {}'s layer entry {:#x} recorded", &entries == &g_table.entries ? 1 : 0, entry);
             return true;
         }
     }
@@ -137,16 +139,13 @@ bool Record(std::uintptr_t (&entries)[4], std::uintptr_t entry) noexcept
 void DrawBatch(void* renderer, void* commandList, void* target, void* batch, void* a5, void* a6, void* vb, void* ib,
                void* params)
 {
-    // Only the two players' pool-2 entries are gated: the same draw serves pool 0 (the navi map's texture) and pool 1
+    // Only the columns' pool-2 entries are gated: the same draw serves pool 0 (the navi map's texture) and pool 1
     // (the offscreen overlay), whose entries every view needs.
     if (g_view >= 0)
     {
-        const bool playerTwo = BatchOf(g_table.entries, batch);
-        const bool playerOne = !playerTwo && BatchOf(g_oneEntries, batch);
-        g_sawPlayerTwo       = g_sawPlayerTwo || playerTwo;
-        // Each view draws its own player's entry; player 1's is drawn in player 2's view only when the slot holds no
-        // entry of player 2's (a frame from before the image started).
-        if ((g_view == 0 && playerTwo) || (g_view == 1 && playerOne && g_sawPlayerTwo))
+        const int owner = BatchOf(g_table.entries, batch) ? 1 : BatchOf(g_columnZero, batch) ? 0 : -1;
+        g_sawFurther    = g_sawFurther || owner >= 1;
+        if (overlay_pass::DrawSkipped(g_view, owner, g_sawFurther))
         {
             ++g_skipped[g_view];
             return;
@@ -196,7 +195,7 @@ void Remove() noexcept
     {
         return;
     }
-    // The table empties first: whatever stays in place then treats every entry as player 1's.
+    // The table empties first: whatever stays in place then treats every entry as column 0's.
     for (auto& entry : g_table.entries)
     {
         entry = 0;
@@ -222,28 +221,41 @@ void RequestBuffers() noexcept
     }
 }
 
-void RecordEntry(int player, void* entry) noexcept
+void RecordEntry(int column, void* entry) noexcept
 {
     const auto value = reinterpret_cast<std::uintptr_t>(entry);
-    if (value == 0 || !BuffersReady())
+    if (value == 0 || !BuffersReady() || column < 0)
     {
         return;
     }
-    if (!Record(player == 2 ? g_table.entries : g_oneEntries, value))
+    if (column > 1)
     {
-        platform::LogWarning(L"HUD image: a fifth layer entry for player {} ({}); it is not gated by view", player, entry);
+        if (!g_ungatedLogged)
+        {
+            g_ungatedLogged = true;
+            platform::LogWarning(L"HUD image: column {}'s layer entry ({}) has no buffer pair of its own yet (plan/seats.md step "
+                                 L"5); it is not gated by view",
+                                 column, entry);
+        }
+        return;
+    }
+    if (!Record(column == 1 ? g_table.entries : g_columnZero, value))
+    {
+        platform::LogWarning(L"HUD image: a fifth layer entry for column {} ({}); it is not gated by view", column, entry);
     }
 }
 
-void BeginUiPass(int player) noexcept
+void BeginUiPass(int column) noexcept
 {
     if (g_requested.load(std::memory_order_relaxed) && !g_ready.load(std::memory_order_relaxed) &&
         !g_failed.load(std::memory_order_relaxed))
     {
         MakeBuffers();
     }
-    g_view         = player;
-    g_sawPlayerTwo = false;
+    // One table serves column 1 (plan/seats.md step 5): a view beyond it draws as column 1's view would, as before the
+    // columns, instead of gating every column's entry out and leaving its image empty.
+    g_view       = column > 1 ? 1 : column;
+    g_sawFurther = false;
 }
 
 void EndUiPasses() noexcept

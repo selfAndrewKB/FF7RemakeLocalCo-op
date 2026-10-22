@@ -15,12 +15,14 @@
 //   - the game's events that only reach EndUISystem[29] (map set-up, field start and end, reset, icon add and remove:
 //     call redirects) are made on player 2's instance too, and its shown/enabled/mode flags follow player 1's through the
 //     game's own setters;
-//   - per pass: the other player's roots are transparent (SetColorAndOpacity, restored after the pass; the manager writes
-//     the root alpha from its fade every tick, so nothing animated is lost) and the other player's octagon does not
-//     render its map (its pool-0 span skipped, hud/image_code.h);
-//   - pool 0 turns once a frame: player 2's octagon acquires and holds the slot in player 2's pass, names its entry with
-//     number 2 and skips its submit; player 1's octagon takes the held slot, adds the stock entry and submits both. A
-//     slot still held after player 1's render is submitted then (an acquire landing on an unsubmitted slot would spin).
+//   - per pass (hud/overlay_pass.h: a further column's, or column 0's): the other player's roots are transparent
+//     (SetColorAndOpacity, restored after the pass; the manager writes the root alpha from its fade every tick, so
+//     nothing animated is lost) and the other player's octagon does not render its map (its pool-0 span skipped,
+//     hud/image_code.h);
+//   - pool 0 turns once a frame: player 2's octagon acquires and holds the slot in the further pass, names its entry with
+//     number 2 and skips its submit; player 1's octagon takes the held slot in column 0's pass, adds the stock entry and
+//     submits both. A slot still held after player 1's render is submitted then (an acquire landing on an unsubmitted
+//     slot would spin). One further column today: its per-seat conversion follows (plan/seats.md step 3).
 // Player 2's instance is made once and kept for the process (the game keeps its own); when player 2 leaves it is hidden
 // with the game's setter and its map pieces released. Game thread only.
 
@@ -43,8 +45,9 @@ bool PoolCodeInstalled() noexcept;
 /// mirrors, hides and releases player 2's instance.
 void Tick(bool playerTwoPlays, void* playerTwoController) noexcept;
 
-/// Game thread, from the overlay driver: before each pass and after it, and after the frame's last render.
-void BeginPass(overlay_pass::Pass pass) noexcept;
+/// Game thread, from the overlay driver: before each pass (the column whose pass runs, overlay_pass::kSingle for the
+/// game's one render) and after it, and after the frame's last render.
+void BeginPass(int column) noexcept;
 void EndPass() noexcept;
 void EndFrame() noexcept;
 

@@ -68,6 +68,7 @@
 #include "world/npc_senses.h"
 #include "world/party_fade.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -81,7 +82,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.46.0-field-icons-per-view";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.47.0-hud-passes-by-column";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
@@ -434,34 +435,43 @@ private:
         lss::world::env_sets_two::Tick(memberTwo, in ? ControllerOf(1) : nullptr);
     }
 
-    /// The HUD layout follows the split and each player's view. With the mirror player in (player 2 out) the HUD is
-    /// laid out for player 1's column and both views sample that one image: player 2's own pass and the per-view
-    /// targets stay off, since only player 2's pass would draw into a second target, leaving the mirror's view empty.
+    /// The HUD layout follows the split and each column's view (hud/overlay_pass.h: column 0 is player 1's, the seats'
+    /// follow in order, then the mirror's). With the mirror player in and no seat in, the HUD is laid out for player 1's
+    /// column and every view samples that one image: the further passes and the per-view targets stay off, since only
+    /// a further pass would draw into a second target, leaving the mirror's view empty.
     void TickHud() noexcept
     {
-        lss::hud::overlay_layout::ViewShare one, two;
-        const bool mirror = session_.Count() == 0 && lss::views::mirror_player::Count() > 0;
-        const bool views  = (session_.In(kSeatOne) || mirror) && ReadView(0, one) && ReadView(1, two);  // two columns today
-        const bool split  = views && session_.In(kSeatOne);
-        lss::hud::overlay_layout::Tick(views, one, two);
+        namespace op = lss::hud::overlay_pass;
+        lss::hud::second_image::Columns columns;
+        columns.count = std::min(1 + session_.Count(), op::kMaxColumns);  // the columns real players fill
+        const bool mirror      = session_.Count() == 0 && lss::views::mirror_player::Count() > 0;
+        const int  viewColumns = std::min(columns.count + lss::views::mirror_player::Count(), op::kMaxColumns);
+        lss::hud::overlay_layout::ViewShares shares{};
+        int                                  read = 0;  // the columns whose views were read, from the first
+        for (int column = 0; column < viewColumns && ReadView(column, shares[column]); ++column)
+        {
+            read = column + 1;
+        }
+        const bool views = read >= 2;  // a split, or the mirror beside player 1
+        const bool split = views && columns.count > 1 && read >= columns.count;
+        lss::hud::overlay_layout::Tick(views, shares, read);
         if (mirror && lss::hud::ui_targets::Enabled())
         {
             lss::hud::ui_targets::SetEnabled(false);
             Log(L"HUD targets: off while the mirror player is in and player 2 is out (each column samples player 1's HUD image; "
                 L"player 2's image turns them on again at its join)");
         }
-        lss::hud::second_image::Players players;
-        for (int i = 0; split && i < 2; ++i)
+        for (int column = 0; split && column < columns.count; ++column)
         {
-            players.localPlayer[i] = session_.LocalPlayer(i);
-            lss::platform::CopyGuarded(&players.controller[i],
-                                       static_cast<const std::uint8_t*>(players.localPlayer[i]) + lss::facts::kLocalPlayerController,
-                                       sizeof(void*));
+            columns.localPlayer[column] = session_.LocalPlayer(column);
+            columns.controller[column]  = ControllerOf(column);
+            // A further column's seat is its index while the seats fill in order (plan/seats.md): its member.
+            columns.member[column] = column >= 1 ? lss::players::scopes::Member(column) : nullptr;
         }
-        lss::hud::second_image::Tick(split, players);
-        lss::hud::minimap_two::Tick(split && session_.Seated(kSeatOne), players.controller[1]);
+        lss::hud::second_image::Tick(split, columns);
+        lss::hud::minimap_two::Tick(split && session_.Seated(kSeatOne), columns.controller[1]);
         lss::hud::marker_replay::Tick();
-        lss::hud::field_icons::Tick(split ? lss::players::scopes::Member(1) : nullptr);  // seat 1's member (plan/seats.md)
+        lss::hud::field_icons::Tick();
         lss::hud::root_placement::Tick(views && lss::hud::overlay_layout::BandApplies());
     }
 

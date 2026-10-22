@@ -271,3 +271,10 @@ add_executable(SeatsTests
 target_include_directories(SeatsTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_compile_features(SeatsTests PRIVATE cxx_std_20)
 add_test(NAME seats COMMAND SeatsTests)
+
+add_executable(OverlayPassTests
+    tests/overlay_pass_test.cpp
+)
+target_include_directories(OverlayPassTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(OverlayPassTests PRIVATE cxx_std_20)
+add_test(NAME overlay_pass COMMAND OverlayPassTests)

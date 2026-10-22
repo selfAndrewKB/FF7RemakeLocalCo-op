@@ -30,7 +30,6 @@ namespace lss::battle::target_cursor_two {
 
 namespace {
 
-using hud::overlay_pass::Pass;
 using platform::Read;
 using RC::Unreal::UClass;
 using RC::Unreal::UFunction;
@@ -60,7 +59,7 @@ bool                  g_placed = false;
 UFunction*            g_hide   = nullptr;  // /Script/EndGame.EndMenuAPI:HideBattleTargetIcon
 UObject*              g_api    = nullptr;  // its class default object
 bool                  g_hideLookedUp = false;
-Pass                  g_pass = Pass::Single;
+int                   g_column = hud::overlay_pass::kSingle;  // the column whose pass runs (hud/overlay_pass.h)
 void*                 g_hidden = nullptr;  // the widget made transparent for this pass
 alignas(16) float     g_hiddenColor[4]{};
 
@@ -312,11 +311,11 @@ void End() noexcept
     g_copySystem = nullptr;
 }
 
-void BeginPass(Pass pass) noexcept
+void BeginPass(int column) noexcept
 {
-    g_pass   = pass;
+    g_column = column;
     g_hidden = nullptr;
-    if (pass == Pass::Single || !g_copy.Defined())
+    if (column < 0 || !g_copy.Defined())
     {
         return;
     }
@@ -325,17 +324,17 @@ void BeginPass(Pass pass) noexcept
     {
         return;
     }
-    if (pass == Pass::PlayerTwo)
+    if (column >= 1)  // every further column shows player 2's cursor until the module keeps one per seat (seats.md step 3)
     {
         void* one = nullptr;
         if (Read(static_cast<const std::uint8_t*>(system) + facts::kBattleSysCursorWidget, one))
         {
-            Transparent(one);  // player 1's cursor out of player 2's half
+            Transparent(one);  // player 1's cursor out of the further column
         }
     }
     else
     {
-        Transparent(CopyWidget());  // player 2's cursor out of player 1's half
+        Transparent(CopyWidget());  // player 2's cursor out of player 1's column
     }
 }
 
@@ -346,7 +345,7 @@ void EndPass() noexcept
         platform::CallGuarded(g_setColor, g_hidden, static_cast<const float*>(g_hiddenColor));
         g_hidden = nullptr;
     }
-    g_pass = Pass::Single;
+    g_column = hud::overlay_pass::kSingle;
 }
 
 }  // namespace lss::battle::target_cursor_two

@@ -2,6 +2,7 @@
 
 #include "control/registry.h"
 #include "engine_facts.h"
+#include "hud/overlay_pass.h"
 #include "platform/call_redirect.h"
 #include "platform/entry_redirect.h"
 #include "platform/guarded.h"
@@ -136,36 +137,48 @@ std::vector<BarCall>   g_bars;
 std::vector<TextCall>  g_texts;
 std::vector<PointCall> g_cursors;
 std::vector<PointCall> g_lockons;
-std::uint32_t         g_replayed[2] = {};  // calls replayed per player since the last log line
+constexpr int         kMaxColumns = overlay_pass::kMaxColumns;
+std::uint32_t         g_replayed[kMaxColumns] = {};  // calls replayed per column since the last log line
 std::uint32_t         g_frames      = 0;
 
+/// The replays made for the further columns together.
+std::uint32_t FurtherReplayed() noexcept
+{
+    std::uint32_t count = 0;
+    for (int column = 1; column < kMaxColumns; ++column)
+    {
+        count += g_replayed[column];
+    }
+    return count;
+}
+
 /// What the readings show (`hud.markers`): counts since the last reading, and one bar and one text followed through
-/// the frame (the tick's placement, player 2's replay, player 1's replay).
+/// the frame (the tick's placement, then each column's replay: index = column, the further columns' first).
 struct Seen
 {
     std::uint32_t frames = 0, framesWithMarkers = 0;
     std::uint32_t untargeted = 0, targeted = 0, texts = 0;  // recorded
-    std::uint32_t replays[2] = {}, faults = 0;
+    std::uint32_t replays[kMaxColumns] = {}, faults = 0;
     std::uint32_t textKinds[3] = {};  // recorded per TextKind
     std::uint32_t visibilities = 0;   // visibility calls made by the replays
     std::uint32_t umgUnmatched = 0;   // UMG texts whose SObjectWidget did not lead back to its UUserWidget
     std::uint32_t cursors = 0, lockons = 0;            // recorded
     std::uint32_t labelRuns = 0, weakRuns = 0;         // ticks run again (both passes)
     std::uint32_t overridden = 0;                      // controller lookups answered by a re-run
-    // A sampled cursor and lock-on marker: the tick's position, player 2's, player 1's.
+    // A sampled cursor and lock-on marker: the tick's position ([0]), then each column's ([1 + column]).
     void*         cursor = nullptr, *lockon = nullptr;
-    float         cursorAt[3][2] = {}, lockonAt[3][2] = {};
-    // The sampled bar (the first recorded in the last frame with bars).
+    float         cursorAt[1 + kMaxColumns][2] = {}, lockonAt[1 + kMaxColumns][2] = {};
+    // The sampled bar (the first recorded in the last frame with bars): the tick's position, then each column's.
     void*        bar          = nullptr;
     bool         barTargeted  = false;
-    float        barTick[2]   = {}, barTwo[2] = {}, barOne[2] = {};
-    std::int32_t contextBefore[2] = {}, contextTwo[2] = {};
-    void*        pcUnderSwap  = nullptr;  // what the widget's context resolves to with player 2's pair in it
-    void*        pcTwo        = nullptr;  // player 2's controller
-    // The sampled text: the position each replay computed.
+    float        barTick[2]   = {}, barAt[kMaxColumns][2] = {};
+    std::int32_t contextBefore[2] = {}, contextFurther[2] = {};  // the widget's player pair, and a further column's
+    void*        pcUnderSwap  = nullptr;  // what the widget's context resolves to with the further column's pair in it
+    void*        pcFurther    = nullptr;  // that column's controller
+    // The sampled text: the position each column's replay computed.
     void*        text         = nullptr;
-    float        textTwo[2]   = {}, textOne[2] = {};
-    bool         textProjected[2] = {};
+    float        textAt[kMaxColumns][2] = {};
+    bool         textProjected[kMaxColumns] = {};
 };
 Seen          g_seen;
 std::uint32_t g_run = 0;  // consecutive frames with markers (an Info line when a run starts and ends)
@@ -396,7 +409,7 @@ void AddWeakReference(void* controller) noexcept
     }
 }
 
-void ReplayBars(int player, const std::int32_t (&context)[2], void* controller) noexcept
+void ReplayBars(int column, const std::int32_t (&context)[2], void* controller) noexcept
 {
     for (auto& bar : g_bars)
     {
@@ -419,14 +432,14 @@ void ReplayBars(int player, const std::int32_t (&context)[2], void* controller) 
         auto*        widget = static_cast<std::uint8_t*>(bar.widget);
         std::int32_t saved[2]{};
         const bool   sample = &bar == &g_bars.front();
-        if (sample && player == 2)
+        if (sample && column != 0)
         {
             g_seen.bar         = bar.widget;
             g_seen.barTargeted = bar.targeted;
-            g_seen.pcTwo       = controller;
+            g_seen.pcFurther   = controller;
             platform::CopyGuarded(g_seen.barTick, widget + facts::kUserWidgetViewportOffsets, sizeof(g_seen.barTick));
             platform::CopyGuarded(g_seen.contextBefore, widget + facts::kUserWidgetPlayerWeak, sizeof(g_seen.contextBefore));
-            std::memcpy(g_seen.contextTwo, context, sizeof(context));
+            std::memcpy(g_seen.contextFurther, context, sizeof(context));
         }
         if (!platform::CopyGuarded(saved, widget + facts::kUserWidgetPlayerWeak, sizeof(saved)) ||
             !platform::WriteGuarded(widget + facts::kUserWidgetPlayerWeak, context, sizeof(context)))
@@ -434,7 +447,7 @@ void ReplayBars(int player, const std::int32_t (&context)[2], void* controller) 
             Fault(0, L"an enemy bar's context");
             continue;
         }
-        if (sample && player == 2 && g_contextPc != nullptr)
+        if (sample && column != 0 && g_contextPc != nullptr)
         {
             g_seen.pcUnderSwap = nullptr;
             platform::CallGuarded(g_contextPc, g_seen.pcUnderSwap, static_cast<const void*>(widget + facts::kUserWidgetPlayerWeak));
@@ -472,8 +485,7 @@ void ReplayBars(int player, const std::int32_t (&context)[2], void* controller) 
         platform::WriteGuarded(widget + facts::kUserWidgetPlayerWeak, saved, sizeof(saved));
         if (sample)
         {
-            platform::CopyGuarded(player == 2 ? g_seen.barTwo : g_seen.barOne, widget + facts::kUserWidgetViewportOffsets,
-                                  sizeof(g_seen.barTwo));
+            platform::CopyGuarded(g_seen.barAt[column], widget + facts::kUserWidgetViewportOffsets, sizeof(g_seen.barAt[column]));
         }
     }
 }
@@ -525,7 +537,7 @@ void ApplyVisibility(const TextCall& text, bool projected) noexcept
     }
 }
 
-void ReplayTexts(int player, void* controller) noexcept
+void ReplayTexts(int column, void* controller) noexcept
 {
     for (auto& text : g_texts)
     {
@@ -542,11 +554,10 @@ void ReplayTexts(int player, void* controller) noexcept
         ApplyVisibility(text, projected);
         if (&text == &g_texts.front())
         {
-            g_seen.text = text.widget.object;
-            float* into = player == 2 ? g_seen.textTwo : g_seen.textOne;
-            into[0]     = out.x;
-            into[1]     = out.y;
-            g_seen.textProjected[player == 2 ? 1 : 0] = projected;
+            g_seen.text                  = text.widget.object;
+            g_seen.textAt[column][0]     = out.x;
+            g_seen.textAt[column][1]     = out.y;
+            g_seen.textProjected[column] = projected;
         }
     }
 }
@@ -557,9 +568,9 @@ void SamplePoint(void* widget, float (&into)[2]) noexcept
 }
 
 /// The cursors and lock-on markers placed again with this pass's controller (a call the game made without one stays so).
-void ReplayPoints(int player, void* controller) noexcept
+void ReplayPoints(int column, void* controller) noexcept
 {
-    const int slot = player == 2 ? 1 : 2;
+    const int slot = 1 + column;  // the sample's row for this column ([0] is the tick's)
     for (auto& call : g_cursors)
     {
         if (!Alive(call.widget, call.weak))
@@ -567,7 +578,7 @@ void ReplayPoints(int player, void* controller) noexcept
             continue;
         }
         const bool sample = &call == &g_cursors.front();
-        if (sample && player == 2)
+        if (sample && column != 0)
         {
             g_seen.cursor = call.widget;
             SamplePoint(call.widget, g_seen.cursorAt[0]);
@@ -591,7 +602,7 @@ void ReplayPoints(int player, void* controller) noexcept
             continue;
         }
         const bool sample = &call == &g_lockons.front();
-        if (sample && player == 2)
+        if (sample && column != 0)
         {
             g_seen.lockon = call.widget;
             SamplePoint(call.widget, g_seen.lockonAt[0]);
@@ -864,17 +875,17 @@ void Tick() noexcept
                   reruns ? L"placed again for each player" : L"stay player 1's (not installed)");
 }
 
-void Replay(int player, void* localPlayer, void* controller) noexcept
+void Replay(int column, void* localPlayer, void* controller) noexcept
 {
-    if (!g_on || localPlayer == nullptr)
+    if (!g_on || localPlayer == nullptr || column < 0 || column >= kMaxColumns)
     {
         return;
     }
-    void* pass = player == 2 ? controller : nullptr;  // player 1's pass: the game's own inputs, as its tick
+    void* pass = column != 0 ? controller : nullptr;  // column 0's pass: the game's own inputs, as its tick
     if (g_bars.empty() && g_texts.empty())
     {
         g_replaying = true;
-        ReplayPoints(player, pass);
+        ReplayPoints(column, pass);
         RerunTicks(pass);
         g_replaying = false;
         return;
@@ -885,13 +896,13 @@ void Replay(int player, void* localPlayer, void* controller) noexcept
         return;
     }
     g_replaying = true;
-    ReplayBars(player, context, controller);
-    ReplayTexts(player, pass);  // player 1: each text's own stored controller, as the tick
-    ReplayPoints(player, pass);
+    ReplayBars(column, context, controller);
+    ReplayTexts(column, pass);  // column 0: each text's own stored controller, as the tick
+    ReplayPoints(column, pass);
     RerunTicks(pass);           // after the bars: the labels read the displayed target's bar point
     g_replaying = false;
-    g_replayed[player == 2 ? 1 : 0] += static_cast<std::uint32_t>(g_bars.size() + g_texts.size());
-    g_seen.replays[player == 2 ? 1 : 0] += static_cast<std::uint32_t>(g_bars.size() + g_texts.size());
+    g_replayed[column] += static_cast<std::uint32_t>(g_bars.size() + g_texts.size());
+    g_seen.replays[column] += static_cast<std::uint32_t>(g_bars.size() + g_texts.size());
 }
 
 void EndFrame() noexcept
@@ -903,25 +914,25 @@ void EndFrame() noexcept
         ++g_seen.framesWithMarkers;
         if (g_run++ == 0)
         {
-            platform::Log(L"HUD markers: placements recorded ({} bars, {} texts this frame); replays for player 2: {}",
-                          g_bars.size(), g_texts.size(), g_replayed[1] != 0 ? L"made" : L"none yet");
+            platform::Log(L"HUD markers: placements recorded ({} bars, {} texts this frame); replays for the further columns: {}",
+                          g_bars.size(), g_texts.size(), FurtherReplayed() != 0 ? L"made" : L"none yet");
         }
         g_runRecorded += recorded;
     }
     else if (g_run != 0)
     {
-        platform::Log(L"HUD markers: no placement this frame, after {} frames with {} ({} replayed for player 2)", g_run,
-                      g_runRecorded, g_replayed[1]);
+        platform::Log(L"HUD markers: no placement this frame, after {} frames with {} ({} replayed for the further columns)",
+                      g_run, g_runRecorded, FurtherReplayed());
         g_run = g_runRecorded = 0;
     }
     if (!g_bars.empty() || !g_texts.empty())
     {
         if (++g_frames >= 300)
         {
-            platform::LogDebug(L"HUD markers: over 300 frames, {} placements replayed for player 1, {} for player 2",
-                               g_replayed[0], g_replayed[1]);
-            g_frames      = 0;
-            g_replayed[0] = g_replayed[1] = 0;
+            platform::LogDebug(L"HUD markers: over 300 frames, {} placements replayed for player 1, {} for the further columns",
+                               g_replayed[0], FurtherReplayed());
+            g_frames = 0;
+            std::memset(g_replayed, 0, sizeof(g_replayed));
         }
     }
     g_bars.clear();
@@ -942,28 +953,29 @@ std::wstring Reading()
     {
         text += std::format(L" | bar {} ({}): tick ({:.0f},{:.0f}) p2 ({:.0f},{:.0f}) p1 ({:.0f},{:.0f}); context {}/{} -> "
                             L"p2 {}/{}: resolves {} (p2's {}: {})",
-                            s.bar, s.barTargeted ? L"targeted" : L"untargeted", s.barTick[0], s.barTick[1], s.barTwo[0],
-                            s.barTwo[1], s.barOne[0], s.barOne[1], s.contextBefore[0], s.contextBefore[1], s.contextTwo[0],
-                            s.contextTwo[1], s.pcUnderSwap, s.pcTwo, s.pcUnderSwap == s.pcTwo ? L"same" : L"DIFFERENT");
+                            s.bar, s.barTargeted ? L"targeted" : L"untargeted", s.barTick[0], s.barTick[1], s.barAt[1][0],
+                            s.barAt[1][1], s.barAt[0][0], s.barAt[0][1], s.contextBefore[0], s.contextBefore[1],
+                            s.contextFurther[0], s.contextFurther[1], s.pcUnderSwap, s.pcFurther,
+                            s.pcUnderSwap == s.pcFurther ? L"same" : L"DIFFERENT");
     }
     text += std::format(L" | cursors {}, lock-on markers {} recorded; labels run {}, weak points run {}, lookups answered {}",
                         s.cursors, s.lockons, s.labelRuns, s.weakRuns, s.overridden);
     if (s.cursor != nullptr)
     {
         text += std::format(L" | cursor {}: tick ({:.0f},{:.0f}) p2 ({:.0f},{:.0f}) p1 ({:.0f},{:.0f})", s.cursor,
-                            s.cursorAt[0][0], s.cursorAt[0][1], s.cursorAt[1][0], s.cursorAt[1][1], s.cursorAt[2][0],
-                            s.cursorAt[2][1]);
+                            s.cursorAt[0][0], s.cursorAt[0][1], s.cursorAt[2][0], s.cursorAt[2][1], s.cursorAt[1][0],
+                            s.cursorAt[1][1]);
     }
     if (s.lockon != nullptr)
     {
         text += std::format(L" | lock-on {}: tick ({:.0f},{:.0f}) p2 ({:.0f},{:.0f}) p1 ({:.0f},{:.0f})", s.lockon,
-                            s.lockonAt[0][0], s.lockonAt[0][1], s.lockonAt[1][0], s.lockonAt[1][1], s.lockonAt[2][0],
-                            s.lockonAt[2][1]);
+                            s.lockonAt[0][0], s.lockonAt[0][1], s.lockonAt[2][0], s.lockonAt[2][1], s.lockonAt[1][0],
+                            s.lockonAt[1][1]);
     }
     if (s.text != nullptr)
     {
-        text += std::format(L" | text {}: p2 ({:.0f},{:.0f}{}) p1 ({:.0f},{:.0f}{})", s.text, s.textTwo[0], s.textTwo[1],
-                            s.textProjected[1] ? L"" : L" off", s.textOne[0], s.textOne[1], s.textProjected[0] ? L"" : L" off");
+        text += std::format(L" | text {}: p2 ({:.0f},{:.0f}{}) p1 ({:.0f},{:.0f}{})", s.text, s.textAt[1][0], s.textAt[1][1],
+                            s.textProjected[1] ? L"" : L" off", s.textAt[0][0], s.textAt[0][1], s.textProjected[0] ? L"" : L" off");
     }
     g_seen = {};
     return text;

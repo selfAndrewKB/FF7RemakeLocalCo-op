@@ -113,11 +113,11 @@ bool                g_shown    = false;  // player 2's instance is enabled for p
 bool                g_forTwo   = false;  // a game call is running on player 2's instance
 bool                g_faulted  = false;  // player 2's tick faulted: its instance is left alone from then on
 std::int32_t        g_twoPcWeak[2] = {-1, 0};  // player 2's controller's weak pair (checked before each swap)
-overlay_pass::Pass  g_pass     = overlay_pass::Pass::Single;
+int                 g_column   = overlay_pass::kSingle;  // the column whose pass runs (hud/overlay_pass.h)
 void*               g_renderer = nullptr;
 void*               g_heldSlot = nullptr;  // pool 0's slot, held from player 2's pass to player 1's
 
-/// What happened since the last `hud.minimap` reading, per pass (0 single, 1 player 2's, 2 player 1's).
+/// What happened since the last `hud.minimap` reading, per pass (0 single, 1 a further column's, 2 player 1's).
 struct Counts
 {
     std::uint32_t acquiresBy[3][3] = {};  // [pass][octagon: player 1's, player 2's, another]
@@ -134,9 +134,9 @@ struct Counts
 Counts         g_counts;
 std::uintptr_t g_paintOne = 0, g_paintTwo = 0;  // each octagon's paint interface, as BeginPass resolved them
 
-int PassIndex(overlay_pass::Pass pass) noexcept
+int PassIndex(int column) noexcept
 {
-    return pass == overlay_pass::Pass::PlayerTwo ? 1 : pass == overlay_pass::Pass::PlayerOne ? 2 : 0;
+    return column >= 1 ? 1 : column == 0 ? 2 : 0;
 }
 
 struct Faded
@@ -272,7 +272,7 @@ struct TwoScope
             {
                 platform::WriteGuarded(pm + f::kPartyLeaderType, &g_twoType, 1);
             }
-            overlay_layout::WriteHostSet(2);
+            overlay_layout::WriteHostSet(1);  // player 2's column
         }
         platform::WriteGuarded(g.slot29, &g_two, sizeof(void*));
         g_forTwo = entered = true;
@@ -287,7 +287,7 @@ struct TwoScope
         {
             platform::WriteGuarded(pm + f::kPartyPrimaryController, &primary, sizeof(void*));
             platform::WriteGuarded(pm + f::kPartyLeaderType, &leaderType, 1);
-            overlay_layout::WriteHostSet(1);
+            overlay_layout::WriteHostSet(0);
         }
         platform::WriteGuarded(g.slot29, &slot, sizeof(void*));
         g_forTwo = entered = false;
@@ -389,13 +389,13 @@ U64 RemoveIcon(void* m, U64 key)
 /// The navi map's pool-0 acquire (reached from hud/image_code.h's code, made as the game's call).
 void* AcquirePool0(void* renderer, U64 pool)
 {
-    const int pass = PassIndex(g_pass);
+    const int pass = PassIndex(g_column);
     ++g_counts.acquiresBy[pass][g_navi.seen != 0 && g_navi.seen == g_paintOne   ? 0
                                 : g_navi.seen != 0 && g_navi.seen == g_paintTwo ? 1
                                                                                 : 2];
     // Only player 2's octagon's slot is held, and only player 1's octagon is given it: any other painter reaching the
     // site (another map widget) gets the game's own acquire and submit, so no slot can be stranded.
-    if (g_pass == overlay_pass::Pass::PlayerTwo && g_navi.seen != 0 && g_navi.seen == g_paintTwo)
+    if (g_column >= 1 && g_navi.seen != 0 && g_navi.seen == g_paintTwo)
     {
         if (g_heldSlot != nullptr)
         {
@@ -408,7 +408,7 @@ void* AcquirePool0(void* renderer, U64 pool)
         g_heldSlot = slot;  // player 1's octagon adds its entry to it; player 1's submit sends both
         return slot;
     }
-    if (g_pass == overlay_pass::Pass::PlayerOne && g_heldSlot != nullptr && g_navi.seen != 0 && g_navi.seen == g_paintOne)
+    if (g_column == 0 && g_heldSlot != nullptr && g_navi.seen != 0 && g_navi.seen == g_paintOne)
     {
         ++g_counts.heldGiven[pass];
         return g_heldSlot;
@@ -419,7 +419,7 @@ void* AcquirePool0(void* renderer, U64 pool)
 void* FindOrAddPool0(void* slot, U64 name, const void* rect)
 {
     // Player 2's octagon names its entry with number 2 (a distinct FName to the entry search; no registration).
-    const bool two = g_pass == overlay_pass::Pass::PlayerTwo && slot == g_heldSlot && g_heldSlot != nullptr;
+    const bool two = g_column >= 1 && slot == g_heldSlot && g_heldSlot != nullptr;
     if (two)
     {
         ++g_counts.renamed;
@@ -429,12 +429,12 @@ void* FindOrAddPool0(void* slot, U64 name, const void* rect)
 
 void SubmitPool0(void* renderer, U64 pool, void* slot)
 {
-    if (g_pass == overlay_pass::Pass::PlayerTwo && slot == g_heldSlot && g_heldSlot != nullptr)
+    if (g_column >= 1 && slot == g_heldSlot && g_heldSlot != nullptr)
     {
         ++g_counts.submitsSkipped;
         return;  // held for player 1's pass
     }
-    ++g_counts.submits[PassIndex(g_pass)];
+    ++g_counts.submits[PassIndex(g_column)];
     if (slot == g_heldSlot)
     {
         g_heldSlot = nullptr;
@@ -565,7 +565,7 @@ void SetAlpha(void* widget, float alpha) noexcept
     g_hideCheck.called = called;
     g_hideCheck.setter = reinterpret_cast<void*>(g.setColor);
     g_hideCheck.widget = widget;
-    g_hideCheck.pass   = PassIndex(g_pass);
+    g_hideCheck.pass   = PassIndex(g_column);
     ReadAlphas(widget, g_hideCheck.afterCall);
 }
 
@@ -907,9 +907,9 @@ catch (...)
     platform::Log(L"HUD minimap: tick failed (an exception)");
 }
 
-void BeginPass(overlay_pass::Pass pass) noexcept
+void BeginPass(int column) noexcept
 {
-    g_pass = pass;
+    g_column = column;
     g_faded.clear();
     g_navi.skip = 0;
     if (!g_installed)
@@ -920,15 +920,15 @@ void BeginPass(overlay_pass::Pass pass) noexcept
     g_paintOne = PaintInterfaceOf(one);
     g_paintTwo = g_two != nullptr ? PaintInterfaceOf(g_two) : 0;
     void* roots[2]{};
-    if (pass == overlay_pass::Pass::PlayerTwo)
+    if (column >= 1)  // every further column shows player 2's map until the module keeps one per seat (seats.md step 3)
     {
-        // Player 1's minimap and compass out of player 2's image; its octagon renders in player 1's pass only.
+        // Player 1's minimap and compass out of the further column's image; its octagon renders in player 1's pass only.
         g_navi.skip = g_paintOne;
         RootsOf(one, roots);
         SetAlpha(roots[0], 0.0f);
         SetAlpha(roots[1], 0.0f);
     }
-    else if (g_two != nullptr && (pass == overlay_pass::Pass::PlayerOne || RootShown(g_two)))
+    else if (g_two != nullptr && (column == 0 || RootShown(g_two)))
     {
         // Player 2's out of player 1's image and, while it still shows after a leave, out of the single image. Painted at
         // alpha 0: the only pass with a real DeltaTime, so its animations (In, Out) advance; its octagon does not render.
@@ -954,7 +954,7 @@ void EndPass() noexcept
 
 void EndFrame() noexcept
 {
-    g_pass      = overlay_pass::Pass::Single;
+    g_column    = overlay_pass::kSingle;
     g_navi.skip = 0;
     ++g_counts.frames;
     if (g_heldSlot != nullptr && g_renderer != nullptr)

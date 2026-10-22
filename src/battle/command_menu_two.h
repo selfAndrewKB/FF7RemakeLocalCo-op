@@ -13,11 +13,11 @@
 // the menu-allowed setter (entry). Two bytes the game writes directly on its controller (menu allowed, input
 // live) are copied each tick: the only values with no call to repeat.
 //
-// Its widgets stay transparent (the game's SetColorAndOpacity) except in player 2's pass of the HUD render,
-// where player 1's two roots go transparent instead; opacity keeps the widget painted and on the focus path,
-// which Hidden would not. The widget's key states (pressed, held, released) are advanced in its NativeTick,
-// once per overlay paint, and the mod paints twice: the NativeTick slot runs each command menu once per frame,
-// in player 1's pass (player 2's pass is skipped), player 2's inside player 2's scopes.
+// Its widgets stay transparent (the game's SetColorAndOpacity) except in the further column's pass of the HUD render
+// (hud/overlay_pass.h), where player 1's two roots go transparent instead; opacity keeps the widget painted and on the
+// focus path, which Hidden would not. The widget's key states (pressed, held, released) are advanced in its NativeTick,
+// once per overlay paint, and the mod paints more than once: the NativeTick slot runs each command menu once per
+// frame, in player 1's pass (the further passes are skipped), player 2's inside player 2's scopes.
 // Game thread only; the controller is never freed, as the game's is not.
 
 #include "hud/overlay_pass.h"
@@ -43,8 +43,9 @@ void OnLeave() noexcept;
 void* Controller() noexcept;
 bool  Ready() noexcept;
 
-/// Around each pass of the HUD render: the pass's own menu and panel visible, the other player's transparent.
-void BeginPass(hud::overlay_pass::Pass pass) noexcept;
+/// Around each pass of the HUD render (the column whose pass runs, overlay_pass::kSingle for the game's one render):
+/// the pass's own menu and panel visible, the other player's transparent.
+void BeginPass(int column) noexcept;
 void EndPass() noexcept;
 
 }  // namespace lss::battle::command_menu_two

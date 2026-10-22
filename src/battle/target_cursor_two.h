@@ -38,8 +38,9 @@ void RunForPlayerTwo(void* system) noexcept;
 /// Player 2's cursor released with the game's own hide (the battle ended, player 2 left) and its copies dropped.
 void End() noexcept;
 
-/// Around each pass of the HUD render: the other player's cursor transparent.
-void BeginPass(hud::overlay_pass::Pass pass) noexcept;
+/// Around each pass of the HUD render (the column whose pass runs, overlay_pass::kSingle for the game's one render):
+/// the other player's cursor transparent.
+void BeginPass(int column) noexcept;
 void EndPass() noexcept;
 
 }  // namespace lss::battle::target_cursor_two

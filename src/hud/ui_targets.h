@@ -9,13 +9,15 @@
 // set. With two views the loop draws both images before either is post-processed, so the last one wins in both halves.
 //
 // Two calls in Render are redirected (platform/call_redirect.h), both with the view in r8:
-//   H1  AllocBind (0x1421E82E9; the clear-only path 0x1421E826B): for player 2's view the member is moved out first
-//       (the reference moves with it), so the game's own allocator hands player 2's UI pass a second target from its
-//       own pool, with its own descriptor;
+//   H1  AllocBind (0x1421E82E9; the clear-only path 0x1421E826B): for column 1's view the member is moved out first
+//       (the reference moves with it), so the game's own allocator hands that UI pass a second target from its own
+//       pool, with its own descriptor;
 //   H4  FPostProcessing::Process (0x1421E8400): the member names the view's own target while that view's final pass
 //       sets its parameters; the other one stays held. After the last view the mod releases what it holds, so it owns
 //       no reference across Renders (the game's own lifetime: one Render).
-// Player 2's view is the one whose ViewRect.Min is not (0, 0) (both split shapes). With one view nothing moves.
+// The views are numbered by column (hud/overlay_pass.h): the view whose ViewRect.Min is (0, 0) is column 0's (both
+// split shapes), the next ones are counted in the order the UI loop runs them. With one view nothing moves. One held
+// target serves one further column; a third view needs a second (plan/seats.md step 5).
 // The switch `hud-targets` (off at start until the image content follows) turns the moves on; the logging runs either
 // way (`hud-targets-log <frames>` logs each call for that many frames).
 
@@ -33,7 +35,7 @@ void Remove() noexcept;
 void SetEnabled(bool on) noexcept;
 bool Enabled() noexcept;
 
-/// True once the render thread has given player 2's view its own target in a Render since the last call (game thread).
+/// True once the render thread has given column 1's view its own target in a Render since the last call (game thread).
 bool TakeSecondTargetSeen() noexcept;
 
 }  // namespace lss::hud::ui_targets

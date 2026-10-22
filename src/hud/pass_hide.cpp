@@ -62,7 +62,7 @@ bool LookUp()
     if (property == nullptr || property->GetSize() != 16 || g_setter->GetParmsSize() > 32)
     {
         g_setter = nullptr;
-        platform::Log(L"HUD image: UUserWidget::SetColorAndOpacity not found; player 1's cursors stay in player 2's half");
+        platform::Log(L"HUD image: UUserWidget::SetColorAndOpacity not found; player 1's cursors stay in the other columns");
         return false;
     }
     g_paramOffset = property->GetOffset_Internal();
@@ -95,7 +95,7 @@ bool SetColor(UObject* widget, const float (&color)[4]) noexcept
 
 }  // namespace
 
-int BeginPlayerTwoPass() noexcept
+int BeginFurtherPass() noexcept
 try
 {
     g_hidden.clear();
@@ -131,7 +131,7 @@ catch (...)
     return static_cast<int>(g_hidden.size());
 }
 
-void EndPlayerTwoPass() noexcept
+void EndFurtherPass() noexcept
 {
     for (auto& hidden : g_hidden)
     {

@@ -3,12 +3,14 @@
 #include "control/registry.h"
 #include "engine_facts.h"
 #include "hud/image_entries.h"
+#include "hud/overlay_pass.h"
 #include "platform/call_redirect.h"
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
 #include "render/movie_frame.h"
 
+#include <algorithm>
 #include <atomic>
 #include <cstdint>
 #include <cstring>
@@ -32,13 +34,16 @@ std::atomic<bool>     g_enabled{false};
 std::atomic<int>      g_logFrames{0};
 std::atomic<bool>     g_secondSeen{false};
 
+constexpr int kMaxColumns = overlay_pass::kMaxColumns;
+
 // Render thread only.
 struct RenderState
 {
-    void* views[2]   = {};       // the views whose UI passes ran this Render (by player)
-    void* targets[2] = {};       // each view's target (one in the member, the other held by the mod)
-    void* held       = nullptr;  // the reference the mod owns (moved out of the member)
-    int   composited = 0;        // views post-processed since the last UI pass of player 1
+    void* views[kMaxColumns]   = {};       // the views whose UI passes ran this Render (by column)
+    void* targets[kMaxColumns] = {};       // column c's target; the mod holds column 0's while column 1's is in the member
+    int   count                = 0;        // views listed this Render (the highest column + 1)
+    void* held                 = nullptr;  // the reference the mod owns (moved out of the member)
+    int   composited           = 0;        // views post-processed since the last UI pass of column 0
 };
 RenderState g_render;
 
@@ -54,8 +59,9 @@ void SetMember(void* value) noexcept
     platform::WriteGuarded(reinterpret_cast<void*>(g_member), &value, sizeof(value));
 }
 
-/// The view's ViewRect.Min is (0, 0) for player 1's view in both split shapes (and for the only view).
-int PlayerOf(const void* view, std::int32_t (&rect)[4]) noexcept
+/// The view's column: 0 for the view whose ViewRect.Min is (0, 0), column 0's in both split shapes (and the only
+/// view); the next ones are counted in the order the UI loop runs them (bounded by the last column).
+int ColumnOf(const void* view, std::int32_t (&rect)[4]) noexcept
 {
     std::memset(rect, 0, sizeof(rect));
     if (view == nullptr ||
@@ -63,7 +69,18 @@ int PlayerOf(const void* view, std::int32_t (&rect)[4]) noexcept
     {
         return 0;
     }
-    return rect[0] != 0 || rect[1] != 0 ? 1 : 0;
+    if (rect[0] == 0 && rect[1] == 0)
+    {
+        return 0;
+    }
+    for (int column = 1; column < g_render.count; ++column)
+    {
+        if (g_render.views[column] == view)
+        {
+            return column;  // a view passed again in this Render keeps its column
+        }
+    }
+    return std::clamp(g_render.count, 1, kMaxColumns - 1);
 }
 
 /// Releases the reference the mod holds (IPooledRenderTarget::Release, vt+0x30), if any.
@@ -99,37 +116,44 @@ bool Logging() noexcept
 std::uint64_t UiPass(void* sceneTargets, void* commandList, void* view, platform::CallRedirect& call)
 {
     std::int32_t rect[4];
-    const int    player = PlayerOf(view, rect);
+    const int    column = ColumnOf(view, rect);
     void* const  before = Member();
-    if (player == 0)
+    if (column == 0)
     {
         ReleaseHeld();  // a Render whose post-process loop did not run leaves one behind
         g_render = {};
         g_render.views[0] = view;
+        g_render.count    = 1;
     }
-    else if (g_render.views[1] = view; g_enabled.load(std::memory_order_relaxed) && g_render.views[0] != nullptr &&
-                                       g_render.held == nullptr && before != nullptr)
+    else
     {
-        g_render.targets[0] = before;
-        g_render.held       = before;  // the reference moves with the pointer
-        SetMember(nullptr);            // the game's allocator now gives this view a target of its own
+        g_render.views[column] = view;
+        g_render.count         = std::max(g_render.count, column + 1);
+        // One target is moved out, for column 1's view (a third view keeps sampling the member: step 5).
+        if (column == 1 && g_enabled.load(std::memory_order_relaxed) && g_render.views[0] != nullptr &&
+            g_render.held == nullptr && before != nullptr)
+        {
+            g_render.targets[0] = before;
+            g_render.held       = before;  // the reference moves with the pointer
+            SetMember(nullptr);            // the game's allocator now gives this view a target of its own
+        }
     }
-    image_entries::BeginUiPass(g_enabled.load(std::memory_order_relaxed) ? player : -1);
+    image_entries::BeginUiPass(g_enabled.load(std::memory_order_relaxed) ? column : -1);
     const std::uint64_t bound = reinterpret_cast<AllocBindFn>(call.Original())(sceneTargets, commandList);
     void* const after = Member();
-    if (player == 0)
+    if (column == 0)
     {
         g_render.targets[0] = after;
     }
-    else if (g_render.held != nullptr)
+    else if (column == 1 && g_render.held != nullptr)
     {
         g_render.targets[1] = after;
         g_secondSeen.store(true, std::memory_order_relaxed);
     }
     if (Logging())
     {
-        platform::Log(L"HUD targets: UI pass view {} (player {}, rect {},{}-{},{}) target {} -> {}{}", view, player + 1,
-                      rect[0], rect[1], rect[2], rect[3], before, after, player == 1 && g_render.held != nullptr ? L" (moved)" : L"");
+        platform::Log(L"HUD targets: UI pass view {} (column {}, rect {},{}-{},{}) target {} -> {}{}", view, column, rect[0],
+                      rect[1], rect[2], rect[3], before, after, column == 1 && g_render.held != nullptr ? L" (moved)" : L"");
     }
     return bound;
 }
@@ -148,24 +172,28 @@ std::uint64_t UiPassClearOnly(void* sceneTargets, void* commandList, void* view)
 void PostProcess(void* postProcessing, void* commandList, void* view, void* velocity)
 {
     image_entries::EndUiPasses();
-    const int player = view == g_render.views[0] ? 0 : view == g_render.views[1] ? 1 : -1;
-    void*     member = Member();
-    if (player >= 0 && g_render.held != nullptr && g_render.targets[player] != nullptr && member != g_render.targets[player] &&
-        g_render.held == g_render.targets[player])
+    int column = -1;
+    for (int i = 0; view != nullptr && i < g_render.count; ++i)
+    {
+        column = view == g_render.views[i] ? i : column;
+    }
+    void* member = Member();
+    if (column >= 0 && g_render.held != nullptr && g_render.targets[column] != nullptr && member != g_render.targets[column] &&
+        g_render.held == g_render.targets[column])
     {
         g_render.held = member;  // the other view's target, still referenced
-        SetMember(g_render.targets[player]);
+        SetMember(g_render.targets[column]);
     }
     if (Logging())
     {
-        platform::Log(L"HUD targets: post-process view {} (player {}) samples {}", view, player + 1, Member());
+        platform::Log(L"HUD targets: post-process view {} (column {}) samples {}", view, column, Member());
     }
     // The movie frame's release at the end of this call runs only for the family's last view (render/movie_frame.h);
     // a view the UI loop did not list releases as the game does.
-    render::movie_frame::BeginView(player < 0 || g_render.views[1] == nullptr || view == g_render.views[1]);
+    render::movie_frame::BeginView(column < 0 || view == g_render.views[g_render.count - 1]);
     reinterpret_cast<PostProcessFn>(g_postCall.Original())(postProcessing, commandList, view, velocity);
     render::movie_frame::EndView();
-    if (player >= 0 && ++g_render.composited >= (g_render.views[1] != nullptr ? 2 : 1))
+    if (column >= 0 && ++g_render.composited >= g_render.count)
     {
         ReleaseHeld();  // the member keeps its own reference, which the game releases at the next Render start
         if (Logging() && g_logFrames.fetch_sub(1, std::memory_order_relaxed) == 1)
@@ -219,7 +247,7 @@ bool Install(const platform::GameImage& image) noexcept
               .shape = Shape::Integer,
               .min   = 0,
               .max   = 600,
-              .help  = L"log every UI pass and post-process call (view, player, target) for that many Renders",
+              .help  = L"log every UI pass and post-process call (view, column, target) for that many Renders",
               .set   = [](const Value& value) {
                   g_logFrames.store(static_cast<int>(std::get<std::int64_t>(value)), std::memory_order_relaxed);
                   return Outcome{};

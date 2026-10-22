@@ -16,9 +16,14 @@
 //     their objects. Square's own OnPaint fallback sets the host rect to the first player's view rect; the delegate
 //     path uses the whole window only because single player's view is the window (RE-hud-split.md §1.4). The HUD
 //     ticks, which run before the next render, read these values.
-// Each pass lays out for its own player's view: player 1's, or player 2's in player 2's pass (hud/second_image.h),
-// whose entry gets player 2's name, and whose submit is left to player 1's pass.
+// Each pass lays out for its own column's view (hud/overlay_pass.h): column 0's, player 1's, in the game's own render,
+// or a further column's in that column's pass (hud/second_image.h), whose entry gets the column's name, and whose submit
+// is left to player 1's pass.
 // Game thread only.
+
+#include "hud/overlay_pass.h"
+
+#include <array>
 
 namespace lss::platform {
 class GameImage;
@@ -34,6 +39,8 @@ struct ViewShare
     float sizeX   = 1.0f;
     float sizeY   = 1.0f;
 };
+/// One per column (index = column).
+using ViewShares = std::array<ViewShare, overlay_pass::kMaxColumns>;
 
 /// Checks the two call sites and the contain-scale leaf, installs the entry redirect and arms the rect redirect
 /// (installed by the next Tick). False (logged) if anything differs: the HUD keeps the game's layout.
@@ -42,13 +49,14 @@ bool Install(const platform::GameImage& image) noexcept;
 void Remove() noexcept;
 
 /// Game thread, every engine tick before the frame's render: installs the rect call once, and records whether the
-/// split is shown and each player's view (player 2's for player 2's pass, hud/second_image.h).
-void Tick(bool splitShown, const ViewShare& playerOne, const ViewShare& playerTwo) noexcept;
+/// split is shown and the view of each of the `count` columns with a view (a further column's for its pass,
+/// hud/second_image.h; the columns beyond are the whole window).
+void Tick(bool splitShown, const ViewShares& shares, int count) noexcept;
 
-/// Writes player `player`'s (1 or 2) marker host set, as that player's pass last laid it out, into the overlay
+/// Writes column `column`'s marker host set, as that column's pass last laid it out, into the overlay
 /// (+0x388..+0x3A8), for marker placements made outside the render (hud/marker_replay.h); the render writes the same
-/// values again in that player's pass. False before that pass has run with the band. Game thread.
-bool WriteHostSet(int player) noexcept;
+/// values again in that column's pass. False before that pass has run with the band. Game thread.
+bool WriteHostSet(int column) noexcept;
 
 /// Whether the last overlay render laid the HUD out in a band. Game thread.
 bool BandApplies() noexcept;

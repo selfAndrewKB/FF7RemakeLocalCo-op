@@ -2,6 +2,7 @@
 
 #include "control/registry.h"
 #include "engine_facts.h"
+#include "hud/overlay_pass.h"
 #include "platform/entry_redirect.h"
 #include "platform/guarded.h"
 #include "platform/image.h"
@@ -48,8 +49,8 @@ bool                    g_on = true;
 
 // All of the state below is the game thread's: the placement is recorded in the HUD tick, replayed in the overlay
 // driver and forgotten at the frame's end, all on that thread (the driver guards its frame-end call by the thread).
-void* g_member    = nullptr;  // player 2's character, set by Tick
-bool  g_replaying = false;
+constexpr int kMaxColumns = overlay_pass::kMaxColumns;
+bool          g_replaying = false;
 
 /// One placement the tick made (the location pointers are the tick's stack temporaries: copied).
 struct Call
@@ -73,8 +74,8 @@ struct Known
 {
     void*         entry   = nullptr;
     std::int32_t  weak[2] = {-1, 0};
-    View          two, one;  // player 1's alpha is the entry's own; only its last offset is kept
-    std::uint32_t seen = 0;  // the frame it was last recorded
+    View          views[kMaxColumns];  // by column; column 0's alpha is the entry's own: only its last offset is kept
+    std::uint32_t seen = 0;            // the frame it was last recorded
 };
 
 std::vector<Call>        g_calls;
@@ -82,22 +83,34 @@ std::vector<Known>       g_known;
 std::vector<const void*> g_listed;  // the icon map's live entries, walked once per replay
 std::uint32_t            g_frame = 0;
 
-/// What the readings show (`hud.field-icons`): counts since the last reading and one icon followed through the frame.
+/// What the readings show (`hud.field-icons`): counts since the last reading and one icon followed through the frame
+/// (the tick's placement, then each column's: index = column).
 struct Seen
 {
     std::uint32_t frames = 0, framesWithIcons = 0, recorded = 0;
-    std::uint32_t replays[2] = {}, faults = 0;
+    std::uint32_t replays[kMaxColumns] = {}, faults = 0;
     std::uint32_t canvasChanged = 0, entryGone = 0, widgetGone = 0, noSlot = 0;
-    bool          memberKnown = false;
+    bool          memberKnown = false;  // the further column's member location was read
     void*         icon      = nullptr;
-    float         tickAt[2] = {}, twoAt[2] = {}, oneAt[2] = {};
-    bool          twoProjected = false, oneProjected = false;
-    float         alphaTick = 0.0f, alphaTwo = 0.0f;
+    float         tickAt[2] = {}, at[kMaxColumns][2] = {};
+    bool          projected[kMaxColumns] = {};
+    float         alphaTick = 0.0f, alphaFurther = 0.0f;  // the entry's alpha as the tick left it, the further column's
 };
 Seen          g_seen;
 std::uint32_t g_run = 0, g_runRecorded = 0;  // consecutive frames with icons (an Info line when a run starts and ends)
-std::uint32_t g_replayed[2] = {};
+std::uint32_t g_replayed[kMaxColumns] = {};
 bool          g_firstReplayLogged = false;
+
+/// The replays made for the further columns together.
+std::uint32_t FurtherReplayed() noexcept
+{
+    std::uint32_t count = 0;
+    for (int column = 1; column < kMaxColumns; ++column)
+    {
+        count += g_replayed[column];
+    }
+    return count;
+}
 
 void Fault(int kind, const wchar_t* what) noexcept
 {
@@ -245,9 +258,10 @@ std::uint8_t* SlotOf(void* canvas, void* widget) noexcept
     return nullptr;
 }
 
-bool MemberLocation(Vector3& out) noexcept
+/// The character's root component's world location (the icons' range gate for that character's column).
+bool MemberLocation(void* member, Vector3& out) noexcept
 {
-    void* root = platform::ReadPointer(g_member, facts::kActorRootComponent);
+    void* root = platform::ReadPointer(member, facts::kActorRootComponent);
     return root != nullptr && Read(static_cast<const std::uint8_t*>(root) + facts::kComponentWorldLocation, out);
 }
 
@@ -282,10 +296,10 @@ Known* KnownOf(const Call& call) noexcept
     return &g_known.back();
 }
 
-/// One icon placed again for a view: for player 2 with player 2's alpha swapped into the entry and the tick's written
-/// back around the call; the slot's offset then read back (this view's projection wrote it) or this view's last one
-/// written (it did not). Returns false when the icon stays as the game placed it.
-bool PlaceFor(int player, const Call& call, void* widget, void* controller, const Vector3* leader, float dt, View& view,
+/// One icon placed again for a column's view: for a further column with that column's alpha swapped into the entry and
+/// the tick's written back around the call; the slot's offset then read back (this view's projection wrote it) or this
+/// view's last one written (it did not). Returns false when the icon stays as the game placed it.
+bool PlaceFor(int column, const Call& call, void* widget, void* controller, const Vector3* leader, float dt, View& view,
               bool& projected, std::uint8_t*& slot) noexcept
 {
     auto*   entry = static_cast<std::uint8_t*>(call.entry);
@@ -303,16 +317,16 @@ bool PlaceFor(int player, const Call& call, void* widget, void* controller, cons
         Fault(1, L"an icon's alpha");
         return false;
     }
-    if (player == 2 && !platform::WriteGuarded(entry + facts::kFieldIconEntryAlpha, &view.alpha, sizeof(view.alpha)))
+    if (column != 0 && !platform::WriteGuarded(entry + facts::kFieldIconEntryAlpha, &view.alpha, sizeof(view.alpha)))
     {
-        Fault(2, L"an icon's alpha for player 2");
+        Fault(2, L"an icon's alpha for a further column");
         return false;
     }
     const bool placed = platform::CallGuarded(reinterpret_cast<PlaceFn>(g_place.Original()), call.entry, call.canvas, dt,
                                               controller, leader, std::int32_t{0}, static_cast<const Vector3*>(&call.icon));
-    if (player == 2)
+    if (column != 0)
     {
-        Read(entry + facts::kFieldIconEntryAlpha, view.alpha);  // player 2's step taken
+        Read(entry + facts::kFieldIconEntryAlpha, view.alpha);  // this column's step taken
         platform::WriteGuarded(entry + facts::kFieldIconEntryAlpha, &alphaTick, sizeof(alphaTick));
     }
     if (!placed)
@@ -342,25 +356,20 @@ bool PlaceFor(int player, const Call& call, void* widget, void* controller, cons
     return true;
 }
 
-/// The first recorded icon followed through the frame for the reading: the tick's offset (read before player 2's
-/// placement, which overwrites it), then each view's offset after its placement.
-void Sample(int player, const Call& call, const std::uint8_t* slot, bool projected, const View& view, float alphaTick) noexcept
+/// The first recorded icon followed through the frame for the reading: the tick's offset (read before the first further
+/// placement, which overwrites it), then each column's offset after its placement.
+void Sample(int column, const Call& call, const std::uint8_t* slot, bool projected, const View& view, float alphaTick) noexcept
 {
     g_seen.icon = call.entry;
-    if (player == 2)
+    if (column != 0)
     {
         g_seen.alphaTick    = alphaTick;
-        g_seen.alphaTwo     = view.alpha;
-        g_seen.twoProjected = projected;
+        g_seen.alphaFurther = view.alpha;
     }
-    else
-    {
-        g_seen.oneProjected = projected;
-    }
+    g_seen.projected[column] = projected;
     if (slot != nullptr)
     {
-        float* into = player == 2 ? g_seen.twoAt : g_seen.oneAt;
-        platform::CopyGuarded(into, slot + facts::kCanvasSlotOffset, sizeof(g_seen.twoAt));
+        platform::CopyGuarded(g_seen.at[column], slot + facts::kCanvasSlotOffset, sizeof(g_seen.at[column]));
     }
 }
 
@@ -430,9 +439,8 @@ void Remove() noexcept
     }
 }
 
-void Tick(void* memberTwo) noexcept
+void Tick() noexcept
 {
-    g_member = memberTwo;
     g_calls.clear();  // a frame whose overlay render did not run (no EndFrame) leaves nothing for the next
     if (!g_pending)
     {
@@ -444,9 +452,9 @@ void Tick(void* memberTwo) noexcept
                                          : L"the placement entry could not be redirected; the icons stay player 1's");
 }
 
-void Replay(int player, void* controller) noexcept
+void Replay(int column, void* controller, void* member) noexcept
 {
-    if (!g_on || g_calls.empty() || (player == 2 && controller == nullptr))
+    if (!g_on || g_calls.empty() || column < 0 || column >= kMaxColumns || (column != 0 && controller == nullptr))
     {
         return;
     }
@@ -458,9 +466,9 @@ void Replay(int player, void* controller) noexcept
         return;
     }
     ListEntries(manager);
-    Vector3    member;
-    const bool memberKnown = player == 2 && MemberLocation(member);
-    if (player == 2)
+    Vector3    memberAt;
+    const bool memberKnown = column != 0 && MemberLocation(member, memberAt);
+    if (column != 0)
     {
         g_seen.memberKnown = memberKnown;
     }
@@ -491,13 +499,13 @@ void Replay(int player, void* controller) noexcept
         {
             continue;
         }
-        View&          view   = player == 2 ? known->two : known->one;
-        void*          pc     = player == 2 ? controller : call.controller;  // player 1: the tick's own controller
-        const Vector3* leader = player == 2 && memberKnown ? &member : &call.leader;
-        const float    dt     = player == 2 ? call.dt : 0.0f;  // player 1: the tick's step is already taken
+        View&          view   = known->views[column];
+        void*          pc     = column != 0 ? controller : call.controller;  // column 0: the tick's own controller
+        const Vector3* leader = column != 0 && memberKnown ? &memberAt : &call.leader;
+        const float    dt     = column != 0 ? call.dt : 0.0f;  // column 0: the tick's step is already taken
         const bool     sample = &call == &g_calls.front();
         float          alphaTick = 0.0f;
-        if (sample && player == 2)
+        if (sample && column != 0)
         {
             Read(static_cast<const std::uint8_t*>(call.entry) + facts::kFieldIconEntryAlpha, alphaTick);
             if (const std::uint8_t* slot = SlotOf(call.canvas, widget))
@@ -507,26 +515,26 @@ void Replay(int player, void* controller) noexcept
         }
         bool          projected = false;
         std::uint8_t* slot      = nullptr;
-        if (!PlaceFor(player, call, widget, pc, leader, dt, view, projected, slot))
+        if (!PlaceFor(column, call, widget, pc, leader, dt, view, projected, slot))
         {
             continue;
         }
         if (sample)
         {
-            Sample(player, call, slot, projected, view, alphaTick);
+            Sample(column, call, slot, projected, view, alphaTick);
         }
-        ++g_seen.replays[player == 2 ? 1 : 0];
-        ++g_replayed[player == 2 ? 1 : 0];
+        ++g_seen.replays[column];
+        ++g_replayed[column];
     }
     g_replaying = false;
-    if (player == 1 && !g_firstReplayLogged && g_replayed[1] != 0)
+    if (column == 0 && !g_firstReplayLogged && FurtherReplayed() != 0)
     {
         g_firstReplayLogged = true;
         platform::LogDebug(L"field icons: the first icon placed per view: tick ({:.0f},{:.0f}), player 2 ({:.0f},{:.0f}{}), "
                            L"player 1 ({:.0f},{:.0f}{}); alpha tick {:.2f}, player 2's {:.2f}; player 2's member {}",
-                           g_seen.tickAt[0], g_seen.tickAt[1], g_seen.twoAt[0], g_seen.twoAt[1],
-                           g_seen.twoProjected ? L"" : L" behind", g_seen.oneAt[0], g_seen.oneAt[1],
-                           g_seen.oneProjected ? L"" : L" behind", g_seen.alphaTick, g_seen.alphaTwo,
+                           g_seen.tickAt[0], g_seen.tickAt[1], g_seen.at[1][0], g_seen.at[1][1],
+                           g_seen.projected[1] ? L"" : L" behind", g_seen.at[0][0], g_seen.at[0][1],
+                           g_seen.projected[0] ? L"" : L" behind", g_seen.alphaTick, g_seen.alphaFurther,
                            g_seen.memberKnown ? L"read" : L"not read (the tick's leader location used)");
     }
 }
@@ -541,15 +549,15 @@ void EndFrame() noexcept
         ++g_seen.framesWithIcons;
         if (g_run++ == 0)
         {
-            platform::Log(L"field icons: {} icon(s) placed this frame; replays for player 2: {}", recorded,
-                          g_replayed[1] != 0 ? L"made" : L"none yet");
+            platform::Log(L"field icons: {} icon(s) placed this frame; replays for the further columns: {}", recorded,
+                          FurtherReplayed() != 0 ? L"made" : L"none yet");
         }
         g_runRecorded += recorded;
     }
     else if (g_run != 0)
     {
-        platform::Log(L"field icons: no icon this frame, after {} frames with {} placements ({} replayed for player 2)", g_run,
-                      g_runRecorded, g_replayed[1]);
+        platform::Log(L"field icons: no icon this frame, after {} frames with {} placements ({} replayed for the further columns)",
+                      g_run, g_runRecorded, FurtherReplayed());
         g_run = g_runRecorded = 0;
     }
     g_calls.clear();
@@ -568,8 +576,8 @@ std::wstring Reading()
     if (s.icon != nullptr)
     {
         text += std::format(L" | icon {}: tick ({:.0f},{:.0f}) p2 ({:.0f},{:.0f}{}) p1 ({:.0f},{:.0f}{}); alpha tick {:.2f} p2 {:.2f}",
-                            s.icon, s.tickAt[0], s.tickAt[1], s.twoAt[0], s.twoAt[1], s.twoProjected ? L"" : L" behind",
-                            s.oneAt[0], s.oneAt[1], s.oneProjected ? L"" : L" behind", s.alphaTick, s.alphaTwo);
+                            s.icon, s.tickAt[0], s.tickAt[1], s.at[1][0], s.at[1][1], s.projected[1] ? L"" : L" behind",
+                            s.at[0][0], s.at[0][1], s.projected[0] ? L"" : L" behind", s.alphaTick, s.alphaFurther);
     }
     g_seen = {};
     return text;

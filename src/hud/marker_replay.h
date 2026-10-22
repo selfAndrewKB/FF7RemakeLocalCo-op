@@ -13,9 +13,10 @@
 //     the controller it is given (player 2's for the replay).
 // The entries are redirected (platform/entry_redirect.h; their first two instructions are copied, so the redirects are
 // installed from the game thread, outside these functions, which only the game thread runs).
-// Order each frame (hud/second_image.h): player 2's host set, player 2's replay, player 2's render; player 1's host set,
-// player 1's replay (the tick's own inputs: it reproduces the tick), player 1's render. Not replayed: the bars' timers,
-// eases and scale, the battle text's count-up and its UI effects (player 1's point in both halves).
+// Order each frame (hud/second_image.h), per further column, the highest first: its host set, its replay, its render;
+// then column 0's host set, column 0's replay (the tick's own inputs: it reproduces the tick), player 1's render. Not
+// replayed: the bars' timers, eases and scale, the battle text's count-up and its UI effects (player 1's point in every
+// column).
 
 namespace lss::platform {
 class GameImage;
@@ -29,9 +30,10 @@ void Remove() noexcept;
 /// Game thread, every tick, outside the HUD: installs the entry redirects once.
 void Tick() noexcept;
 
-/// Game thread, from the overlay driver: places every marker recorded this frame for `player` (1 or 2), whose host set
-/// must already be in the overlay. `localPlayer` is that player's ULocalPlayer, `controller` its player controller.
-void Replay(int player, void* localPlayer, void* controller) noexcept;
+/// Game thread, from the overlay driver: places every marker recorded this frame for column `column`
+/// (hud/overlay_pass.h; 0 = player 1's, with the tick's own inputs), whose host set must already be in the overlay.
+/// `localPlayer` is that column's ULocalPlayer, `controller` its player controller.
+void Replay(int column, void* localPlayer, void* controller) noexcept;
 
 /// Game thread, after the frame's overlay render: forgets this frame's records.
 void EndFrame() noexcept;

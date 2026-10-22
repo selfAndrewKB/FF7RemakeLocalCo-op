@@ -25,7 +25,6 @@ namespace {
 
 using platform::Read;
 
-using hud::overlay_pass::Pass;
 
 using MallocFn        = void* (*)(void* allocator, std::uint64_t size, std::uint32_t alignment);
 using CtorFn          = void* (*)(void* controller);
@@ -69,7 +68,7 @@ NativeTickFn            g_nativeTick = nullptr;
 void* g_ctrl      = nullptr;  // player 2's controller, once built (kept for the game's life)
 bool  g_plays     = false;
 bool  g_enabled   = true;
-Pass  g_pass      = Pass::Single;
+int   g_column    = hud::overlay_pass::kSingle;  // the column whose pass runs (hud/overlay_pass.h)
 /// The two roots a controller owns: the command menu and the field menu (the party panel).
 constexpr std::array<std::uint32_t, 2> kRoots{facts::kCommandCtrlMenuWeak, facts::kCommandCtrlFieldMenuWeak};
 alignas(16) float g_colorOne[kRoots.size()][4]{};  // player 1's roots' colours while transparent in player 2's pass
@@ -265,11 +264,11 @@ double SetMenuAllowed(void* controller, std::uint8_t on, std::uint8_t keep, std:
     return result;
 }
 
-/// UEndFieldCommandMenu::NativeTick: once per frame per command menu. Player 2's pass (the first paint) is skipped
-/// for every command menu; player 2's own menu ticks inside player 2's scopes.
+/// UEndFieldCommandMenu::NativeTick: once per frame per command menu. The further columns' passes (the first paints)
+/// are skipped for every command menu; player 2's own menu ticks inside player 2's scopes.
 std::int64_t NativeTick(void* widget, const void* geometry, float deltaTime)
 {
-    if (g_pass == Pass::PlayerTwo && g_enabled)
+    if (g_column >= 1 && g_enabled)
     {
         ++g_skipped;
         if (!g_skippedLogged)
@@ -556,10 +555,11 @@ bool Ready() noexcept
     return g_ctrl != nullptr && Byte(g_ctrl, facts::kCommandCtrlSetUp) != 0;
 }
 
-void BeginPass(Pass pass) noexcept
+void BeginPass(int column) noexcept
 {
-    g_pass = pass;
-    if (pass != Pass::PlayerTwo || !Ready() || !g_enabled)
+    g_column = column;
+    // Every further column shows player 2's menu until the module keeps one per seat (plan/seats.md step 3).
+    if (column < 1 || !Ready() || !g_enabled)
     {
         return;
     }
@@ -587,7 +587,7 @@ void BeginPass(Pass pass) noexcept
 
 void EndPass() noexcept
 {
-    if (g_pass == Pass::PlayerTwo)
+    if (g_column >= 1)
     {
         for (std::size_t i = 0; i < kRoots.size(); ++i)
         {
@@ -599,7 +599,7 @@ void EndPass() noexcept
             }
         }
     }
-    g_pass = Pass::Single;
+    g_column = hud::overlay_pass::kSingle;
 }
 
 }  // namespace lss::battle::command_menu_two

@@ -19,6 +19,7 @@
 #endif
 #include <Windows.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <cstring>
 #include <format>
@@ -27,6 +28,8 @@
 namespace lss::hud::overlay_layout {
 
 namespace {
+
+constexpr int kMaxColumns = overlay_pass::kMaxColumns;
 
 using GetRectFn        = IntRect* (*)(IntRect* out);
 using FindOrAddEntryFn = void* (*)(void* slot, std::uintptr_t name, const IntRect* rect);
@@ -64,8 +67,7 @@ DWORD     g_gameThread  = 0;
 bool      g_rectPending = false;  // the rect call waits for the game thread, outside the render
 bool      g_splitShown  = false;
 bool      g_bandOn      = true;
-ViewShare g_playerOne;
-ViewShare g_playerTwo;
+ViewShares g_shares;  // each column's view (the whole window for a column without one)
 
 /// What the rect call decided for this render, for the entry call a few instructions later in the same function.
 struct Pending
@@ -78,14 +80,14 @@ struct Pending
 };
 Pending g_pending;
 
-/// Each player's whole marker host set (overlay +0x388..+0x3A8) as that player's pass last laid it out, for writing
+/// Each column's whole marker host set (overlay +0x388..+0x3A8) as that column's pass last laid it out, for writing
 /// outside the render (WriteHostSet).
 struct HostSet
 {
     bool  valid = false;
     float min[2] = {}, origin[2] = {}, ui[2] = {}, size[2] = {}, scale = 0.0f;
 };
-HostSet g_hostSet[2];
+HostSet g_hostSet[kMaxColumns];
 
 /// The entry the layer-entry call placed in this render, for the submit call at its end: the per-child matrices
 /// the paint pushed are complete only then.
@@ -107,9 +109,9 @@ struct Logged
     float   viewH   = -1.0f;
     int     applied = -1;
 };
-Logged      g_logged[2];  // per pass: player 1's (and the single render), player 2's
-bool        g_entryLogged[2] = {};
-int         g_loggedPass = 0;
+Logged      g_logged[kMaxColumns];  // per column: player 1's (and the single render), then the further columns'
+bool        g_entryLogged[kMaxColumns] = {};
+int         g_loggedColumn = 0;
 std::wstring g_lastText    = L"not yet rendered";
 
 float ReadFloat(std::uintptr_t address) noexcept
@@ -150,8 +152,9 @@ IntRect* LayoutRect(IntRect* out)
     // The host size the render stored just before this call: the game viewport widget's size, in window pixels.
     const float   hostW   = ReadFloat(overlay + facts::kOverlayHostSize);
     const float   hostH   = ReadFloat(overlay + facts::kOverlayHostSize + 4);
-    const bool      two     = overlay_pass::Current() == overlay_pass::Pass::PlayerTwo;
-    const ViewShare& share  = two ? g_playerTwo : g_playerOne;
+    // The single render (the mirror in, no further pass) lays out for column 0, player 1's, as its own pass does.
+    const int        column  = std::max(overlay_pass::Column(), 0);
+    const ViewShare& share   = g_shares[column];
     const float   viewW   = share.sizeX * hostW;
     const float   viewH   = share.sizeY * hostH;
     const IntRect image   = *out;
@@ -160,16 +163,16 @@ IntRect* LayoutRect(IntRect* out)
     const float   host    = MarkerHostScale(band, uiScale, image.Width(), image.Height(), viewW, viewH);
     const auto    place   = PlaceInBand(band, image.Width(), image.Height());
     const bool    applied = g_bandOn && host > 0.0f && place.scaleX != 0.0f;
-    g_loggedPass   = two ? 1 : 0;
-    Logged& logged = g_logged[g_loggedPass];
+    g_loggedColumn = column;
+    Logged& logged = g_logged[column];
     if (!(image == logged.image) || !(band == logged.band) || viewW != logged.viewW || viewH != logged.viewH ||
         static_cast<int>(applied) != logged.applied)
     {
-        logged                      = {image, band, viewW, viewH, applied ? 1 : 0};
-        g_entryLogged[g_loggedPass] = false;
+        logged                = {image, band, viewW, viewH, applied ? 1 : 0};
+        g_entryLogged[column] = false;
         g_lastText    = std::format(L"image {}x{}, player {}'s view {:.0f}x{:.0f} at ({:.0f},{:.0f}); band ({},{})-({},{}), "
                                     L"layout scale {:.3f}, marker host scale {:.4f}: {}",
-                                    image.Width(), image.Height(), two ? 2 : 1, viewW, viewH, share.originX * hostW,
+                                    image.Width(), image.Height(), column + 1, viewW, viewH, share.originX * hostW,
                                     share.originY * hostH, band.minX, band.minY, band.maxX, band.maxY, uiScale, host,
                                     applied ? L"applied" : g_bandOn ? L"NOT applied (unusable band)" : L"off (hud-band off)");
         platform::Log(L"HUD layout: {}", g_lastText);
@@ -180,12 +183,12 @@ IntRect* LayoutRect(IntRect* out)
         g_bandApplies = 1;
         g_pending = {true, place, share.originX * hostW, share.originY * hostH, viewW, viewH, host,
                      BandClipMap(band, image.Width(), image.Height())};
-        g_hostSet[two ? 1 : 0] = {true,
-                                  {static_cast<float>(band.minX), static_cast<float>(band.minY)},
-                                  {share.originX * hostW, share.originY * hostH},
-                                  {static_cast<float>(band.Width()), static_cast<float>(band.Height())},
-                                  {viewW, viewH},
-                                  host};
+        g_hostSet[column] = {true,
+                             {static_cast<float>(band.minX), static_cast<float>(band.minY)},
+                             {share.originX * hostW, share.originY * hostH},
+                             {static_cast<float>(band.Width()), static_cast<float>(band.Height())},
+                             {viewW, viewH},
+                             host};
     }
     return result;
 }
@@ -193,12 +196,12 @@ IntRect* LayoutRect(IntRect* out)
 /// Replaces the render's call to FEndMenuRenderer__FindOrAddNamedLayerEntry (same register arguments).
 void* LayerEntry(void* slot, std::uintptr_t name, const IntRect* rect)
 {
-    // Player 2's pass names its own entry (hud/second_image.h).
+    // A further column's pass names its own entry (hud/second_image.h).
     void* entry = reinterpret_cast<FindOrAddEntryFn>(g_entryCall.Original())(
         slot, static_cast<std::uintptr_t>(second_image::EntryNameForPass(name)), rect);
-    if (overlay_pass::Current() != overlay_pass::Pass::Single)
+    if (overlay_pass::Split())
     {
-        image_entries::RecordEntry(overlay_pass::Current() == overlay_pass::Pass::PlayerTwo ? 2 : 1, entry);
+        image_entries::RecordEntry(overlay_pass::Column(), entry);
     }
     if (!g_pending.active || entry == nullptr || GetCurrentThreadId() != g_gameThread)
     {
@@ -207,9 +210,9 @@ void* LayerEntry(void* slot, std::uintptr_t name, const IntRect* rect)
     g_pending.active             = false;
     const std::uintptr_t e       = reinterpret_cast<std::uintptr_t>(entry);
     const std::uintptr_t overlay = Overlay();
-    if (!g_entryLogged[g_loggedPass] && platform::Enabled(platform::Level::Debug))
+    if (!g_entryLogged[g_loggedColumn] && platform::Enabled(platform::Level::Debug))
     {
-        g_entryLogged[g_loggedPass] = true;
+        g_entryLogged[g_loggedColumn] = true;
         platform::LogDebug(L"HUD layout: entry matrix x/y ({:.6f}, {:.6f}, {:.3f}, {:.3f}) -> ({:.6f}, {:.6f}, {:.3f}, {:.3f}); "
                            L"host ({:.0f},{:.0f}) {:.0f}x{:.0f} scale {:.4f} -> ({:.0f},{:.0f}) {:.0f}x{:.0f} scale {:.4f}",
                            ReadFloat(e + facts::kEntryMatrixScaleX), ReadFloat(e + facts::kEntryMatrixScaleY),
@@ -281,9 +284,9 @@ void SubmitSlot(void* renderer, std::uintptr_t pool, void* slot)
         g_submit.active = false;
         PlaceChildMatrices(g_submit);
     }
-    if (overlay_pass::Current() == overlay_pass::Pass::PlayerTwo)
+    if (overlay_pass::Further())
     {
-        return;  // player 1's pass submits the slot holding both entries (hud/second_image.h)
+        return;  // player 1's pass submits the slot holding every column's entry (hud/second_image.h)
     }
     reinterpret_cast<SubmitSlotFn>(g_submitCall.Original())(renderer, pool, slot);
 }
@@ -410,8 +413,12 @@ void Remove() noexcept
     g_installed = !(rect && entry && submitBack);
 }
 
-void Tick(bool splitShown, const ViewShare& playerOne, const ViewShare& playerTwo) noexcept
+void Tick(bool splitShown, const ViewShares& shares, int count) noexcept
 {
+    for (int column = 0; column < kMaxColumns; ++column)
+    {
+        g_shares[column] = column < count ? shares[column] : ViewShare{};
+    }
     if (!g_installed)
     {
         return;
@@ -432,13 +439,15 @@ void Tick(bool splitShown, const ViewShare& playerOne, const ViewShare& playerTw
         }
     }
     g_splitShown = splitShown && g_rectCall.IsInstalled();
-    g_playerOne  = playerOne;
-    g_playerTwo  = playerTwo;
 }
 
-bool WriteHostSet(int player) noexcept
+bool WriteHostSet(int column) noexcept
 {
-    const HostSet& set = g_hostSet[player == 2 ? 1 : 0];
+    if (column < 0 || column >= kMaxColumns)
+    {
+        return false;
+    }
+    const HostSet&       set     = g_hostSet[column];
     const std::uintptr_t overlay = Overlay();
     if (!set.valid || overlay == 0 || GetCurrentThreadId() != g_gameThread)
     {
