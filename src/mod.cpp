@@ -80,7 +80,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.44.5-guest-row";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.45.0-seat-record";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
@@ -115,9 +115,9 @@ public:
 
     Outcome HoldStick(std::int32_t player, const float (&axes)[4]) override
     {
-        if (!session_.HasPlayerTwo())
+        if (!session_.In(player - 1))
         {
-            return {false, L"stick holds act only while player 2 is in"};
+            return {false, L"stick holds act only while that player is in"};
         }
         lss::players::player_two_camera::HoldStick(static_cast<unsigned>(player - 1), axes);
         return {};
@@ -140,13 +140,13 @@ void RegisterSessionCommands(lss::players::Session& session)
                       L"free, nothing is made yet and player 2 joins once it is (p2.state awaiting)",
               .set  = [&session](const Value&) {
                   session.Join();
-                  return session.HasPlayerTwo() ? Outcome{}
+                  return session.In() ? Outcome{}
                          : session.Awaiting()   ? Outcome{true, L"player 2 joins once its member is free (see the log; 'leave' stops the wait)"}
                                                 : Outcome{false, L"player 2 did not join (see the log)"};
               }});
     Register({.name = L"leave", .help = L"player 2 leaves, or stops waiting for a member (Ctrl+F8)", .set = [&session](const Value&) {
                   session.Leave();
-                  return session.HasPlayerTwo() ? Outcome{false, L"player 2 is still in (see the log)"} : Outcome{};
+                  return session.In() ? Outcome{false, L"player 2 is still in (see the log)"} : Outcome{};
               }});
     Register({.name = L"party.ai", .shape = Shape::Text,
               .help = L"each deployed member's status, PLAYER slot holder, actor mode and field AI layers (the take test's view)",
@@ -155,7 +155,7 @@ void RegisterSessionCommands(lss::players::Session& session)
               .help = L"the member player 2 plays (its type and row of the party order), or why it waits for one",
               .get  = [&session] { return Value{session.MemberReading()}; }});
     Register({.name = L"p2.in", .shape = Shape::OnOff, .help = L"player 2 is in",
-              .get = [&session] { return Value{session.HasPlayerTwo()}; }});
+              .get = [&session] { return Value{session.In()}; }});
     Register({.name = L"p2.rejoin", .shape = Shape::OnOff,
               .help = L"player 2 was taken out by a world change and joins again once the field is back ('leave' cancels)",
               .get  = [&session] { return Value{session.RejoinPending()}; }});
@@ -166,7 +166,7 @@ void RegisterSessionCommands(lss::players::Session& session)
                        L"playing (holds its member), or handed (its member is with its AI while the game's leader is: a scene, a "
                        L"field action, the lock; or for the member's own hold: a script, an animation, a guide lead; the seat is kept)",
               .get   = [&session] {
-                  return Value{std::wstring(!session.HasPlayerTwo() ? (session.Awaiting() ? L"awaiting" : L"out")
+                  return Value{std::wstring(!session.In() ? (session.Awaiting() ? L"awaiting" : L"out")
                                             : !session.Seated()     ? L"in"
                                             : session.HandedToAi()  ? L"handed"
                                                                     : L"playing")};
@@ -178,7 +178,7 @@ void RegisterSessionCommands(lss::players::Session& session)
                        L"players/split_render.h)",
               .set   = [&session](const Value& value) {
                   lss::players::split_render::SetMask(static_cast<std::uint32_t>(std::get<std::int64_t>(value)),
-                                                      session.HasPlayerTwo());
+                                                      session.Count() != 0);
                   return Outcome{};
               },
               .get = [] { return Value{static_cast<std::int64_t>(lss::players::split_render::Mask())}; }});
@@ -197,9 +197,9 @@ void RegisterSessionCommands(lss::players::Session& session)
               }});
     Register({.name = L"quit", .help = L"quit the game through the engine (player 2 must be out)",
               .set  = [&session](const Value&) {
-                  if (session.HasPlayerTwo())
+                  if (session.Count() != 0)
                   {
-                      return Outcome{false, L"player 2 is still in ('leave' first)"};
+                      return Outcome{false, L"a further player is still in ('leave' first)"};
                   }
                   return lss::players::Session::Console(L"quit") ? Outcome{}
                                                                   : Outcome{false, L"the console command could not be called"};
@@ -257,7 +257,7 @@ public:
         }
         // With player 2 in, its camera manager was built through the replacement; the DLL is pinned, so the
         // replacement stays valid. Otherwise the engine's function goes back.
-        if (installed_ && !session_.HasPlayerTwo())
+        if (installed_ && session_.Count() == 0)
         {
             lss::players::player_two_camera::RemoveInputTick();
             lss::players::nav_area_two::Remove();
@@ -362,11 +362,11 @@ private:
         lss::players::game_state::Tick();  // first: the session and the console read this tick's values
         lss::players::pad_presence::Tick();
         session_.Tick();
-        lss::views::letterbox_patch::Tick(session_.HasPlayerTwo() || lss::views::window_span::Held());
-        lss::views::window_span::Tick(session_.HasPlayerTwo());
-        lss::views::mirror_player::Tick(session_.HasPlayerTwo() ? 2 : 1,
-                                        lss::views::window_span::Held() ? lss::views::window_span::Columns() : 0);
-        lss::views::scene_camera_two::Tick(CameraManagerOf(0), session_.HasPlayerTwo() ? CameraManagerOf(1) : nullptr);
+        const int playersIn = 1 + session_.Count();  // player 1 and the seats in: the columns the players fill
+        lss::views::letterbox_patch::Tick(playersIn > 1 || lss::views::window_span::Held());
+        lss::views::window_span::Tick(playersIn > 1);
+        lss::views::mirror_player::Tick(playersIn, lss::views::window_span::Held() ? lss::views::window_span::Columns() : 0);
+        lss::views::scene_camera_two::Tick(CameraManagerOf(0), session_.In() ? CameraManagerOf(1) : nullptr);  // seat 1 today
         lss::battle::command_menu_two::Tick(session_.Seated());
         lss::battle::command_menu_tick::Tick();
         lss::battle::party_switch::Tick();
@@ -415,7 +415,7 @@ private:
     /// camera that sees them better, the NPCs near player 2 kept awake and spawned around it too, and able to see it.
     void TickWorld() noexcept
     {
-        const bool in        = session_.HasPlayerTwo();
+        const bool in        = session_.In();  // seat 1: the world modules take one further player today (plan/seats.md)
         void*      cameraTwo = in ? CameraManagerOf(1) : nullptr;
         void*      memberTwo = in ? lss::players::scopes::Member(1) : nullptr;
         lss::world::party_fade::Tick(in);
@@ -432,9 +432,9 @@ private:
     void TickHud() noexcept
     {
         lss::hud::overlay_layout::ViewShare one, two;
-        const bool mirror = !session_.HasPlayerTwo() && lss::views::mirror_player::Count() > 0;
-        const bool views  = (session_.HasPlayerTwo() || mirror) && ReadView(0, one) && ReadView(1, two);
-        const bool split  = views && session_.HasPlayerTwo();
+        const bool mirror = session_.Count() == 0 && lss::views::mirror_player::Count() > 0;
+        const bool views  = (session_.In() || mirror) && ReadView(0, one) && ReadView(1, two);  // two columns today
+        const bool split  = views && session_.In();
         lss::hud::overlay_layout::Tick(views, one, two);
         if (mirror && lss::hud::ui_targets::Enabled())
         {
