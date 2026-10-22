@@ -82,7 +82,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.47.0-hud-passes-by-column";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.48.0-enemy-bar-by-column";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;

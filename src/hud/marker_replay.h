@@ -14,9 +14,16 @@
 // The entries are redirected (platform/entry_redirect.h; their first two instructions are copied, so the redirects are
 // installed from the game thread, outside these functions, which only the game thread runs).
 // Order each frame (hud/second_image.h), per further column, the highest first: its host set, its replay, its render;
-// then column 0's host set, column 0's replay (the tick's own inputs: it reproduces the tick), player 1's render. Not
-// replayed: the bars' timers, eases and scale, the battle text's count-up and its UI effects (player 1's point in every
-// column).
+// then column 0's host set, column 0's replay (the tick's own inputs: it reproduces the tick), player 1's render.
+// The enemy bars' class per column (hud/bar_class.h; RE-enemy-bar-two-classification.md, -content.md): the tick
+// classes each bar once with player 1's displayed target, so a further column's replay classes it again with its own
+// seat's target (the targeted placement for its target and its main target, the leader clamp against its member),
+// keeps its own copy of the displayed target's y-ease (the tick's arithmetic: the game has no function for the step),
+// sets the bar's look where the class differs (the bar's, the name's, the status panel's and the stagger-bonus icon's
+// visibility through UWidget::SetVisibility, the tick's own setter) and refreshes the status icons of a bar only that
+// column targets with the game's once-per-frame call; column 0's replay puts the tick's looks back first. Its label
+// tick runs again under its own key. Not replayed: the bars' timers and scale, the battle text's count-up and its UI
+// effects (player 1's point in every column).
 
 namespace lss::platform {
 class GameImage;

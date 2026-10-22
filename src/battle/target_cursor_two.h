@@ -15,8 +15,9 @@
 // player 2's cursor with the same exchanges. The releases the game makes for player 1 alone (a battle suspension)
 // release player 2's with the game's reflected HideBattleTargetIcon; the battle's end and a leave the same. In each
 // player's pass of the HUD render the other player's cursor is transparent (the game's SetColorAndOpacity), as the
-// mod hides player 1's field cursors. Not covered: the enemy bar's targeted look and the ability label in player 2's
-// half (the HUD ticks classify once with player 1's key), the shared weak-point marker edges. Game thread only.
+// mod hides player 1's field cursors. The enemy bar's targeted look and the ability label in player 2's half follow
+// player 2's key from here (hud/marker_replay classes the bars per column with DisplayedTarget). Not covered: the
+// shared weak-point marker edges. Game thread only.
 
 #include "hud/overlay_pass.h"
 
@@ -37,6 +38,11 @@ void RunForPlayerTwo(void* system) noexcept;
 
 /// Player 2's cursor released with the game's own hide (the battle ended, player 2 left) and its copies dropped.
 void End() noexcept;
+
+/// Player 2's displayed-target key from its copy of the enemy bar's HUD key (`object`, `controller`: a thread-safe
+/// weak pair, both null when player 2 has no target or no copy). For the HUD passes that classify the enemy bars
+/// per column (hud/marker_replay).
+bool DisplayedTarget(void*& object, void*& controller) noexcept;
 
 /// Around each pass of the HUD render (the column whose pass runs, overlay_pass::kSingle for the game's one render):
 /// the other player's cursor transparent.

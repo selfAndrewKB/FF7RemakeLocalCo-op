@@ -311,6 +311,23 @@ void End() noexcept
     g_copySystem = nullptr;
 }
 
+bool DisplayedTarget(void*& object, void*& controller) noexcept
+{
+    object = controller = nullptr;
+    if (!g_copy.Defined() || g_copy.IsOpen() || System() != g_copySystem)
+    {
+        return false;  // open: the live key is player 2's just now; the passes never run inside the targeting run
+    }
+    const auto key = g_copy.Value(1);
+    if (key.size() < 2 * sizeof(void*))
+    {
+        return false;
+    }
+    std::memcpy(&object, key.data(), sizeof(object));
+    std::memcpy(&controller, key.data() + sizeof(object), sizeof(controller));
+    return object != nullptr;
+}
+
 void BeginPass(int column) noexcept
 {
     g_column = column;

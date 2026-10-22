@@ -1,7 +1,9 @@
 #include "hud/marker_replay.h"
 
+#include "battle/target_cursor_two.h"
 #include "control/registry.h"
 #include "engine_facts.h"
+#include "hud/bar_class.h"
 #include "hud/overlay_pass.h"
 #include "platform/call_redirect.h"
 #include "platform/entry_redirect.h"
@@ -9,6 +11,7 @@
 #include "platform/image.h"
 #include "platform/log.h"
 #include "players/player_two_camera.h"
+#include "players/scopes.h"
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -17,6 +20,7 @@
 
 #include <intrin.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <cstring>
 #include <format>
@@ -43,6 +47,7 @@ struct WeakKey
     void* object     = nullptr;
     void* controller = nullptr;
 };
+static_assert(sizeof(WeakKey) == facts::kEnemyBarDisplayedTargetBytes, "the bar manager's key is one weak pair");
 
 using PlaceUntargetedFn = void (*)(void* manager, void* widget, const Vector3* location);
 using PlaceTargetedFn   = void (*)(void* manager, void* widget, WeakKey* key, const Vector3* location, std::int32_t scratch,
@@ -65,6 +70,18 @@ using LockonPlaceFn      = void (*)(void* controller, void* widget, const Vector
 using ManagerTickFn      = void (*)(void* manager);
 using SetPositionFn     = void (*)(void* widget, Vector2 position, bool removeDpiScale);
 using ContextPcFn       = void* (*)(const void* context);
+// The enemy bar's class per column (hud/bar_class.h; RE-enemy-bar-two-classification.md, -content.md).
+using MainTargetFn      = WeakKey* (*)(WeakKey* out, const WeakKey* key);  // out holds one weak reference
+using WeakReleaseFn     = void (*)(WeakKey* pair);
+using DtAlphaFn         = float (*)(float scale);
+using GetVisibilityFn   = std::uint8_t (*)(void* widget);
+using IsTargetableFn    = std::uint8_t (*)(void* unit, std::int32_t one, std::int32_t zero);
+using StatusIconsFn     = void (*)(void* block, void* character);
+using WidgetFn          = void (*)(void* widget);
+using BoolMethodFn      = std::uint8_t (*)(void* self);
+using BoolMethod2Fn     = std::uint8_t (*)(void* self, std::int32_t zero);
+using ObjectMethodFn    = void* (*)(void* self);
+using FloatMethodFn     = float (*)(void* self);
 
 platform::EntryRedirect g_untargeted;
 platform::EntryRedirect g_targeted;
@@ -90,6 +107,17 @@ const std::uint8_t*     g_hiddenVisibility = nullptr;
 std::uintptr_t          g_umgReturn = 0, g_numberReturn = 0, g_textReturn = 0, g_wrapperReturn = 0;
 bool                    g_installed = false, g_pending = false;
 bool                    g_on        = true;
+// The bars' class per column: set once at install (every check passed, or the further columns keep the tick's class).
+void**                  g_barSlot        = nullptr;  // &EndUISystem[27]
+MainTargetFn            g_mainTarget     = nullptr;
+WeakReleaseFn           g_weakRelease    = nullptr;
+DtAlphaFn               g_dtAlpha        = nullptr;
+WidgetVisibilityFn      g_setVisibility  = nullptr;
+GetVisibilityFn         g_getVisibility  = nullptr;
+IsTargetableFn          g_isTargetable   = nullptr;
+StatusIconsFn           g_statusIcons    = nullptr;
+WidgetFn                g_renderTransform = nullptr;
+bool                    g_ownClasses     = false;
 
 // Game thread only.
 bool g_replaying = false;
@@ -179,8 +207,38 @@ struct Seen
     void*        text         = nullptr;
     float        textAt[kMaxColumns][2] = {};
     bool         textProjected[kMaxColumns] = {};
+    // The bars' class per further column: bars classed otherwise than the tick (per column), looks set and put back,
+    // status-icon refreshes made, and column 0's checks of the rule against the tick.
+    std::uint32_t reclassed[kMaxColumns] = {}, looksSet = 0, looksRestored = 0, iconsRefreshed = 0, disagreements = 0;
+    // The sampled bar's class in the further column that last replayed it, and its own visibility before and after.
+    bool         sampleTickTargeted = false, sampleOwnTargeted = false;
+    std::uint8_t sampleBarBefore = 0xFF, sampleBarAfter = 0xFF;
+    float        sampleEase = 0.0f;
 };
 Seen          g_seen;
+
+/// A further column's own copy of a bar's y-ease (the tick keeps one, player 1's, in the entry: p+0x110).
+struct OwnEase
+{
+    int   column = 0;
+    void* source = nullptr;  // the entry's source object: the ease belongs to the enemy's bar
+    float ease   = 0.0f;
+    bool  seen   = false;
+};
+std::vector<OwnEase> g_eases;
+
+/// A widget's visibility as the tick left it, changed in a further column's pass and put back before player 1's.
+struct LookRestore
+{
+    void*        widget = nullptr;
+    std::int32_t weak[2] = {-1, 0};
+    std::uint8_t visibility = 0;
+};
+std::vector<LookRestore> g_looks;
+std::vector<void*>       g_refreshed;  // the entries whose status icons were refreshed this frame (once a frame each)
+std::uint32_t            g_reclassedLogged[kMaxColumns] = {};  // the last count logged per column
+bool                     g_reclassedTold = false;              // the first re-class ever: an Info line
+std::int32_t             g_disagreedLogged = -1;
 std::uint32_t g_run = 0;  // consecutive frames with markers (an Info line when a run starts and ends)
 std::uint32_t g_runRecorded = 0;
 
@@ -409,24 +467,462 @@ void AddWeakReference(void* controller) noexcept
     }
 }
 
+/// A virtual method of `self` at vtable offset `slot`, read guarded.
+template <class Fn>
+bool Method(const void* self, std::uint32_t slot, Fn& fn) noexcept
+{
+    void* vtable = nullptr;
+    fn           = nullptr;
+    return platform::Read(self, vtable) && vtable != nullptr &&
+           platform::Read(static_cast<const std::uint8_t*>(vtable) + slot, fn) && fn != nullptr;
+}
+
+/// A column's displayed target and its main target, as the tick's rule reads them: the main target is the key's owner
+/// when the key is a part (the game's own lookup; its result holds one weak reference, given back).
+bar_class::Keys KeysOf(const WeakKey& key) noexcept
+{
+    bar_class::Keys keys{key.object, nullptr};
+    if (key.object == nullptr || key.controller == nullptr || g_mainTarget == nullptr)
+    {
+        return keys;
+    }
+    WeakKey  main{};
+    WeakKey* result = nullptr;
+    if (platform::CallGuarded(g_mainTarget, result, &main, static_cast<const WeakKey*>(&key)))
+    {
+        keys.main = main.object;
+        if (main.controller != nullptr)
+        {
+            platform::CallGuarded(g_weakRelease, &main);
+        }
+    }
+    return keys;
+}
+
+/// The key the tick classified with: the live displayed target (player 1's) on the bar manager.
+WeakKey LiveKey(const void* manager) noexcept
+{
+    WeakKey key{};
+    platform::CopyGuarded(&key, static_cast<const std::uint8_t*>(manager) + facts::kEnemyBarDisplayedTarget, sizeof(key));
+    return key;
+}
+
+/// A column's own key: column 0 the live one; a further column its seat's copy (seat 1's today: every further column
+/// shows player 2's target until the seats hold one key each, plan/seats.md step 6). No copy, or one open: an empty
+/// key, which classes every bar as untargeted there (the single-player look of a player with no target).
+WeakKey ColumnKey(int column, const void* manager) noexcept
+{
+    if (column == 0)
+    {
+        return LiveKey(manager);
+    }
+    WeakKey key{};
+    battle::target_cursor_two::DisplayedTarget(key.object, key.controller);
+    return key;
+}
+
+/// What a bar's entry leads to: its source, the source's character and battle unit, and the "shown anyway" flag.
+struct BarObjects
+{
+    void*        source     = nullptr;
+    void*        controller = nullptr;
+    void*        character  = nullptr;
+    void*        unit       = nullptr;
+    std::uint8_t show       = 0;  // p+0x12D: the bar's content shows whoever targets it (a burst began)
+};
+
+bool ObjectsOf(const std::uint8_t* p, BarObjects& out) noexcept
+{
+    const std::uint8_t* entry = p - facts::kBarEntryP;
+    if (!platform::CopyGuarded(&out.source, entry, sizeof(out.source)) ||
+        !platform::CopyGuarded(&out.controller, entry + 8, sizeof(out.controller)) || out.source == nullptr)
+    {
+        return false;
+    }
+    platform::CopyGuarded(&out.show, p + facts::kBarEntryShowFlag, sizeof(out.show));
+    ObjectMethodFn character = nullptr;
+    if (Method(out.source, facts::kSourceCharacterSlot, character))
+    {
+        platform::CallGuarded(character, out.character, out.source);
+    }
+    out.unit = platform::ReadPointer(out.character, facts::kCharacterUnit);
+    return true;
+}
+
+/// The targeted clamp's half size for a bar the tick placed untargeted: the character's own answer, as the tick asks it.
+float HalfSizeOf(const BarObjects& objects) noexcept
+{
+    float half = 0.0f;
+    if (objects.character != nullptr)
+    {
+        auto*         object = static_cast<std::uint8_t*>(objects.character) + facts::kCharacterHalfSizeObject;
+        FloatMethodFn fn     = nullptr;
+        if (Method(object, facts::kHalfSizeSlot, fn))
+        {
+            platform::CallGuarded(fn, half, static_cast<void*>(object));
+        }
+    }
+    return half;
+}
+
+/// The visibility the tick gives a bar and its parts for `targeted` (RE-enemy-bar-two-content.md §6): 0 Visible, 1
+/// Collapsed. The stagger-bonus icon's applies only while the unit shows a bonus (the game sets it only then).
+struct Look
+{
+    std::uint8_t bar = 1, name = 1, status = 1, linkage = 1;
+    bool         bonus = false;  // the unit's stagger bonus is showing: the bonus icon's visibility applies
+};
+
+Look LookFor(const BarObjects& objects, bool targeted) noexcept
+{
+    Look          look;
+    std::uint8_t  part = 0, downed = 0, bonus = 0, targetable = 1, keep = 0;
+    BoolMethod2Fn partFn = nullptr;
+    BoolMethodFn  fn     = nullptr;
+    if (Method(objects.source, facts::kSourceIsPartSlot, partFn))
+    {
+        platform::CallGuarded(partFn, part, objects.source, std::int32_t{0});
+    }
+    if (objects.character != nullptr && Method(objects.character, facts::kCharacterIsDownedSlot, fn))
+    {
+        platform::CallGuarded(fn, downed, objects.character);
+    }
+    if (objects.unit != nullptr && Method(objects.unit, facts::kUnitBonusActiveSlot, fn))
+    {
+        platform::CallGuarded(fn, bonus, objects.unit);
+    }
+    look.bonus = bonus != 0;
+    if (!targeted)
+    {
+        return look;  // every part collapsed, the bar too
+    }
+    if (objects.unit == nullptr)
+    {
+        look.bar = 1;
+    }
+    else
+    {
+        platform::CallGuarded(g_isTargetable, targetable, objects.unit, std::int32_t{1}, std::int32_t{0});
+        platform::CopyGuarded(&keep, static_cast<const std::uint8_t*>(objects.unit) + facts::kUnitKeepBarFlag, sizeof(keep));
+        look.bar = targetable == 0 && keep == 0 ? 1 : 0;  // untargetable and no script keeps its bar: collapsed
+    }
+    look.name    = 0;
+    look.status  = part != 0 ? 1 : 0;
+    look.linkage = part != 0 || downed != 0 ? 1 : 0;
+    return look;
+}
+
+/// One widget's visibility set for this pass with the game's setter, the tick's value kept for the restore.
+void SetLook(void* widget, const std::int32_t (&weak)[2], std::uint8_t value) noexcept
+{
+    std::uint8_t now = 0xFF;
+    if (widget == nullptr || !platform::CallGuarded(g_getVisibility, now, widget))
+    {
+        return;
+    }
+    try
+    {
+        g_looks.push_back({widget, {weak[0], weak[1]}, now});  // the restore first: a look is never set without one
+    }
+    catch (...)
+    {
+        return;
+    }
+    if (now != value && platform::CallGuarded(g_setVisibility, widget, value))
+    {
+        ++g_seen.looksSet;
+    }
+}
+
+/// A sub-widget of the entry at its weak field.
+void* SubWidget(const std::uint8_t* p, std::uint32_t field, std::int32_t (&weak)[2]) noexcept
+{
+    weak[0] = -1;
+    weak[1] = 0;
+    if (!platform::CopyGuarded(weak, p + field, sizeof(weak)))
+    {
+        return nullptr;
+    }
+    return players::player_two_camera::ObjectOf(weak);
+}
+
+/// The bar's look for this column when its class differs from the tick's: the bar, the name, the status panel and
+/// the stagger-bonus icon through UWidget::SetVisibility (the tick's own setter), the tick's values kept.
+Look ApplyLook(const std::uint8_t* p, void* barWidget, const std::int32_t (&barWeak)[2], const BarObjects& objects,
+               bool targeted) noexcept
+{
+    const Look   look = LookFor(objects, targeted);
+    std::int32_t weak[2]{};
+    SetLook(barWidget, barWeak, look.bar);
+    SetLook(SubWidget(p, facts::kBarEntryNameText, weak), weak, look.name);
+    SetLook(SubWidget(p, facts::kBarEntryStatusPanel, weak), weak, look.status);
+    if (look.bonus)  // the game sets the bonus icon's visibility only while the bonus shows
+    {
+        SetLook(SubWidget(p, facts::kBarEntryLinkage, weak), weak, look.linkage);
+    }
+    return look;
+}
+
+/// The status icons of a bar only this column targets, refreshed by the game's own once-per-frame call (the tick made
+/// it only for the bars it placed targeted): the enemy's real status, no per-view state, nothing to put back.
+void RefreshStatusIcons(const std::uint8_t* p, const BarObjects& objects, bool bonus) noexcept
+{
+    void* block = platform::ReadPointer(p, facts::kBarEntryStatusIcons);
+    if (block == nullptr || objects.character == nullptr || g_statusIcons == nullptr)
+    {
+        return;
+    }
+    std::uint8_t* slots = nullptr;
+    std::int32_t  count = 0;
+    if (platform::CopyGuarded(&slots, block, sizeof(slots)) && platform::CopyGuarded(&count, static_cast<std::uint8_t*>(block) + 8, sizeof(count)) &&
+        slots != nullptr && count > 0 && count <= 16)
+    {
+        const float y = bonus ? 30.0f : 0.0f;
+        for (std::int32_t i = 0; i < count; ++i)
+        {
+            std::int32_t weak[2]{};
+            void*        icon = SubWidget(slots + static_cast<std::size_t>(i) * facts::kBarStatusSlotSize, 0, weak);
+            if (icon != nullptr && platform::WriteGuarded(static_cast<std::uint8_t*>(icon) + facts::kWidgetRenderTranslationY, &y, sizeof(y)))
+            {
+                platform::CallGuarded(g_renderTransform, icon);
+            }
+        }
+    }
+    if (platform::CallGuarded(g_statusIcons, block, objects.character))
+    {
+        ++g_seen.iconsRefreshed;
+    }
+    else
+    {
+        Fault(10, L"a bar's status icons");
+    }
+}
+
+/// A further column's own y-ease for its displayed target's bar: the tick's arithmetic on the column's own copy
+/// (the game has no function for the step: it is inline in the tick, RE-enemy-bar-two-classification.md §4; the
+/// recreation is three lines with the game's constants and its own dt helper).
+float& OwnEaseOf(int column, void* source) noexcept
+{
+    for (auto& own : g_eases)
+    {
+        if (own.column == column && own.source == source)
+        {
+            own.seen = true;
+            return own.ease;
+        }
+    }
+    try
+    {
+        g_eases.push_back({column, source, 0.0f, true});  // a new entry starts at 0, as the game's
+        return g_eases.back().ease;
+    }
+    catch (...)
+    {
+        static float scratch = 0.0f;  // no room for a copy: this frame's step is lost, nothing else
+        scratch = 0.0f;
+        return scratch;
+    }
+}
+
+void StepOwnEase(float& ease) noexcept
+{
+    float alpha = 0.0f;
+    if (g_dtAlpha != nullptr && platform::CallGuarded(g_dtAlpha, alpha, 1.0f))
+    {
+        ease += (-60.0f - ease) * 3.0f * alpha;
+    }
+}
+
+/// The looks the further columns' passes set, put back to the tick's values, the last set first (the columns run
+/// highest first: each pass starts from the tick's looks, and player 1's pass renders them).
+void RestoreLooks() noexcept
+{
+    for (auto look = g_looks.rbegin(); look != g_looks.rend(); ++look)
+    {
+        if (Alive(look->widget, look->weak) && platform::CallGuarded(g_setVisibility, look->widget, look->visibility))
+        {
+            ++g_seen.looksRestored;
+        }
+    }
+    g_looks.clear();
+}
+
+/// The keys a column classes with (bar_class.h): player 1's live key (the tick's) and the column's own; a further
+/// column's own key from its seat, column 0's the live one again.
+struct ColumnKeys
+{
+    bar_class::Keys one, two;
+};
+
+ColumnKeys KeysForColumn(int column, bool ownColumn, const void* manager) noexcept
+{
+    const WeakKey live = LiveKey(manager);
+    ColumnKeys    keys;
+    keys.one = g_ownClasses ? KeysOf(live) : bar_class::Keys{live.object, nullptr};  // the ease needs the live key either way
+    keys.two = ownColumn ? KeysOf(ColumnKey(column, manager)) : keys.one;
+    return keys;
+}
+
+/// One bar placed for this column as the game places a bar of that class, then the displayed target's rise applied:
+/// column 0 the tick's (applied, not stepped), a further column its own copy stepped once per frame as the tick
+/// steps the game's.
+void PlaceBar(int column, bool ownColumn, const BarCall& bar, std::uint8_t* p, const BarObjects& objects, bool known,
+              bool targeted, bool caseC, const bar_class::Keys& two, bool sample) noexcept
+{
+    if (!targeted)
+    {
+        if (!platform::CallGuarded(reinterpret_cast<PlaceUntargetedFn>(g_untargeted.Original()), bar.manager, bar.widget,
+                                   static_cast<const Vector3*>(&bar.location)))
+        {
+            Fault(1, L"an enemy bar");
+        }
+        return;
+    }
+    // The key is the entry's own pair; the clamp's half size the tick's when it placed this bar targeted, else the
+    // character's answer; the leader clamp against this column's seat (its member), unless case (c) skips it.
+    WeakKey            key      = bar.targeted ? bar.key : WeakKey{objects.source, objects.controller};
+    const float        halfSize = bar.targeted ? bar.halfSize : HalfSizeOf(objects);
+    const std::uint8_t skip     = ownColumn ? (caseC ? 1 : 0) : bar.skip;
+    AddWeakReference(key.controller);  // the placement releases one
+    bool placed = false;
+    if (ownColumn && skip == 0)
+    {
+        const players::scopes::Scope leader(column, players::scopes::Leader);
+        if (!leader.Held())
+        {
+            static bool told = false;
+            if (!told)
+            {
+                told = true;
+                platform::LogDebug(L"HUD markers: player {}'s leader scope is not bound; its target's bar is clamped away from player 1's leader", column + 1);
+            }
+        }
+        placed = platform::CallGuarded(reinterpret_cast<PlaceTargetedFn>(g_targeted.Original()), bar.manager, bar.widget, &key,
+                                       static_cast<const Vector3*>(&bar.location), std::int32_t{0}, halfSize, skip);
+    }
+    else
+    {
+        placed = platform::CallGuarded(reinterpret_cast<PlaceTargetedFn>(g_targeted.Original()), bar.manager, bar.widget, &key,
+                                       static_cast<const Vector3*>(&bar.location), std::int32_t{0}, halfSize, skip);
+    }
+    if (!placed)
+    {
+        Fault(2, L"the targeted enemy bar");
+        if (g_weakRelease != nullptr && key.controller != nullptr)
+        {
+            platform::CallGuarded(g_weakRelease, &key);  // the reference the placement did not get to release
+        }
+    }
+    if (p == nullptr || !known || objects.source != two.own)
+    {
+        return;
+    }
+    float point[2]{}, ease = 0.0f;
+    bool  have = platform::CopyGuarded(point, p + facts::kBarEntryPoint, sizeof(point));
+    if (ownColumn)
+    {
+        float& mine = OwnEaseOf(column, objects.source);
+        StepOwnEase(mine);
+        ease = mine;
+        if (sample)
+        {
+            g_seen.sampleEase = mine;
+        }
+    }
+    else
+    {
+        have = have && platform::CopyGuarded(&ease, p + facts::kBarEntryEase, sizeof(ease));
+    }
+    if (have)
+    {
+        platform::CallGuarded(g_setPosition, bar.widget, Vector2{point[0], point[1] + ease}, false);
+    }
+}
+
+/// The content's look follows `targeted || shown anyway`: set for this column where it differs from the tick's, and
+/// the status icons refreshed for a bar only this column targets, once a frame (the tick's cadence) however many
+/// further columns target it. True when this bar's class differed from the tick's.
+bool LookAfter(const BarCall& bar, std::uint8_t* p, const BarObjects& objects, bool targeted, bool sample) noexcept
+{
+    const bool tickLook = bar.targeted || objects.show != 0;
+    const bool ownLook  = targeted || objects.show != 0;
+    if (tickLook == ownLook)
+    {
+        return targeted != bar.targeted;  // the placement differed, the look did not (shown anyway)
+    }
+    if (sample)
+    {
+        platform::CallGuarded(g_getVisibility, g_seen.sampleBarBefore, bar.widget);
+    }
+    const Look look = ApplyLook(p, bar.widget, bar.weak, objects, ownLook);
+    if (sample)
+    {
+        platform::CallGuarded(g_getVisibility, g_seen.sampleBarAfter, bar.widget);
+    }
+    if (ownLook && !tickLook && std::find(g_refreshed.begin(), g_refreshed.end(), static_cast<void*>(p)) == g_refreshed.end())
+    {
+        try
+        {
+            g_refreshed.push_back(p);
+        }
+        catch (...)
+        {
+            return true;  // no room to remember it: the refresh is skipped rather than risked twice
+        }
+        RefreshStatusIcons(p, objects, look.bonus);
+    }
+    return true;
+}
+
 void ReplayBars(int column, const std::int32_t (&context)[2], void* controller) noexcept
 {
+    if (g_bars.empty())
+    {
+        return;
+    }
+    // The bar manager: the game's slot (the keys, the label scope); every recorded bar's manager must be it.
+    void* manager = nullptr;
+    if (g_barSlot == nullptr || !platform::CopyGuarded(&manager, g_barSlot, sizeof(manager)))
+    {
+        manager = nullptr;
+    }
+    const bool        ownColumn = g_ownClasses && column >= 1 && manager != nullptr;  // this column classes with its own key
+    const ColumnKeys  keys      = KeysForColumn(column, ownColumn, manager != nullptr ? manager : g_bars.front().manager);
+    std::uint32_t     reclassed = 0, disagreed = 0;
     for (auto& bar : g_bars)
     {
         if (!Alive(bar.widget, bar.weak))
         {
             continue;
         }
+        std::uint8_t* const p = BarEntryOf(bar.manager, bar.widget);
         // A targeted placement consumes one weak reference on the key: replayed only while the manager's entry for this
         // widget still holds that key (its own reference keeps the controller alive).
         if (bar.targeted)
         {
-            std::uint8_t* entry = BarEntryOf(bar.manager, bar.widget);
             void* held = nullptr;
-            if (entry == nullptr || !platform::CopyGuarded(&held, entry - 0x10 + 8, sizeof(held)) ||
-                held != bar.key.controller)
+            if (p == nullptr || !platform::CopyGuarded(&held, p - facts::kBarEntryP + 8, sizeof(held)) || held != bar.key.controller)
             {
                 continue;
+            }
+        }
+        // This column's class: the tick's for column 0 (its inputs reproduce the tick), its own key's for a further one.
+        BarObjects objects;
+        const bool known    = p != nullptr && bar.manager == manager && ObjectsOf(p, objects);
+        auto       verdict  = bar_class::Verdict{};
+        bool       targeted = bar.targeted;
+        if (g_ownClasses && known)
+        {
+            verdict = bar_class::Classify(objects.source, keys.one, keys.two, bar.targeted, bar.skip != 0);
+            if (ownColumn)
+            {
+                // A targeted placement finds the entry by its key: an entry whose controller is gone would match
+                // every empty key, so it keeps the untargeted placement.
+                targeted = verdict.targeted && (bar.targeted || objects.controller != nullptr);
+            }
+            else if (!bar_class::PlayerOneAgrees(objects.source, keys.one, bar.targeted, bar.skip != 0))
+            {
+                ++disagreed;
             }
         }
         auto*        widget = static_cast<std::uint8_t*>(bar.widget);
@@ -440,6 +936,8 @@ void ReplayBars(int column, const std::int32_t (&context)[2], void* controller) 
             platform::CopyGuarded(g_seen.barTick, widget + facts::kUserWidgetViewportOffsets, sizeof(g_seen.barTick));
             platform::CopyGuarded(g_seen.contextBefore, widget + facts::kUserWidgetPlayerWeak, sizeof(g_seen.contextBefore));
             std::memcpy(g_seen.contextFurther, context, sizeof(context));
+            g_seen.sampleTickTargeted = bar.targeted;
+            g_seen.sampleOwnTargeted  = targeted;
         }
         if (!platform::CopyGuarded(saved, widget + facts::kUserWidgetPlayerWeak, sizeof(saved)) ||
             !platform::WriteGuarded(widget + facts::kUserWidgetPlayerWeak, context, sizeof(context)))
@@ -452,43 +950,85 @@ void ReplayBars(int column, const std::int32_t (&context)[2], void* controller) 
             g_seen.pcUnderSwap = nullptr;
             platform::CallGuarded(g_contextPc, g_seen.pcUnderSwap, static_cast<const void*>(widget + facts::kUserWidgetPlayerWeak));
         }
-        if (!bar.targeted)
-        {
-            if (!platform::CallGuarded(reinterpret_cast<PlaceUntargetedFn>(g_untargeted.Original()), bar.manager, bar.widget,
-                                       static_cast<const Vector3*>(&bar.location)))
-            {
-                Fault(1, L"an enemy bar");
-            }
-        }
-        else
-        {
-            WeakKey key = bar.key;
-            AddWeakReference(key.controller);
-            if (!platform::CallGuarded(reinterpret_cast<PlaceTargetedFn>(g_targeted.Original()), bar.manager, bar.widget, &key,
-                                       static_cast<const Vector3*>(&bar.location), std::int32_t{0}, bar.halfSize, bar.skip))
-            {
-                Fault(2, L"the targeted enemy bar");
-            }
-            // The displayed target's bar rides its y-ease above the point (applied, not stepped).
-            void* displayed = nullptr;
-            std::uint8_t* p = nullptr;
-            if (platform::CopyGuarded(&displayed, static_cast<const std::uint8_t*>(bar.manager) + 0xD8, sizeof(displayed)) &&
-                displayed == bar.key.object && (p = BarEntryOf(bar.manager, bar.widget)) != nullptr)
-            {
-                float point[2]{}, ease = 0.0f;
-                if (platform::CopyGuarded(point, p + 0xB4, sizeof(point)) && platform::CopyGuarded(&ease, p + 0x110, sizeof(ease)))
-                {
-                    platform::CallGuarded(g_setPosition, bar.widget, Vector2{point[0], point[1] + ease}, false);
-                }
-            }
-        }
+        PlaceBar(column, ownColumn, bar, p, objects, known, targeted, verdict.caseC, keys.two, sample);
         platform::WriteGuarded(widget + facts::kUserWidgetPlayerWeak, saved, sizeof(saved));
+        if (ownColumn && known && LookAfter(bar, p, objects, targeted, sample))
+        {
+            ++reclassed;
+        }
         if (sample)
         {
             platform::CopyGuarded(g_seen.barAt[column], widget + facts::kUserWidgetViewportOffsets, sizeof(g_seen.barAt[column]));
         }
     }
+    const bar_class::Keys& two = keys.two;
+    if (ownColumn)
+    {
+        g_seen.reclassed[column] += reclassed;
+        if (reclassed != g_reclassedLogged[column])
+        {
+            g_reclassedLogged[column] = reclassed;
+            if (!g_reclassedTold && reclassed != 0)
+            {
+                g_reclassedTold = true;
+                platform::Log(L"HUD markers: player {}'s view shows its own target's enemy bar for the first time ({} bar(s) "
+                              L"classed by player {}'s target this frame, their look set for its pass and put back for player 1's)",
+                              column + 1, reclassed, column + 1);
+            }
+            else
+            {
+                platform::LogDebug(L"HUD markers: player {}'s view: {} enemy bar(s) classed otherwise than the tick (own target {}, its main target {})",
+                                   column + 1, reclassed, two.own, two.main);
+            }
+        }
+    }
+    else if (column == 0 && g_ownClasses)
+    {
+        g_seen.disagreements += disagreed;
+        if (static_cast<std::int32_t>(disagreed) != g_disagreedLogged)
+        {
+            g_disagreedLogged = static_cast<std::int32_t>(disagreed);
+            platform::LogDebug(L"HUD markers: player 1's view: the bar rule disagrees with the tick on {} bar(s)", disagreed);
+        }
+    }
 }
+
+/// The displayed-target key on the bar manager answered for a further column while its label tick runs again (the
+/// ability label sits over that key's bar, RE-enemy-bar-two-classification.md §6; the tick only reads it).
+class ColumnKeyScope
+{
+public:
+    explicit ColumnKeyScope(int column) noexcept
+    {
+        void* manager = nullptr;
+        if (column < 1 || !g_ownClasses || g_barSlot == nullptr || !platform::CopyGuarded(&manager, g_barSlot, sizeof(manager)) ||
+            manager == nullptr)
+        {
+            return;
+        }
+        const WeakKey key = ColumnKey(column, manager);
+        if (key.object == nullptr)
+        {
+            return;
+        }
+        slot_ = static_cast<std::uint8_t*>(manager) + facts::kEnemyBarDisplayedTarget;
+        held_ = platform::CopyGuarded(&saved_, slot_, sizeof(saved_)) && platform::WriteGuarded(slot_, &key, sizeof(key));
+    }
+    ~ColumnKeyScope()
+    {
+        if (held_)
+        {
+            platform::WriteGuarded(slot_, &saved_, sizeof(saved_));
+        }
+    }
+    ColumnKeyScope(const ColumnKeyScope&)            = delete;
+    ColumnKeyScope& operator=(const ColumnKeyScope&) = delete;
+
+private:
+    std::uint8_t* slot_ = nullptr;
+    WeakKey       saved_{};
+    bool          held_ = false;
+};
 
 /// The visibility the tick sets right after a placement, for this replay's projection.
 void ApplyVisibility(const TextCall& text, bool projected) noexcept
@@ -719,6 +1259,43 @@ bool Install(const platform::GameImage& image) noexcept
     }
     g_release          = reinterpret_cast<SharedReleaseFn>(*release);
     g_attribute        = reinterpret_cast<AttributeFn>(*attribute);
+    // The bars' class per column: every function the further columns' classes call, or they keep the tick's class.
+    {
+        const auto barSlot   = image.Rebase(facts::kEnemyBarSlotGlobal, sizeof(void*));
+        const auto main      = platform::FindFunction(image, facts::kMainTargetOfLockOn);
+        const auto weakFree  = platform::FindFunction(image, facts::kWeakPtrRelease);
+        const auto dtAlpha   = platform::FindFunction(image, facts::kGameStateDtAlpha);
+        const auto setVis    = platform::FindFunction(image, facts::kWidgetSetVisibilityFn);
+        const auto getVis    = platform::FindFunction(image, facts::kWidgetGetVisibilityFn);
+        const auto targetable = platform::FindFunction(image, facts::kBattleUnitIsTargetable);
+        const auto icons     = platform::FindFunction(image, facts::kBarStatusIconsUpdate);
+        const auto transform = platform::FindFunction(image, facts::kWidgetUpdateRenderTransform);
+        g_ownClasses = barSlot && main && weakFree && dtAlpha && setVis && getVis && targetable && icons && transform;
+        if (g_ownClasses)
+        {
+            try
+            {
+                g_looks.reserve(64);  // four looks per bar re-classed; the pushes stay guarded for the rest
+                g_eases.reserve(16);
+                g_refreshed.reserve(16);
+            }
+            catch (...)
+            {
+            }
+            g_barSlot         = reinterpret_cast<void**>(*barSlot);
+            g_mainTarget      = reinterpret_cast<MainTargetFn>(*main);
+            g_weakRelease     = reinterpret_cast<WeakReleaseFn>(*weakFree);
+            g_dtAlpha         = reinterpret_cast<DtAlphaFn>(*dtAlpha);
+            g_setVisibility   = reinterpret_cast<WidgetVisibilityFn>(*setVis);
+            g_getVisibility   = reinterpret_cast<GetVisibilityFn>(*getVis);
+            g_isTargetable    = reinterpret_cast<IsTargetableFn>(*targetable);
+            g_statusIcons     = reinterpret_cast<StatusIconsFn>(*icons);
+            g_renderTransform = reinterpret_cast<WidgetFn>(*transform);
+        }
+        platform::Log(L"HUD markers: the enemy bars' class per view {}",
+                      g_ownClasses ? L"follows each player's own target (the look set with the game's setters per pass)"
+                                   : L"stays player 1's (a function check failed)");
+    }
     g_shownVisibility  = reinterpret_cast<const std::uint8_t*>(*shown);
     g_hiddenVisibility = reinterpret_cast<const std::uint8_t*>(*hidden);
     g_umgReturn        = *umg;
@@ -803,6 +1380,9 @@ void Remove() noexcept
         return;
     }
     g_on = false;
+    RestoreLooks();  // the tick's looks back, then nothing of the columns' kept
+    g_eases.clear();
+    g_refreshed.clear();
     g_bars.clear();
     ClearTexts();
     g_cursors.clear();
@@ -879,27 +1459,35 @@ void Replay(int column, void* localPlayer, void* controller) noexcept
 {
     if (!g_on || localPlayer == nullptr || column < 0 || column >= kMaxColumns)
     {
+        RestoreLooks();  // player 1's pass without a replay still renders the tick's looks
         return;
     }
+    RestoreLooks();  // every pass starts from the tick's looks (the further columns' passes set their own)
     void* pass = column != 0 ? controller : nullptr;  // column 0's pass: the game's own inputs, as its tick
     if (g_bars.empty() && g_texts.empty())
     {
         g_replaying = true;
         ReplayPoints(column, pass);
-        RerunTicks(pass);
+        {
+            const ColumnKeyScope key(column);
+            RerunTicks(pass);
+        }
         g_replaying = false;
         return;
     }
     std::int32_t context[2]{};
     if (!players::player_two_camera::WeakPairOf(localPlayer, context))
     {
-        return;
+        return;  // the looks are the tick's already (above)
     }
     g_replaying = true;
     ReplayBars(column, context, controller);
     ReplayTexts(column, pass);  // column 0: each text's own stored controller, as the tick
     ReplayPoints(column, pass);
-    RerunTicks(pass);           // after the bars: the labels read the displayed target's bar point
+    {
+        const ColumnKeyScope key(column);  // the label over this column's own target's bar
+        RerunTicks(pass);                  // after the bars: the labels read the displayed target's bar point
+    }
     g_replaying = false;
     g_replayed[column] += static_cast<std::uint32_t>(g_bars.size() + g_texts.size());
     g_seen.replays[column] += static_cast<std::uint32_t>(g_bars.size() + g_texts.size());
@@ -907,6 +1495,13 @@ void Replay(int column, void* localPlayer, void* controller) noexcept
 
 void EndFrame() noexcept
 {
+    RestoreLooks();  // if player 1's pass did not come to put the tick's looks back
+    g_refreshed.clear();
+    std::erase_if(g_eases, [](const OwnEase& own) { return !own.seen; });  // a bar not replayed this frame: its ease gone
+    for (auto& own : g_eases)
+    {
+        own.seen = false;
+    }
     ++g_seen.frames;
     const auto recorded = static_cast<std::uint32_t>(g_bars.size() + g_texts.size());
     if (recorded != 0)
@@ -958,6 +1553,11 @@ std::wstring Reading()
                             s.contextFurther[0], s.contextFurther[1], s.pcUnderSwap, s.pcFurther,
                             s.pcUnderSwap == s.pcFurther ? L"same" : L"DIFFERENT");
     }
+    text += std::format(L" | classes: p2 {} bar(s) classed by its own target ({} looks set, {} put back, {} status-icon "
+                        L"refreshes), p1 rule disagreements {}; sample bar: tick {}, p2 {}, its visibility {} -> {}, p2 ease {:.1f}",
+                        s.reclassed[1], s.looksSet, s.looksRestored, s.iconsRefreshed, s.disagreements,
+                        s.sampleTickTargeted ? L"targeted" : L"untargeted", s.sampleOwnTargeted ? L"targeted" : L"untargeted",
+                        s.sampleBarBefore, s.sampleBarAfter, s.sampleEase);
     text += std::format(L" | cursors {}, lock-on markers {} recorded; labels run {}, weak points run {}, lookups answered {}",
                         s.cursors, s.lockons, s.labelRuns, s.weakRuns, s.overridden);
     if (s.cursor != nullptr)

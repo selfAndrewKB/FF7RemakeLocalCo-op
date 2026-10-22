@@ -278,3 +278,10 @@ add_executable(OverlayPassTests
 target_include_directories(OverlayPassTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_compile_features(OverlayPassTests PRIVATE cxx_std_20)
 add_test(NAME overlay_pass COMMAND OverlayPassTests)
+
+add_executable(BarClassTests
+    tests/bar_class_test.cpp
+)
+target_include_directories(BarClassTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(BarClassTests PRIVATE cxx_std_20)
+add_test(NAME bar_class COMMAND BarClassTests)

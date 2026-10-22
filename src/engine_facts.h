@@ -450,6 +450,59 @@ inline constexpr std::uintptr_t kTextUmgWrapperReturn = 0x141496FEB;  // EndUI_B
 inline constexpr std::uint32_t  kSlateSetVisibility   = 0x1A8;  // SWidget::SetVisibility(TAttribute) (by value)
 inline constexpr std::uint32_t  kWidgetSetVisibility  = 0x248;  // UWidget::SetVisibility(ESlateVisibility)
 inline constexpr std::uint32_t  kObjectWidgetUser     = 0x4E8;  // SObjectWidget::WidgetObject (written at 0x1428D8C50)
+// The enemy bar's class per column (RE-enemy-bar-two-content.md, RE-enemy-bar-two-classification.md; hud/bar_class.h).
+// The slot-27 tick classifies each bar once with player 1's displayed target; a further column's pass classifies again
+// with its own and sets what follows the class through the game's own setters: the bar's and three sub-widgets'
+// visibility (stock UWidget::SetVisibility, repeatable), and the status icons' refresh for a bar only that column
+// targets (the game's own once-per-frame call, which the tick made only for player 1's targets).
+inline constexpr std::array<std::uint8_t, 16> kWidgetSetVisibilityEntry{
+    0x40, 0x53, 0x48, 0x81, 0xEC, 0x80, 0x00, 0x00, 0x00, 0x0F, 0xB6, 0xDA, 0x88, 0x91, 0xB7, 0x00};
+inline constexpr platform::FunctionFact kWidgetSetVisibilityFn{L"UWidget__SetVisibility", 0x1428D7FC0, kWidgetSetVisibilityEntry};
+inline constexpr std::array<std::uint8_t, 16> kWidgetGetVisibilityEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x08, 0x57, 0x48, 0x83, 0xEC, 0x30, 0x48, 0x8D, 0x54, 0x24, 0x20, 0x48};
+inline constexpr platform::FunctionFact kWidgetGetVisibilityFn{L"UWidget__GetVisibility", 0x1428D7F00, kWidgetGetVisibilityEntry};
+inline constexpr std::array<std::uint8_t, 16> kWidgetUpdateRenderTransformEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x20, 0x55, 0x48, 0x8D, 0x6C, 0x24, 0xA9, 0x48, 0x81, 0xEC, 0xF0, 0x00};
+inline constexpr platform::FunctionFact kWidgetUpdateRenderTransform{L"UWidget__UpdateRenderTransform", 0x1428D7840,
+                                                                     kWidgetUpdateRenderTransformEntry};
+inline constexpr std::array<std::uint8_t, 16> kBattleUnitIsTargetableEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x18, 0x48, 0x89, 0x6C, 0x24, 0x20, 0x41, 0x56, 0x48, 0x83, 0xEC, 0x20};
+inline constexpr platform::FunctionFact kBattleUnitIsTargetable{L"BattleComp_Vt008_IsTargetable", 0x140994980,
+                                                                kBattleUnitIsTargetableEntry};  // (unit, 1, 0) -> bool
+inline constexpr std::array<std::uint8_t, 16> kBarStatusIconsUpdateEntry{
+    0x48, 0x85, 0xD2, 0x0F, 0x84, 0x9C, 0x08, 0x00, 0x00, 0x53, 0x41, 0x56, 0x48, 0x81, 0xEC, 0xC8};
+inline constexpr platform::FunctionFact kBarStatusIconsUpdate{L"EndUISlot27_EnemyBar_StatusIcons_Update", 0x1414A7B30,
+                                                              kBarStatusIconsUpdateEntry};  // (p+0x40 block, character)
+inline constexpr std::array<std::uint8_t, 16> kMainTargetOfLockOnEntry{
+    0x48, 0x89, 0x74, 0x24, 0x18, 0x57, 0x48, 0x83, 0xEC, 0x20, 0x48, 0x83, 0x3A, 0x00, 0x48, 0x8B};
+inline constexpr platform::FunctionFact kMainTargetOfLockOn{L"EndUI_GetMainTargetOfLockOnTarget", 0x1413DA690,
+                                                            kMainTargetOfLockOnEntry};  // (weak pair* out, const weak pair* key)
+inline constexpr std::array<std::uint8_t, 16> kGameStateDtAlphaEntry{
+    0x48, 0x83, 0xEC, 0x38, 0x48, 0x8B, 0x0D, 0x35, 0xD4, 0x40, 0x04, 0x0F, 0x29, 0x74, 0x24, 0x20};
+inline constexpr platform::FunctionFact kGameStateDtAlpha{L"EndUI_GameStateDtAlpha", 0x1413DC670, kGameStateDtAlphaEntry};  // (float k) -> min(k*dt, 1)
+inline constexpr std::array<std::uint8_t, 16> kWeakPtrReleaseEntry{
+    0x48, 0x8B, 0x49, 0x08, 0x48, 0x85, 0xC9, 0x74, 0x20, 0xB8, 0xFF, 0xFF, 0xFF, 0xFF, 0xF0, 0x0F};
+inline constexpr platform::FunctionFact kWeakPtrRelease{L"TWeakPtrTS_Release", 0x140657A90, kWeakPtrReleaseEntry};  // (weak pair*): one weak reference off
+// The bar manager's entries (0x150 bytes: +0 source, +8 its weak controller, p = +0x10) and the bar's objects.
+inline constexpr std::uint32_t kBarEntrySize        = 0x150;
+inline constexpr std::uint32_t kBarEntryP           = 0x10;
+inline constexpr std::uint32_t kBarEntryNameText    = 0xE8;   // p: weak Txt_EnemyName
+inline constexpr std::uint32_t kBarEntryStatusPanel = 0xF0;   // p: weak Pnl_Icon_Status
+inline constexpr std::uint32_t kBarEntryLinkage     = 0xD0;   // p: weak CommandLinkage (the stagger bonus icon)
+inline constexpr std::uint32_t kBarEntryStatusIcons = 0x40;   // p: the status icons' block (TArray of 0x20 slots)
+inline constexpr std::uint32_t kBarEntryShowFlag    = 0x12D;  // p: u8, the bar shown whoever targets (a burst began)
+inline constexpr std::uint32_t kBarEntryPoint       = 0xB4;   // p: the cached screen point (x, y)
+inline constexpr std::uint32_t kBarEntryEase        = 0x110;  // p: the displayed target's y-ease toward -60
+inline constexpr std::uint32_t kBarStatusSlotSize   = 0x20;   // a status icon slot: +0 weak widget
+inline constexpr std::uint32_t kWidgetRenderTranslationY = 0x94;  // UWidget::RenderTransform.Translation.Y
+inline constexpr std::uint32_t kSourceCharacterSlot = 0x20;   // source->vt: the character (AEndCharacter) of a bar's source
+inline constexpr std::uint32_t kSourceIsPartSlot    = 0x68;   // source->vt: a part source (no status panel, no bonus icon)
+inline constexpr std::uint32_t kCharacterUnit       = 0xCB0;  // AEndCharacter: its battle unit
+inline constexpr std::uint32_t kCharacterHalfSizeObject = 0x800;  // AEndCharacter: the object whose vt+0x118 gives the bar clamp's half size
+inline constexpr std::uint32_t kHalfSizeSlot        = 0x118;
+inline constexpr std::uint32_t kCharacterIsDownedSlot = 0x8B0;  // AEndCharacter vt
+inline constexpr std::uint32_t kUnitBonusActiveSlot = 0x798;  // battle unit vt: the stagger bonus is showing
+inline constexpr std::uint32_t kUnitKeepBarFlag     = 0x543;  // battle unit: u8, a script keeps the bar of an untargetable unit
 // The target cursor (slot 18, also Barret's far-shot cursor, slot 54) and the lock-on markers (slot 43): pure placements
 // taking the controller as an argument (RE-hud-battle-markers.md §3.4, §3.7), recorded at their entries and replayed.
 inline constexpr std::uintptr_t kCursorPlace = 0x1413E7BE0;  // bool (pc, widget, const FVector*)
