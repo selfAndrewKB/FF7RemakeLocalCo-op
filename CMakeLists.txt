@@ -30,6 +30,7 @@ add_library(LocalSplitScreen SHARED
     src/control/server.cpp
     src/battle/command_menu_tick.cpp
     src/battle/command_menu_two.cpp
+    src/battle/enemy_coin.cpp
     src/battle/enemy_leader.cpp
     src/battle/lock_camera_two.cpp
     src/battle/member_rates.cpp
@@ -224,3 +225,24 @@ add_executable(EnvSetViewTests
 target_include_directories(EnvSetViewTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_compile_features(EnvSetViewTests PRIVATE cxx_std_20)
 add_test(NAME env_set_view COMMAND EnvSetViewTests)
+
+add_executable(CoinTableTests
+    tests/coin_table_test.cpp
+)
+target_include_directories(CoinTableTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(CoinTableTests PRIVATE cxx_std_20)
+add_test(NAME coin_table COMMAND CoinTableTests)
+
+add_executable(CoinChoiceTests
+    tests/coin_choice_test.cpp
+)
+target_include_directories(CoinChoiceTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(CoinChoiceTests PRIVATE cxx_std_20)
+add_test(NAME coin_choice COMMAND CoinChoiceTests)
+
+add_executable(TypeAnswerCodeTests
+    tests/type_answer_code_test.cpp
+)
+target_include_directories(TypeAnswerCodeTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(TypeAnswerCodeTests PRIVATE cxx_std_20)
+add_test(NAME type_answer_code COMMAND TypeAnswerCodeTests)

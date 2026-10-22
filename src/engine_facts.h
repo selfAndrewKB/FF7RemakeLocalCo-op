@@ -868,6 +868,88 @@ inline constexpr std::array<std::uint8_t, 16> kGameFreeEntry{
     0x48, 0x85, 0xC9, 0x74, 0x2E, 0x53, 0x48, 0x83, 0xEC, 0x20, 0x48, 0x8B, 0xD9, 0x48, 0x8B, 0x0D};
 inline constexpr platform::FunctionFact kGameFree{L"FMemory::Free", 0x1416C0370, kGameFreeEntry};
 
+// --- The equal-attention coin (RE-enemy-attention-coin.md §2-§4, §6; battle/enemy_coin) --------------------------
+// Every enemy decides at one call: its battle AI tick calls the decision gate (vtable +0xA50, one function in 64
+// vtables; Reno's mines override it), which is true only while no action runs; the Blueprint OnUpdate then chooses.
+inline constexpr std::uint32_t kBattleAICurrentAction = 0x1A40;  // the controller's running action (an FName; 0 = none)
+inline constexpr std::uint32_t kBattleCompPlayerType  = 0x58;    // the battle component's player type byte (vs PM+0x233)
+inline constexpr std::size_t   kPartyManagerBytes     = 0x258;   // the party manager's size
+inline constexpr std::uint32_t kFrameObject           = 0x18;    // FFrame: the object whose script is running (+0x20 = Code)
+inline constexpr std::uint32_t kCharacterController   = 0xCF0;   // AEndCharacter: the controller possessing it
+inline constexpr std::array<std::uint8_t, 16> kPartyManagerGetEntry{
+    0x48, 0x83, 0xEC, 0x28, 0x48, 0x8B, 0x05, 0xBD, 0x1F, 0x19, 0x05, 0x48, 0x85, 0xC0, 0x0F, 0x85};
+inline constexpr platform::FunctionFact kPartyManagerGet{L"PartyManager_Get", 0x140657AC0, kPartyManagerGetEntry};
+inline constexpr std::array<std::uint8_t, 16> kIsABattleAIControllerEntry{
+    0x4C, 0x8B, 0xDC, 0x48, 0x81, 0xEC, 0x88, 0x00, 0x00, 0x00, 0x48, 0x8B, 0x05, 0xC7, 0x52, 0x31};
+inline constexpr platform::FunctionFact kIsABattleAIController{L"IsA_EndBattleAIController", 0x140686CB0, kIsABattleAIControllerEntry};
+inline constexpr std::array<std::uint8_t, 16> kBattleCompIsPartySideEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x08, 0x57, 0x48, 0x83, 0xEC, 0x20, 0x48, 0x8B, 0x01, 0x48, 0x8B, 0xD9};
+inline constexpr platform::FunctionFact kBattleCompIsPartySide{L"BattlePlayerComp_IsPartySide", 0x14096CA90, kBattleCompIsPartySideEntry};
+inline constexpr std::array<std::uint8_t, 16> kBattleAIGetPawnCompEntry{
+    0x44, 0x8B, 0x81, 0x5C, 0x07, 0x00, 0x00, 0x45, 0x85, 0xC0, 0x74, 0x46, 0x48, 0x63, 0x81, 0x58};
+inline constexpr platform::FunctionFact kBattleAIGetPawnComp{L"EndBattleAI_GetPawnComp", 0x140940190, kBattleAIGetPawnCompEntry};
+/// The decision gate and the mines' override; the toss sits at their entry (the first instruction, a home-area store).
+inline constexpr std::uintptr_t kBattleAIDecisionGate     = 0x14091F1F0;  // EndBattleAI_Vt0A50_DecisionGate_IdleHate
+inline constexpr std::uintptr_t kBattleAIMineDecisionGate = 0x14081F050;  // EndBattleAIEB0003Mine_LeaderOrOwnInRange_Hate
+inline constexpr std::array<std::uint8_t, 5> kBattleAIDecisionGateFirst{0x48, 0x89, 0x5C, 0x24, 0x18};
+inline constexpr std::array<std::uint8_t, 5> kBattleAIMineDecisionGateFirst{0x48, 0x89, 0x5C, 0x24, 0x08};
+/// The opening target: the enemy component's battle start (vtable 0x144B6B1C8 slot +0x100) reads the party leader
+/// at one call (E8 D7 EA D5 00, inside its block) and sets it as the first target.
+inline constexpr std::array<std::uint8_t, 16> kBattleEnemyCompBattleStartEntry{
+    0x40, 0x55, 0x41, 0x55, 0x41, 0x56, 0x48, 0x8D, 0xAC, 0x24, 0x50, 0xFF, 0xFF, 0xFF, 0x48, 0x81};
+inline constexpr platform::FunctionFact kBattleEnemyCompBattleStart{L"BattleEnemyComp_Vt100_BattleStart_TargetLeader", 0x140893190,
+                                                                    kBattleEnemyCompBattleStartEntry};
+inline constexpr platform::SlotFact kBattleEnemyCompBattleStartSlot{L"the enemy battle component's battle start (slot +0x100)",
+                                                                    0x144B6B1C8 + 0x100, kBattleEnemyCompBattleStart};
+inline constexpr std::uintptr_t kBattleOpeningLeaderCall = 0x140893204;
+/// The inlined "is this member the player" reads (call PartyManager_Get; movzx ecx, [rax+0x233]; cmp [reg+0x58], cl;
+/// the manager read for nothing else): the hate rows (member in r14), the hate pick's two tie-break reads (rdi; the
+/// second crosses its block), IsAIPC (rbx; crosses).
+inline constexpr std::uintptr_t kBattleHateTypeCall = 0x14093F27A;                           // E8 41 88 D1 FF
+inline constexpr std::array<std::uintptr_t, 2> kBattleTieTypeCalls{0x140940081, 0x14094009E};  // E8 3A 7A D1 FF, E8 1D 7A D1 FF
+inline constexpr std::uintptr_t kBattleIsAipcTypeCall = 0x14187D25D;                         // E8 5E A8 DD FE
+/// The expectation counts' reads of the leader type (movzx from PartyManager_Get's result, used for nothing else):
+/// the coin's human's type answers.
+inline constexpr std::array<std::uintptr_t, 2> kBattleExpectationTypeCalls{0x1409598F1, 0x14095A3A7};  // E8 CA E1 CF FF, E8 14 D7 CF FF
+/// The enemy EQS target context keeps a party non-leader only if its controller IsA battle AI controller (E8 82 6A CD FF).
+inline constexpr std::uintptr_t kBattleEqsIsACall = 0x1409B0229;
+/// Hits: the apply (entry; the hit's attacker weak at +0x50, victim weak at +0x78) and its second form's one call
+/// (E8 8F DF 2F FF, crossing its block; its 2nd and 4th arguments are the two characters).
+inline constexpr std::uintptr_t kBattleHitApply = 0x1409E9C70;  // BattleDamage_ApplyHitToVictim
+inline constexpr std::array<std::uint8_t, 5> kBattleHitApplyFirst{0x48, 0x89, 0x5C, 0x24, 0x18};
+inline constexpr std::uint32_t  kBattleHitAttackerWeak = 0x50;
+inline constexpr std::uint32_t  kBattleHitVictimWeak   = 0x78;
+inline constexpr std::array<std::uint8_t, 16> kBattleHitApplyBEntry{
+    0x40, 0x55, 0x53, 0x56, 0x57, 0x41, 0x55, 0x41, 0x56, 0x41, 0x57, 0x48, 0x8D, 0xAC, 0x24, 0xA0};
+inline constexpr platform::FunctionFact kBattleHitApplyB{L"BattleDamage_ApplyHitToVictim_B", 0x1409EFE40, kBattleHitApplyBEntry};
+inline constexpr std::uintptr_t kBattleHitApplyBCall = 0x1416F1EAC;
+/// The attacker's ability start tells the enemies (OnReactionSensing): E8 D8 12 02 00, inside its block.
+inline constexpr std::array<std::uint8_t, 16> kBattleReactionSensingEntry{
+    0x4C, 0x8B, 0xDC, 0x4D, 0x89, 0x4B, 0x20, 0x4D, 0x89, 0x43, 0x18, 0x49, 0x89, 0x4B, 0x08, 0x55};
+inline constexpr platform::FunctionFact kBattleReactionSensing{L"BattleReaction_NotifySensingEnemies", 0x140996200, kBattleReactionSensingEntry};
+inline constexpr std::uintptr_t kBattleReactionSensingCall = 0x140974F23;
+/// The Blueprint natives that name "the player", by their exec functions (checked against UFunction::Func before a
+/// swap), in the order of battle/enemy_coin's path table: the controller's nine (the context is the enemy), then the
+/// library's seven (the calling object is the enemy).
+inline constexpr std::array<std::uintptr_t, 16> kBattleCoinNativeExecs{
+    0x1417B32B0,  // EndBattleAIController:GetLeader
+    0x1417BC210,  // :SetTargetByType
+    0x1417AD100,  // :GetActionCharacter
+    0x1417AD360,  // :GetSyncActionCharacter
+    0x1417AD5B0,  // :GetSpecialStatusChangeCharacter
+    0x1417AD830,  // :GetStatusChangeCharacter
+    0x1417ADC10,  // :HasStatusChangeEsuna
+    0x1417ADD90,  // :HasStatusChangeDeSpell
+    0x1417ADE70,  // :HasStatusChange
+    0x1418783A0,  // EndBattleAPI:GetExpectationCountInConeAreaByLocation
+    0x141878710,  // :GetExpectationCountInConeArea
+    0x141878A60,  // :GetExpectationCountInCapsuleAreaByLocation
+    0x141878DD0,  // :GetExpectationCountInCapsuleArea
+    0x14187D180,  // :IsAIPC
+    0x141B8E820,  // EndPartyAPI:GetPartyLeader
+    0x141B8E780,  // EndPartyAPI:GetPartyLeaderType
+};
+
 // --- The battle sequence cameras (RE-seq-camera-two.md) --------------------------------------------------------
 // The request lists at `[sys+0x78]`: two singly linked lists of 48-byte entries (+0x08 weak sequence actor, +0x19
 // active byte, +0x20 next). A sequence actor's camera actor at +0x468; the per-view state the game keeps once:

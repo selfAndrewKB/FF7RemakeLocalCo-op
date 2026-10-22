@@ -22,10 +22,11 @@
 //     the KO state, a battle AI whose spec says 10), the game's setter. Ten lines of the cycle recreated with the
 //     game's own functions: the game has no path to that step without a leader write, which the rule forbids;
 //   - the battle AI tick's leader read (its one call site) answers that member for every battle AI while the
-//     enemy-facing leader differs from the game's, so the game's own OnChangeLeader fires, forward and back;
-//   - the Blueprint natives an enemy script picks "the player" with (SetTargetByType(UCPC), GetLeader, the
-//     target-type collector behind GetActionCharacter and kin; none tests that the leader stands) answer that
-//     member too: the re-target alone left Rude's script re-picking the downed Cloud each action [CONFIRMED live].
+//     enemy-facing leader differs from the game's, so the game's own OnChangeLeader fires, forward and back.
+// The Blueprint natives an enemy script picks "the player" with (SetTargetByType(UCPC), GetLeader, the target-type
+// collector behind GetActionCharacter and kin; none tests that the leader stands) were answered here too from
+// v0.19.1 (the re-target alone left Rude's script re-picking the downed Cloud each action [CONFIRMED live]); since
+// v0.36.0 battle/enemy_coin answers them from each enemy's coin, whose toss skips a downed member.
 // Game thread only: a read off it gets the game's answer and is counted. Logged on each change (Debug) with the
 // number of enemies re-targeted; `enemy-leader` reads the state.
 

@@ -124,4 +124,11 @@ src/
     env_sets_two          player 2's view hides what the area hides under player 2 (the game's area trace and read
                           run again for player 2; the engine's per-player hidden list); the world stays player 1's
     env_set_view.h        player 2's set kept and paced, the list edit (pure, host-tested)
+  battle/ (the coin)
+    enemy_coin            enemies share their attention between the humans: a coin per enemy decision at the game's
+                          own decision gate, the script natives answered from it, both humans "the player" for the
+                          hate rows, the enemy EQS keeping player 2's member, hits and sensing in the human's scopes
+    coin_table.h          the coins, lock-free, keyed by the enemy's controller (pure, host-tested; from Rebirth)
+    coin_choice.h         the toss: who may be "the player" and the fair pick (pure, host-tested)
+    type_answer_code.h    the machine code answering the inlined leader-type test per member (pure, host-tested)
 ```

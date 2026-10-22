@@ -16,6 +16,7 @@
 
 #include "battle/command_menu_tick.h"
 #include "battle/command_menu_two.h"
+#include "battle/enemy_coin.h"
 #include "battle/enemy_leader.h"
 #include "battle/lock_camera_two.h"
 #include "battle/member_rates.h"
@@ -72,7 +73,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.35.0-view-hides-two";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.36.0-enemy-coin";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
@@ -229,6 +230,7 @@ public:
         lss::players::pad_buttons::Remove();
         lss::battle::sequence_camera_two::Remove();
         lss::battle::target_cursor_two::Remove();
+        lss::battle::enemy_coin::Remove();
         lss::battle::enemy_leader::Remove();
         lss::battle::member_rates::Remove();
         lss::battle::lock_camera_two::Remove();
@@ -285,6 +287,7 @@ public:
             lss::battle::lock_camera_two::Install(*image);
             lss::battle::member_rates::Install(*image);
             lss::battle::enemy_leader::Install(*image);
+            lss::battle::enemy_coin::Install(*image);  // optional: without it enemies name player 1 as the player
             lss::battle::sequence_camera_two::Install(*image);
         }
         lss::players::game_state::Install(*image);  // readings only; fine without
@@ -336,6 +339,7 @@ private:
         lss::battle::lock_camera_two::Tick();
         lss::battle::member_rates::Tick();
         lss::battle::enemy_leader::Tick();
+        lss::battle::enemy_coin::Tick();
         lss::battle::sequence_camera_two::Tick();
         TickWorld();
         TickHud();

@@ -1,0 +1,122 @@
+// Host-side tests for the coin table (battle/coin_table.h): placing, finding, clearing, the mark, and eviction of
+// the oldest coin among a key's four slots. Run without the game.
+
+#include "battle/coin_table.h"
+
+#include <cstdio>
+
+namespace lss::test {
+inline int g_failures = 0;
+inline int Report()
+{
+    std::printf(g_failures == 0 ? "coin_table: all passed\n" : "coin_table: %d failure(s)\n", g_failures);
+    return g_failures == 0 ? 0 : 1;
+}
+}  // namespace lss::test
+
+#define EXPECT(condition)                                                    \
+    do                                                                       \
+    {                                                                        \
+        if (!(condition))                                                    \
+        {                                                                    \
+            std::printf("  FAILED line %d: %s\n", __LINE__, #condition);     \
+            ++lss::test::g_failures;                                         \
+        }                                                                    \
+    } while (false)
+
+namespace {
+
+using namespace lss::battle::coin_table;
+
+constexpr std::uintptr_t kRude = 0x1F0000A0;  // 16-byte aligned, as object addresses are
+constexpr std::uintptr_t kReno = 0x1F0001B0;
+
+void EmptyAnswersNothing()
+{
+    CoinTable table;
+    EXPECT(table.PlayerOf(kRude) == 0);
+    EXPECT(table.Find(kRude) == kNoSlot);
+    EXPECT(!table.Marked(kRude));
+    table.Mark(kRude);  // nothing to mark
+    EXPECT(!table.Marked(kRude));
+}
+
+void SetFindClear()
+{
+    CoinTable table;
+    table.Set(kRude, 2, 100);
+    table.Set(kReno, 4, 100);
+    EXPECT(table.PlayerOf(kRude) == 2);
+    EXPECT(table.PlayerOf(kReno) == 4);
+    EXPECT(table.Find(kRude) != kNoSlot && table.Find(kRude) != table.Find(kReno));
+    table.Set(kRude, 1, 101);  // its own slot again
+    EXPECT(table.PlayerOf(kRude) == 1);
+    table.Clear(kRude);
+    EXPECT(table.PlayerOf(kRude) == 0);
+    EXPECT(table.PlayerOf(kReno) == 4);
+}
+
+void MarkFollowsTheToss()
+{
+    CoinTable table;
+    table.Set(kRude, 1, 100);
+    EXPECT(!table.Marked(kRude));
+    table.Mark(kRude);
+    EXPECT(table.Marked(kRude));
+    table.Set(kRude, 2, 105);  // a new toss starts unmarked
+    EXPECT(!table.Marked(kRude));
+    EXPECT(table.PlayerOf(kRude) == 2);
+}
+
+/// Four keys sharing Rude's four slots fill them; a fifth evicts the oldest, never a newer one.
+void OldestIsEvicted()
+{
+    CoinTable table;
+    // Keys whose first probe lands in Rude's slots: built from Rude's slot sequence by brute force.
+    std::uintptr_t keys[5]{};
+    std::size_t    found = 0;
+    for (std::uintptr_t candidate = 0x10; found < 5 && candidate < 0x10000000; candidate += 0x10)
+    {
+        if (SlotOf(candidate, 0) == SlotOf(kRude, 0))
+        {
+            keys[found++] = candidate;
+        }
+    }
+    EXPECT(found == 5);
+    for (std::size_t i = 0; i < 4; ++i)
+    {
+        table.Set(keys[i], 1, static_cast<std::uint32_t>(10 + i));  // keys[0] is the oldest
+    }
+    for (std::size_t i = 0; i < 4; ++i)
+    {
+        EXPECT(table.PlayerOf(keys[i]) == 1);
+    }
+    table.Set(keys[4], 2, 20);
+    EXPECT(table.PlayerOf(keys[4]) == 2);
+    EXPECT(table.PlayerOf(keys[0]) == 0);  // evicted
+    for (std::size_t i = 1; i < 4; ++i)
+    {
+        EXPECT(table.PlayerOf(keys[i]) == 1);
+    }
+}
+
+void LowBitsHoldThePlayer()
+{
+    EXPECT((kRude & kMask) == 0);
+    CoinTable table;
+    table.Set(kRude, 3, 1);
+    EXPECT(table.PlayerOf(kRude) == 3);
+    EXPECT(table.PlayerOf(kRude + 1) == 0);  // another key
+}
+
+}  // namespace
+
+int main()
+{
+    EmptyAnswersNothing();
+    SetFindClear();
+    MarkFollowsTheToss();
+    OldestIsEvicted();
+    LowBitsHoldThePlayer();
+    return lss::test::Report();
+}

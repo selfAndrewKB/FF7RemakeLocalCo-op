@@ -1,0 +1,920 @@
+#include "battle/enemy_coin.h"
+
+#define RC_UNREAL_DISABLE_PROPERTY_DEPRECATION_WARNINGS
+#define RC_UNREAL_DISABLE_CLASS_DEPRECATION_WARNINGS
+#include <Unreal/CoreUObject/UObject/Class.hpp>
+#include <Unreal/UFunction.hpp>
+#include <Unreal/UObject.hpp>
+#include <Unreal/UObjectGlobals.hpp>
+
+#include "battle/coin_choice.h"
+#include "battle/coin_table.h"
+#include "battle/type_answer_code.h"
+#include "control/registry.h"
+#include "engine_facts.h"
+#include "platform/call_redirect.h"
+#include "platform/code_memory.h"
+#include "platform/entry_redirect.h"
+#include "platform/guarded.h"
+#include "platform/image.h"
+#include "platform/log.h"
+#include "platform/verified_code.h"
+#include "platform/vtable_entry.h"
+#include "players/player_two_camera.h"
+#include "players/scopes.h"
+
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <Windows.h>
+
+#include <array>
+#include <atomic>
+#include <chrono>
+#include <cstdint>
+#include <cstring>
+#include <format>
+
+namespace lss::battle::enemy_coin {
+
+namespace {
+
+using platform::Read;
+using platform::ReadPointer;
+using RC::Unreal::UClass;
+using RC::Unreal::UFunction;
+using RC::Unreal::UObject;
+namespace UObjectGlobals = RC::Unreal::UObjectGlobals;
+using ExecFn             = RC::Unreal::UnrealScriptFunction;  // (context, FFrame&, result)
+
+constexpr int         kSeats   = players::scopes::kMaxPlayers;  // seat 0 = player 1 (the game's leader)
+constexpr std::size_t kFurther = kSeats - 1;                    // seats 1..3
+
+using GateFn           = char (*)(void* controller);
+using PmGetFn          = void* (*)();
+using GetPartyLeaderFn = void* (*)(void* partyManager, std::uint8_t variant);
+using GetPlayerActorFn = void* (*)(void* partyManager, std::uint8_t variant, std::uint8_t type, bool alternate);
+using IsAFn            = bool (*)(void* object, void* b, void* c);
+using IsPartySideFn    = bool (*)(void* component);
+using PawnCompFn       = void* (*)(void* controller);
+using OwnerFn          = void* (*)(void* component);
+using BattleStartFn    = void (*)(void* component);
+using HitApplyFn       = char (*)(void* context, void* hit);
+using HitApplyBFn      = void (*)(std::uint64_t, std::uint64_t, std::uint64_t, std::uint64_t, std::uint64_t, std::uint64_t,
+                             std::uint64_t);
+using SensingFn        = void (*)(std::uint64_t, std::uint64_t, std::uint64_t, std::uint64_t, std::uint64_t, std::uint64_t,
+                           std::uint64_t, std::uint64_t);
+
+// The script natives, in the order of facts::kBattleCoinNativeExecs. Member: the context is the enemy and the leader
+// read inside answers. Caller: the script's object is the enemy (a library native); the read inside answers. The
+// party API's two write their result straight, so the result is replaced after the game's call.
+enum class Kind : std::uint8_t
+{
+    Member,
+    Caller,
+    LeaderApi,
+    LeaderTypeApi,
+};
+struct Native
+{
+    const wchar_t* path;
+    Kind           kind;
+};
+constexpr std::size_t                 kNativeCount = facts::kBattleCoinNativeExecs.size();
+constexpr std::array<Native, kNativeCount> kNatives{{
+    {L"/Script/EndGame.EndBattleAIController:GetLeader", Kind::Member},
+    {L"/Script/EndGame.EndBattleAIController:SetTargetByType", Kind::Member},
+    {L"/Script/EndGame.EndBattleAIController:GetActionCharacter", Kind::Member},
+    {L"/Script/EndGame.EndBattleAIController:GetSyncActionCharacter", Kind::Member},
+    {L"/Script/EndGame.EndBattleAIController:GetSpecialStatusChangeCharacter", Kind::Member},
+    {L"/Script/EndGame.EndBattleAIController:GetStatusChangeCharacter", Kind::Member},
+    {L"/Script/EndGame.EndBattleAIController:HasStatusChangeEsuna", Kind::Member},
+    {L"/Script/EndGame.EndBattleAIController:HasStatusChangeDeSpell", Kind::Member},
+    {L"/Script/EndGame.EndBattleAIController:HasStatusChange", Kind::Member},
+    {L"/Script/EndGame.EndBattleAPI:GetExpectationCountInConeAreaByLocation", Kind::Caller},
+    {L"/Script/EndGame.EndBattleAPI:GetExpectationCountInConeArea", Kind::Caller},
+    {L"/Script/EndGame.EndBattleAPI:GetExpectationCountInCapsuleAreaByLocation", Kind::Caller},
+    {L"/Script/EndGame.EndBattleAPI:GetExpectationCountInCapsuleArea", Kind::Caller},
+    {L"/Script/EndGame.EndBattleAPI:IsAIPC", Kind::Caller},
+    {L"/Script/EndGame.EndPartyAPI:GetPartyLeader", Kind::LeaderApi},
+    {L"/Script/EndGame.EndPartyAPI:GetPartyLeaderType", Kind::LeaderTypeApi},
+}};
+constexpr const wchar_t* kAiControllerClass = L"/Script/EndGame.EndBattleAIController";
+
+// Set at install, then only read.
+platform::EntryRedirect g_gate, g_mineGate, g_hitApply;
+platform::CallRedirect  g_opening, g_hate, g_isAipc, g_eqs, g_hitApplyB, g_sensing, g_scriptLeader;
+std::array<platform::CallRedirect, 2> g_tie, g_expect, g_scriptActor;
+platform::VTableEntry   g_battleStart;
+PmGetFn                 g_pmGet       = nullptr;
+GetPartyLeaderFn        g_getLeader   = nullptr;
+GetPlayerActorFn        g_getActor    = nullptr;
+IsPartySideFn           g_isPartySide = nullptr;
+PawnCompFn              g_pawnComp    = nullptr;
+std::array<std::uintptr_t, kNativeCount>       g_execs{};      // the live exec addresses IDA named
+std::array<std::atomic<ExecFn>, kNativeCount>  g_originals{};  // null until swapped (or found changed)
+std::array<UFunction*, kNativeCount>           g_functions{};  // game thread: the swapped ones
+std::atomic<const UClass*>                     g_aiClass{nullptr};
+bool                                           g_swapsDone = false;  // game thread
+unsigned                                       g_swapTries = 0;      // game thread
+
+// The blocks answering the inlined leader-type tests (type_answer_code.h): one per further seat, +0x233 its member's
+// type, 9 (NONE) while the seat holds no member. Written on the game thread, read by the game's code on any thread.
+alignas(16) std::uint8_t g_fakes[kFurther][facts::kPartyManagerBytes]{};
+
+// The seats as the game thread last saw them, for any thread.
+std::array<std::atomic<void*>, kSeats>        g_members{};
+std::array<std::atomic<void*>, kSeats>        g_controllers{};
+std::atomic<unsigned>                         g_seated{1u};  // bit per seat with a member (bit 0: the game's leader)
+std::atomic<bool>                             g_on{false};
+std::atomic<bool>                             g_enabled{true};
+DWORD                                         g_thread = 0;  // the game thread
+
+// The enemy whose script native is running on this thread (null: none, or not an enemy).
+thread_local void*         t_enemy = nullptr;
+thread_local std::uint64_t t_rng   = 0;
+
+coin_table::CoinTable g_coins;
+
+struct Counts
+{
+    std::array<std::atomic<unsigned>, kSeats> tosses{};         // per player named
+    std::atomic<unsigned>                     gamesOwn{};       // tosses with no further player: the game's own answer
+    std::atomic<unsigned>                     retosses{};       // the coin's player went down
+    std::array<std::atomic<unsigned>, kSeats> scriptAnswers{};  // the three script reads and the collector, per player
+    std::atomic<unsigned>                     openingAnswers{};
+    std::atomic<unsigned>                     expectationAnswers{};
+    std::atomic<unsigned>                     apiAnswers{};
+    std::atomic<unsigned>                     eqsKept{};
+    std::atomic<unsigned>                     hitsScoped{};
+    std::atomic<unsigned>                     sensingsScoped{};
+    std::atomic<unsigned>                     offThread{};  // hits or sensings off the game thread: left as the game's
+};
+Counts g_counts;                                 // since the last summary
+Counts g_totals;                                 // since install
+std::chrono::steady_clock::time_point g_lastSummary{};
+std::chrono::steady_clock::time_point g_lastSwapTry{};
+bool                                  g_offThreadLogged = false;
+std::array<bool, 3>                   g_scopedLogged{};
+
+unsigned Take(std::atomic<unsigned>& counter) noexcept
+{
+    return counter.exchange(0, std::memory_order_relaxed);
+}
+
+void Count(std::atomic<unsigned>& since, std::atomic<unsigned>& total) noexcept
+{
+    since.fetch_add(1, std::memory_order_relaxed);
+    total.fetch_add(1, std::memory_order_relaxed);
+}
+
+std::uint32_t Seconds() noexcept
+{
+    return static_cast<std::uint32_t>(
+        std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
+}
+
+/// A fair bit per toss, per thread (xorshift seeded from the thread and the clock).
+unsigned Random() noexcept
+{
+    if (t_rng == 0)
+    {
+        LARGE_INTEGER counter{};
+        QueryPerformanceCounter(&counter);
+        t_rng = (static_cast<std::uint64_t>(GetCurrentThreadId()) + 1) * 0x9E3779B97F4A7C15ull ^ static_cast<std::uint64_t>(counter.QuadPart);
+        t_rng |= 1;
+    }
+    t_rng ^= t_rng << 13;
+    t_rng ^= t_rng >> 7;
+    t_rng ^= t_rng << 17;
+    return static_cast<unsigned>(t_rng >> 32);
+}
+
+bool Tossing() noexcept
+{
+    return g_on.load(std::memory_order_acquire) && g_enabled.load(std::memory_order_relaxed) &&
+           (g_seated.load(std::memory_order_relaxed) & ~1u) != 0;
+}
+
+/// `seat`'s member stands in the battle (its component not in the KO state). Any thread, guarded.
+bool Standing(int seat) noexcept
+{
+    void*       member    = g_members[static_cast<std::size_t>(seat)].load(std::memory_order_relaxed);
+    const auto* component = static_cast<const std::uint8_t*>(ReadPointer(member, facts::kCharacterBattleComponent));
+    std::uint8_t state    = 0;
+    return component != nullptr && Read(component + facts::kBattleCompActionState, state) && state != facts::kBattleCompStateKnockedOut;
+}
+
+/// The controller's pawn is an enemy's (not on the party side). Any thread; false if unreadable.
+bool IsEnemy(void* controller) noexcept
+{
+    void* component = nullptr;
+    bool  party     = true;
+    return controller != nullptr && platform::CallGuarded(g_pawnComp, component, controller) && component != nullptr &&
+           platform::CallGuarded(g_isPartySide, party, component) && !party;
+}
+
+/// A further seat's controller (never player 1's).
+bool IsFurtherController(const void* controller) noexcept
+{
+    for (std::size_t seat = 1; seat < kSeats; ++seat)
+    {
+        if (controller != nullptr && g_controllers[seat].load(std::memory_order_relaxed) == controller)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+/// The further seat holding `member`, or 0.
+int SeatOfMember(const void* member) noexcept
+{
+    for (std::size_t seat = 1; seat < kSeats; ++seat)
+    {
+        if (member != nullptr && g_members[seat].load(std::memory_order_relaxed) == member)
+        {
+            return static_cast<int>(seat);
+        }
+    }
+    return 0;
+}
+
+const wchar_t* Because(coin_choice::Why why) noexcept
+{
+    switch (why)
+    {
+    case coin_choice::Why::Coin:
+        return L"the coin";
+    case coin_choice::Why::OnlyEligible:
+        return L"the only one standing";
+    case coin_choice::Why::NeitherEligible:
+        return L"nobody stands";
+    case coin_choice::Why::NoFurtherPlayer:
+        break;
+    }
+    return L"no further player";
+}
+
+/// Tosses `controller`'s coin and keeps it: the player it names (1..4), or 0 (the game's own answer).
+int Toss(void* controller, const wchar_t* when) noexcept
+{
+    const auto key      = reinterpret_cast<std::uintptr_t>(controller);
+    const auto seated   = g_seated.load(std::memory_order_relaxed);
+    unsigned   eligible = 0;
+    for (int seat = 0; seat < kSeats; ++seat)
+    {
+        if ((seated & (1u << seat)) != 0 && Standing(seat))
+        {
+            eligible |= 1u << seat;
+        }
+    }
+    const coin_choice::Choice choice = coin_choice::Choose(seated, eligible, Random());
+    if (choice.player == coin_choice::kGamesOwn)
+    {
+        g_coins.Clear(key);
+        Count(g_counts.gamesOwn, g_totals.gamesOwn);
+        return 0;
+    }
+    const int player = choice.player + 1;
+    g_coins.Set(key, player, Seconds());
+    Count(g_counts.tosses[static_cast<std::size_t>(choice.player)], g_totals.tosses[static_cast<std::size_t>(choice.player)]);
+    platform::LogDebug(L"enemy coin: enemy {:#x} counts player {} as the player until its next action ({}; {})", key, player, when,
+                       Because(choice.why));
+    return player;
+}
+
+/// The coin `controller` holds: tossed if it has none, tossed again if its player's member is down.
+int CoinOf(void* controller) noexcept
+{
+    const auto key  = reinterpret_cast<std::uintptr_t>(controller);
+    const int  held = g_coins.PlayerOf(key);
+    if (held == 0)
+    {
+        return Toss(controller, L"first question");
+    }
+    if (!Standing(held - 1))
+    {
+        Count(g_counts.retosses, g_totals.retosses);
+        return Toss(controller, L"its player's member is down");
+    }
+    return held;
+}
+
+/// A further player's member for a coin naming it; null for player 1 (the game's own answer) or none.
+void* MemberOf(int player) noexcept
+{
+    return player >= 2 ? g_members[static_cast<std::size_t>(player - 1)].load(std::memory_order_relaxed) : nullptr;
+}
+
+// --- The toss: the decision gate ---------------------------------------------------------------------------------
+
+char GateFor(platform::EntryRedirect& redirect, void* controller) noexcept
+{
+    if (Tossing() && IsEnemy(controller))
+    {
+        const auto    key    = reinterpret_cast<std::uintptr_t>(controller);
+        std::uint64_t action = 0;
+        if (Read(static_cast<const std::uint8_t*>(controller) + facts::kBattleAICurrentAction, action))
+        {
+            if (action != 0)
+            {
+                g_coins.Mark(key);  // this coin's action runs; the next idle gate tosses again
+            }
+            else if (g_coins.PlayerOf(key) == 0 || g_coins.Marked(key))
+            {
+                Toss(controller, L"decision");
+            }
+        }
+    }
+    return reinterpret_cast<GateFn>(redirect.Original())(controller);
+}
+
+char Gate(void* controller)
+{
+    return GateFor(g_gate, controller);
+}
+
+char MineGate(void* controller)
+{
+    return GateFor(g_mineGate, controller);
+}
+
+// --- The opening target ------------------------------------------------------------------------------------------
+
+/// The enemy component's battle start: the enemy recorded for its leader read below.
+void BattleStart(void* component)
+{
+    void* previous = t_enemy;
+    void* enemy    = nullptr;
+    if (Tossing())
+    {
+        void** vtable = nullptr;
+        void*  owner  = nullptr;
+        OwnerFn getOwner = nullptr;
+        if (Read(component, vtable) && Read(vtable + 4, getOwner) && platform::CallGuarded(getOwner, owner, component))
+        {
+            enemy = ReadPointer(owner, facts::kCharacterBattleAI);
+        }
+    }
+    t_enemy = enemy;
+    reinterpret_cast<BattleStartFn>(g_battleStart.Original())(component);
+    t_enemy = previous;
+}
+
+void* OpeningLeader(void* partyManager, std::uint8_t variant)
+{
+    void* const game = reinterpret_cast<GetPartyLeaderFn>(g_opening.Original())(partyManager, variant);
+    if (t_enemy == nullptr)
+    {
+        return game;
+    }
+    const int player = CoinOf(t_enemy);
+    if (void* member = MemberOf(player); member != nullptr)
+    {
+        Count(g_counts.openingAnswers, g_totals.openingAnswers);
+        platform::LogDebug(L"enemy coin: enemy {:#x} opens on player {}'s member", reinterpret_cast<std::uintptr_t>(t_enemy), player);
+        return member;
+    }
+    return game;
+}
+
+// --- The script natives' reads -----------------------------------------------------------------------------------
+
+/// The game's answer to a script's "the player" read, or the coin's member when the calling enemy's coin names a
+/// further player.
+void* AnswerScript(void* game, const wchar_t* what) noexcept
+{
+    if (t_enemy == nullptr)
+    {
+        return game;
+    }
+    const int player = CoinOf(t_enemy);
+    if (player >= 1)
+    {
+        Count(g_counts.scriptAnswers[static_cast<std::size_t>(player - 1)], g_totals.scriptAnswers[static_cast<std::size_t>(player - 1)]);
+    }
+    void* member = MemberOf(player);
+    platform::LogTrace(L"enemy coin: {} answered player {} for enemy {:#x}", what, player == 0 ? 1 : player,
+                       reinterpret_cast<std::uintptr_t>(t_enemy));
+    return member != nullptr ? member : game;
+}
+
+void* ScriptLeader(void* partyManager, std::uint8_t variant)
+{
+    return AnswerScript(g_getLeader(partyManager, variant), L"GetLeader");
+}
+
+void* ScriptActor(void* partyManager, std::uint8_t variant, std::uint8_t type, bool alternate)
+{
+    return AnswerScript(g_getActor(partyManager, variant, type, alternate), L"the player actor read");
+}
+
+/// PartyManager_Get at the expectation counts' leader-type read: a block carrying the coin's human's type.
+void* PartyManagerForExpectation()
+{
+    if (t_enemy != nullptr)
+    {
+        const int player = CoinOf(t_enemy);
+        if (player >= 2)
+        {
+            Count(g_counts.expectationAnswers, g_totals.expectationAnswers);
+            return g_fakes[player - 2];
+        }
+    }
+    return g_pmGet();
+}
+
+/// `IsA_EndBattleAIController` at the enemy EQS target context: a human's controller counts.
+bool EqsIsA(void* controller, void* b, void* c)
+{
+    if (g_on.load(std::memory_order_acquire) && g_enabled.load(std::memory_order_relaxed) && IsFurtherController(controller))
+    {
+        Count(g_counts.eqsKept, g_totals.eqsKept);
+        return true;
+    }
+    return reinterpret_cast<IsAFn>(g_eqs.Original())(controller, b, c);
+}
+
+/// A native called from an enemy's script: the enemy recorded on this thread for the reads inside; the party API's
+/// results replaced by the coin's.
+template <std::size_t I>
+void Exec(UObject* context, RC::Unreal::FFrame& frame, void* result)
+{
+    const ExecFn original = g_originals[I].load(std::memory_order_acquire);
+    void*        enemy    = nullptr;
+    if (Tossing())
+    {
+        void* candidate = kNatives[I].kind == Kind::Member ? static_cast<void*>(context) : ReadPointer(&frame, facts::kFrameObject);
+        const auto* const aiClass = g_aiClass.load(std::memory_order_acquire);
+        const bool controller = kNatives[I].kind == Kind::Member ||
+                                (candidate != nullptr && aiClass != nullptr && static_cast<UObject*>(candidate)->IsA(aiClass));
+        if (controller && IsEnemy(candidate))
+        {
+            enemy = candidate;
+        }
+    }
+    void* const previous = t_enemy;
+    t_enemy              = enemy;
+    original(context, frame, result);
+    if constexpr (kNatives[I].kind == Kind::LeaderApi || kNatives[I].kind == Kind::LeaderTypeApi)
+    {
+        if (enemy != nullptr && result != nullptr)
+        {
+            const int player = CoinOf(enemy);
+            if (void* member = MemberOf(player); member != nullptr)
+            {
+                Count(g_counts.apiAnswers, g_totals.apiAnswers);
+                if constexpr (kNatives[I].kind == Kind::LeaderApi)
+                {
+                    std::memcpy(result, &member, sizeof(member));
+                }
+                else
+                {
+                    const std::uint8_t type = g_fakes[player - 2][type_answer_code::kTypeOffset];
+                    std::memcpy(result, &type, sizeof(type));
+                }
+                platform::LogTrace(L"enemy coin: {} answered player {} for enemy {:#x}", kNatives[I].path, player,
+                                   reinterpret_cast<std::uintptr_t>(enemy));
+            }
+        }
+    }
+    t_enemy = previous;
+}
+
+template <std::size_t... I>
+constexpr std::array<ExecFn, kNativeCount> ExecTable(std::index_sequence<I...>) noexcept
+{
+    return {{&Exec<I>...}};
+}
+constexpr std::array<ExecFn, kNativeCount> kExecs = ExecTable(std::make_index_sequence<kNativeCount>{});
+
+// --- Hits and reaction sensing: the human's scopes ---------------------------------------------------------------
+
+/// Whether a hit or sensing by or on `seat`'s member may run in its scopes now (the game thread only).
+bool MayScope(int seat, std::size_t lever, const wchar_t* what) noexcept
+{
+    if (seat == 0 || !g_on.load(std::memory_order_acquire) || !g_enabled.load(std::memory_order_relaxed))
+    {
+        return false;
+    }
+    if (GetCurrentThreadId() != g_thread)
+    {
+        Count(g_counts.offThread, g_totals.offThread);
+        if (!g_offThreadLogged)
+        {
+            g_offThreadLogged = true;
+            platform::LogWarning(L"enemy coin: {} for player {}'s member ran off the game thread; it keeps the game's answers", what, seat + 1);
+        }
+        return false;
+    }
+    if (!g_scopedLogged[lever])
+    {
+        g_scopedLogged[lever] = true;
+        platform::LogDebug(L"enemy coin: {} for player {}'s member runs in that player's scopes", what, seat + 1);
+    }
+    return true;
+}
+
+/// The seat whose member a weak pair at `at` names, or 0 (game thread).
+int SeatOfWeak(const std::uint8_t* at) noexcept
+{
+    std::int32_t pair[2]{};
+    return Read(at, pair) ? SeatOfMember(players::player_two_camera::ObjectOf(pair)) : 0;
+}
+
+char HitApply(void* context, void* hit)
+{
+    const auto original = reinterpret_cast<HitApplyFn>(g_hitApply.Original());
+    if (Tossing())
+    {
+        if (GetCurrentThreadId() != g_thread)
+        {
+            // The weak pairs cannot be resolved here; whoever the hit is on, it keeps the game's answers.
+            Count(g_counts.offThread, g_totals.offThread);
+            if (!g_offThreadLogged)
+            {
+                g_offThreadLogged = true;
+                platform::LogWarning(L"enemy coin: a hit was applied off the game thread; such hits keep the game's answers");
+            }
+            return original(context, hit);
+        }
+        const auto* bytes = static_cast<const std::uint8_t*>(hit);
+        int         seat  = SeatOfWeak(bytes + facts::kBattleHitAttackerWeak);
+        if (seat == 0)
+        {
+            seat = SeatOfWeak(bytes + facts::kBattleHitVictimWeak);
+        }
+        if (MayScope(seat, 0, L"a hit"))
+        {
+            players::scopes::Scope scope(seat, players::scopes::Leader | players::scopes::Primary);
+            if (scope.Held())
+            {
+                Count(g_counts.hitsScoped, g_totals.hitsScoped);
+            }
+            return original(context, hit);
+        }
+    }
+    return original(context, hit);
+}
+
+void HitApplyB(std::uint64_t a1, std::uint64_t a2, std::uint64_t a3, std::uint64_t a4, std::uint64_t a5, std::uint64_t a6, std::uint64_t a7)
+{
+    const auto original = reinterpret_cast<HitApplyBFn>(g_hitApplyB.Original());
+    int        seat     = SeatOfMember(reinterpret_cast<const void*>(a2));
+    if (seat == 0)
+    {
+        seat = SeatOfMember(reinterpret_cast<const void*>(a4));
+    }
+    if (Tossing() && MayScope(seat, 1, L"a hit (second form)"))
+    {
+        players::scopes::Scope scope(seat, players::scopes::Leader | players::scopes::Primary);
+        if (scope.Held())
+        {
+            Count(g_counts.hitsScoped, g_totals.hitsScoped);
+        }
+        original(a1, a2, a3, a4, a5, a6, a7);
+        return;
+    }
+    original(a1, a2, a3, a4, a5, a6, a7);
+}
+
+void Sensing(std::uint64_t attackerComponent, std::uint64_t a2, std::uint64_t a3, std::uint64_t a4, std::uint64_t a5, std::uint64_t a6,
+             std::uint64_t a7, std::uint64_t a8)
+{
+    const auto original = reinterpret_cast<SensingFn>(g_sensing.Original());
+    int        seat     = 0;
+    for (std::size_t candidate = 1; candidate < kSeats && seat == 0; ++candidate)
+    {
+        void* member = g_members[candidate].load(std::memory_order_relaxed);
+        if (member != nullptr && ReadPointer(member, facts::kCharacterBattleComponent) == reinterpret_cast<void*>(attackerComponent))
+        {
+            seat = static_cast<int>(candidate);
+        }
+    }
+    if (Tossing() && MayScope(seat, 2, L"the reaction sensing"))
+    {
+        players::scopes::Scope scope(seat, players::scopes::Leader);
+        if (scope.Held())
+        {
+            Count(g_counts.sensingsScoped, g_totals.sensingsScoped);
+        }
+        original(attackerComponent, a2, a3, a4, a5, a6, a7, a8);
+        return;
+    }
+    original(attackerComponent, a2, a3, a4, a5, a6, a7, a8);
+}
+
+// --- Install helpers ---------------------------------------------------------------------------------------------
+
+/// Places the leader-type answer for the inlined test at `site` (the member in `reg`) and points the call at it.
+bool PlaceTypeAnswer(platform::CallRedirect& redirect, std::uintptr_t site, type_answer_code::Register reg, std::uintptr_t partyManagerGet,
+                     bool crosses, const wchar_t* what) noexcept
+{
+    std::array<std::uint8_t, type_answer_code::kMaxBytes> bytes{};
+    const std::size_t length = type_answer_code::Build(bytes, reg, reinterpret_cast<std::uintptr_t>(&g_fakes[0][0]), kFurther, partyManagerGet);
+    const std::uintptr_t code =
+        length == 0 ? 0
+                    : platform::PlaceCodeNear(site, length, [&](std::uintptr_t, std::span<std::uint8_t> out) noexcept {
+                          std::memcpy(out.data(), bytes.data(), length);
+                          return true;
+                      });
+    const bool placed = code != 0 && (crosses ? redirect.InstallFromOwnThread(site, partyManagerGet, code) : redirect.Install(site, partyManagerGet, code));
+    if (!placed)
+    {
+        platform::Log(L"enemy coin: {} could not be answered; it keeps the game's leader test", what);
+    }
+    return placed;
+}
+
+bool PlaceCall(platform::CallRedirect& redirect, const platform::GameImage& image, std::uintptr_t site, std::uintptr_t target, const void* replacement,
+               bool crosses, const wchar_t* what) noexcept
+{
+    const auto live   = image.Rebase(site, 5);
+    const bool placed = live && (crosses ? redirect.InstallFromOwnThread(*live, target, reinterpret_cast<std::uintptr_t>(replacement))
+                                         : redirect.Install(*live, target, reinterpret_cast<std::uintptr_t>(replacement)));
+    if (!placed)
+    {
+        platform::Log(L"enemy coin: {} could not be redirected; it keeps the game's answer", what);
+    }
+    return placed;
+}
+
+/// Swaps each native's UFunction pointer whose function exists and still holds the exec IDA named. Game thread.
+void TrySwaps() noexcept
+{
+    if (g_aiClass.load(std::memory_order_relaxed) == nullptr)
+    {
+        const auto* const found = UObjectGlobals::StaticFindObject<UClass*>(nullptr, nullptr, kAiControllerClass);
+        g_aiClass.store(found, std::memory_order_release);
+        if (found == nullptr)
+        {
+            if (++g_swapTries == 1)
+            {
+                platform::LogDebug(L"enemy coin: {} not found yet; trying again each second", kAiControllerClass);
+            }
+            return;
+        }
+    }
+    std::size_t missing = 0;
+    for (std::size_t i = 0; i < kNativeCount; ++i)
+    {
+        if (g_originals[i].load(std::memory_order_relaxed) != nullptr)
+        {
+            continue;
+        }
+        auto* function = UObjectGlobals::StaticFindObject<UFunction*>(nullptr, nullptr, kNatives[i].path);
+        if (function == nullptr)
+        {
+            ++missing;
+            continue;
+        }
+        const auto current = reinterpret_cast<std::uintptr_t>(function->GetFuncPtr());
+        if (g_execs[i] == 0 || current != g_execs[i])
+        {
+            platform::Log(L"enemy coin: {} holds {:#x}, not the exec read in IDA; it keeps the game's own answer", kNatives[i].path, current);
+            g_originals[i].store(reinterpret_cast<ExecFn>(current), std::memory_order_release);  // never swapped
+            continue;
+        }
+        g_originals[i].store(reinterpret_cast<ExecFn>(current), std::memory_order_release);
+        function->SetFuncPtr(kExecs[i]);
+        g_functions[i] = function;
+    }
+    if (missing == 0)
+    {
+        g_swapsDone = true;
+        std::size_t swapped = 0;
+        for (auto* function : g_functions)
+        {
+            swapped += function != nullptr ? 1 : 0;
+        }
+        platform::Log(L"enemy coin: {} of {} script natives run with the calling enemy recorded", swapped, kNativeCount);
+    }
+    else if (++g_swapTries == 1)
+    {
+        platform::LogDebug(L"enemy coin: {} script natives not found yet; trying again each second", missing);
+    }
+}
+
+std::wstring Reading(const Counts& counts) noexcept
+{
+    return std::format(L"tosses P1 {} / P2 {} / P3 {} (no further player {}, re-tossed {}); script answers P1 {} / P2 {} / P3 {}; opening {}, "
+                       L"expectation {}, party API {}; EQS kept {}; hits scoped {}, sensings scoped {}, off-thread {}",
+                       counts.tosses[0].load(), counts.tosses[1].load(), counts.tosses[2].load(), counts.gamesOwn.load(), counts.retosses.load(),
+                       counts.scriptAnswers[0].load(), counts.scriptAnswers[1].load(), counts.scriptAnswers[2].load(), counts.openingAnswers.load(),
+                       counts.expectationAnswers.load(), counts.apiAnswers.load(), counts.eqsKept.load(), counts.hitsScoped.load(),
+                       counts.sensingsScoped.load(), counts.offThread.load());
+}
+
+void ResetSince() noexcept
+{
+    for (auto& t : g_counts.tosses) Take(t);
+    for (auto& a : g_counts.scriptAnswers) Take(a);
+    Take(g_counts.gamesOwn);
+    Take(g_counts.retosses);
+    Take(g_counts.openingAnswers);
+    Take(g_counts.expectationAnswers);
+    Take(g_counts.apiAnswers);
+    Take(g_counts.eqsKept);
+    Take(g_counts.hitsScoped);
+    Take(g_counts.sensingsScoped);
+    Take(g_counts.offThread);
+}
+
+bool Any(const Counts& counts) noexcept
+{
+    unsigned sum = counts.gamesOwn.load() + counts.retosses.load() + counts.openingAnswers.load() + counts.expectationAnswers.load() +
+                   counts.apiAnswers.load() + counts.eqsKept.load() + counts.hitsScoped.load() + counts.sensingsScoped.load() + counts.offThread.load();
+    for (std::size_t i = 0; i < kSeats; ++i)
+    {
+        sum += counts.tosses[i].load() + counts.scriptAnswers[i].load();
+    }
+    return sum != 0;
+}
+
+}  // namespace
+
+bool Install(const platform::GameImage& image) noexcept
+{
+    const auto pmGet       = platform::FindFunction(image, facts::kPartyManagerGet);
+    const auto isA         = platform::FindFunction(image, facts::kIsABattleAIController);
+    const auto isPartySide = platform::FindFunction(image, facts::kBattleCompIsPartySide);
+    const auto pawnComp    = platform::FindFunction(image, facts::kBattleAIGetPawnComp);
+    const auto getLeader   = platform::FindFunction(image, facts::kGetPartyLeader);
+    const auto getActor    = platform::FindFunction(image, facts::kGetPlayerActor);
+    const auto hitApplyB   = platform::FindFunction(image, facts::kBattleHitApplyB);
+    const auto sensing     = platform::FindFunction(image, facts::kBattleReactionSensing);
+    const auto gate        = image.Rebase(facts::kBattleAIDecisionGate);
+    const auto mineGate    = image.Rebase(facts::kBattleAIMineDecisionGate);
+    const auto hitApply    = image.Rebase(facts::kBattleHitApply);
+    if (!pmGet || !isA || !isPartySide || !pawnComp || !getLeader || !getActor || !hitApplyB || !sensing || !gate || !mineGate || !hitApply)
+    {
+        platform::Log(L"enemy coin: an engine check failed; enemies keep naming player 1 as the player");
+        return false;
+    }
+    g_pmGet       = reinterpret_cast<PmGetFn>(*pmGet);
+    g_getLeader   = reinterpret_cast<GetPartyLeaderFn>(*getLeader);
+    g_getActor    = reinterpret_cast<GetPlayerActorFn>(*getActor);
+    g_isPartySide = reinterpret_cast<IsPartySideFn>(*isPartySide);
+    g_pawnComp    = reinterpret_cast<PawnCompFn>(*pawnComp);
+    for (std::size_t i = 0; i < kNativeCount; ++i)
+    {
+        const auto exec = image.Rebase(facts::kBattleCoinNativeExecs[i]);
+        g_execs[i]      = exec ? *exec : 0;
+    }
+    for (auto& fake : g_fakes)
+    {
+        fake[type_answer_code::kTypeOffset] = facts::kPlayerTypeNone;
+    }
+    g_on.store(true, std::memory_order_release);  // before any lever: a lever may run the moment it is placed
+
+    std::size_t placed = 0;
+    // The toss (entry redirects on the gate and the mines' override).
+    placed += g_gate.Install(*gate, facts::kBattleAIDecisionGateFirst, reinterpret_cast<std::uintptr_t>(&Gate)) ? 1 : 0;
+    placed += g_mineGate.Install(*mineGate, facts::kBattleAIMineDecisionGateFirst, reinterpret_cast<std::uintptr_t>(&MineGate)) ? 1 : 0;
+    if (!g_gate.IsInstalled())
+    {
+        platform::Log(L"enemy coin: the decision gate could not be redirected; coins are tossed at the first question only");
+    }
+    // The opening target: the slot, then its leader read.
+    if (platform::ReplaceSlot(image, facts::kBattleEnemyCompBattleStartSlot, reinterpret_cast<std::uintptr_t>(&BattleStart), g_battleStart))
+    {
+        placed += PlaceCall(g_opening, image, facts::kBattleOpeningLeaderCall, *getLeader, &OpeningLeader, false, L"the opening target's leader read") ? 2 : 1;
+    }
+    // The script natives' reads (the swaps follow in Tick).
+    placed += PlaceCall(g_scriptLeader, image, facts::kBattleScriptLeaderCall, *getLeader, &ScriptLeader, false, L"the scripts' GetLeader") ? 1 : 0;
+    for (std::size_t i = 0; i < g_scriptActor.size(); ++i)
+    {
+        placed += PlaceCall(g_scriptActor[i], image, facts::kBattleScriptPlayerActorCalls[i], *getActor, &ScriptActor, false, L"a script's player actor read") ? 1 : 0;
+    }
+    for (std::size_t i = 0; i < g_expect.size(); ++i)
+    {
+        placed += PlaceCall(g_expect[i], image, facts::kBattleExpectationTypeCalls[i], *pmGet, &PartyManagerForExpectation, false,
+                            L"an expectation count's leader type read")
+                      ? 1
+                      : 0;
+    }
+    // Rule B at the inlined tests (on_unreal_init: no battle runs, so the crossing calls can be placed from here).
+    const auto hate = image.Rebase(facts::kBattleHateTypeCall, 5);
+    placed += hate && PlaceTypeAnswer(g_hate, *hate, type_answer_code::kR14, *pmGet, false, L"the hate rows' leader test") ? 1 : 0;
+    for (std::size_t i = 0; i < g_tie.size(); ++i)
+    {
+        const auto tie = image.Rebase(facts::kBattleTieTypeCalls[i], 5);
+        placed += tie && PlaceTypeAnswer(g_tie[i], *tie, type_answer_code::kRdi, *pmGet, i == 1, L"the hate pick's tie-break leader test") ? 1 : 0;
+    }
+    const auto isAipc = image.Rebase(facts::kBattleIsAipcTypeCall, 5);
+    placed += isAipc && PlaceTypeAnswer(g_isAipc, *isAipc, type_answer_code::kRbx, *pmGet, true, L"IsAIPC's leader test") ? 1 : 0;
+    // Membership, hits, sensing.
+    placed += PlaceCall(g_eqs, image, facts::kBattleEqsIsACall, *isA, &EqsIsA, false, L"the enemy EQS membership test") ? 1 : 0;
+    placed += g_hitApply.Install(*hitApply, facts::kBattleHitApplyFirst, reinterpret_cast<std::uintptr_t>(&HitApply)) ? 1 : 0;
+    placed += PlaceCall(g_hitApplyB, image, facts::kBattleHitApplyBCall, *hitApplyB, &HitApplyB, true, L"the hit apply's second form") ? 1 : 0;
+    placed += PlaceCall(g_sensing, image, facts::kBattleReactionSensingCall, *sensing, &Sensing, false, L"the reaction sensing") ? 1 : 0;
+
+    control::Register({.name  = L"enemy-coin",
+                       .shape = control::Shape::Text,
+                       .help  = L"the equal-attention coin's counts since install (battle/enemy_coin.h)",
+                       .get   = [] { return control::Value{Reading(g_totals)}; }});
+    control::Register({.name  = L"coin-two",
+                       .shape = control::Shape::OnOff,
+                       .help  = L"enemies share their attention between the humans by a coin per decision (battle/enemy_coin.h; on)",
+                       .set   = [](const control::Value& value) {
+                           g_enabled.store(std::get<bool>(value), std::memory_order_relaxed);
+                           platform::Log(L"enemy coin {}", std::get<bool>(value) ? L"on" : L"off");
+                           return control::Outcome{};
+                       },
+                       .get = [] { return control::Value{g_enabled.load(std::memory_order_relaxed)}; }});
+    g_lastSummary = std::chrono::steady_clock::now();
+    platform::Log(L"enemy coin: installed, {} of 17 levers placed; enemies toss a coin per decision between the humans (the script natives "
+                  L"answer once swapped)",
+                  placed);
+    return true;
+}
+
+void Remove() noexcept
+{
+    g_on.store(false, std::memory_order_release);  // every lever passes the game's own answer through from now on
+    for (auto& fake : g_fakes)
+    {
+        fake[type_answer_code::kTypeOffset] = facts::kPlayerTypeNone;  // the type answers match nobody
+    }
+    for (std::size_t i = 0; i < kNativeCount; ++i)
+    {
+        if (g_functions[i] != nullptr)
+        {
+            g_functions[i]->SetFuncPtr(g_originals[i].load(std::memory_order_relaxed));
+            g_functions[i] = nullptr;
+        }
+    }
+    g_sensing.Restore();
+    g_hitApply.Restore();
+    g_eqs.Restore();
+    g_hate.Restore();
+    g_tie[0].Restore();
+    for (auto& call : g_expect)
+    {
+        call.Restore();
+    }
+    for (auto& call : g_scriptActor)
+    {
+        call.Restore();
+    }
+    g_scriptLeader.Restore();
+    g_opening.Restore();
+    g_battleStart.Restore();
+    g_mineGate.Restore();
+    g_gate.Restore();
+    // The crossing calls (the second tie-break read, IsAIPC, the hit apply's second form) stay: only the thread that
+    // runs them could put them back, and they pass through now.
+}
+
+void Tick() noexcept
+{
+    g_thread = GetCurrentThreadId();
+    if (!g_on.load(std::memory_order_relaxed))
+    {
+        return;
+    }
+    // The seats: player 1 is the game's leader; further seats hold what the scopes bound.
+    const std::uintptr_t manager = players::scopes::PartyManagerAddress();
+    std::int32_t         pair[2]{};
+    void* leader = manager != 0 && Read(reinterpret_cast<const void*>(manager + facts::kPartyLeaderWeak), pair)
+                       ? players::player_two_camera::ObjectOf(pair)
+                       : nullptr;
+    g_members[0].store(leader, std::memory_order_relaxed);
+    g_controllers[0].store(players::scopes::Controller(0), std::memory_order_relaxed);
+    unsigned seated = 1u;
+    for (std::size_t seat = 1; seat < kSeats; ++seat)
+    {
+        void*              member = players::scopes::Member(static_cast<int>(seat));
+        const std::uint8_t type   = players::scopes::MemberType(static_cast<int>(seat));
+        g_members[seat].store(member, std::memory_order_relaxed);
+        g_controllers[seat].store(players::scopes::Controller(static_cast<int>(seat)), std::memory_order_relaxed);
+        g_fakes[seat - 1][type_answer_code::kTypeOffset] = member != nullptr ? type : facts::kPlayerTypeNone;
+        if (member != nullptr)
+        {
+            seated |= 1u << seat;
+        }
+    }
+    g_seated.store(seated, std::memory_order_release);
+
+    const auto now = std::chrono::steady_clock::now();
+    if (!g_swapsDone && now - g_lastSwapTry >= std::chrono::seconds(1))
+    {
+        g_lastSwapTry = now;
+        TrySwaps();  // once a second until every native is found (an object walk is never per frame)
+    }
+    if (now - g_lastSummary >= std::chrono::seconds(60))
+    {
+        g_lastSummary = now;
+        if (Any(g_counts))
+        {
+            platform::LogDebug(L"enemy coin (60 s): {}", Reading(g_counts));
+        }
+        ResetSince();
+    }
+}
+
+}  // namespace lss::battle::enemy_coin
