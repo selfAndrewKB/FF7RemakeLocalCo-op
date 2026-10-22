@@ -50,6 +50,7 @@ constexpr std::uint32_t kStatusTicks            = 300;
 constexpr std::uint32_t kRequestTicks           = 180;  // the engine applies a request on its next frame; 3 s is a failure
 constexpr std::uint32_t kReshapeSettleTicks     = 2;    // the window's rect is read after the engine's own follow
 constexpr std::uint32_t kReshapeRetryTicks      = 60;
+constexpr std::uint32_t kLineUpTicks            = 120;  // the desktop read as the row after a move: live 2 ms was too soon
 constexpr std::int32_t  kColumnsBuilt           = 2;    // the third column needs the third view and the layout-table write
 constexpr std::uint8_t  kLayoutSideBySide       = 1;    // ETwoPlayerSplitScreenType::Vertical
 constexpr const wchar_t* kGameMapsSettingsPath  = L"/Script/EngineSettings.Default__GameMapsSettings";
@@ -58,6 +59,7 @@ constexpr const wchar_t* kGameMapsSettingsPath  = L"/Script/EngineSettings.Defau
 enum class Step : std::uint8_t
 {
     Out,
+    LiningUp,   // a row monitor is moved; waiting for the desktop to read as the row (Windows applies it after the call)
     Requested,  // the resolution request is sent; waiting for the engine to apply it
     Reshaped,   // the window is reshaped; waiting for its rect
     In,         // held
@@ -368,11 +370,41 @@ void ReshapeAgain(const wchar_t* why) noexcept
     g_stepTicks = 0;
 }
 
+/// The entry proper, with the row's monitors level: the layout byte, the resolution request, the globals, the log.
+bool Proceed(const NativeWindow& window, const monitor_row::Choice& choice) noexcept
+{
+    const Resolution before = g_savedRes;
+    const Rect       client = g_before;
+    g_targetRes             = {choice.span.Width(), choice.span.Height(), kModeWindowedFullscreen};
+    SetLayout(true);
+    if (!Request(g_targetRes))
+    {
+        platform::LogWarning(L"window span: the resolution request faulted; nothing changed");
+        SetLayout(false);
+        display_align::Restore();
+        Forget();
+        return false;
+    }
+    g_step      = Step::Requested;
+    g_stepTicks = 0;
+    g_target    = choice.span;
+    ++g_entries;
+    platform::Log(L"window span: entering: {} columns over the row of {} equal monitor(s){}{}; the game's resolution request "
+                  L"sent for {} (was {}; the window's client area {} in {} mode, the viewport {}); the reshape to {} follows "
+                  L"once the engine applies it",
+                  g_columns, choice.rowMonitors, choice.gamesRow ? L"" : L" (not the game's own monitor's row)",
+                  display_align::Moved() ? std::format(L" (lined up: {})", display_align::Reading()).c_str() : L"",
+                  ResolutionText(g_targetRes), ResolutionText(before), RectText(client), ModeName(window.mode), ViewportText(),
+                  RectText(choice.span));
+    return true;
+}
+
 const wchar_t* StepName(Step step) noexcept
 {
     switch (step)
     {
         case Step::Out: return L"out";
+        case Step::LiningUp: return L"lining up the row";
         case Step::Requested: return L"resolution requested";
         case Step::Reshaped: return L"window reshaped";
         case Step::In: return L"in";
@@ -495,60 +527,34 @@ bool Enter(std::int32_t columns) noexcept
                       choice.why, monitors.list.size(), monitor_row::kAlignTolerance);
         return false;
     }
+    g_native     = window->object;
+    g_hwnd       = window->hwnd;
+    g_before     = ClientRect(window->hwnd);
+    g_beforeMode = window->mode;
+    g_savedRes   = ReadResolution();
+    g_columns    = columns;
+    g_ticks      = 0;
+    g_reapplies  = 0;
     if (!choice.moves.empty())
     {
-        // The row's monitors a few pixels off its top are lined up first; then the desktop is read again and must
-        // give the same row with nothing left to move.
+        // The row's monitors a few pixels off its top are lined up first. Windows applies the move after the call
+        // returns (live, the desktop still read the old layout 2 ms later), so the request waits for a tick on
+        // which the desktop reads as the row with nothing left to move.
         const auto moves = MovesFor(choice, monitors);
         if (moves.size() != choice.moves.size() || !display_align::Apply(moves))
         {
             platform::Log(L"window span: refused: {} monitor(s) of the row could not be lined up with its top (see above)",
                           choice.moves.size());
+            Forget();
             return false;
         }
-        monitors = Collect(window->hwnd);
-        choice   = monitor_row::Choose(monitors.list, monitors.gameAt, columns);
-        if (!choice.ok || !choice.moves.empty())
-        {
-            platform::LogWarning(L"window span: after the line-up the desktop does not read as the row ({}); the monitors "
-                                 L"are put back",
-                                 choice.ok ? std::format(L"{} move(s) still listed", choice.moves.size()) : choice.why);
-            display_align::Restore();
-            return false;
-        }
+        g_step      = Step::LiningUp;
+        g_stepTicks = 0;
+        platform::Log(L"window span: lining up the row ({}); the entry follows once the desktop reads as the row",
+                      display_align::Reading());
+        return true;
     }
-
-    const Resolution before = ReadResolution();
-    const Rect       client = ClientRect(window->hwnd);
-    g_targetRes             = {choice.span.Width(), choice.span.Height(), kModeWindowedFullscreen};
-    SetLayout(true);
-    if (!Request(g_targetRes))
-    {
-        platform::LogWarning(L"window span: the resolution request faulted; nothing changed");
-        SetLayout(false);
-        display_align::Restore();
-        return false;
-    }
-    g_step       = Step::Requested;
-    g_stepTicks  = 0;
-    g_native     = window->object;
-    g_hwnd       = window->hwnd;
-    g_before     = client;
-    g_beforeMode = window->mode;
-    g_savedRes   = before;
-    g_target     = choice.span;
-    g_columns    = columns;
-    g_ticks      = 0;
-    g_reapplies  = 0;
-    ++g_entries;
-    platform::Log(L"window span: entering: {} columns over the row of {} equal monitor(s){}{}; the game's resolution request "
-                  L"sent for {} (was {}; the window's client area {} in {} mode, the viewport {}); the reshape to {} follows "
-                  L"once the engine applies it",
-                  columns, choice.rowMonitors, choice.gamesRow ? L"" : L" (not the game's own monitor's row)",
-                  display_align::Moved() ? std::format(L" (lined up: {})", display_align::Reading()).c_str() : L"",
-                  ResolutionText(g_targetRes), ResolutionText(before), RectText(client), ModeName(window->mode), ViewportText(),
-                  RectText(choice.span));
-    return true;
+    return Proceed(*window, choice);
 }
 
 void Leave(const wchar_t* why) noexcept
@@ -613,6 +619,37 @@ void Tick(bool playerTwoIn) noexcept
     ++g_stepTicks;
     switch (g_step)
     {
+        case Step::LiningUp:
+        {
+            const wchar_t* reason = L"";
+            const auto     window = FindNativeWindow(&reason);
+            if (!window)
+            {
+                platform::LogWarning(L"window span: the game window could not be reached during the line-up ({}); the "
+                                     L"monitors are put back",
+                                     reason);
+                display_align::Restore();
+                Forget();
+                break;
+            }
+            const Monitors monitors = Collect(window->hwnd);
+            const auto     choice   = monitor_row::Choose(monitors.list, monitors.gameAt, g_columns);
+            if (choice.ok && choice.moves.empty())
+            {
+                platform::Log(L"window span: the desktop reads as the row after {} tick(s)", g_stepTicks);
+                Proceed(*window, choice);
+            }
+            else if (g_stepTicks > kLineUpTicks)
+            {
+                platform::LogWarning(L"window span: after the line-up the desktop still does not read as the row ({}) after "
+                                     L"{} ticks; the monitors are put back",
+                                     choice.ok ? std::format(L"{} move(s) still listed", choice.moves.size()) : choice.why,
+                                     g_stepTicks);
+                display_align::Restore();
+                Forget();
+            }
+            break;
+        }
         case Step::Requested:
         {
             const Resolution res = ReadResolution();
