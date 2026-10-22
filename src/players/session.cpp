@@ -190,6 +190,10 @@ void Session::LeaveForWorldChange(const wchar_t* why) noexcept
         return;
     }
     rejoin_ = Rejoin{.pending = true};
+    if (mirror_.fillAtLeave != nullptr)
+    {
+        mirror_.fillAtLeave(L"player 2 left for a world change");  // the column held through the loading screen
+    }
     platform::Log(L"world change: player 2 joins again once the field is back (Ctrl+F8 cancels)");
 }
 

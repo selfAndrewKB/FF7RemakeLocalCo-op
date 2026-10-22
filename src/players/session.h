@@ -92,11 +92,13 @@ public:
 
     /// The mirror player's local players (views/mirror_player.h): how many are in (they fill the columns player 2 is
     /// out of, so the join and the rejoin expect them beside player 1), and the call that takes them out inside the
-    /// join, right before CreatePlayer, so player 2 takes its column on the same tick.
+    /// join, right before CreatePlayer, so player 2 takes its column on the same tick; and the call that fills player
+    /// 2's column the tick it leaves for a world change, so the loading screen is drawn by two views.
     struct MirrorPlayers
     {
-        std::int32_t (*count)() noexcept           = nullptr;
-        void (*clear)(const wchar_t* why) noexcept = nullptr;
+        std::int32_t (*count)() noexcept                 = nullptr;
+        void (*clear)(const wchar_t* why) noexcept       = nullptr;
+        void (*fillAtLeave)(const wchar_t* why) noexcept = nullptr;
     };
     void SetMirrorPlayers(MirrorPlayers mirror) noexcept { mirror_ = mirror; }
 

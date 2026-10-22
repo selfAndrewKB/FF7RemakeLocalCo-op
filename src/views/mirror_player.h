@@ -46,6 +46,11 @@ void Tick(std::int32_t playersIn, std::int32_t columns) noexcept;
 /// Takes every mirror out (`why` logged): the session's join, the switch, the unload.
 void Clear(const wchar_t* why) noexcept;
 
+/// The mirror into player 2's column on the tick player 2 leaves for a world change (the session calls it right
+/// after the leave), so the loading screen that follows is drawn by two views, not one stretched across the row.
+/// The field is leaving, not steady; the other checks hold. Logged either way.
+void FillAtLeave(const wchar_t* why) noexcept;
+
 /// The mirrors in now (0 or 1 today).
 std::int32_t Count() noexcept;
 

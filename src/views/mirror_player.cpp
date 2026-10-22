@@ -39,6 +39,8 @@ UObject*       g_manager      = nullptr;
 UObject*       g_managerOne   = nullptr;  // player 1's camera manager, the mirror's source
 std::int32_t   g_seat         = 0;        // its controller id = its index in the list
 std::int32_t   g_wanted       = 0;
+std::int32_t   g_columns      = 0;        // the span's columns at the last tick (0: not held)
+std::uint32_t  g_leaveFills   = 0;        // adds made the tick player 2 left for a world change
 std::uint32_t  g_ticks        = 0;
 std::uint32_t  g_adds         = 0;
 std::uint32_t  g_removes      = 0;
@@ -72,12 +74,17 @@ void Forget() noexcept
 }
 
 /// Why the mirror cannot be added now, or null with player 1's controller and the instance filled.
-const wchar_t* Refusal(std::int32_t seat, UObject*& playerOneController, UObject*& gameInstance) noexcept
+/// `atLeave`: the tick player 2 leaves for a world change. The field is leaving, not steady, and still running:
+/// the mirror added then holds the column through the loading screen, where a steady-field add came too late (the
+/// user, 2026-10-22 10:52: one view stretched over both monitors at a save load with player 2 in, mirrored on the
+/// next load because the mirror from the first was still in).
+const wchar_t* Refusal(std::int32_t seat, UObject*& playerOneController, UObject*& gameInstance, bool atLeave) noexcept
 {
     const auto game = players::game_state::Current();
-    if (!(game.valid && game.hasRoot && game.running && game.step == kStepSteady && game.state == kStatePlay))
+    if (atLeave ? !(game.valid && game.hasRoot && game.running)
+                : !(game.valid && game.hasRoot && game.running && game.step == kStepSteady && game.state == kStatePlay))
     {
-        return L"the field is not steady (a load, or a scene change)";
+        return atLeave ? L"the field is already down" : L"the field is not steady (a load, or a scene change)";
     }
     gameInstance = list::GameInstance();
     if (list::Count(gameInstance) != seat)
@@ -104,11 +111,11 @@ void Remove(const wchar_t* why) noexcept;
 
 /// The mirror into the column after the real players (`seat` = their count): CreatePlayer, the views filled, the
 /// split effects back on, its camera manager handed to the slot copy.
-bool Add(std::int32_t seat) noexcept
+bool Add(std::int32_t seat, bool atLeave) noexcept
 {
     UObject* playerOne    = nullptr;
     UObject* gameInstance = nullptr;
-    if (const wchar_t* why = Refusal(seat, playerOne, gameInstance); why != nullptr)
+    if (const wchar_t* why = Refusal(seat, playerOne, gameInstance, atLeave); why != nullptr)
     {
         if (g_waiting != why)
         {
@@ -235,7 +242,8 @@ void Tick(std::int32_t playersIn, std::int32_t columns) noexcept
         Forget();
         players::split_render::OnLeave();
     }
-    g_wanted = g_enabled ? std::clamp(columns - playersIn, 0, kMirrorsBuilt) : 0;
+    g_columns = columns;
+    g_wanted  = g_enabled ? std::clamp(columns - playersIn, 0, kMirrorsBuilt) : 0;
     if (g_wanted == 0)
     {
         if (g_player != nullptr)
@@ -249,11 +257,31 @@ void Tick(std::int32_t playersIn, std::int32_t columns) noexcept
     }
     else if (g_player == nullptr)
     {
-        Add(playersIn);
+        Add(playersIn, false);
     }
     if (g_player != nullptr && g_ticks % kStatusTicks == 0 && platform::Enabled(platform::Level::Debug))
     {
         platform::LogDebug(L"mirror player: {}", Reading());
+    }
+}
+
+void FillAtLeave(const wchar_t* why) noexcept
+{
+    // Player 2 is out as of this call (the session took it out first), so the real players are one.
+    constexpr std::int32_t playersIn = 1;
+    if (g_removeLocalPlayer == 0 || !g_enabled || g_player != nullptr || std::clamp(g_columns - playersIn, 0, kMirrorsBuilt) == 0)
+    {
+        return;
+    }
+    if (Add(playersIn, true))
+    {
+        ++g_leaveFills;
+        platform::Log(L"mirror player: column {} filled as {} (before the loading screen)", playersIn + 1, why);
+    }
+    else
+    {
+        platform::Log(L"mirror player: column {} not filled as {}: {}; it is added once the field is steady", playersIn + 1, why,
+                      g_waiting != nullptr ? g_waiting : L"the add failed (see above)");
     }
 }
 
@@ -269,9 +297,9 @@ std::int32_t Count() noexcept
 
 std::wstring Reading() noexcept
 {
-    return std::format(L"{}; wanted {}; {}; adds {}, removes {}, dropped by the engine {}{}; camera copy: {}", g_enabled ? L"on" : L"off",
+    return std::format(L"{}; wanted {}; {}; adds {} ({} at player 2's leave for a world change), removes {}, dropped by the engine {}{}; camera copy: {}", g_enabled ? L"on" : L"off",
                        g_wanted, g_player != nullptr ? std::format(L"in column {} (controller id {})", g_seat + 1, g_seat) : L"out",
-                       g_adds, g_removes, g_dropped, g_waiting != nullptr ? std::format(L"; waiting: {}", g_waiting) : L"",
+                       g_adds, g_leaveFills, g_removes, g_dropped, g_waiting != nullptr ? std::format(L"; waiting: {}", g_waiting) : L"",
                        scene_camera_two::MirrorPlayerText());
 }
 

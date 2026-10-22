@@ -80,7 +80,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.44.3-wait-formation-log";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.44.4-mirror-at-leave";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
@@ -292,7 +292,8 @@ public:
         // Optional: without it a held span shows one view across the row while player 2 is out.
         if (lss::views::mirror_player::Install(*image))
         {
-            session_.SetMirrorPlayers({&lss::views::mirror_player::Count, &lss::views::mirror_player::Clear});
+            session_.SetMirrorPlayers({&lss::views::mirror_player::Count, &lss::views::mirror_player::Clear,
+                                       &lss::views::mirror_player::FillAtLeave});
         }
         lss::players::pad_buttons::Install(*image);  // optional: without it every pad presses player 1's buttons
         lss::players::pad_presence::Register();      // diagnostics: which XInput users have a pad
