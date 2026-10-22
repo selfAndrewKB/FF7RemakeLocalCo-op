@@ -1217,39 +1217,6 @@ inline constexpr std::uint32_t kCognitionTimer         = 0x14;  //   time since 
 inline constexpr std::uint32_t kCognitionInterest      = 0x18;  //   interest,
 inline constexpr std::uint32_t kCognitionExperience    = 0x1C;  //   experience (100 after a look)
 
-// --- An NPC's field look-at (research/RE-npc-reactions.md §10, pass S-RMK-NPCLOOK) ----------------------------------
-// The continuous look of an NPC that tracks the player (the user's old man in Sector 5): the field AI's look-at
-// setting from the NPC's row, a struct on the character. Its target name resolves once: `Leader` to the party leader,
-// any other (`Cloud` in Sector 5, v0.32.0 live) through the character registry by name.
-/// FieldAILookAt_Tick(lookAt): in range of the target and not yet requested -> request a look of type 4 (AI) at it
-/// once (and a body turn); out of range -> clear that request. Its per-character call is in the field-action
-/// system's tick, which runs on a worker thread, one character after the other.
-inline constexpr std::array<std::uint8_t, 16> kFieldLookAtTickEntry{
-    0x48, 0x89, 0x5C, 0x24, 0x18, 0x48, 0x89, 0x7C, 0x24, 0x20, 0x55, 0x48, 0x8D, 0x6C, 0x24, 0xA9};
-inline constexpr platform::FunctionFact kFieldLookAtTick{L"FieldAILookAt_Tick", 0x1416812D0, kFieldLookAtTickEntry};
-inline constexpr std::uintptr_t kFieldLookAtTickCall = 0x140FBE546;
-/// IsWithinReactionDistance(lookAt, const FVector*): the NPC's 3D distance under ReactionDistance (and the height
-/// check when set). Reads only.
-inline constexpr std::array<std::uint8_t, 16> kFieldLookAtInRangeEntry{
-    0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x74, 0x24, 0x10, 0x57, 0x48, 0x83, 0xEC, 0x30, 0x44};
-inline constexpr platform::FunctionFact kFieldLookAtInRange{L"FieldAILookAt_IsWithinReactionDistance", 0x141682820,
-                                                            kFieldLookAtInRangeEntry};
-/// LookAtCtrl_ClearRequest(controller, u8 type): the tick's own clear.
-inline constexpr std::array<std::uint8_t, 16> kLookAtClearEntry{
-    0x0F, 0xB6, 0xC2, 0x48, 0x6B, 0xD0, 0x58, 0x8B, 0x84, 0x0A, 0xD0, 0x00, 0x00, 0x00, 0x89, 0x84};
-inline constexpr platform::FunctionFact kLookAtClear{L"LookAtCtrl_ClearRequest", 0x14079AC40, kLookAtClearEntry};
-inline constexpr std::uintptr_t kNameLeaderGlobal       = 0x145903970;  // the FName "Leader" (built at start-up)
-inline constexpr std::uint32_t  kFieldLookAtOwner       = 0x00;  // weak pair: the NPC
-inline constexpr std::uint32_t  kFieldLookAtRequested   = 0x0A;  // u8: the look is requested
-inline constexpr std::uint32_t  kFieldLookAtMode        = 0x0C;  // i32: 0 an actor, 1 a place
-inline constexpr std::uint32_t  kFieldLookAtTarget      = 0x10;  // weak pair: the actor looked at
-inline constexpr std::uint32_t  kFieldLookAtTargetName  = 0x18;  // FName: the row's target ("Leader", an actor, a point)
-inline constexpr std::uint32_t  kFieldLookAtReach       = 0x34;  // float: ReactionDistance (the range test's radius)
-inline constexpr std::uint32_t  kFieldLookAtLookAway    = 0x39;  // u8: look away instead
-inline constexpr std::uint32_t  kCharacterLookAtHost    = 0x810; // the look-at controller's host; its vt+0x48 gives it
-inline constexpr std::uint32_t  kLookAtHostController   = 0x48;
-inline constexpr std::uint8_t   kLookAtTypeAi           = 4;
-
 // --- EnvironmentSet: actors hidden by the ground under the leader (research/RE-picture-variants.md §2, §5, §9) -------
 // Square Enix's EnvironmentSet manager traces down from the party leader each frame, takes the hit surface's material
 // as the area's set, and hides (reason 13) the actors the field's EnvironmentSetWrapper row lists for that set. All
