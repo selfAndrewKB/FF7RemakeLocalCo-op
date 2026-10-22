@@ -2,29 +2,53 @@
 
 #include <algorithm>
 #include <format>
+#include <optional>
 #include <vector>
 
 namespace lss::views::monitor_row {
 
 namespace {
 
-/// Why `candidate` cannot stand beside `base` in a row, or empty if it can.
-std::wstring Mismatch(const Monitor& base, const Monitor& candidate)
+/// One monitor keeping a row from growing: which one (`about`, for naming it once) and the sentence that says what
+/// to change in Windows. A misaligned pair always names the lower monitor, whichever side the row grew from.
+struct Stop
+{
+    Rect         about;
+    int          order;  // in the reason: a misaligned monitor first (one drag fixes it), then a size, then scaling
+    std::wstring text;
+};
+
+std::wstring At(const Rect& rect)
+{
+    return std::format(L"({}, {})", rect.left, rect.top);
+}
+
+/// Why `candidate` cannot stand beside `base` in a row, or nothing if it can.
+std::optional<Stop> Mismatch(const Monitor& base, const Monitor& candidate)
 {
     if (candidate.dpi != 96)
     {
-        return std::format(L"scaled to {} % in Windows (needs 100 %)", candidate.dpi * 100 / 96);
+        return Stop{candidate.rect, 2,
+                    std::format(L"the monitor at {} is scaled to {} % in Windows (needs 100 %)", At(candidate.rect),
+                                candidate.dpi * 100 / 96)};
     }
     if (candidate.rect.Width() != base.rect.Width() || candidate.rect.Height() != base.rect.Height())
     {
-        return std::format(L"{}x{}, not {}x{}", candidate.rect.Width(), candidate.rect.Height(), base.rect.Width(),
-                           base.rect.Height());
+        return Stop{candidate.rect, 1,
+                    std::format(L"the monitor at {} is {}x{}, not {}x{}", At(candidate.rect), candidate.rect.Width(),
+                                candidate.rect.Height(), base.rect.Width(), base.rect.Height())};
     }
     if (candidate.rect.top != base.rect.top)
     {
-        return std::format(L"its top edge is {} px off its neighbour's", candidate.rect.top - base.rect.top);
+        const Rect& lower = candidate.rect.top > base.rect.top ? candidate.rect : base.rect;
+        const Rect& upper = candidate.rect.top > base.rect.top ? base.rect : candidate.rect;
+        const auto  px    = lower.top - upper.top;
+        return Stop{lower, 0,
+                    std::format(L"the monitor at {} sits {} px lower than its neighbour at {} (move it up {} px in "
+                                L"Windows display settings)",
+                                At(lower), px, At(upper), px)};
     }
-    return {};
+    return std::nullopt;
 }
 
 /// The monitor touching `edge` (its right edge there when `leftOf`, else its left edge) with any vertical overlap.
@@ -44,8 +68,8 @@ const Monitor* Neighbour(std::span<const Monitor> monitors, const Rect& edge, bo
 
 struct Row
 {
-    std::vector<Rect> rects;      // left to right
-    std::wstring      stoppedBy;  // the first unequal neighbour met, for the reason
+    std::vector<Rect> rects;  // left to right
+    std::vector<Stop> stops;  // the unequal neighbours met at either end, for the reason
 };
 
 /// The row of equal monitors around `base`: outward to each side until one is missing or unequal.
@@ -63,13 +87,9 @@ Row RowAround(std::span<const Monitor> monitors, const Monitor& base)
             {
                 break;
             }
-            const auto mismatch = Mismatch(base, *next);
-            if (!mismatch.empty())
+            if (auto mismatch = Mismatch(base, *next))
             {
-                if (row.stoppedBy.empty())
-                {
-                    row.stoppedBy = std::format(L"the monitor at ({}, {}) is {}", next->rect.left, next->rect.top, mismatch);
-                }
+                row.stops.push_back(std::move(*mismatch));
                 break;
             }
             row.rects.push_back(next->rect);
@@ -142,15 +162,26 @@ Choice Choose(std::span<const Monitor> monitors, std::size_t gameMonitor, std::i
     }
     if (best == nullptr)
     {
-        std::int32_t longest = 0;
-        std::wstring stopped = gameRow.stoppedBy;  // the game's own neighbour first, else any row's
+        // Every monitor that stopped a row, each named once, the easiest change first: the user reads what to do.
+        std::int32_t      longest = 0;
+        std::vector<Stop> stops;
         for (const auto& row : rows)
         {
             longest = std::max(longest, static_cast<std::int32_t>(row.rects.size()));
-            if (stopped.empty())
+            for (const auto& stop : row.stops)
             {
-                stopped = row.stoppedBy;
+                const auto named = [&](const Stop& s) { return s.about == stop.about; };
+                if (std::find_if(stops.begin(), stops.end(), named) == stops.end())
+                {
+                    stops.push_back(stop);
+                }
             }
+        }
+        std::stable_sort(stops.begin(), stops.end(), [](const Stop& a, const Stop& b) { return a.order < b.order; });
+        std::wstring stopped;
+        for (const auto& stop : stops)
+        {
+            stopped += (stopped.empty() ? L"" : L"; ") + stop.text;
         }
         choice.rowMonitors = longest;
         if (game.dpi != 96 && rows.empty())

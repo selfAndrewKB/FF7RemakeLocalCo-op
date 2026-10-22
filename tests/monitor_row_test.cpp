@@ -61,12 +61,25 @@ void TestRowBelowTheGame()
 
 void TestUsersPairTwoPixelsOff()
 {
-    std::printf("the user's pair as first set up (the right one 2 px lower) is refused, naming the offset\n");
+    std::printf("the user's pair as first set up (the right one 2 px lower) is refused, naming the offset and the move\n");
     std::vector<Monitor> monitors{At(0, 0, 3440, 1440), At(873, 1440), At(3433, 1442)};
-    const Choice         c = Choose(monitors, 0, 2);
+    Choice               c = Choose(monitors, 0, 2);
     EXPECT(!c.ok);
     EXPECT(c.rowMonitors == 1);
-    EXPECT(c.why.find(L"2 px") != std::wstring::npos);
+    EXPECT(c.why.find(L"the monitor at (3433, 1442) sits 2 px lower than its neighbour at (873, 1440)") !=
+           std::wstring::npos);
+    EXPECT(c.why.find(L"move it up 2 px") != std::wstring::npos);
+    EXPECT(c.why.find(L"(873, 1440) sits") == std::wstring::npos);  // the pair is named once, by its lower monitor
+
+    // As the game's process sees that desktop (2026-10-21 22:23): the scaled TV also touches the pair's left monitor,
+    // so the left monitor's row stops at both ends. Both monitors are named, the pair's offset first.
+    std::printf("  with the scaled TV touching the pair's left: both reasons named, the offset first\n");
+    monitors.push_back(At(-2967, 1442, 3840, 2160, 168));
+    c = Choose(monitors, 0, 2);
+    EXPECT(!c.ok && c.rowMonitors == 1);
+    const auto offset = c.why.find(L"sits 2 px lower");
+    const auto scaled = c.why.find(L"the monitor at (-2967, 1442) is scaled to 175 %");
+    EXPECT(offset != std::wstring::npos && scaled != std::wstring::npos && offset < scaled);
 }
 
 void TestThreeAcrossTheRow()
@@ -132,7 +145,8 @@ void TestRowBrokenByAMisalignedTop()
     std::vector<Monitor> monitors{At(-1971, 1440), At(589, 1453), At(3149, 1453)};
     const Choice         c = Choose(monitors, 1, 3);
     EXPECT(!c.ok && c.rowMonitors == 2);
-    EXPECT(c.why.find(L"top edge") != std::wstring::npos);
+    EXPECT(c.why.find(L"the monitor at (589, 1453) sits 13 px lower than its neighbour at (-1971, 1440)") !=
+           std::wstring::npos);
 }
 
 void TestRowBrokenByAGap()
