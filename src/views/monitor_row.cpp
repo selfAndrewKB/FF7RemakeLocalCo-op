@@ -79,8 +79,25 @@ struct Row
     std::vector<Stop>   stops;    // the unequal neighbours met at either end, for the reason
 };
 
+/// `member` touches a monitor outside the row above or below it: its bottom on that monitor's top, or its top on
+/// its bottom, with a horizontal overlap. A move to such a member's top keeps the row on the rest of the desktop.
+bool Attached(std::span<const Monitor> monitors, const std::vector<Member>& row, const Rect& member) noexcept
+{
+    for (const auto& m : monitors)
+    {
+        const bool inRow = std::any_of(row.begin(), row.end(), [&](const Member& r) { return r.placed == m.rect; });
+        const bool overlap = m.rect.left < member.right && m.rect.right > member.left;
+        if (!inRow && overlap && (member.bottom == m.rect.top || member.top == m.rect.bottom))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
 /// The row of equal monitors around `base`: outward to each side until one is missing or unequal. The row's top is
-/// its leftmost monitor's; the others are read as if moved there (the span moves them first).
+/// the top of its first monitor attached to the rest of the desktop (the leftmost's if none is); the others are
+/// read as if moved there (the span moves them first).
 Row RowAround(std::span<const Monitor> monitors, const Monitor& base)
 {
     Row row;
@@ -106,7 +123,15 @@ Row RowAround(std::span<const Monitor> monitors, const Monitor& base)
     }
     std::sort(row.members.begin(), row.members.end(),
               [](const Member& a, const Member& b) { return a.placed.left < b.placed.left; });
-    const auto top = row.members.front().placed.top;
+    auto top = row.members.front().placed.top;
+    for (const auto& m : row.members)
+    {
+        if (Attached(monitors, row.members, m.placed))
+        {
+            top = m.placed.top;
+            break;
+        }
+    }
     for (auto& m : row.members)
     {
         m.aligned = {m.placed.left, top, m.placed.right, top + m.placed.Height()};

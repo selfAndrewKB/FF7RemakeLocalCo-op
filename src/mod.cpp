@@ -78,7 +78,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.42.0-mirror-player";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.42.1-row-anchor";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;

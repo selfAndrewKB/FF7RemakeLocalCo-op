@@ -82,12 +82,27 @@ void TestUsersPairTwoPixelsOff()
 
 void TestUsersPairAboveTheUltrawide()
 {
-    std::printf("the user's pair moved above the ultrawide (22:41): the left one 15 px higher; the right one moves up to it\n");
+    // Seen live 2026-10-22: the right monitor sits on the ultrawide, the left one floats 15 px higher. The row's top
+    // is the attached monitor's, so the floating one moves down to it (moving the attached one up instead made
+    // Windows drop the other by 15 px, and the pair swapped).
+    std::printf("the user's pair above the ultrawide (22:41): the left one 15 px higher and floating; it moves down to the right one\n");
     std::vector<Monitor> monitors{At(0, 0, 3440, 1440), At(419, -1455), At(2979, -1440), At(-144, 1440, 3840, 2160, 168)};
-    const Choice         c = Choose(monitors, 0, 2);
+    Choice               c = Choose(monitors, 0, 2);
     EXPECT(c.ok && c.rowMonitors == 2 && !c.gamesRow);
-    EXPECT((c.span == Rect{419, -1455, 5539, -15}));
-    EXPECT((c.moves.size() == 1 && c.moves[0] == Move{{2979, -1440, 5539, 0}, -1455}));
+    EXPECT((c.span == Rect{419, -1440, 5539, 0}));
+    EXPECT((c.moves.size() == 1 && c.moves[0] == Move{{419, -1455, 2979, -15}, -1440}));
+
+    std::printf("  the pair floating as a whole (nothing attached): the leftmost's top, as before\n");
+    std::vector<Monitor> floating{At(0, 0, 3440, 1440), At(419, -1470), At(2979, -1455)};
+    c = Choose(floating, 0, 2);
+    EXPECT((c.ok && c.span == Rect{419, -1470, 5539, -30}));
+    EXPECT((c.moves.size() == 1 && c.moves[0] == Move{{2979, -1455, 5539, -15}, -1470}));
+
+    std::printf("  the pair below the ultrawide with the right one attached and the left one 2 px low: the left moves up\n");
+    std::vector<Monitor> below{At(0, 0, 3440, 1440), At(873, 1442), At(3433, 1440)};
+    c = Choose(below, 0, 2);
+    EXPECT((c.ok && c.span == Rect{873, 1440, 5993, 2880}));
+    EXPECT((c.moves.size() == 1 && c.moves[0] == Move{{873, 1442, 3433, 2882}, 1440}));
 }
 
 void TestMovesOnlyForTheSpansColumns()

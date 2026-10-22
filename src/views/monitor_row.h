@@ -16,10 +16,15 @@
 // before that), else from the row's left. Seat-indexed by design: each column is one seated player's view, so a
 // two-player span covers two monitors and leaves a third idle.
 // Changed again (v0.38.0): a monitor whose top is within kAlignTolerance of the row's is in the row, read as if it
-// sat at the row's top (the top of the row's leftmost monitor); the choice lists the moves that make that true,
-// and the span makes them in Windows before placing the window (views/display_align). Windows snaps a dragged
-// monitor to its neighbours' edges, so a pair beside a monitor of another size lands a few pixels off every time
-// (the user's pair: 2 px, then 15 px); asking the user to fix that by hand failed twice in one evening.
+// sat at the row's top; the choice lists the moves that make that true, and the span makes them in Windows before
+// placing the window (views/display_align). Windows snaps a dragged monitor to its neighbours' edges, so a pair
+// beside a monitor of another size lands a few pixels off every time (the user's pair: 2 px, then 15 px); asking
+// the user to fix that by hand failed twice in one evening.
+// The row's top (v0.42.1): the top of a row monitor attached to the rest of the desktop (its bottom on another
+// monitor's top, or its top on another's bottom, with a horizontal overlap), the leftmost's otherwise. Seen live
+// 2026-10-22: with the leftmost's top (the floating monitor's) as the reference, the mod moved the attached
+// monitor 15 px up off the primary, and Windows dropped the other one 15 px to keep the pair on the primary, so
+// the two swapped and the desktop never read as the row [CONFIRMED by the span's desktop log].
 
 #include <cstdint>
 #include <span>
