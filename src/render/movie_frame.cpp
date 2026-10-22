@@ -43,21 +43,29 @@ void Release(void* sceneTargets)
 {
     const bool  on    = g_enabled.load(std::memory_order_relaxed);
     void* const frame = Source();
+    if (frame == nullptr)
+    {
+        g_logged = false;  // no movie: the next movie's first deferral is logged again
+    }
     if (on && !g_viewIsLast)
     {
         ++g_deferred;
-        if (frame != nullptr && !g_logged)
+        if (frame != nullptr)
         {
-            g_logged = true;
-            platform::Log(L"movie frame: kept for the next view (the composite source {} is released after the family's last view)",
-                          frame);
+            // Once per movie at Info (the latch holds until the source is gone), every frame at Trace.
+            if (!g_logged)
+            {
+                g_logged = true;
+                platform::Log(L"movie frame: kept for the next view (the composite source {} is released after the family's last view)",
+                              frame);
+            }
+            platform::LogTrace(L"movie frame: deferred for a view before the last (source {})", frame);
         }
         return;
     }
     if (frame != nullptr)
     {
         ++g_released;
-        g_logged = false;
     }
     reinterpret_cast<ReleaseFn>(g_call.Original())(sceneTargets);
 }
