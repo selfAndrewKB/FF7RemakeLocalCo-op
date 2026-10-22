@@ -39,6 +39,7 @@ add_library(LocalSplitScreen SHARED
     src/battle/target_cursor_two.cpp
     src/battle/targeting_two.cpp
     src/hud/hud_probe.cpp
+    src/hud/field_icons.cpp
     src/hud/image_entries.cpp
     src/hud/marker_replay.cpp
     src/hud/minimap_two.cpp

@@ -4,6 +4,7 @@
 #include "engine_facts.h"
 #include "hud/image_code.h"
 #include "hud/image_entries.h"
+#include "hud/field_icons.h"
 #include "hud/marker_replay.h"
 #include "hud/minimap_two.h"
 #include "hud/overlay_layout.h"
@@ -201,6 +202,7 @@ void Driver(void* delegate)
         if (hostSets)
         {
             marker_replay::Replay(2, g_players.localPlayer[1], g_players.controller[1]);
+            field_icons::Replay(2, g_players.controller[1]);
         }
         if (!RenderPlayerTwo(overlay))
         {
@@ -209,6 +211,7 @@ void Driver(void* delegate)
         if (hostSets && overlay_layout::WriteHostSet(1))
         {
             marker_replay::Replay(1, g_players.localPlayer[0], g_players.controller[0]);
+            field_icons::Replay(1, g_players.controller[0]);
         }
     }
     const double middle = NowMs();
@@ -222,7 +225,11 @@ void Driver(void* delegate)
     minimap_two::EndPass();
     overlay_pass::Set(overlay_pass::Pass::Single);
     minimap_two::EndFrame();  // pool 0's slot, if player 1's map did not take it
-    marker_replay::EndFrame();
+    if (GetCurrentThreadId() == g_gameThread)  // the replays' records are the game thread's
+    {
+        marker_replay::EndFrame();
+        field_icons::EndFrame();
+    }
     const double end = NowMs();
     g_timing.twoMs += middle - start;
     g_timing.oneMs += end - middle;

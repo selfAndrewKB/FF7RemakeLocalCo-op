@@ -470,6 +470,22 @@ inline constexpr std::uintptr_t kWeakPointsContextCall = 0x1414C0EEA;
 inline constexpr std::uint32_t  kLabelsSlot = 45, kWeakPointsSlot = 58;
 inline constexpr std::uint32_t  kLabelsNumBits = 0x28, kWeakPointsNumBits = 0x30;  // the TSets' element counts
 
+// The field objective and item icons (slot 51, RE-field-icon-placement.md §2.2-§2.3, §5.1): one stateless placement call
+// per icon, projecting with the controller it is given; its first three instructions (5 bytes, position-independent, no
+// branch lands inside: IDA 2026-10-22) are copied, so the redirect is installed from the game thread, outside the function.
+inline constexpr std::uintptr_t kFieldIconPlace = 0x1414223E0;  // (entry, canvas, float dt, pc, const FVector* leader, int, const FVector* icon)
+inline constexpr std::array<std::uint8_t, 5> kFieldIconPlaceFirst{0x48, 0x8B, 0xC4, 0x55, 0x53};
+inline constexpr std::uintptr_t kOverlayProject = 0x141348940;  // bool EndUI__ProjectWorldToOverlay(pc, const FVector*, FVector2D* out)
+inline constexpr std::array<std::uint8_t, 6> kOverlayProjectFirst{0x40, 0x57, 0x48, 0x83, 0xEC, 0x70};
+inline constexpr std::uint32_t kFieldIconSlot = 51;  // EndUISystem[51]: +0 the one SEndFieldQuestIconCanvas, +0x10 the icon map
+// The icon map, TMap<FName, TUniquePtr<Entry>>: the sparse array's data, its allocation bits (inline, or on the heap when
+// that pointer is set), its bit count; 24 bytes per element, the entry pointer at +8.
+inline constexpr std::uint32_t kFieldIconMapData = 0x10, kFieldIconMapBitsInline = 0x20, kFieldIconMapBitsHeap = 0x30,
+                               kFieldIconMapNumBits = 0x38, kFieldIconMapElement = 24, kFieldIconMapElementEntry = 8;
+inline constexpr std::uint32_t kFieldIconEntryHasSlot = 28, kFieldIconEntryAlpha = 32;  // the entry's has-slot byte; its alpha, the only state the placement carries
+inline constexpr std::uint32_t kCanvasChildren   = 0x160;  // SEndCanvas vtable: its children (+0 vtable: count; +8 slot pointers)
+inline constexpr std::uint32_t kCanvasSlotWidget = 0x08, kCanvasSlotOffset = 0x20;  // a slot's SWidget, its Offset {x, y, w, h}
+
 // Player 2's own navi map manager (EndUISystem[29], RE-hud-minimap-two.md §2-§6, §9). Call sites are checked by
 // platform::CallRedirect against their targets.
 inline constexpr std::uintptr_t kNaviSlotGlobal        = 0x1459CAA58;  // EndUISystem[29]: the game's manager

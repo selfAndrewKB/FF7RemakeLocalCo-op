@@ -29,6 +29,7 @@
 #include "hud/hud_probe.h"
 #include "hud/overlay_layout.h"
 #include "hud/root_placement.h"
+#include "hud/field_icons.h"
 #include "hud/image_entries.h"
 #include "hud/marker_replay.h"
 #include "hud/minimap_two.h"
@@ -80,7 +81,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.45.2-operator-satellites-by-seat";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.46.0-field-icons-per-view";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
@@ -237,6 +238,7 @@ public:
         lss::hud::root_placement::Remove();
         lss::hud::overlay_layout::Remove();
         lss::hud::marker_replay::Remove();
+        lss::hud::field_icons::Remove();
         lss::hud::second_image::Remove();
         lss::hud::minimap_two::Remove();
         lss::hud::image_entries::Remove();
@@ -328,7 +330,11 @@ public:
         lss::render::movie_frame::Install(*image);  // optional: without it a movie shows in the first view only
         if (lss::hud::image_entries::Install(*image) && lss::hud::minimap_two::Install(*image))  // optional: player 2's image
         {
-            lss::hud::second_image::Install(*image) && lss::hud::marker_replay::Install(*image);
+            if (lss::hud::second_image::Install(*image))
+            {
+                lss::hud::marker_replay::Install(*image);
+                lss::hud::field_icons::Install(*image);
+            }
         }
         // The settings file: the one preset today, applied before the first tick.
         lss::views::window_span::SetPreset(lss::platform::settings::Read(L"Views", L"multi-monitor", L"auto"),
@@ -455,6 +461,7 @@ private:
         lss::hud::second_image::Tick(split, players);
         lss::hud::minimap_two::Tick(split && session_.Seated(kSeatOne), players.controller[1]);
         lss::hud::marker_replay::Tick();
+        lss::hud::field_icons::Tick(split ? lss::players::scopes::Member(1) : nullptr);  // seat 1's member (plan/seats.md)
         lss::hud::root_placement::Tick(views && lss::hud::overlay_layout::BandApplies());
     }
 
