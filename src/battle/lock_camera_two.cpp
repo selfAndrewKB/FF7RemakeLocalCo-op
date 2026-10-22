@@ -52,7 +52,7 @@ std::uint32_t g_hits[2]{};       // request re-aims: [0] any other operator's ti
 bool          g_loggedTwo = false;
 std::uint32_t g_transforms = 0;  // the game's call repeated for player 2
 std::uint32_t g_lockNearests = 0;
-std::uint32_t g_restores[4]{};   // the target-list end: ctrl1's tick, ctrl2's tick, a pad-2 key event, elsewhere
+std::uint32_t g_restores[4]{};   // the enemy detail window's close: ctrl1's tick, ctrl2's tick, a pad-2 key event, elsewhere
 bool          g_restoreLogged[4]{};
 
 // Set at install, then only read.
@@ -157,7 +157,7 @@ char CountRestore(std::uintptr_t original, void* state, void* a2, void* a3, void
     {
         g_restoreLogged[context] = true;
         static constexpr const wchar_t* kNames[] = {L"player 1's controller tick", L"player 2's controller tick", L"a pad-2 key event", L"another context"};
-        platform::LogDebug(L"lock camera 2: the target-list end restored a lock in {}", kNames[context]);
+        platform::LogDebug(L"lock camera 2: the enemy detail window's close restored a lock in {}", kNames[context]);
     }
     return reinterpret_cast<RestoreLockFn>(original)(state, a2, a3, a4);
 }
@@ -234,7 +234,7 @@ bool Install(const platform::GameImage& image) noexcept
                        .help = L"battle camera requests that re-aimed a lock camera: in player 2's operator tick, in any other",
                        .get  = [] { return control::Value{std::format(L"player 2's operator {}, other {}", g_hits[1], g_hits[0])}; }});
     control::Register({.name = L"lock-camera-two.restore", .shape = control::Shape::Text,
-                       .help = L"the command menu's target-list end (lock restore) by context, and the re-targets repeated for player 2",
+                       .help = L"the enemy detail window's close (lock restore, row X5) by context, and the re-targets repeated for player 2",
                        .get  = [] {
                            return control::Value{std::format(L"ctrl1 tick {}, ctrl2 tick {}, pad-2 event {}, elsewhere {}; transforms {}, scripted locks {}",
                                                              g_restores[0], g_restores[1], g_restores[2], g_restores[3], g_transforms, g_lockNearests)};

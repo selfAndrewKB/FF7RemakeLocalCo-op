@@ -899,8 +899,10 @@ inline constexpr platform::FunctionFact kScriptLockNearest{L"BattleTarget_Script
                                                            kScriptLockNearestEntry};
 inline constexpr std::uintptr_t kScriptLockNearestCall = 0x141873C31;  // E8 7A 8C 0E FF
 
-// The command menu's target-list end restores the lock and asks the Command camera flavor (row X5): one function in
-// two command-menu state vtables, a second variant in a third slot. Which context runs them for player 2 is read first.
+// The enemy detail window's close delegate restores the lock and asks the Command camera flavor (row X5; named a
+// command-menu state end before pass S-RMK-CMDCAM read it, RE-command-camera-two.md §2.5): the Execute and
+// ExecuteIfSafe slots of the delegate instance the window's open binds (the third slot is the base vtable the
+// constructor overwrites, never called). Which context runs them for player 2 is read first.
 inline constexpr std::array<std::uint8_t, 16> kCmdMenuRestoreLockEntryA{
     0x40, 0x53, 0x48, 0x83, 0xEC, 0x20, 0x48, 0x8B, 0xD9, 0xE8, 0x42, 0xE8, 0xF8, 0xFF, 0x84, 0xC0};
 inline constexpr std::array<std::uint8_t, 16> kCmdMenuRestoreLockEntryB{
@@ -913,6 +915,19 @@ inline constexpr std::array<platform::SlotFact, 3> kCmdMenuRestoreLockSlots{{
     {L"command-menu state vtable 0x144BF1D28: restore lock", 0x144BF1D28, kCmdMenuRestoreLockA},
     {L"command-menu state vtable 0x144BF1E78: restore lock", 0x144BF1E78, kCmdMenuRestoreLockA},
     {L"command-menu state vtable 0x144BF1E80: restore lock (B)", 0x144BF1E80, kCmdMenuRestoreLockB}}};
+
+// The field camera's Command flavor (13, FEndCameraFlavorCommand, RE-command-camera-two.md §2): its per-frame aim
+// (vtable +0x20) runs inside the operator's tick and reads EndUISystem[19] and the focus path for the list row's
+// target; the subject is the controller's member (option FriendCommandCameraType) or the operator's owner.
+inline constexpr std::uintptr_t kCommandFlavorVTable = 0x144BB8060;
+inline constexpr std::uint32_t  kFlavorOperator      = 0x10;   // a flavor object's operator
+inline constexpr std::uint32_t  kFlavorStarted       = 0x39;   // a flavor object's started byte (its first tick ran)
+inline constexpr std::uint32_t  kCommandFlavorTarget = 0x380;  // the Command flavor's stored target (a shared pointer's object)
+inline constexpr std::array<std::uint8_t, 16> kCommandFlavorAimEntry{
+    0x4C, 0x89, 0x4C, 0x24, 0x20, 0x55, 0x53, 0x57, 0x41, 0x54, 0x41, 0x57, 0x48, 0x8D, 0xAC, 0x24};
+inline constexpr platform::SlotFact kCommandFlavorAim{
+    L"FEndCameraFlavorCommand vtable +0x20: the per-frame aim", kCommandFlavorVTable + 0x20,
+    {L"FEndCameraFlavorCommand__Vt20", 0x1410A32B0, kCommandFlavorAimEntry}};
 
 // --- Enemies and a downed leader (RE-enemy-leader-reads.md §2, §5.1) ---------------------------------------
 inline constexpr std::uint32_t kBattleCompActionState            = 0x611;   // the battle component's action state byte

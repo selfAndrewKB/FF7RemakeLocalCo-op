@@ -13,6 +13,7 @@
 #include "players/scopes.h"
 #include "players/seats.h"
 #include "views/scene_camera_two.h"
+#include "battle/command_camera_two.h"
 #include "battle/lock_camera_two.h"
 #include "battle/sequence_camera_two.h"
 #include "battle/targeting_two.h"
@@ -420,6 +421,9 @@ void OperatorTick(void* self, float deltaSeconds)
     // sequence overrides the tick reads are keyed on the party leader (RE-lock-camera-two.md §1.4), as the lock
     // camera follows the seat's target, not player 1's.
     const scopes::Scope              leader(seat, scopes::Leader);
+    // In battle the seat's UI context too: the Command camera flavor frames the target the seat's own list cursor is
+    // on, read from the UI slot and the focus path inside this tick (battle/command_camera_two.h).
+    const battle::command_camera_two::TickScope ui(seat);
     const battle::targeting_two::FieldsScope targets;  // one instance (plan/seats.md step 3)
     g_tickingSeat = seat;
     battle::lock_camera_two::BeforeOperatorTick(self, controller);  // one instance

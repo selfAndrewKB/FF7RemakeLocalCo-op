@@ -28,6 +28,7 @@ add_library(LocalSplitScreen SHARED
     src/control/runner.cpp
     src/control/script.cpp
     src/control/server.cpp
+    src/battle/command_camera_two.cpp
     src/battle/command_menu_tick.cpp
     src/battle/command_menu_two.cpp
     src/battle/enemy_coin.cpp

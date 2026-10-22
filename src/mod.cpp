@@ -14,6 +14,7 @@
 #include <Mod/CppUserModBase.hpp>
 #include <Unreal/Hooks/Hooks.hpp>
 
+#include "battle/command_camera_two.h"
 #include "battle/command_menu_tick.h"
 #include "battle/command_menu_two.h"
 #include "battle/enemy_coin.h"
@@ -82,7 +83,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.49.0-command-menu-by-seat";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.50.0-command-camera-two";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
@@ -251,6 +252,7 @@ public:
         lss::battle::enemy_coin::Remove();
         lss::battle::enemy_leader::Remove();
         lss::battle::member_rates::Remove();
+        lss::battle::command_camera_two::Remove();
         lss::battle::lock_camera_two::Remove();
         lss::battle::targeting_two::Remove();
         lss::battle::party_switch::Remove();
@@ -313,6 +315,7 @@ public:
                 lss::battle::target_cursor_two::Install(*image);  // optional: without it both halves show player 1's cursor
             }
             lss::battle::lock_camera_two::Install(*image);
+            lss::battle::command_camera_two::Install(*image);  // optional: without it the aim reading is off, the UI scope stays
             lss::battle::member_rates::Install(*image);
             lss::battle::enemy_leader::Install(*image);
             lss::battle::enemy_coin::Install(*image);  // optional: without it enemies name player 1 as the player

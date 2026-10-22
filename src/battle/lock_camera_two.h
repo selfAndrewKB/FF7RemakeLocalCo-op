@@ -10,9 +10,10 @@
 //     game's own call a second time inside player 2's scopes (the primary, the operator, the leader and the copy),
 //     so player 2's lock follows the transform too and a scripted lock takes both players (row X9);
 //   - `lock-camera-two.requests`: the battle camera requests that re-aimed each operator's lock camera;
-//   - `lock-camera-two.restore`: which context runs the command menu's target-list end (it restores the lock and
-//     asks the Command camera flavor) for player 2: its controller's tick, where the copy is in, or a pad-2 key
-//     event, where it is not yet (row X5, read before a lever);
+//   - `lock-camera-two.restore`: which context runs the enemy detail window's close delegate (it restores the lock
+//     and asks the Command camera flavor; pass S-RMK-CMDCAM found it is the window's, not a command-menu state's,
+//     so it counts only when that window closes) for player 2: its controller's tick, where the copy is in, or a
+//     pad-2 key event, where it is not yet (row X5, read before a lever);
 //   - `lock-camera-two.frames`: player 2's operator tick, read around it (the ledger's live checks L1, L2, L5): the
 //     control yaw it starts from against the yaw it last wrote back (another writer in between), the frame stamp
 //     that would skip its write-back, the member's controller, the yaw it moves per tick and its reversals (a
