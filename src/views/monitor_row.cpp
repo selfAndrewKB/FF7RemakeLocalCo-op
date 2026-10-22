@@ -23,7 +23,7 @@ std::wstring At(const Rect& rect)
     return std::format(L"({}, {})", rect.left, rect.top);
 }
 
-/// Why `candidate` cannot stand beside `base` in a row, or nothing if it can.
+/// Why `candidate` cannot stand beside `base` in a row, or nothing if it can (a top within the tolerance can).
 std::optional<Stop> Mismatch(const Monitor& base, const Monitor& candidate)
 {
     if (candidate.dpi != 96)
@@ -38,15 +38,16 @@ std::optional<Stop> Mismatch(const Monitor& base, const Monitor& candidate)
                     std::format(L"the monitor at {} is {}x{}, not {}x{}", At(candidate.rect), candidate.rect.Width(),
                                 candidate.rect.Height(), base.rect.Width(), base.rect.Height())};
     }
-    if (candidate.rect.top != base.rect.top)
+    const auto off = candidate.rect.top - base.rect.top;
+    if (off > kAlignTolerance || off < -kAlignTolerance)
     {
-        const Rect& lower = candidate.rect.top > base.rect.top ? candidate.rect : base.rect;
-        const Rect& upper = candidate.rect.top > base.rect.top ? base.rect : candidate.rect;
+        const Rect& lower = off > 0 ? candidate.rect : base.rect;
+        const Rect& upper = off > 0 ? base.rect : candidate.rect;
         const auto  px    = lower.top - upper.top;
         return Stop{lower, 0,
-                    std::format(L"the monitor at {} sits {} px lower than its neighbour at {} (move it up {} px in "
-                                L"Windows display settings)",
-                                At(lower), px, At(upper), px)};
+                    std::format(L"the monitor at {} sits {} px lower than its neighbour at {} (more than the {} px the "
+                                L"mod lines up itself: move it up in Windows display settings)",
+                                At(lower), px, At(upper), kAlignTolerance)};
     }
     return std::nullopt;
 }
@@ -66,17 +67,24 @@ const Monitor* Neighbour(std::span<const Monitor> monitors, const Rect& edge, bo
     return nullptr;
 }
 
-struct Row
+struct Member
 {
-    std::vector<Rect> rects;  // left to right
-    std::vector<Stop> stops;  // the unequal neighbours met at either end, for the reason
+    Rect placed;   // as Windows has it
+    Rect aligned;  // shifted to the row's top (the same when it is there already)
 };
 
-/// The row of equal monitors around `base`: outward to each side until one is missing or unequal.
+struct Row
+{
+    std::vector<Member> members;  // left to right
+    std::vector<Stop>   stops;    // the unequal neighbours met at either end, for the reason
+};
+
+/// The row of equal monitors around `base`: outward to each side until one is missing or unequal. The row's top is
+/// its leftmost monitor's; the others are read as if moved there (the span moves them first).
 Row RowAround(std::span<const Monitor> monitors, const Monitor& base)
 {
     Row row;
-    row.rects.push_back(base.rect);
+    row.members.push_back({base.rect, base.rect});
     for (const bool leftOf : {true, false})
     {
         Rect edge = base.rect;
@@ -92,11 +100,17 @@ Row RowAround(std::span<const Monitor> monitors, const Monitor& base)
                 row.stops.push_back(std::move(*mismatch));
                 break;
             }
-            row.rects.push_back(next->rect);
+            row.members.push_back({next->rect, next->rect});
             edge = next->rect;
         }
     }
-    std::sort(row.rects.begin(), row.rects.end(), [](const Rect& a, const Rect& b) { return a.left < b.left; });
+    std::sort(row.members.begin(), row.members.end(),
+              [](const Member& a, const Member& b) { return a.placed.left < b.placed.left; });
+    const auto top = row.members.front().placed.top;
+    for (auto& m : row.members)
+    {
+        m.aligned = {m.placed.left, top, m.placed.right, top + m.placed.Height()};
+    }
     return row;
 }
 
@@ -118,8 +132,8 @@ Choice Choose(std::span<const Monitor> monitors, std::size_t gameMonitor, std::i
     const Monitor& game = monitors[gameMonitor];
 
     // Every row on the desktop, the game's first; the longest qualifying one wins, the game's own on a tie.
-    std::vector<Row> rows;
-    std::vector<Rect> seen;  // each row by its leftmost rect
+    std::vector<Row>  rows;
+    std::vector<Rect> seen;  // each row by its leftmost rect (the anchor: placed and aligned are the same)
     const Row gameRow = game.dpi == 96 ? RowAround(monitors, game) : Row{};
     const auto consider = [&](const Monitor& base) {
         if (base.dpi != 96)
@@ -127,14 +141,14 @@ Choice Choose(std::span<const Monitor> monitors, std::size_t gameMonitor, std::i
             return;
         }
         Row row = RowAround(monitors, base);
-        if (std::find(seen.begin(), seen.end(), row.rects.front()) != seen.end())
+        if (std::find(seen.begin(), seen.end(), row.members.front().placed) != seen.end())
         {
             return;
         }
-        seen.push_back(row.rects.front());
+        seen.push_back(row.members.front().placed);
         rows.push_back(std::move(row));
     };
-    if (!gameRow.rects.empty())
+    if (!gameRow.members.empty())
     {
         consider(game);
     }
@@ -145,17 +159,17 @@ Choice Choose(std::span<const Monitor> monitors, std::size_t gameMonitor, std::i
 
     // The game's own row when it qualifies (rows.front() then), else the longest qualifying row.
     const Row* best = nullptr;
-    if (!gameRow.rects.empty() && static_cast<std::int32_t>(gameRow.rects.size()) >= columns)
+    if (!gameRow.members.empty() && static_cast<std::int32_t>(gameRow.members.size()) >= columns)
     {
         best = &rows.front();
     }
     for (const auto& row : rows)
     {
-        if (best == nullptr && static_cast<std::int32_t>(row.rects.size()) >= columns)
+        if (best == nullptr && static_cast<std::int32_t>(row.members.size()) >= columns)
         {
             best = &row;
         }
-        else if (best != nullptr && best != &rows.front() && row.rects.size() > best->rects.size())
+        else if (best != nullptr && best != &rows.front() && row.members.size() > best->members.size())
         {
             best = &row;
         }
@@ -167,7 +181,7 @@ Choice Choose(std::span<const Monitor> monitors, std::size_t gameMonitor, std::i
         std::vector<Stop> stops;
         for (const auto& row : rows)
         {
-            longest = std::max(longest, static_cast<std::int32_t>(row.rects.size()));
+            longest = std::max(longest, static_cast<std::int32_t>(row.members.size()));
             for (const auto& stop : row.stops)
             {
                 const auto named = [&](const Stop& s) { return s.about == stop.about; };
@@ -198,15 +212,24 @@ Choice Choose(std::span<const Monitor> monitors, std::size_t gameMonitor, std::i
         return choice;
     }
 
-    const auto& row    = best->rects;
-    const auto  inRow  = std::find(row.begin(), row.end(), game.rect);
-    const auto  gameAt = inRow == row.end() ? 0 : static_cast<std::int32_t>(inRow - row.begin());
-    const auto  start  = std::min(gameAt, static_cast<std::int32_t>(row.size()) - columns);
-    choice.ok          = true;
-    choice.rowMonitors = static_cast<std::int32_t>(row.size());
-    choice.gamesRow    = inRow != row.end();
-    choice.span        = {row[static_cast<std::size_t>(start)].left, row.front().top,
-                          row[static_cast<std::size_t>(start + columns - 1)].right, row.front().bottom};
+    const auto& members = best->members;
+    const auto  inRow   = std::find_if(members.begin(), members.end(), [&](const Member& m) { return m.placed == game.rect; });
+    const auto  gameAt  = inRow == members.end() ? 0 : static_cast<std::int32_t>(inRow - members.begin());
+    const auto  start   = std::min(gameAt, static_cast<std::int32_t>(members.size()) - columns);
+    const auto  first   = static_cast<std::size_t>(start);
+    const auto  last    = static_cast<std::size_t>(start + columns - 1);
+    choice.ok           = true;
+    choice.rowMonitors  = static_cast<std::int32_t>(members.size());
+    choice.gamesRow     = inRow != members.end();
+    choice.span         = {members[first].aligned.left, members[first].aligned.top, members[last].aligned.right,
+                           members[last].aligned.bottom};
+    for (std::size_t i = first; i <= last; ++i)
+    {
+        if (members[i].placed.top != members[i].aligned.top)
+        {
+            choice.moves.push_back({members[i].placed, members[i].aligned.top});
+        }
+    }
     return choice;
 }
 

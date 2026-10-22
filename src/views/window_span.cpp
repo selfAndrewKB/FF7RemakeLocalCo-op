@@ -11,6 +11,7 @@
 #include "platform/image.h"
 #include "platform/log.h"
 #include "platform/verified_code.h"
+#include "views/display_align.h"
 #include "views/monitor_row.h"
 
 #ifndef WIN32_LEAN_AND_MEAN
@@ -222,17 +223,19 @@ std::wstring ViewportText() noexcept
     return L"unread";
 }
 
-/// Every monitor with its effective DPI, and the handles to find the game's.
+/// Every monitor with its effective DPI, its GDI device name (for a move) and the index of the game's.
 struct Monitors
 {
     std::vector<monitor_row::Monitor> list;
-    std::vector<HMONITOR>             handles;
+    std::vector<std::wstring>         devices;
+    HMONITOR                          own    = nullptr;  // the game window's monitor, to find
+    std::size_t                       gameAt = 0;        // its index; list.size() when it is not listed
 };
 
 BOOL CALLBACK CollectMonitor(HMONITOR handle, HDC, LPRECT, LPARAM param) noexcept
 {
-    auto*       out = reinterpret_cast<Monitors*>(param);
-    MONITORINFO info{};
+    auto*         out = reinterpret_cast<Monitors*>(param);
+    MONITORINFOEXW info{};
     info.cbSize = sizeof(info);
     if (!GetMonitorInfoW(handle, &info))
     {
@@ -246,9 +249,44 @@ BOOL CALLBACK CollectMonitor(HMONITOR handle, HDC, LPRECT, LPARAM param) noexcep
     {
         getDpi(handle, 0 /* MDT_EFFECTIVE_DPI */, &dpiX, &dpiY);
     }
+    if (handle == out->own)
+    {
+        out->gameAt = out->list.size();
+    }
     out->list.push_back({{info.rcMonitor.left, info.rcMonitor.top, info.rcMonitor.right, info.rcMonitor.bottom}, dpiX});
-    out->handles.push_back(handle);
+    out->devices.emplace_back(info.szDevice);
     return TRUE;
+}
+
+/// The desktop now, with the game window's monitor marked.
+Monitors Collect(HWND game) noexcept
+{
+    Monitors monitors;
+    monitors.own    = MonitorFromWindow(game, MONITOR_DEFAULTTONEAREST);
+    monitors.gameAt = SIZE_MAX;
+    EnumDisplayMonitors(nullptr, nullptr, CollectMonitor, reinterpret_cast<LPARAM>(&monitors));
+    if (monitors.gameAt == SIZE_MAX)
+    {
+        monitors.gameAt = monitors.list.size();
+    }
+    return monitors;
+}
+
+/// The choice's moves as the display API takes them: each monitor by the device name its rect was listed with.
+std::vector<display_align::Move> MovesFor(const monitor_row::Choice& choice, const Monitors& monitors)
+{
+    std::vector<display_align::Move> moves;
+    for (const auto& move : choice.moves)
+    {
+        for (std::size_t i = 0; i < monitors.list.size(); ++i)
+        {
+            if (monitors.list[i].rect == move.from)
+            {
+                moves.push_back({monitors.devices[i], move.toTop});
+            }
+        }
+    }
+    return moves;
 }
 
 bool Reshape(void* native, const Rect& rect) noexcept
@@ -448,24 +486,36 @@ bool Enter(std::int32_t columns) noexcept
         return false;
     }
 
-    Monitors monitors;
-    EnumDisplayMonitors(nullptr, nullptr, CollectMonitor, reinterpret_cast<LPARAM>(&monitors));
-    const HMONITOR own    = MonitorFromWindow(window->hwnd, MONITOR_DEFAULTTONEAREST);
-    std::size_t    gameAt = monitors.handles.size();
-    for (std::size_t i = 0; i < monitors.handles.size(); ++i)
-    {
-        if (monitors.handles[i] == own)
-        {
-            gameAt = i;
-        }
-    }
-    const auto choice = monitor_row::Choose(monitors.list, gameAt, columns);
+    Monitors monitors = Collect(window->hwnd);
+    auto     choice   = monitor_row::Choose(monitors.list, monitors.gameAt, columns);
     if (!choice.ok)
     {
-        platform::Log(L"window span: refused: {} ({} monitor(s) listed; the mod changes no display mode: arrange equal "
-                      L"monitors in a row, tops aligned, at 100 % scaling)",
-                      choice.why, monitors.list.size());
+        platform::Log(L"window span: refused: {} ({} monitor(s) listed; the mod lines up a row's tops itself within {} px "
+                      L"and changes no display mode or scaling: arrange equal monitors in a row at 100 % scaling)",
+                      choice.why, monitors.list.size(), monitor_row::kAlignTolerance);
         return false;
+    }
+    if (!choice.moves.empty())
+    {
+        // The row's monitors a few pixels off its top are lined up first; then the desktop is read again and must
+        // give the same row with nothing left to move.
+        const auto moves = MovesFor(choice, monitors);
+        if (moves.size() != choice.moves.size() || !display_align::Apply(moves))
+        {
+            platform::Log(L"window span: refused: {} monitor(s) of the row could not be lined up with its top (see above)",
+                          choice.moves.size());
+            return false;
+        }
+        monitors = Collect(window->hwnd);
+        choice   = monitor_row::Choose(monitors.list, monitors.gameAt, columns);
+        if (!choice.ok || !choice.moves.empty())
+        {
+            platform::LogWarning(L"window span: after the line-up the desktop does not read as the row ({}); the monitors "
+                                 L"are put back",
+                                 choice.ok ? std::format(L"{} move(s) still listed", choice.moves.size()) : choice.why);
+            display_align::Restore();
+            return false;
+        }
     }
 
     const Resolution before = ReadResolution();
@@ -476,6 +526,7 @@ bool Enter(std::int32_t columns) noexcept
     {
         platform::LogWarning(L"window span: the resolution request faulted; nothing changed");
         SetLayout(false);
+        display_align::Restore();
         return false;
     }
     g_step       = Step::Requested;
@@ -490,10 +541,11 @@ bool Enter(std::int32_t columns) noexcept
     g_ticks      = 0;
     g_reapplies  = 0;
     ++g_entries;
-    platform::Log(L"window span: entering: {} columns over the row of {} equal monitor(s){}; the game's resolution request "
+    platform::Log(L"window span: entering: {} columns over the row of {} equal monitor(s){}{}; the game's resolution request "
                   L"sent for {} (was {}; the window's client area {} in {} mode, the viewport {}); the reshape to {} follows "
                   L"once the engine applies it",
                   columns, choice.rowMonitors, choice.gamesRow ? L"" : L" (not the game's own monitor's row)",
+                  display_align::Moved() ? std::format(L" (lined up: {})", display_align::Reading()).c_str() : L"",
                   ResolutionText(g_targetRes), ResolutionText(before), RectText(client), ModeName(window->mode), ViewportText(),
                   RectText(choice.span));
     return true;
@@ -650,6 +702,7 @@ void Tick(bool playerTwoIn) noexcept
                               L"in {} mode), the viewport {}",
                               g_stepTicks, ResolutionText(res), res == g_savedRes ? L"" : L" (NOT the saved one)", RectText(seen),
                               moved ? L" after a last reshape" : L"", RectText(g_before), ModeName(g_beforeMode), ViewportText());
+                display_align::Restore();  // after the window is back: the engine sees one desktop change, not two at once
                 Forget();
             }
             break;
@@ -670,9 +723,10 @@ std::wstring Reading() noexcept
         return std::format(L"out; auto {}; entries {}; the resolution {}", g_auto ? L"on" : L"off", g_entries,
                            ResolutionText(ReadResolution()));
     }
-    return std::format(L"{} ({} columns, row {}); the window's client area {}; the resolution {}; the viewport {}; re-applies {}",
+    return std::format(L"{} ({} columns, row {}); the window's client area {}; the resolution {}; the viewport {}; re-applies {}{}",
                        StepName(g_step), g_columns, RectText(g_target), RectText(IsWindow(g_hwnd) ? ClientRect(g_hwnd) : Rect{}),
-                       ResolutionText(ReadResolution()), ViewportText(), g_reapplies);
+                       ResolutionText(ReadResolution()), ViewportText(), g_reapplies,
+                       display_align::Moved() ? std::format(L"; monitors lined up: {}", display_align::Reading()) : L"");
 }
 
 }  // namespace lss::views::window_span

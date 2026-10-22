@@ -24,8 +24,10 @@
 //
 // Entered on player 2's join when a row of equal monitors qualifies (`window-span on`, the default), or by the
 // command / Ctrl+F2; left by the command, with player 2, and at the mod's end. The number of columns is the number
-// of seated players (two today); the display modes are never changed: a row that does not qualify is logged with
-// the reason. Game thread only. Logged at Info on each step and change, at Debug for the status.
+// of seated players (two today). A row monitor a few pixels off the row's top is lined up first, for the Windows
+// session, and put back at the leave (views/display_align; v0.38.0); no display mode or scaling is ever changed: a
+// row that does not qualify is logged with the reason and what to change. Game thread only. Logged at Info on each
+// step and change, at Debug for the status.
 
 #include <cstdint>
 #include <string>

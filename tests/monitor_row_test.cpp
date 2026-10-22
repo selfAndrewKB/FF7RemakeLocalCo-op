@@ -1,10 +1,11 @@
 // Host-side tests for views::monitor_row::Choose, run without the game.
 //
 // The cases: the user's desktop of 2026-10-21 (an ultrawide primary above, holding the game; two equal 1440p
-// monitors below it: the row is not the game's); Rebirth's three-monitor row (the game in it; a two-column span
-// starting at the game's monitor and shifted left at the row's end); the row broken by a monitor of another size,
-// a misaligned top (the user's pair 2 px apart), a gap, or Windows scaling; the game's monitor scaled with and
-// without another row; one column always possible; bad inputs.
+// monitors below it: the row is not the game's; the pair 2 px apart, later above the ultrawide 15 px apart: the
+// off monitor is listed as a move to the row's top); Rebirth's three-monitor row (the game in it; a two-column span
+// starting at the game's monitor and shifted left at the row's end; moves only for the span's columns); the row
+// broken by a monitor of another size, a top too far off (beyond the tolerance), a gap, or Windows scaling; the
+// game's monitor scaled with and without another row; one column always possible; bad inputs.
 
 #include "views/monitor_row.h"
 
@@ -16,6 +17,7 @@ namespace {
 using lss::views::monitor_row::Choice;
 using lss::views::monitor_row::Choose;
 using lss::views::monitor_row::Monitor;
+using lss::views::monitor_row::Move;
 using lss::views::monitor_row::Rect;
 
 int g_failures = 0;
@@ -57,29 +59,46 @@ void TestRowBelowTheGame()
     EXPECT(c.rowMonitors == 2);
     EXPECT(!c.gamesRow);
     EXPECT((c.span == Rect{873, 1440, 5993, 2880}));
+    EXPECT(c.moves.empty());
 }
 
 void TestUsersPairTwoPixelsOff()
 {
-    std::printf("the user's pair as first set up (the right one 2 px lower) is refused, naming the offset and the move\n");
+    std::printf("the user's pair as first set up (the right one 2 px lower) is lined up: one move, the span over the row\n");
     std::vector<Monitor> monitors{At(0, 0, 3440, 1440), At(873, 1440), At(3433, 1442)};
     Choice               c = Choose(monitors, 0, 2);
-    EXPECT(!c.ok);
-    EXPECT(c.rowMonitors == 1);
-    EXPECT(c.why.find(L"the monitor at (3433, 1442) sits 2 px lower than its neighbour at (873, 1440)") !=
-           std::wstring::npos);
-    EXPECT(c.why.find(L"move it up 2 px") != std::wstring::npos);
-    EXPECT(c.why.find(L"(873, 1440) sits") == std::wstring::npos);  // the pair is named once, by its lower monitor
+    EXPECT(c.ok && c.rowMonitors == 2 && !c.gamesRow);
+    EXPECT((c.span == Rect{873, 1440, 5993, 2880}));
+    EXPECT(c.moves.size() == 1);
+    EXPECT((c.moves.size() == 1 && c.moves[0] == Move{{3433, 1442, 5993, 2882}, 1440}));
 
-    // As the game's process sees that desktop (2026-10-21 22:23): the scaled TV also touches the pair's left monitor,
-    // so the left monitor's row stops at both ends. Both monitors are named, the pair's offset first.
-    std::printf("  with the scaled TV touching the pair's left: both reasons named, the offset first\n");
+    // As the game's process sees that desktop (2026-10-21 22:23): the scaled TV also touches the pair's left monitor.
+    std::printf("  with the scaled TV touching the pair's left: the same row and move\n");
     monitors.push_back(At(-2967, 1442, 3840, 2160, 168));
     c = Choose(monitors, 0, 2);
-    EXPECT(!c.ok && c.rowMonitors == 1);
-    const auto offset = c.why.find(L"sits 2 px lower");
-    const auto scaled = c.why.find(L"the monitor at (-2967, 1442) is scaled to 175 %");
-    EXPECT(offset != std::wstring::npos && scaled != std::wstring::npos && offset < scaled);
+    EXPECT(c.ok && c.rowMonitors == 2 && c.moves.size() == 1);
+    EXPECT((c.span == Rect{873, 1440, 5993, 2880}));
+}
+
+void TestUsersPairAboveTheUltrawide()
+{
+    std::printf("the user's pair moved above the ultrawide (22:41): the left one 15 px higher; the right one moves up to it\n");
+    std::vector<Monitor> monitors{At(0, 0, 3440, 1440), At(419, -1455), At(2979, -1440), At(-144, 1440, 3840, 2160, 168)};
+    const Choice         c = Choose(monitors, 0, 2);
+    EXPECT(c.ok && c.rowMonitors == 2 && !c.gamesRow);
+    EXPECT((c.span == Rect{419, -1455, 5539, -15}));
+    EXPECT((c.moves.size() == 1 && c.moves[0] == Move{{2979, -1440, 5539, 0}, -1455}));
+}
+
+void TestMovesOnlyForTheSpansColumns()
+{
+    std::printf("a row monitor outside the span's columns is not moved; inside it is\n");
+    std::vector<Monitor> monitors{At(-1971, 1440), At(589, 1440), At(3149, 1450)};
+    Choice               c = Choose(monitors, 0, 2);  // the game at the left: columns 1 and 2, both level
+    EXPECT((c.ok && c.gamesRow && c.span == Rect{-1971, 1440, 3149, 2880} && c.moves.empty()));
+    c = Choose(monitors, 1, 2);  // the game in the middle: columns 2 and 3, the third (10 px low) moves
+    EXPECT((c.ok && c.gamesRow && c.span == Rect{589, 1440, 5709, 2880}));
+    EXPECT((c.moves.size() == 1 && c.moves[0] == Move{{3149, 1450, 5709, 2890}, 1440}));
 }
 
 void TestThreeAcrossTheRow()
@@ -141,12 +160,19 @@ void TestRowBrokenByAnotherSize()
 
 void TestRowBrokenByAMisalignedTop()
 {
-    std::printf("a monitor 13 px lower is not in the row\n");
+    std::printf("two monitors 13 px lower are lined up to the leftmost's top; 40 px lower is refused, naming the move\n");
     std::vector<Monitor> monitors{At(-1971, 1440), At(589, 1453), At(3149, 1453)};
-    const Choice         c = Choose(monitors, 1, 3);
+    Choice               c = Choose(monitors, 1, 3);
+    EXPECT((c.ok && c.gamesRow && c.rowMonitors == 3 && c.span == Rect{-1971, 1440, 5709, 2880}));
+    EXPECT(c.moves.size() == 2);
+    EXPECT((c.moves.size() == 2 && c.moves[0] == Move{{589, 1453, 3149, 2893}, 1440} &&
+            c.moves[1] == Move{{3149, 1453, 5709, 2893}, 1440}));
+    std::vector<Monitor> far{At(-1971, 1440), At(589, 1480), At(3149, 1480)};
+    c = Choose(far, 1, 3);
     EXPECT(!c.ok && c.rowMonitors == 2);
-    EXPECT(c.why.find(L"the monitor at (589, 1453) sits 13 px lower than its neighbour at (-1971, 1440)") !=
+    EXPECT(c.why.find(L"the monitor at (589, 1480) sits 40 px lower than its neighbour at (-1971, 1440)") !=
            std::wstring::npos);
+    EXPECT(c.why.find(L"more than the 32 px") != std::wstring::npos);
 }
 
 void TestRowBrokenByAGap()
@@ -191,6 +217,8 @@ int main()
 {
     TestRowBelowTheGame();
     TestUsersPairTwoPixelsOff();
+    TestUsersPairAboveTheUltrawide();
+    TestMovesOnlyForTheSpansColumns();
     TestThreeAcrossTheRow();
     TestTwoColumnsStartAtTheGame();
     TestOneColumnIsTheGamesMonitor();

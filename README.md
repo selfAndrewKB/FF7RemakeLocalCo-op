@@ -127,7 +127,10 @@ src/
   views/
     window_span           the game window across a row of equal monitors, one full view per player: the game's own
                           resolution request for the row, then the engine's window reshape; held, put back at the leave
-    monitor_row.h         which monitors a spanned window may cover (pure, host-tested; from Rebirth, any row)
+    monitor_row.h         which monitors a spanned window may cover, and which to line up first (pure, host-tested;
+                          from Rebirth, any row, tops within 32 px)
+    display_align         a row monitor moved to the row's top for the Windows session (the display-configuration
+                          API, nothing saved), put back at the leave
     letterbox_patch       the Borderless single-view letterbox off while two views exist (321 one-byte immediates)
   battle/ (the coin)
     enemy_coin            enemies share their attention between the humans: a coin per enemy decision at the game's

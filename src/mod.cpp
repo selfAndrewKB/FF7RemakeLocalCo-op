@@ -54,6 +54,7 @@
 #include "render/bloom_origin.h"
 #include "render/distortion_apply.h"
 #include "views/letterbox_patch.h"
+#include "views/display_align.h"
 #include "views/window_span.h"
 #include "world/anim_two_views.h"
 #include "world/env_sets_two.h"
@@ -75,7 +76,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.37.1-span-reason";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.38.0-row-align";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
@@ -222,6 +223,7 @@ public:
         }
         remote_.Close();
         lss::views::window_span::Leave(L"the mod unloads");
+        lss::views::display_align::Restore();  // the leave's ticks never come: the monitors go back now
         lss::views::letterbox_patch::Restore();
         lss::hud::hud_probe::Remove();
         lss::hud::root_placement::Remove();
