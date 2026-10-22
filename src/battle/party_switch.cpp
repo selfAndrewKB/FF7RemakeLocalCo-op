@@ -7,6 +7,7 @@
 #include "platform/log.h"
 #include "platform/verified_code.h"
 #include "players/scopes.h"
+#include "players/seats.h"
 
 #include <cstdint>
 
@@ -27,14 +28,15 @@ bool                   g_placed = false;
 
 // Game thread.
 std::uint8_t g_lastRefused = kTypeNone;
-int          g_lastPlayer  = 0;
+int          g_lastSeat    = -1;
 
-/// The member type the switch running now must pass over: inside player 2's tick, player 1's leader; outside it,
-/// the member player 2 plays. NONE when there is nothing to exclude.
+/// The member type the switch running now must pass over: inside a seat's tick, player 1's leader; outside it,
+/// the member seat 1 plays (every seat's member once seat 2 is wired, plan/seats.md step 6). NONE when there is
+/// nothing to exclude.
 std::uint8_t Excluded() noexcept
 {
-    const int ticking = command_menu_tick::TickingPlayer();
-    return ticking == 2 ? players::scopes::OtherLeaderType(kPlayer) : players::scopes::MemberType(kPlayer);
+    const int seat = command_menu_tick::TickingSeat();
+    return seat >= 1 ? players::scopes::OtherLeaderType(seat) : players::scopes::MemberType(kPlayer);
 }
 
 void* Candidate(void* partyManager, std::uint8_t variant, std::uint8_t type, bool alternate)
@@ -42,12 +44,12 @@ void* Candidate(void* partyManager, std::uint8_t variant, std::uint8_t type, boo
     const std::uint8_t excluded = Excluded();
     if (excluded != kTypeNone && type == excluded)
     {
-        const int player = command_menu_tick::TickingPlayer() == 2 ? 2 : 1;
-        if (g_lastRefused != type || g_lastPlayer != player)
+        const int seat = command_menu_tick::TickingSeat();  // 0: player 1's switch
+        if (g_lastRefused != type || g_lastSeat != seat)
         {
             g_lastRefused = type;
-            g_lastPlayer  = player;
-            platform::LogDebug(L"party switch: player {}'s switch passes over member type {} (the other player's)", player, type);
+            g_lastSeat    = seat;
+            platform::LogDebug(L"party switch: {}'s switch passes over member type {} (the other player's)", players::SeatName(seat), type);
         }
         return nullptr;
     }

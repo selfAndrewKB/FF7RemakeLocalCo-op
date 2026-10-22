@@ -12,6 +12,7 @@
 #include "platform/vtable_entry.h"
 #include "players/player_two_camera.h"
 #include "players/scopes.h"
+#include "players/seats.h"
 
 #include <algorithm>
 #include <array>
@@ -52,7 +53,7 @@ std::uint32_t g_hits[2]{};       // request re-aims: [0] any other operator's ti
 bool          g_loggedTwo = false;
 std::uint32_t g_transforms = 0;  // the game's call repeated for player 2
 std::uint32_t g_lockNearests = 0;
-std::uint32_t g_restores[4]{};   // the enemy detail window's close: ctrl1's tick, ctrl2's tick, a pad-2 key event, elsewhere
+std::uint32_t g_restores[4]{};   // the enemy detail window's close: player 1's tick, a seat's tick, a seat's pad's key event, elsewhere
 bool          g_restoreLogged[4]{};
 
 // Set at install, then only read.
@@ -150,14 +151,18 @@ void LockNearest(void* a1, char a2, char a3, char a4, char a5)
 /// The command menu's target-list end, counted by the context it runs in (a reading, no change).
 char CountRestore(std::uintptr_t original, void* state, void* a2, void* a3, void* a4)
 {
-    const int  ticking = command_menu_tick::TickingPlayer();
-    const int  context = ticking == 1 ? 0 : ticking == 2 ? 1 : command_menu_tick::EventContextActive() ? 2 : 3;
+    const int  seat    = command_menu_tick::TickingSeat();
+    const int  context = command_menu_tick::Ticking() ? (seat == 0 ? 0 : 1) : command_menu_tick::EventSeat() != 0 ? 2 : 3;
     ++g_restores[context];
     if (!g_restoreLogged[context])
     {
         g_restoreLogged[context] = true;
-        static constexpr const wchar_t* kNames[] = {L"player 1's controller tick", L"player 2's controller tick", L"a pad-2 key event", L"another context"};
-        platform::LogDebug(L"lock camera 2: the enemy detail window's close restored a lock in {}", kNames[context]);
+        const wchar_t* player = players::SeatName(context == 2 ? command_menu_tick::EventSeat() : seat);
+        platform::LogDebug(L"lock camera 2: the enemy detail window's close restored a lock in {}",
+                           context == 0   ? std::wstring(L"player 1's controller tick")
+                           : context == 1 ? std::format(L"{}'s controller tick", player)
+                           : context == 2 ? std::format(L"{}'s pad's key event", player)
+                                          : std::wstring(L"another context"));
     }
     return reinterpret_cast<RestoreLockFn>(original)(state, a2, a3, a4);
 }
@@ -236,7 +241,7 @@ bool Install(const platform::GameImage& image) noexcept
     control::Register({.name = L"lock-camera-two.restore", .shape = control::Shape::Text,
                        .help = L"the enemy detail window's close (lock restore, row X5) by context, and the re-targets repeated for player 2",
                        .get  = [] {
-                           return control::Value{std::format(L"ctrl1 tick {}, ctrl2 tick {}, pad-2 event {}, elsewhere {}; transforms {}, scripted locks {}",
+                           return control::Value{std::format(L"player 1's tick {}, a seat's tick {}, a seat's pad event {}, elsewhere {}; transforms {}, scripted locks {}",
                                                              g_restores[0], g_restores[1], g_restores[2], g_restores[3], g_transforms, g_lockNearests)};
                        }});
     return true;

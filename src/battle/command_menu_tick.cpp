@@ -1,5 +1,6 @@
 #include "battle/command_menu_tick.h"
 
+#include "battle/command_menu_rules.h"
 #include "battle/command_menu_two.h"
 #include "battle/targeting_two.h"
 #include "control/registry.h"
@@ -12,8 +13,9 @@
 #include "players/pad_buttons.h"
 #include "players/player_two_camera.h"
 #include "players/scopes.h"
+#include "players/seats.h"
 
-#include <algorithm>
+#include <array>
 #include <cstdint>
 #include <format>
 #include <optional>
@@ -24,40 +26,52 @@ namespace lss::battle::command_menu_tick {
 namespace {
 
 using platform::Read;
+using players::kSeatsBuilt;
+using players::SeatBuilt;
+using players::SeatName;
 
 using TickFn        = void (*)(void* controller, float deltaTime);
 using SetSlotFn     = std::int64_t (*)(std::uint8_t slot, float value);
 using InputBufferFn = void (*)(void* component, float deltaTime);
 
-constexpr int kPlayer = 1;
-
 // Set once at install.
-std::uintptr_t g_tickCall    = 0;
-std::uintptr_t g_tickTarget  = 0;
-std::uintptr_t g_slowCall    = 0;
-std::uintptr_t g_slowTarget  = 0;
-std::uintptr_t g_slot        = 0;  // EndUISystem[19]
+std::uintptr_t g_tickCall     = 0;
+std::uintptr_t g_tickTarget   = 0;
+std::uintptr_t g_slowCall     = 0;
+std::uintptr_t g_slowTarget   = 0;
+std::uintptr_t g_slot         = 0;  // EndUISystem[19]
 void**         g_battleSystem = nullptr;
-void**         g_gameMode    = nullptr;
+void**         g_gameMode     = nullptr;
 
 platform::CallRedirect g_tick;  // placed on the game thread (the call crosses a block)
 platform::CallRedirect g_slow;
 
-// Game thread.
-int   g_ticking   = 0;
-float g_slowOne   = 1.0f;   // player 1's slot-2 value this frame
-bool  g_enabled   = true;
-bool  g_placed    = false;
-bool  g_bufferLogged = false;
-std::uint32_t g_ticksTwo = 0;
-std::optional<players::scopes::Scope> g_eventScope;  // player 2's context around one of pad 2's key events
-/// Pad 2's key events: routed into player 2's context, or not (its menu not up, its path empty, its scope refused).
+/// A seat's pad's key events: routed into the seat's context, or not (its menu not up, its path empty, its scope
+/// refused).
 struct Routing
 {
     std::uint32_t routed = 0, notReady = 0, noPath = 0, notHeld = 0;
     bool          lastRouted = true;  // a change is logged at Debug
 };
-Routing g_routing;
+
+// Game thread. Index = seat; [0] = player 1 (the game's own tick, counted for the reading; its routing and buffer
+// flag unused).
+struct Seat
+{
+    std::uint32_t ticks        = 0;  // the controller ticked at the game's spot
+    std::uint32_t slowWrites   = 0;  // its tick wrote the world-slow slot
+    bool          bufferLogged = false;
+    Routing       routing;
+};
+std::array<Seat, players::scopes::kMaxPlayers> g_seats;
+bool                                     g_enabled     = true;
+bool                                     g_placed      = false;
+bool                                     g_ticking     = false;
+int                                      g_tickingSeat = 0;
+int                                      g_eventSeat   = 0;
+bool                                     g_aloneLogged = false;
+command_menu_rules::SlowWrites           g_slowWrites;
+std::optional<players::scopes::Scope>    g_eventScope;  // the seat's context around one of its pad's key events
 
 std::uint8_t* Ctrl1() noexcept
 {
@@ -65,18 +79,18 @@ std::uint8_t* Ctrl1() noexcept
     return Read(reinterpret_cast<const void*>(g_slot), ctrl) ? ctrl : nullptr;
 }
 
-/// The game's leader-only input buffer, run for player 2's member under the game's gates (the battle system
+/// The game's leader-only input buffer, run for the seat's member under the game's gates (the battle system
 /// exists, the game state's pause counter is 0).
-void RunInputBuffer(float deltaTime) noexcept
+void RunInputBuffer(int seat, float deltaTime) noexcept
 {
-    void*         system   = nullptr;
-    void*         gameMode = nullptr;
-    std::uint8_t* state    = nullptr;
-    std::int32_t  paused   = 0;
-    void*         member   = players::scopes::Member(kPlayer);
+    void*         system    = nullptr;
+    void*         gameMode  = nullptr;
+    std::uint8_t* state     = nullptr;
+    std::int32_t  paused    = 0;
+    void*         member    = players::scopes::Member(seat);
     std::uint8_t* component = nullptr;
-    void**        vtable   = nullptr;
-    InputBufferFn buffer   = nullptr;
+    void**        vtable    = nullptr;
+    InputBufferFn buffer    = nullptr;
     if (!Read(g_battleSystem, system) || system == nullptr || !Read(g_gameMode, gameMode) || gameMode == nullptr ||
         !Read(static_cast<std::uint8_t*>(gameMode) + facts::kGameModeGameState, state) || state == nullptr ||
         !Read(state + facts::kGameStatePauseCounter, paused) || paused != 0 || member == nullptr ||
@@ -85,104 +99,151 @@ void RunInputBuffer(float deltaTime) noexcept
     {
         return;
     }
-    if (!g_bufferLogged)
+    Seat& s = g_seats[seat];
+    if (!s.bufferLogged)
     {
-        g_bufferLogged = true;
-        platform::LogDebug(L"command menu 2: the game's input buffer runs for player 2's member after its tick");
+        s.bufferLogged = true;
+        platform::LogDebug(L"command menu 2: the game's input buffer runs for {}'s member after its tick", SeatName(seat));
     }
     if (!platform::CallGuarded(buffer, component, deltaTime))
     {
-        platform::Log(L"command menu 2: the input buffer for player 2's member RAISED AN EXCEPTION");
+        platform::Log(L"command menu 2: the input buffer for {}'s member RAISED AN EXCEPTION", SeatName(seat));
     }
 }
 
-/// FieldCommandCtrl__Tick at the game's call: the game's controller, then player 2's in player 2's scopes.
-void TickControllers(void* controller, float deltaTime)
+/// The seat's controller ticked inside the seat's scopes, with its pad's buttons and sticks and (seat 1's copy, until
+/// targeting_two's own conversion) its target fields, then the game's input buffer for its member.
+void TickSeat(int seat, float deltaTime)
 {
-    g_ticking = 1;
-    reinterpret_cast<TickFn>(g_tickTarget)(controller, deltaTime);
-    g_ticking = 0;
-    void* two = command_menu_two::Controller(kPlayer);
-    if (!g_enabled || two == nullptr || controller != Ctrl1() || !command_menu_two::Ready(kPlayer) ||
-        players::scopes::Member(kPlayer) == nullptr)
+    void* ctrl = command_menu_two::Controller(seat);
+    if (ctrl == nullptr || !command_menu_two::Ready(seat) || players::scopes::Member(seat) == nullptr)
     {
         return;
     }
-    players::scopes::Scope             scope(kPlayer, players::scopes::All);
-    players::pad_buttons::ButtonScope  buttons(1);
-    players::player_two_camera::StickScope stick(1, true);
+    players::scopes::Scope                 scope(seat, players::scopes::All);
+    players::pad_buttons::ButtonScope      buttons(static_cast<unsigned>(seat));
+    players::player_two_camera::StickScope stick(static_cast<std::uint32_t>(seat), true);
     // A command executed here aims at the displayed target and re-locks the camera on it while the member is the
-    // leader and locked on: player 2's target fields, not player 1's (RE-lock-camera-ledger.md row X4).
-    const targeting_two::FieldsScope   targets;
+    // leader and locked on: the seat's target fields, not player 1's (RE-lock-camera-ledger.md row X4).
+    const targeting_two::FieldsScope targets;
+    static_assert(kSeatsBuilt == 1, "TickSeat swaps in seat 1's target fields until targeting_two is per seat (plan/seats.md step 3)");
     if (!scope.Held())
     {
         return;
     }
-    ++g_ticksTwo;
-    g_ticking = 2;
-    reinterpret_cast<TickFn>(g_tickTarget)(two, deltaTime);
-    RunInputBuffer(deltaTime);
-    g_ticking = 0;
+    ++g_seats[seat].ticks;
+    g_ticking     = true;
+    g_tickingSeat = seat;
+    reinterpret_cast<TickFn>(g_tickTarget)(ctrl, deltaTime);
+    RunInputBuffer(seat, deltaTime);
+    g_ticking     = false;
+    g_tickingSeat = 0;
 }
 
-/// GameState_SetGameSpeedSlot at the tick's one write: player 2's tick writes the smaller of both menus' values.
+/// FieldCommandCtrl__Tick at the game's call: the game's controller, then each built seat's in the seat's scopes.
+void TickControllers(void* controller, float deltaTime)
+{
+    ++g_seats[0].ticks;
+    g_ticking = true;
+    reinterpret_cast<TickFn>(g_tickTarget)(controller, deltaTime);
+    g_ticking = false;
+    if (!g_enabled || controller != Ctrl1())
+    {
+        return;
+    }
+    for (int seat = 1; seat <= kSeatsBuilt; ++seat)
+    {
+        TickSeat(seat, deltaTime);
+    }
+}
+
+/// GameState_SetGameSpeedSlot at the tick's one write: a seat's tick writes the least of the frame's values
+/// (battle/command_menu_rules.h). The site lies inside the controller tick; a write outside one counts as the game's.
 std::int64_t SetSlot(std::uint8_t slot, float value)
 {
-    if (g_ticking == 2)
+    const int seat = g_ticking ? g_tickingSeat : 0;
+    ++g_seats[seat].slowWrites;
+    const std::uint32_t aloneBefore = g_slowWrites.Alone();
+    value                           = g_slowWrites.Write(seat, value);
+    if (seat != 0 && g_slowWrites.Alone() != aloneBefore && !g_aloneLogged)
     {
-        value = std::min(value, g_slowOne);
-    }
-    else
-    {
-        g_slowOne = value;
+        g_aloneLogged = true;  // the game's tick writes every frame (RE-battle.md §2.7): this line means that changed
+        platform::Log(L"command menu 2: WARNING: {}'s tick wrote the world slow with no write of player 1's this frame; "
+                      L"written as asked",
+                      SeatName(seat));
     }
     return reinterpret_cast<SetSlotFn>(g_slowTarget)(slot, value);
 }
 
-void NoteRouting(bool routed, const wchar_t* why) noexcept
+void NoteRouting(int seat, bool routed, const wchar_t* why) noexcept
 {
-    if (routed != g_routing.lastRouted)
+    Routing& routing = g_seats[seat].routing;
+    if (routed != routing.lastRouted)
     {
-        g_routing.lastRouted = routed;
-        platform::LogDebug(L"command menu 2: pad 2's key events {} player 2's context ({})", routed ? L"reach" : L"do NOT reach", why);
+        routing.lastRouted = routed;
+        platform::LogDebug(L"command menu 2: {}'s pad's key events {} its context ({})", SeatName(seat),
+                           routed ? L"reach" : L"do NOT reach", why);
     }
 }
 
-/// Pad 2's key events reach player 2's widgets inside player 2's context, once its menu is up in that context.
+/// A seat's pad's key events reach the seat's widgets inside the seat's context, once its menu is up in that
+/// context. The pad's XInput user is the seat.
 bool EnterEventContext(unsigned user) noexcept
 {
-    if (user != 1 || !g_enabled || g_eventScope.has_value())
+    const int seat = static_cast<int>(user);
+    if (!g_enabled || !SeatBuilt(seat) || g_eventScope.has_value())
     {
         return false;
     }
-    if (!command_menu_two::Ready(kPlayer))
+    Routing& routing = g_seats[seat].routing;
+    if (!command_menu_two::Ready(seat))
     {
-        ++g_routing.notReady;
-        NoteRouting(false, L"player 2's menu is not set up");
+        ++routing.notReady;
+        NoteRouting(seat, false, L"its menu is not set up");
         return false;
     }
-    if (!players::scopes::FocusPathSet(kPlayer))
+    if (!players::scopes::FocusPathSet(seat))
     {
-        ++g_routing.noPath;
-        NoteRouting(false, L"player 2's focus path is empty");
+        ++routing.noPath;
+        NoteRouting(seat, false, L"its focus path is empty");
         return false;
     }
-    g_eventScope.emplace(kPlayer, players::scopes::Focus | players::scopes::UiSlot);
+    g_eventScope.emplace(seat, players::scopes::Focus | players::scopes::UiSlot);
     if (!g_eventScope->Held())
     {
         g_eventScope.reset();
-        ++g_routing.notHeld;
-        NoteRouting(false, L"player 2's focus scope could not open");
+        ++routing.notHeld;
+        NoteRouting(seat, false, L"its focus scope could not open");
         return false;
     }
-    ++g_routing.routed;
-    NoteRouting(true, L"its menu is up in its context");
+    g_eventSeat = seat;
+    ++routing.routed;
+    NoteRouting(seat, true, L"its menu is up in its context");
     return true;
 }
 
-void LeaveEventContext(unsigned) noexcept
+void LeaveEventContext(unsigned user) noexcept
 {
+    if (static_cast<int>(user) != g_eventSeat)
+    {
+        return;
+    }
     g_eventScope.reset();
+    g_eventSeat = 0;
+}
+
+/// Player 1's and each seat's tick and slow-write counts, the seats' key-event routing, the alone writes.
+std::wstring Reading()
+{
+    std::wstring text = std::format(L"player 1: ticks {}, slow writes {}", g_seats[0].ticks, g_seats[0].slowWrites);
+    for (int seat = 1; seat <= kSeatsBuilt; ++seat)
+    {
+        const Seat& s = g_seats[seat];
+        text += std::format(L"; {}: ticks {}, slow writes {}, pad events routed {}, refused (not ready {}, no path {}, not held {})",
+                            SeatName(seat), s.ticks, s.slowWrites, s.routing.routed, s.routing.notReady, s.routing.noPath,
+                            s.routing.notHeld);
+    }
+    return text + std::format(L"; seat writes without player 1's {}", g_slowWrites.Alone());
 }
 
 }  // namespace
@@ -198,7 +259,7 @@ bool Install(const platform::GameImage& image) noexcept
     const auto gameMode = image.Rebase(facts::kGameModeGlobal, sizeof(void*));
     if (!tickCall || !tick || !slowCall || !slow || !slot || !system || !gameMode)
     {
-        platform::Log(L"command menu 2: the tick's engine checks failed; player 2's menu never ticks");
+        platform::Log(L"command menu 2: the tick's engine checks failed; no seat's menu ever ticks");
         return false;
     }
     g_tickCall     = *tickCall;
@@ -210,17 +271,15 @@ bool Install(const platform::GameImage& image) noexcept
     g_gameMode     = reinterpret_cast<void**>(*gameMode);
     if (!g_slow.Install(g_slowCall, g_slowTarget, reinterpret_cast<std::uintptr_t>(&SetSlot)))
     {
-        platform::Log(L"command menu 2: the time-slow write could not be redirected; player 2's menu never ticks");
+        platform::Log(L"command menu 2: the time-slow write could not be redirected; no seat's menu ever ticks");
         return false;
     }
     players::pad_buttons::SetUiContext({&EnterEventContext, &LeaveEventContext});
     control::Register({.name = L"menu-two.route", .shape = control::Shape::Text,
-                       .help = L"pad 2's key events routed into player 2's context, and those refused (menu not set up, "
-                               L"path empty, scope not held)",
-                       .get  = [] {
-                           return control::Value{std::format(L"routed {}; refused: not ready {}, no path {}, not held {}",
-                                                             g_routing.routed, g_routing.notReady, g_routing.noPath, g_routing.notHeld)};
-                       }});
+                       .help = L"each command controller's ticks at the game's spot and its world-slow writes; each seat's "
+                               L"pad key events routed into the seat's context and those refused (menu not set up, path "
+                               L"empty, scope not held); seat writes made with no write of player 1's in the frame",
+                       .get  = [] { return control::Value{Reading()}; }});
     return true;
 }
 
@@ -233,6 +292,7 @@ void Remove() noexcept
 
 void Tick() noexcept
 {
+    g_slowWrites.BeginFrame();
     if (g_placed || g_tickCall == 0)
     {
         return;
@@ -240,22 +300,27 @@ void Tick() noexcept
     g_placed = true;  // once, whatever the outcome
     if (g_tick.InstallFromOwnThread(g_tickCall, g_tickTarget, reinterpret_cast<std::uintptr_t>(&TickControllers)))
     {
-        platform::Log(L"command menu 2: the controller tick's call is redirected; player 2's controller ticks after the game's");
+        platform::Log(L"command menu 2: the controller tick's call is redirected; each seat's controller ticks after the game's");
     }
     else
     {
-        platform::Log(L"command menu 2: the controller tick's call could not be redirected; player 2's menu never ticks");
+        platform::Log(L"command menu 2: the controller tick's call could not be redirected; no seat's menu ever ticks");
     }
 }
 
-bool EventContextActive() noexcept
-{
-    return g_eventScope.has_value();
-}
-
-int TickingPlayer() noexcept
+bool Ticking() noexcept
 {
     return g_ticking;
+}
+
+int TickingSeat() noexcept
+{
+    return g_tickingSeat;
+}
+
+int EventSeat() noexcept
+{
+    return g_eventSeat;
 }
 
 }  // namespace lss::battle::command_menu_tick

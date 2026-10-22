@@ -286,3 +286,10 @@ add_executable(BarClassTests
 target_include_directories(BarClassTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_compile_features(BarClassTests PRIVATE cxx_std_20)
 add_test(NAME bar_class COMMAND BarClassTests)
+
+add_executable(CommandMenuRulesTests
+    tests/command_menu_rules_test.cpp
+)
+target_include_directories(CommandMenuRulesTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(CommandMenuRulesTests PRIVATE cxx_std_20)
+add_test(NAME command_menu_rules COMMAND CommandMenuRulesTests)
