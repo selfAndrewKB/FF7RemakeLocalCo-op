@@ -80,7 +80,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.45.1-camera-by-seat";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.45.2-operator-satellites-by-seat";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
@@ -105,6 +105,8 @@ bool Pressed(int virtualKey, bool& wasDown) noexcept
 using lss::control::Outcome;
 using lss::control::Shape;
 using lss::control::Value;
+
+constexpr int kSeatOne = 1;  // the p2.* readings and intents name seat 1 (plan/seats.md step 7 generalises them)
 
 /// The input holds the console can make: at the mod's own per-pad stick layer, so a scripted stick takes the
 /// path a real pad takes.
@@ -139,26 +141,26 @@ void RegisterSessionCommands(lss::players::Session& session)
               .help = L"player 2 joins on its member with a controller and camera manager of its own (Ctrl+F7); with the member not "
                       L"free, nothing is made yet and player 2 joins once it is (p2.state awaiting)",
               .set  = [&session](const Value&) {
-                  session.Join();
-                  return session.In() ? Outcome{}
-                         : session.Awaiting()   ? Outcome{true, L"player 2 joins once its member is free (see the log; 'leave' stops the wait)"}
+                  session.Join(kSeatOne);
+                  return session.In(kSeatOne) ? Outcome{}
+                         : session.Awaiting(kSeatOne)   ? Outcome{true, L"player 2 joins once its member is free (see the log; 'leave' stops the wait)"}
                                                 : Outcome{false, L"player 2 did not join (see the log)"};
               }});
     Register({.name = L"leave", .help = L"player 2 leaves, or stops waiting for a member (Ctrl+F8)", .set = [&session](const Value&) {
-                  session.Leave();
-                  return session.In() ? Outcome{false, L"player 2 is still in (see the log)"} : Outcome{};
+                  session.Leave(kSeatOne);
+                  return session.In(kSeatOne) ? Outcome{false, L"player 2 is still in (see the log)"} : Outcome{};
               }});
     Register({.name = L"party.ai", .shape = Shape::Text,
               .help = L"each deployed member's status, PLAYER slot holder, actor mode and field AI layers (the take test's view)",
               .get  = [&session] { return Value{session.FormationReading()}; }});
     Register({.name = L"p2.member", .shape = Shape::Text,
               .help = L"the member player 2 plays (its type and row of the party order), or why it waits for one",
-              .get  = [&session] { return Value{session.MemberReading()}; }});
+              .get  = [&session] { return Value{session.MemberReading(kSeatOne)}; }});
     Register({.name = L"p2.in", .shape = Shape::OnOff, .help = L"player 2 is in",
-              .get = [&session] { return Value{session.In()}; }});
+              .get = [&session] { return Value{session.In(kSeatOne)}; }});
     Register({.name = L"p2.rejoin", .shape = Shape::OnOff,
               .help = L"player 2 was taken out by a world change and joins again once the field is back ('leave' cancels)",
-              .get  = [&session] { return Value{session.RejoinPending()}; }});
+              .get  = [&session] { return Value{session.RejoinPending(kSeatOne)}; }});
     Register({.name  = L"p2.state",
               .shape = Shape::Word,
               .words = {L"out", L"awaiting", L"in", L"playing", L"handed"},
@@ -166,9 +168,9 @@ void RegisterSessionCommands(lss::players::Session& session)
                        L"playing (holds its member), or handed (its member is with its AI while the game's leader is: a scene, a "
                        L"field action, the lock; or for the member's own hold: a script, an animation, a guide lead; the seat is kept)",
               .get   = [&session] {
-                  return Value{std::wstring(!session.In() ? (session.Awaiting() ? L"awaiting" : L"out")
-                                            : !session.Seated()     ? L"in"
-                                            : session.HandedToAi()  ? L"handed"
+                  return Value{std::wstring(!session.In(kSeatOne) ? (session.Awaiting(kSeatOne) ? L"awaiting" : L"out")
+                                            : !session.Seated(kSeatOne)     ? L"in"
+                                            : session.HandedToAi(kSeatOne)  ? L"handed"
                                                                     : L"playing")};
               }});
     Register({.name  = L"showflags",
@@ -344,11 +346,11 @@ private:
     {
         if (Pressed(VK_F7, joinWasDown_))
         {
-            session_.Join();
+            session_.Join(kSeatOne);
         }
         if (Pressed(VK_F8, leaveWasDown_))
         {
-            session_.Leave();
+            session_.Leave(kSeatOne);
         }
         if (Pressed(VK_F6, reportWasDown_))
         {
@@ -366,8 +368,8 @@ private:
         lss::views::letterbox_patch::Tick(playersIn > 1 || lss::views::window_span::Held());
         lss::views::window_span::Tick(playersIn > 1);
         lss::views::mirror_player::Tick(playersIn, lss::views::window_span::Held() ? lss::views::window_span::Columns() : 0);
-        lss::views::scene_camera_two::Tick(CameraManagerOf(0), session_.In() ? CameraManagerOf(1) : nullptr);  // seat 1 today
-        lss::battle::command_menu_two::Tick(session_.Seated());
+        lss::views::scene_camera_two::Tick(CameraManagerOf(0), session_.In(kSeatOne) ? CameraManagerOf(1) : nullptr);  // seat 1 today
+        lss::battle::command_menu_two::Tick(session_.Seated(kSeatOne));
         lss::battle::command_menu_tick::Tick();
         lss::battle::party_switch::Tick();
         lss::battle::targeting_two::Tick();
@@ -415,7 +417,7 @@ private:
     /// camera that sees them better, the NPCs near player 2 kept awake and spawned around it too, and able to see it.
     void TickWorld() noexcept
     {
-        const bool in        = session_.In();  // seat 1: the world modules take one further player today (plan/seats.md)
+        const bool in        = session_.In(kSeatOne);  // seat 1: the world modules take one further player today (plan/seats.md)
         void*      cameraTwo = in ? CameraManagerOf(1) : nullptr;
         void*      memberTwo = in ? lss::players::scopes::Member(1) : nullptr;
         lss::world::party_fade::Tick(in);
@@ -433,8 +435,8 @@ private:
     {
         lss::hud::overlay_layout::ViewShare one, two;
         const bool mirror = session_.Count() == 0 && lss::views::mirror_player::Count() > 0;
-        const bool views  = (session_.In() || mirror) && ReadView(0, one) && ReadView(1, two);  // two columns today
-        const bool split  = views && session_.In();
+        const bool views  = (session_.In(kSeatOne) || mirror) && ReadView(0, one) && ReadView(1, two);  // two columns today
+        const bool split  = views && session_.In(kSeatOne);
         lss::hud::overlay_layout::Tick(views, one, two);
         if (mirror && lss::hud::ui_targets::Enabled())
         {
@@ -451,7 +453,7 @@ private:
                                        sizeof(void*));
         }
         lss::hud::second_image::Tick(split, players);
-        lss::hud::minimap_two::Tick(split && session_.Seated(), players.controller[1]);
+        lss::hud::minimap_two::Tick(split && session_.Seated(kSeatOne), players.controller[1]);
         lss::hud::marker_replay::Tick();
         lss::hud::root_placement::Tick(views && lss::hud::overlay_layout::BandApplies());
     }

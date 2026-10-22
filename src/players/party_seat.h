@@ -27,7 +27,7 @@ bool Install(const platform::GameImage& image) noexcept;
 
 /// Seats `member` (of player type `type`) on seat `seat`'s controller. False (logged) if the controller cannot
 /// take it, or it is player 1's leader.
-bool Seat(int seat, void* playerOneController, void* controller, void* member, std::uint8_t type) noexcept;
+bool SeatMember(int seat, void* playerOneController, void* controller, void* member, std::uint8_t type) noexcept;
 
 /// Gives the seat's member back to its AI (and re-seats player 1's leader if its trigger was borrowed). True once
 /// the controller no longer holds a character (also when nothing was seated); false (logged) if it still does.

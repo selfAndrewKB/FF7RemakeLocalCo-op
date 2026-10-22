@@ -19,9 +19,11 @@
 // that player's pad record, and put back after (pad 1 = XInput user 0, a seat's pad = user `seat`).
 // The slot replacements find the seat from the object they are handed (its controller, operator or camera
 // manager), so one set of replacements serves every seat. All of this runs on the game thread.
-// Seats: players/seats.h (one wired today, player 2); the battle modules this one calls around a tick
-// (lock camera, sequence cameras, targeting, the override route) are one instance each until their own step
-// of plan/seats.md.
+// Seats: players/seats.h (one wired today, player 2). State owned here: each seat's controller and operator
+// weak pairs (set by Start, cleared by Take), the stick holds and the call counts. The battle modules this one
+// calls around a tick (the lock camera, the sequence cameras, the targeting copy) are one instance each until
+// their own step of plan/seats.md; the operator's satellites (nav areas, battle mode, the override route) are
+// per seat.
 
 namespace lss::platform {
 class GameImage;
@@ -64,8 +66,8 @@ void ReleaseStick(unsigned user) noexcept;
 /// Logs how often each player's input, movement and camera calls ran since the last report. Game thread.
 void LogCounts() noexcept;
 
-/// The player number (2 for seat 1) whose own operator's Tick runs now (inside its scopes), else 0.
-int OperatorTicking() noexcept;
+/// The seat whose own operator's Tick runs now (inside its scopes), else 0.
+int TickingSeat() noexcept;
 
 /// Player 1's field camera operator (the field root's), and a seat's own; null when none.
 void* OperatorOne() noexcept;

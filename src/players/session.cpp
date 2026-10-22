@@ -123,16 +123,20 @@ catch (...)
 
 }  // namespace
 
-const wchar_t* Session::Seat::Name() const noexcept
+void Session::Seat::ResetMember() noexcept
 {
-    return SeatName(index);
+    memberWeak[0] = -1;
+    memberWeak[1] = 0;
+    handedToAi    = false;
+    holdHand      = false;
+    hold          = party_member::Wait::None;
 }
 
 Session::Session() noexcept
 {
-    for (int i = 0; i < kSeatsBuilt; ++i)
+    for (int seat = 1; seat <= kSeatsBuilt; ++seat)
     {
-        seats_[i].index = i + 1;
+        seats_[seat].index = seat;
     }
 }
 
@@ -178,9 +182,9 @@ void Session::Remove() noexcept
 int Session::Count() const noexcept
 {
     int count = 0;
-    for (const Seat& seat : seats_)
+    for (int seat = 1; seat <= kSeatsBuilt; ++seat)
     {
-        count += seat.localPlayer != nullptr ? 1 : 0;
+        count += seats_[seat].localPlayer != nullptr ? 1 : 0;
     }
     return count;
 }
@@ -188,6 +192,13 @@ int Session::Count() const noexcept
 UObject* Session::Controller(const Seat& seat) const noexcept
 {
     return Field(seat.localPlayer, facts::kLocalPlayerController);
+}
+
+void Session::EndMemberModules(const Seat& seat) noexcept
+{
+    (void)seat;                           // the modules are one instance each (plan/seats.md step 3): seat 1's
+    battle::targeting_two::OnLeave();
+    battle::command_menu_two::OnLeave();
 }
 
 void Session::OnFieldExit(void* self, const wchar_t* caller) noexcept
@@ -208,9 +219,9 @@ void Session::OnFieldExit(void* self, const wchar_t* caller) noexcept
 void Session::LeaveForWorldChange(const wchar_t* why) noexcept
 {
     // The last seat first: the engine list's order, each seat at its own index.
-    for (int i = kSeatsBuilt - 1; i >= 0; --i)
+    for (int index = kSeatsBuilt; index >= 1; --index)
     {
-        Seat& seat = seats_[i];
+        Seat& seat = seats_[index];
         if (seat.localPlayer == nullptr)
         {
             continue;
@@ -225,7 +236,8 @@ void Session::LeaveForWorldChange(const wchar_t* why) noexcept
         seat.rejoin = Rejoin{.pending = true};
         if (mirror_.fillAtLeave != nullptr)
         {
-            mirror_.fillAtLeave(L"player 2 left for a world change");  // the column held through the loading screen
+            // The column held through the loading screen (the seat's column, once per seat that leaves).
+            mirror_.fillAtLeave(std::format(L"{} left for a world change", seat.Name()).c_str());
         }
         platform::Log(L"world change: {} joins again once the field is back (Ctrl+F8 cancels)", seat.Name());
     }
@@ -253,14 +265,15 @@ try
     {
         worldChangeStuck_ = false;
     }
-    for (Seat& seat : seats_)
+    auto* players = LocalPlayers(gameInstance_);  // one lookup a tick, for every seat
+    for (int index = 1; index <= kSeatsBuilt; ++index)
     {
+        Seat& seat = seats_[index];
         if (seat.localPlayer == nullptr)
         {
             TryRejoin(seat);  // after a world change, or for the member the seat waits on
             continue;
         }
-        auto* players = LocalPlayers(gameInstance_);
         if (players != nullptr && !Contains(*players, seat.localPlayer))
         {
             platform::Log(L"{} was removed by the engine; the mod lets go of it", seat.Name());
@@ -449,8 +462,7 @@ void Session::LogFormation(Seat& seat, const party_member::Choice& choice) noexc
 void Session::Forget(Seat& seat) noexcept
 {
     seat.localPlayer = nullptr;
-    battle::targeting_two::OnLeave();     // one instance today (plan/seats.md step 3)
-    battle::command_menu_two::OnLeave();  // one instance today
+    EndMemberModules(seat);
     scopes::Unbind(seat.index);
     split_render::OnLeave();
     pad_buttons::SetPlayers(1 + Count());
@@ -462,24 +474,20 @@ void Session::Forget(Seat& seat) noexcept
     {
         party_seat::Forget(seat.index);
     }
-    seat.memberWeak[0]   = -1;
-    seat.memberWeak[1]   = 0;
+    seat.ResetMember();
     seat.waitLogged      = 0;
     seat.formationLogged = 0;
-    seat.handedToAi      = false;
-    seat.holdHand        = false;
-    seat.hold            = party_member::Wait::None;
 }
 
 void Session::Join(int index) noexcept
 try
 {
-    if (!Valid(index))
+    if (!SeatBuilt(index))
     {
         platform::Log(L"join refused: seat {} is not built ({} built)", index, kSeatsBuilt);
         return;
     }
-    Seat& seat = seats_[index - 1];
+    Seat& seat = seats_[index];
     if (seat.localPlayer != nullptr)
     {
         platform::Log(L"{} is already in", seat.Name());
@@ -533,7 +541,7 @@ try
     // The mirror player leaves its column inside the join, so the seat takes it on the same tick.
     if (mirrors != 0)
     {
-        mirror_.clear(L"player 2 joins");
+        mirror_.clear(std::format(L"{} joins", seat.Name()).c_str());
         if (players->Num() != seat.index)
         {
             platform::Log(L"join refused: the mirror player did not leave its column ({} local players)", players->Num());
@@ -587,17 +595,17 @@ try
 catch (...)
 {
     platform::Log(L"join: an engine lookup raised an exception; seat {} {}", index,
-                  Valid(index) && seats_[index - 1].localPlayer != nullptr ? L"is tracked" : L"is not in");
+                  SeatBuilt(index) && seats_[index].localPlayer != nullptr ? L"is tracked" : L"is not in");
 }
 
 void Session::Leave(int index) noexcept
 {
-    if (!Valid(index))
+    if (!SeatBuilt(index))
     {
         platform::Log(L"leave refused: seat {} is not built ({} built)", index, kSeatsBuilt);
         return;
     }
-    Seat& seat = seats_[index - 1];
+    Seat& seat = seats_[index];
     if (seat.rejoin.pending)
     {
         seat.rejoin = Rejoin{};
@@ -631,10 +639,7 @@ try
     // manager has no EndPlay or Destroyed override). Read before the removal destroys their owners.
     UObject*   controller = Controller(seat);
     const auto leftovers  = local_player_list::ReadLeftovers(seat.localPlayer);
-    // The seat's lock and target end, and its menu lets go of its focus layers inside its own context, while its
-    // controller and member still exist.
-    battle::targeting_two::OnLeave();     // one instance today (plan/seats.md step 3)
-    battle::command_menu_two::OnLeave();  // one instance today
+    EndMemberModules(seat);  // while the seat's controller and member still exist
     // The seat's member goes back to its AI first, through the game's leader funnel.
     if (seatInstalled_ && !party_seat::Unseat(seat.index, Field((*players)[0], facts::kLocalPlayerController), controller))
     {
@@ -666,11 +671,7 @@ try
     {
         party_seat::Forget(seat.index);  // a later player in this seat is a new controller, set up afresh
     }
-    seat.memberWeak[0] = -1;
-    seat.memberWeak[1] = 0;
-    seat.handedToAi    = false;
-    seat.holdHand      = false;
-    seat.hold          = party_member::Wait::None;
+    seat.ResetMember();
     scopes::Unbind(seat.index);
     const auto gone = local_player_list::DestroyLeftovers(leftovers);
     platform::Log(L"leave: {} removed{}; leftovers destroyed: camera actor {}, battle-talk actor {}", seat.Name(),
@@ -701,7 +702,7 @@ try
     {
         return false;
     }
-    if (!party_seat::Seat(seat.index, playerOne, seatController, choice.member, choice.type))
+    if (!party_seat::SeatMember(seat.index, playerOne, seatController, choice.member, choice.type))
     {
         seat.seatRetryAt = ticks_ + kSeatRetryTicks;  // the refusal is logged by the seat; tried again later, the player in
         return false;
@@ -746,17 +747,10 @@ try
     }
     platform::Log(L"{}'s member (type {}) is {}: given back; the row's member next, or {} leaves to wait for one", seat.Name(),
                   party_seat::MemberType(seat.index), why, seat.Name());
-    // The seat's lock and target end, and its menu lets go of its focus layers inside its own context, while its
-    // member still exists; the menu is set up again for the next member by its own tick.
-    battle::targeting_two::OnLeave();     // one instance today (plan/seats.md step 3)
-    battle::command_menu_two::OnLeave();  // one instance today
+    EndMemberModules(seat);  // the menu is set up again for the next member by its own tick
     DestroyOperator(seat);
     party_seat::Unseat(seat.index, Field((*players)[0], facts::kLocalPlayerController), Controller(seat));
-    seat.memberWeak[0] = -1;
-    seat.memberWeak[1] = 0;
-    seat.handedToAi    = false;
-    seat.holdHand      = false;
-    seat.hold          = party_member::Wait::None;
+    seat.ResetMember();
 }
 catch (...)
 {
@@ -802,12 +796,10 @@ try
     {
         platform::Log(L"{}'s member was destroyed under it (the party rebuilt without a field exit); {} lets go and chooses again",
                       seat.Name(), seat.Name());
-        battle::targeting_two::OnLeave();     // one instance today (plan/seats.md step 3)
-        battle::command_menu_two::OnLeave();  // one instance today
+        EndMemberModules(seat);
         DestroyOperator(seat);
         party_seat::Forget(seat.index);
-        seat.memberWeak[0] = -1;
-        seat.memberWeak[1] = 0;
+        seat.ResetMember();
         return;
     }
     auto* players = LocalPlayers(gameInstance_);
@@ -866,8 +858,9 @@ catch (...)
 void Session::OnLeaderChanging(void* self, void* character) noexcept
 {
     auto* session = static_cast<Session*>(self);
-    for (Seat& seat : session->seats_)
+    for (int index = 1; index <= kSeatsBuilt; ++index)
     {
+        Seat& seat = session->seats_[index];
         if (character != nullptr && character == party_seat::Member(seat.index))
         {
             session->ReleaseMember(seat, L"about to become player 1's leader (the game's leader change)");
@@ -878,8 +871,9 @@ void Session::OnLeaderChanging(void* self, void* character) noexcept
 void Session::OnStreamFinishing(void* self) noexcept
 {
     auto* session = static_cast<Session*>(self);
-    for (Seat& seat : session->seats_)
+    for (int index = 1; index <= kSeatsBuilt; ++index)
     {
+        Seat& seat = session->seats_[index];
         if (party_seat::Member(seat.index) != nullptr && !party_member::InFormation(party_seat::MemberType(seat.index)))
         {
             session->ReleaseMember(seat, L"leaving the deployed party (its status changed)");
@@ -890,8 +884,9 @@ void Session::OnStreamFinishing(void* self) noexcept
 void Session::OnStreamFinished(void* self) noexcept
 {
     auto* session = static_cast<Session*>(self);
-    for (Seat& seat : session->seats_)
+    for (int index = 1; index <= kSeatsBuilt; ++index)
     {
+        Seat& seat   = session->seats_[index];
         void* member = party_seat::Member(seat.index);
         if (member == nullptr)
         {
@@ -907,9 +902,9 @@ void Session::OnStreamFinished(void* self) noexcept
 void Session::OnLeaderHandedToAi(void* self) noexcept
 {
     auto* session = static_cast<Session*>(self);
-    for (Seat& seat : session->seats_)
+    for (int index = 1; index <= kSeatsBuilt; ++index)
     {
-        session->HandWithLeader(seat);
+        session->HandWithLeader(session->seats_[index]);
     }
 }
 
@@ -937,9 +932,9 @@ void Session::HandWithLeader(Seat& seat) noexcept
 void Session::OnLeaderReturned(void* self) noexcept
 {
     auto* session = static_cast<Session*>(self);
-    for (Seat& seat : session->seats_)
+    for (int index = 1; index <= kSeatsBuilt; ++index)
     {
-        session->ReturnWithLeader(seat);
+        session->ReturnWithLeader(session->seats_[index]);
     }
 }
 
@@ -1020,7 +1015,7 @@ catch (...)
 
 bool Session::Seated(int seat) const noexcept
 {
-    return Valid(seat) && seatInstalled_ && party_seat::Seated(seat);
+    return SeatBuilt(seat) && seatInstalled_ && party_seat::Seated(seat);
 }
 
 std::wstring Session::FormationReading() const noexcept
@@ -1041,11 +1036,11 @@ catch (...)
 std::wstring Session::MemberReading(int index) const noexcept
 try
 {
-    if (!Valid(index))
+    if (!SeatBuilt(index))
     {
         return L"no such seat";
     }
-    const Seat& seat = seats_[index - 1];
+    const Seat& seat = seats_[index];
     if (seat.localPlayer == nullptr && !seat.awaiting)
     {
         return L"out";

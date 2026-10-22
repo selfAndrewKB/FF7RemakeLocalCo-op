@@ -6,6 +6,7 @@
 #include "platform/log.h"
 #include "platform/verified_code.h"
 #include "players/player_trigger.h"
+#include "players/seats.h"
 #include "players/scopes.h"
 
 #include <array>
@@ -68,7 +69,7 @@ bool Install(const platform::GameImage& image) noexcept
     return true;
 }
 
-bool Seat(int seat, void* playerOneController, void* controller, void* member, std::uint8_t type) noexcept
+bool SeatMember(int seat, void* playerOneController, void* controller, void* member, std::uint8_t type) noexcept
 {
     if (!ValidSeat(seat) || g_seats[seat].member != nullptr || playerOneController == nullptr || controller == nullptr ||
         member == nullptr)
@@ -78,18 +79,18 @@ bool Seat(int seat, void* playerOneController, void* controller, void* member, s
     State& state   = g_seats[seat];
     void*  trigger = ReadPointer(playerOneController, kTrigger);
     // The seat's own trigger (a copy of the placed one); player 1's only if none could be made.
-    if (void* own = player_trigger::Ensure(playerOneController); own != nullptr)
+    if (void* own = player_trigger::Ensure(seat, playerOneController); own != nullptr)
     {
         trigger = own;
     }
     else
     {
-        platform::Log(L"seat {}: borrows player 1's PlayerTrigger (encounters and prompts will follow this seat's member)", seat + 1);
+        platform::Log(L"{}: borrows player 1's PlayerTrigger (encounters and prompts will follow its member)", SeatName(seat));
     }
     if (trigger == nullptr || ReadPointer(playerOneController, kTriggerOverlap) == nullptr ||
         member == ReadPointer(playerOneController, kLeader))
     {
-        platform::Log(L"seat {}: refused (player 1's trigger or overlap component is missing, or the member is player 1's leader)", seat + 1);
+        platform::Log(L"{}: refused (player 1's trigger or overlap component is missing, or the member is player 1's leader)", SeatName(seat));
         return false;
     }
     // The game's party setup for a controller, once per controller: it stores the trigger and its overlap
@@ -98,14 +99,14 @@ bool Seat(int seat, void* playerOneController, void* controller, void* member, s
     {
         if (!platform::CallGuarded(g_initPartyLevel, controller, trigger) || ReadPointer(controller, kTriggerOverlap) == nullptr)
         {
-            platform::Log(L"seat {}: InitPartyLevel on its controller failed or left no overlap component; not seating", seat + 1);
+            platform::Log(L"{}: InitPartyLevel on its controller failed or left no overlap component; not seating", SeatName(seat));
             return false;
         }
         state.setUpController = controller;
     }
     if (!platform::CallGuarded(g_switchLeader, controller, member, false, false))
     {
-        platform::Log(L"seat {}: SwitchLeaderInternal(controller, member) RAISED AN EXCEPTION", seat + 1);
+        platform::Log(L"{}: SwitchLeaderInternal(controller, member) RAISED AN EXCEPTION", SeatName(seat));
         return false;
     }
     const bool seated = ReadPointer(controller, kLeader) == member;
@@ -115,7 +116,7 @@ bool Seat(int seat, void* playerOneController, void* controller, void* member, s
         state.type   = type;
         scopes::BindMember(seat, member, type);
     }
-    platform::Log(L"seat {}: its controller {} member type {} (its leader field {})", seat + 1,
+    platform::Log(L"{}: its controller {} member type {} (its leader field {})", SeatName(seat),
                   seated ? L"now holds" : L"did NOT take", type, seated ? L"names it" : L"does not name it");
     return seated;
 }
@@ -131,7 +132,7 @@ bool Unseat(int seat, void* playerOneController, void* controller) noexcept
     const bool released = ReadPointer(controller, kLeader) == nullptr;
     if (!released)
     {
-        platform::Log(L"seat {}: its controller still holds its member after the release{}", seat + 1, called ? L"" : L" (the call raised)");
+        platform::Log(L"{}: its controller still holds its member after the release{}", SeatName(seat), called ? L"" : L" (the call raised)");
         return false;
     }
     const std::uint8_t type = state.type;
@@ -140,11 +141,11 @@ bool Unseat(int seat, void* playerOneController, void* controller) noexcept
     scopes::BindMember(seat, nullptr, facts::kPlayerTypeNone);
     // With a borrowed trigger player 1's trigger rode on the member: re-seating player 1's own leader through the
     // same funnel puts it back. The seat's own trigger needs nothing: player 1's never moved.
-    const bool borrowed  = !player_trigger::Owns(ReadPointer(controller, kTrigger));
+    const bool borrowed  = !player_trigger::OwnedBy(seat, ReadPointer(controller, kTrigger));
     void*      leaderOne = ReadPointer(playerOneController, kLeader);
     const bool reseated  = borrowed && leaderOne != nullptr &&
                            platform::CallGuarded(g_switchLeader, playerOneController, leaderOne, false, true);
-    platform::Log(L"seat {}: member type {} given back to its AI{}; player 1's leader {}", seat + 1, type,
+    platform::Log(L"{}: member type {} given back to its AI{}; player 1's leader {}", SeatName(seat), type,
                   called ? L"" : L" (the call raised after releasing it)",
                   borrowed ? (reseated ? L"re-seated (its trigger back on it)" : L"NOT re-seated") : L"untouched (the seat has its own trigger)");
     return true;
@@ -158,7 +159,7 @@ void Forget(int seat) noexcept
     }
     g_seats[seat] = State{};
     scopes::BindMember(seat, nullptr, facts::kPlayerTypeNone);
-    player_trigger::Destroy();
+    player_trigger::Destroy(seat);
 }
 
 bool Seated(int seat) noexcept

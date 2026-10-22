@@ -80,7 +80,7 @@ ActorFloatFn          g_cameraUpdate      = nullptr;
 std::uintptr_t* g_phaseHookPointer = nullptr;
 PhaseHookFn     g_phaseHook        = nullptr;
 InputFn         g_tickPlayerInput  = nullptr;
-int             g_operatorTicking  = 0;  // the player number whose own operator ticks (2 for seat 1), else 0
+int             g_tickingSeat      = 0;  // the seat whose own operator ticks, else 0
 bool            g_phaseHookLogged  = false;
 
 // Game thread only (set by Start from the engine tick; the wrappers act only on that thread).
@@ -400,11 +400,12 @@ void OperatorBeginPlay(void* self)
 /// AEndFieldCameraOperator::Tick. A seat's operator ticks as the primary one, for that seat.
 void OperatorTick(void* self, float deltaSeconds)
 {
-    const int seat = AnySeatIn() ? SeatOfOperator(self) : 0;
+    const bool seatsIn = AnySeatIn();
+    const int  seat    = seatsIn ? SeatOfOperator(self) : 0;
     if (seat == 0)
     {
         g_operatorTick(self, deltaSeconds);
-        if (AnySeatIn() && self == PlayerOneOperator())
+        if (seatsIn && self == PlayerOneOperator())
         {
             battle::sequence_camera_two::AfterOperatorTick(1);
         }
@@ -420,15 +421,15 @@ void OperatorTick(void* self, float deltaSeconds)
     // camera follows the seat's target, not player 1's.
     const scopes::Scope              leader(seat, scopes::Leader);
     const battle::targeting_two::FieldsScope targets;  // one instance (plan/seats.md step 3)
-    g_operatorTicking = seat + 1;
+    g_tickingSeat = seat;
     battle::lock_camera_two::BeforeOperatorTick(self, controller);  // one instance
     g_operatorTick(self, deltaSeconds);
     battle::lock_camera_two::AfterOperatorTick(self);
-    g_operatorTicking = 0;
+    g_tickingSeat = 0;
     battle::sequence_camera_two::AfterOperatorTick(seat + 1);
     // The owner's camera-override route follows the owner (the tick may have changed it: the LeaderChange flavor).
     void* owner = nullptr;
-    camera_override_two::Route(Read(static_cast<std::uint8_t*>(self) + facts::kOperatorOwnerChara, owner) ? owner : nullptr);
+    camera_override_two::Route(seat, Read(static_cast<std::uint8_t*>(self) + facts::kOperatorOwnerChara, owner) ? owner : nullptr);
 }
 
 /// AEndPlayerCameraManager::UpdateCamera: a seat's camera manager updates as the primary player's, with the seat's
@@ -660,9 +661,9 @@ bool Install(const platform::GameImage& image) noexcept
         g_operatorBeginPlaySlot.Restore();
         return false;
     }
-    camera_override_two::Install(image);  // optional: without it player 2's attack cameras stay on player 1's camera
-    operator_battle_mode::Install(image);  // optional: without it player 2's camera plays battles on the field setting
-    nav_area_two::Install(image);          // optional: without it player 2's InDoor settings reach player 1's operator
+    camera_override_two::Install(image);  // optional: without it a seat's attack cameras stay on player 1's camera
+    operator_battle_mode::Install(image);  // optional: without it a seat's camera plays battles on the field setting
+    nav_area_two::Install(image);          // optional: without it a seat's InDoor settings reach player 1's operator
     // Optional: without it a seat's right stick does nothing, and everything else still works.
     if (!Global(image, facts::kWorldTickPhaseHookGlobal, g_phaseHookPointer) ||
         !FindInto(image, facts::kWorldTickPhaseHook, g_phaseHook) || !FindInto(image, facts::kTickPlayerInput, g_tickPlayerInput))
@@ -803,9 +804,9 @@ bool Start(int seat, void* playerOneController, void* seatController, void* memb
     }
     if (owned)
     {
-        camera_override_two::Route(member);  // the game's SetOwnerChara just wrote the member's delegate (one route today)
-        operator_battle_mode::OnOperatorStarted(spawned, operatorOne);  // a join mid-battle
-        nav_area_two::OnOperatorStarted(seatController);                // the volumes entered before the spawn
+        camera_override_two::Route(seat, member);  // the game's SetOwnerChara just wrote the member's delegate
+        operator_battle_mode::OnOperatorStarted(seat, spawned, operatorOne);  // a join mid-battle
+        nav_area_two::OnOperatorStarted(seat, seatController);                // the volumes entered before the spawn
     }
     // Moving the new operator off the leader cleared the leader's camera delegate that player 1's operator
     // had bound; the game's own re-apply puts it back.
@@ -824,7 +825,7 @@ void* Take(int seat) noexcept
     {
         return nullptr;
     }
-    camera_override_two::Route(nullptr);  // the member's delegate holds the game's handler again (one route today)
+    camera_override_two::Route(seat, nullptr);  // the member's delegate holds the game's handler again
     void* cameraOperator = Resolve(g_seats[seat].cameraOperator);
     g_seats[seat]        = {};
     {
@@ -855,9 +856,9 @@ void ReleaseStick(unsigned user) noexcept
     }
 }
 
-int OperatorTicking() noexcept
+int TickingSeat() noexcept
 {
-    return g_operatorTicking;
+    return g_tickingSeat;
 }
 
 void* OperatorOne() noexcept

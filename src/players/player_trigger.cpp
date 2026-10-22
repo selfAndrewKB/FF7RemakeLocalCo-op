@@ -14,6 +14,7 @@
 #include "platform/verified_code.h"
 #include "players/game_state.h"
 #include "players/player_two_camera.h"
+#include "players/seats.h"
 #include "players/unreal_call.h"
 
 #include <array>
@@ -38,8 +39,12 @@ constexpr std::uint32_t kTrigger = 0x6E0;  // AEndPlayerController::PlayerTrigge
 SpawnActorFn  g_spawnActor = nullptr;
 std::uint32_t* g_nameNone  = nullptr;
 
-// Game thread.
-std::int32_t g_trigger[2]{-1, 0};  // player 2's trigger, a weak pair
+// Game thread. Index = seat ([0] unused): each seat's trigger, a weak pair.
+struct Trigger
+{
+    std::int32_t weak[2]{-1, 0};
+};
+std::array<Trigger, scopes::kMaxPlayers> g_triggers;
 
 /// AActor.GetComponentByClass(class) on `actor`, through the game's own reflected call. Null if none or unknown.
 UObject* ComponentByClass(UObject* actor, const wchar_t* classPath) noexcept
@@ -95,14 +100,14 @@ catch (...)
 }
 
 /// The copy carries its own root, capsule and overlap component (not the template's), and the template's first tag.
-bool OwnComponents(UObject* copy, const std::uint8_t* original) noexcept
+bool OwnComponents(const wchar_t* name, UObject* copy, const std::uint8_t* original) noexcept
 {
     void* root     = nullptr;
     void* rootOrig = nullptr;
     if (!Read(reinterpret_cast<const std::uint8_t*>(copy) + facts::kActorRootComponent, root) || root == nullptr ||
         !Read(original + facts::kActorRootComponent, rootOrig) || root == rootOrig)
     {
-        platform::Log(L"player 2's trigger: the copy has no root of its own (the spawn kept the placed actor's)");
+        platform::Log(L"{}'s trigger: the copy has no root of its own (the spawn kept the placed actor's)", name);
         return false;
     }
     for (const wchar_t* path : {L"/Script/Engine.CapsuleComponent", L"/Script/EndGame.EndCapsuleOverlapComponent"})
@@ -110,7 +115,7 @@ bool OwnComponents(UObject* copy, const std::uint8_t* original) noexcept
         UObject* component = ComponentByClass(copy, path);
         if (component == nullptr || OwnerOf(component) != copy)
         {
-            platform::Log(L"player 2's trigger: the copy's {} is {}", path, component == nullptr ? L"missing" : L"not its own");
+            platform::Log(L"{}'s trigger: the copy's {} is {}", name, path, component == nullptr ? L"missing" : L"not its own");
             return false;
         }
     }
@@ -124,7 +129,7 @@ bool OwnComponents(UObject* copy, const std::uint8_t* original) noexcept
     Read(original + facts::kActorTags, namesOrig);
     if (tags < 1 || tagsOrig < 1 || !Read(names, tag) || !Read(namesOrig, tagOrig) || tag != tagOrig)
     {
-        platform::Log(L"player 2's trigger: the copy's tag differs from the placed actor's ({} tags, {} on the original)", tags, tagsOrig);
+        platform::Log(L"{}'s trigger: the copy's tag differs from the placed actor's ({} tags, {} on the original)", name, tags, tagsOrig);
         return false;
     }
     return true;
@@ -145,9 +150,14 @@ bool Install(const platform::GameImage& image) noexcept
     return true;
 }
 
-void* Ensure(void* playerOneController) noexcept
+void* Ensure(int seat, void* playerOneController) noexcept
 {
-    if (void* existing = player_two_camera::ObjectOf(g_trigger); existing != nullptr)
+    if (!SeatBuilt(seat))
+    {
+        return nullptr;
+    }
+    const wchar_t* name = SeatName(seat);
+    if (void* existing = player_two_camera::ObjectOf(g_triggers[seat].weak); existing != nullptr)
     {
         return existing;
     }
@@ -158,7 +168,7 @@ void* Ensure(void* playerOneController) noexcept
     if (!Read(static_cast<const std::uint8_t*>(playerOneController) + kTrigger, original) || original == nullptr || world == nullptr ||
         !Read(original + facts::kObjectClass, type) || type == nullptr || !Read(g_nameNone, none) || g_spawnActor == nullptr)
     {
-        platform::Log(L"player 2's trigger: player 1's trigger, the world or its class could not be read; none made");
+        platform::Log(L"{}'s trigger: player 1's trigger, the world or its class could not be read; none made", name);
         return nullptr;
     }
     // The engine's own spawn with the placed actor as the template: no name (a unique one is made), the game's
@@ -173,40 +183,44 @@ void* Ensure(void* playerOneController) noexcept
                                static_cast<const void*>(parameters.data())) ||
         spawned == nullptr)
     {
-        platform::Log(L"player 2's trigger: the spawn {}; none made", spawned == nullptr ? L"returned nothing" : L"RAISED AN EXCEPTION");
+        platform::Log(L"{}'s trigger: the spawn {}; none made", name, spawned == nullptr ? L"returned nothing" : L"RAISED AN EXCEPTION");
         return nullptr;
     }
     auto* copy = static_cast<UObject*>(spawned);
-    if (!OwnComponents(copy, original))
+    if (!OwnComponents(name, copy, original))
     {
         DestroyActor(copy);
         return nullptr;
     }
-    if (!player_two_camera::WeakPairOf(spawned, g_trigger))
+    if (!player_two_camera::WeakPairOf(spawned, g_triggers[seat].weak))
     {
         DestroyActor(copy);
-        platform::Log(L"player 2's trigger: no weak pair for the copy; destroyed");
+        platform::Log(L"{}'s trigger: no weak pair for the copy; destroyed", name);
         return nullptr;
     }
-    platform::Log(L"player 2's trigger: a copy of the placed PlayerTrigger spawned with its own components ({:#x})",
+    platform::Log(L"{}'s trigger: a copy of the placed PlayerTrigger spawned with its own components ({:#x})", name,
                   reinterpret_cast<std::uintptr_t>(spawned));
     return spawned;
 }
 
-void Destroy() noexcept
+void Destroy(int seat) noexcept
 {
-    void* trigger = player_two_camera::ObjectOf(g_trigger);
-    g_trigger[0] = -1;
-    g_trigger[1] = 0;
+    if (!SeatBuilt(seat))
+    {
+        return;
+    }
+    void* trigger             = player_two_camera::ObjectOf(g_triggers[seat].weak);
+    g_triggers[seat].weak[0] = -1;
+    g_triggers[seat].weak[1] = 0;
     if (trigger != nullptr)
     {
-        platform::Log(L"player 2's trigger: {}", DestroyActor(static_cast<UObject*>(trigger)) ? L"destroyed" : L"NOT destroyed");
+        platform::Log(L"{}'s trigger: {}", SeatName(seat), DestroyActor(static_cast<UObject*>(trigger)) ? L"destroyed" : L"NOT destroyed");
     }
 }
 
-bool Owns(const void* actor) noexcept
+bool OwnedBy(int seat, const void* actor) noexcept
 {
-    return actor != nullptr && actor == player_two_camera::ObjectOf(g_trigger);
+    return SeatBuilt(seat) && actor != nullptr && actor == player_two_camera::ObjectOf(g_triggers[seat].weak);
 }
 
 }  // namespace lss::players::player_trigger

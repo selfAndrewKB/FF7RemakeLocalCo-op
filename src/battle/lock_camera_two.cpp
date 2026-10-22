@@ -94,7 +94,7 @@ char FindRotation(void* requests, float* outRotation, void* owner, void* view, v
     const char found = reinterpret_cast<FindRotationFn>(g_requestCall.Original())(requests, outRotation, owner, view, params, idFiltered);
     if (found != 0)
     {
-        const bool two = players::player_two_camera::OperatorTicking() == 2;
+        const bool two = players::player_two_camera::TickingSeat() != 0;  // a seat's own operator (one instance: seat 1's)
         ++g_hits[two ? 1 : 0];
         if (two && !g_loggedTwo)
         {

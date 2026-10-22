@@ -263,3 +263,10 @@ add_executable(TypeAnswerCodeTests
 target_include_directories(TypeAnswerCodeTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_compile_features(TypeAnswerCodeTests PRIVATE cxx_std_20)
 add_test(NAME type_answer_code COMMAND TypeAnswerCodeTests)
+
+add_executable(SeatsTests
+    tests/seats_test.cpp
+)
+target_include_directories(SeatsTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(SeatsTests PRIVATE cxx_std_20)
+add_test(NAME seats COMMAND SeatsTests)

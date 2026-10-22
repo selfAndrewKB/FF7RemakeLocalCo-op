@@ -1,7 +1,7 @@
 #pragma once
 
 // The further players (seats) joining, taking their party member, and leaving, through UE's and the game's own
-// paths, on the game thread. Seat 1 is player 2; the seats are built one at a time (kSeatsBuilt, plan/seats.md).
+// paths, on the game thread. Seat 1 is player 2; the seats are built one at a time (players/seats.h, plan/seats.md).
 //
 // Join: UGameplayStatics::CreatePlayer(ControllerId = the seat, spawn a controller) inside own_controller's join
 // scope, so the player gets a real End player controller and camera manager of its own; the player takes the
@@ -31,11 +31,16 @@
 // (players/field_exit.h, with a field-step check in Tick as the fallback), and each joins again in seat order,
 // taking its member again, once the field has been steady for a moment with player 1 on a character.
 //
-// The modules a seat drives are one instance each today (player 2's); plan/seats.md step 3 makes them per seat.
+// State ownership: the session owns each seat's record (its local player, the rejoin, the wait, the hand and hold,
+// the member's weak pair, the log keys) and resets it on the leave, the release and the forget; the modules a seat
+// drives own the seat's game objects (its controller's scopes, its operator, its trigger, its member's seat). The
+// battle modules the session tells of a leave (the targeting copy, the command menu) are one instance each until
+// their step of plan/seats.md.
 
 #include "players/party_member.h"
 #include "players/seats.h"
 
+#include <array>
 #include <chrono>
 #include <cstdint>
 #include <string>
@@ -61,9 +66,9 @@ public:
     void Remove() noexcept;
 
     /// The seat's player joins on its member; with none free, waits outside the game for one (the player's intent).
-    void Join(int seat = 1) noexcept;
+    void Join(int seat) noexcept;
     /// The seat's player leaves (the player's intent); also cancels a rejoin after a world change and a wait.
-    void Leave(int seat = 1) noexcept;
+    void Leave(int seat) noexcept;
     /// Once per engine tick, after players/game_state's: lets go of a player the engine no longer lists, takes
     /// every seat out at a field exit the request did not report, rejoins each after a world change or once its
     /// member is free, seats the member, and follows the party order.
@@ -74,25 +79,25 @@ public:
     void Status() const noexcept;
 
     /// The seat's player is in (its local player listed by the engine).
-    bool In(int seat = 1) const noexcept { return Valid(seat) && seats_[seat - 1].localPlayer != nullptr; }
+    bool In(int seat) const noexcept { return SeatBuilt(seat) && seats_[seat].localPlayer != nullptr; }
     /// How many further players are in (the views beyond player 1's that a seat fills).
     int Count() const noexcept;
     /// The game instance's local player `index` (a column: 0 is player 1), or null (the instance is found within a
     /// second of the first tick). Game thread.
     RC::Unreal::UObject* LocalPlayer(int index) const noexcept;
     /// The seat's player holds its member.
-    bool Seated(int seat = 1) const noexcept;
+    bool Seated(int seat) const noexcept;
     /// The seat's member is with its AI while the game's leader is (a scene, a field action, the field control
     /// lock), or for its own scripted hold; the seat is kept and comes back when the hand ends.
-    bool HandedToAi(int seat = 1) const noexcept { return Valid(seat) && seats_[seat - 1].handedToAi; }
+    bool HandedToAi(int seat) const noexcept { return SeatBuilt(seat) && seats_[seat].handedToAi; }
     /// The seat's player was asked for and is out until the row's member is free for it.
-    bool Awaiting(int seat = 1) const noexcept { return Valid(seat) && seats_[seat - 1].awaiting; }
+    bool Awaiting(int seat) const noexcept { return SeatBuilt(seat) && seats_[seat].awaiting; }
     /// The member the seat plays (type and row), or why it waits for one; for the `p2.member` reading.
-    std::wstring MemberReading(int seat = 1) const noexcept;
+    std::wstring MemberReading(int seat) const noexcept;
     /// Every deployed member's AI detail; for the `party.ai` reading.
     std::wstring FormationReading() const noexcept;
     /// The seat's player was taken out by a world change and joins again once the field is back.
-    bool RejoinPending(int seat = 1) const noexcept { return Valid(seat) && seats_[seat - 1].rejoin.pending; }
+    bool RejoinPending(int seat) const noexcept { return SeatBuilt(seat) && seats_[seat].rejoin.pending; }
 
     /// An engine console command, as typed in the console (UKismetSystemLibrary::ExecuteConsoleCommand with
     /// player 1's controller). False if the call could not be made.
@@ -121,10 +126,10 @@ private:
     };
 
     /// One further player: everything the session keeps per seat. `index` is the seat (the scopes' numbering,
-    /// players/scopes.h: 1 = player 2), the engine list's index and the controller id.
+    /// players/seats.h: 1 = player 2), the engine list's index and the controller id; 0 = not numbered.
     struct Seat
     {
-        int                  index          = 1;
+        int                  index          = 0;
         RC::Unreal::UObject* localPlayer    = nullptr;  // ULocalPlayer while in
         Rejoin               rejoin;
         bool                 awaiting       = false;    // asked for, out until the row's member is free
@@ -139,12 +144,13 @@ private:
         std::uint32_t        formationLogged = 0;       // the formation last logged under the wait (party_member::Choice::formation), 0 none
 
         /// "player 2" for seat 1: the name every line of the seat's uses.
-        const wchar_t* Name() const noexcept;
+        const wchar_t* Name() const noexcept { return SeatName(index); }
         /// The seat's controller id, and the engine list index its player takes.
         std::int32_t ControllerId() const noexcept { return index; }
+        /// The member's records cleared: the weak pair, the hand and the hold (the member was given back, forgotten
+        /// or destroyed).
+        void ResetMember() noexcept;
     };
-
-    static bool Valid(int seat) noexcept { return SeatBuilt(seat); }
 
     static void OnFieldExit(void* self, const wchar_t* caller) noexcept;
     /// Leave's work for one seat. A world change cannot wait: it takes the player out even if the member's release
@@ -181,6 +187,9 @@ private:
     static void OnLeaderReturned(void* self) noexcept;
     void HandWithLeader(Seat& seat) noexcept;
     void ReturnWithLeader(Seat& seat) noexcept;
+    /// The battle modules let go of the seat's member before it is given back, destroyed or forgotten: its lock and
+    /// target end, its menu lets go of its focus layers, inside their own context while the member still exists.
+    static void EndMemberModules(const Seat& seat) noexcept;
     /// The seat's field camera operator forgotten and destroyed (the member's release or the leave).
     void DestroyOperator(Seat& seat) noexcept;
     /// The seat's player controller, or null.
@@ -189,7 +198,7 @@ private:
     /// The mirror players in now (0 without the module).
     std::int32_t Mirrors() const noexcept { return mirror_.count != nullptr ? mirror_.count() : 0; }
 
-    Seat                 seats_[kSeatsBuilt];
+    std::array<Seat, scopes::kMaxPlayers> seats_;  // index = seat; [0] unused (player 1 is the game's)
     MirrorPlayers        mirror_;
     RC::Unreal::UObject* gameInstance_ = nullptr;  // kept after a leave: the instance lives as long as the game
     unsigned long        gameThread_         = 0;  // the engine tick's thread (Tick)

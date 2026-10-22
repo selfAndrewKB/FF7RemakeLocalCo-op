@@ -161,7 +161,7 @@ void Captured(void* sequence, const wchar_t* why) noexcept
 /// first's active camera, so the game's tail applies the union of both views' world state.
 std::int64_t Apply(void* requests, void* outPose, void* aimLeap, void* eyeLeap, std::uint32_t dt, void* owner, void* view)
 {
-    const int  op       = players::player_two_camera::OperatorTicking() == 2 ? 2 : 1;
+    const int  op       = 1 + players::player_two_camera::TickingSeat();  // the player number: 1, or the seat's
     auto* const active  = static_cast<std::uint8_t*>(outPose) + facts::kSeqOutPoseActiveWeak;
     const bool  twoIn   = players::scopes::Member(kPlayer) != nullptr;
     if (twoIn && g_firstOp != 0 && g_firstOp != op && g_firstActive[8] != 0)
@@ -187,7 +187,7 @@ std::int64_t Apply(void* requests, void* outPose, void* aimLeap, void* eyeLeap, 
 /// camera actor's history and the sequence's blend, cut and delta fields in.
 char Eval(void* a1, void* outPose, void* a3, void* a4, void* a5, void* a6, std::uint32_t dt, void* view, std::uint32_t a9, void* entry)
 {
-    if (players::player_two_camera::OperatorTicking() != 2)
+    if (players::player_two_camera::TickingSeat() == 0)
     {
         return reinterpret_cast<EvalFn>(g_eval)(a1, outPose, a3, a4, a5, a6, dt, view, a9, entry);
     }
@@ -269,7 +269,7 @@ char JumpToCut(void* sequence, std::uint8_t kind, void* a3, void* a4)
 /// manager, the primary there) instead of the first player's.
 std::int64_t Cut()
 {
-    if (players::player_two_camera::OperatorTicking() != 2)
+    if (players::player_two_camera::TickingSeat() == 0)
     {
         return reinterpret_cast<CutFn>(g_cut)();
     }

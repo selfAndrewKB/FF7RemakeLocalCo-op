@@ -9,6 +9,7 @@
 #include "platform/verified_code.h"
 #include "players/player_two_camera.h"
 #include "players/scopes.h"
+#include "players/seats.h"
 
 #include <array>
 #include <cstddef>
@@ -28,8 +29,6 @@ using EnterFn         = std::uint64_t (*)(std::uint64_t, std::uint64_t, std::uin
 using PopRequestFn    = void (*)(void* key, void* setting);
 using OperatorVoidFn  = void (*)(void* cameraOperator);
 
-constexpr int kPlayer = 1;
-
 // Set at install, then only read.
 EnterFn        g_enter           = nullptr;
 PopRequestFn   g_popRequest      = nullptr;
@@ -40,11 +39,15 @@ std::array<platform::CallRedirect, facts::kFieldCameraEnterBattleModeCalls.size(
 platform::CallRedirect g_popCall;
 
 // Game thread.
-std::uint32_t g_enters    = 0;  // the game's enter calls
-std::uint32_t g_entersTwo = 0;  // of them, run again on player 2's operator
-std::uint32_t g_leaves    = 0;  // the game's battle-end pops
-std::uint32_t g_leavesTwo = 0;  // of them, mirrored on player 2's operator
-std::uint32_t g_joins     = 0;  // player 2's operator entered battle mode at its spawn
+std::uint32_t g_enters = 0;  // the game's enter calls
+std::uint32_t g_leaves = 0;  // the game's battle-end pops
+struct Counts
+{
+    std::uint32_t enters = 0;  // of the game's, run again on the seat's operator
+    std::uint32_t leaves = 0;  // of the game's, mirrored on the seat's operator
+    std::uint32_t joins  = 0;  // the seat's operator entered battle mode at its spawn
+};
+std::array<Counts, scopes::kMaxPlayers> g_counts;  // index = seat ([0] unused)
 
 std::uint8_t* Bytes(void* object) noexcept
 {
@@ -78,11 +81,11 @@ void SetFlavorActive(void* cameraOperator, std::uint32_t type, std::uint8_t acti
     }
 }
 
-/// The game's enter function on player 2's operator: inside its operator scope the root weak answers that
-/// operator, and the function reads nothing else. False if player 2 has no operator bound.
-bool EnterTwo(std::uint64_t a1, std::uint64_t a2, std::uint64_t a3, std::uint64_t a4) noexcept
+/// The game's enter function on the seat's operator: inside its operator scope the root weak answers that
+/// operator, and the function reads nothing else. False if the seat has no operator bound.
+bool EnterSeat(int seat, std::uint64_t a1, std::uint64_t a2, std::uint64_t a3, std::uint64_t a4) noexcept
 {
-    const scopes::Scope scope(kPlayer, scopes::Operator);
+    const scopes::Scope scope(seat, scopes::Operator);
     if (!scope.Held())
     {
         return false;
@@ -91,12 +94,12 @@ bool EnterTwo(std::uint64_t a1, std::uint64_t a2, std::uint64_t a3, std::uint64_
     return platform::CallGuarded(g_enter, result, a1, a2, a3, a4);
 }
 
-/// The on/off table's battle-off block, step for step, on player 2's operator (RE-operator-settings-two.md §2.3):
+/// The on/off table's battle-off block, step for step, on a seat's operator (RE-operator-settings-two.md §2.3):
 /// mode 0, the Battle request popped, Free state, TargetLength and TargetOffset off, SpaceOffset back to following
 /// the row when the option says so, the MoveFollow elapsed reset, the field scales and pitch limits selected.
-void LeaveTwo(void* operatorTwo) noexcept
+void LeaveSeat(void* seatOperator) noexcept
 {
-    std::uint8_t*      op    = Bytes(operatorTwo);
+    std::uint8_t*      op    = Bytes(seatOperator);
     const std::int32_t field = 0;
     platform::WriteGuarded(op + facts::kOperatorBattleMode, &field, sizeof(field));
     void*         battle = nullptr;
@@ -105,18 +108,18 @@ void LeaveTwo(void* operatorTwo) noexcept
     {
         platform::CallGuarded(g_popRequest, &key, battle);
     }
-    platform::CallGuarded(g_setStateFree, operatorTwo);
-    SetFlavorActive(operatorTwo, facts::kFlavorTargetLength, 0);
-    SetFlavorActive(operatorTwo, facts::kFlavorTargetOffset, 0);
+    platform::CallGuarded(g_setStateFree, seatOperator);
+    SetFlavorActive(seatOperator, facts::kFlavorTargetLength, 0);
+    SetFlavorActive(seatOperator, facts::kFlavorTargetOffset, 0);
     std::uint8_t* data   = nullptr;
     std::uint8_t  option = 0;
     if (Read(g_data, data) && data != nullptr && Read(data + facts::kOptionSpaceOffsetInField, option) && option == 1)
     {
         platform::WriteGuarded(op + facts::kOperatorSpaceOffsetByRow, &option, sizeof(option));
     }
-    if (FlavorActive(operatorTwo, facts::kFlavorMoveFollow))
+    if (FlavorActive(seatOperator, facts::kFlavorMoveFollow))
     {
-        platform::CallGuarded(g_resetMoveFollow, operatorTwo);
+        platform::CallGuarded(g_resetMoveFollow, seatOperator);
     }
     const std::uintptr_t fieldOption = reinterpret_cast<std::uintptr_t>(op + facts::kOperatorFieldDistanceOption);
     platform::WriteGuarded(op + facts::kOperatorDistanceOptionPtr, &fieldOption, sizeof(fieldOption));
@@ -138,33 +141,39 @@ void LeaveTwo(void* operatorTwo) noexcept
     }
 }
 
-/// At the enter function's call sites: the game's call (the root operator), then the same on player 2's.
+/// At the enter function's call sites: the game's call (the root operator), then the same on each seat's.
 std::uint64_t Enter(std::uint64_t a1, std::uint64_t a2, std::uint64_t a3, std::uint64_t a4)
 {
     const std::uint64_t result = g_enter(a1, a2, a3, a4);
     ++g_enters;
-    if (EnterTwo(a1, a2, a3, a4))
+    for (int seat = 1; seat <= kSeatsBuilt; ++seat)
     {
-        ++g_entersTwo;
-        platform::LogDebug(L"operator battle mode: player 2's operator entered battle mode with player 1's (modes {} / {})",
-                           Mode(player_two_camera::OperatorOne()), Mode(player_two_camera::OperatorTwo()));
+        if (EnterSeat(seat, a1, a2, a3, a4))
+        {
+            ++g_counts[seat].enters;
+            platform::LogDebug(L"operator battle mode: {}'s operator entered battle mode with player 1's (modes {} / {})", SeatName(seat),
+                               Mode(player_two_camera::OperatorOne()), Mode(player_two_camera::Operator(seat)));
+        }
     }
     return result;
 }
 
 /// At the battle-off block's pop of the Battle request: the game's pop (player 1's operator), then the whole block
-/// on player 2's operator if it is in battle mode.
+/// on each seat's operator that is in battle mode.
 void PopRequest(void* key, void* setting)
 {
     g_popRequest(key, setting);
     ++g_leaves;
-    void* two = player_two_camera::OperatorTwo();
-    if (two != nullptr && Mode(two) == 1)
+    for (int seat = 1; seat <= kSeatsBuilt; ++seat)
     {
-        LeaveTwo(two);
-        ++g_leavesTwo;
-        platform::LogDebug(L"operator battle mode: player 2's operator left battle mode with player 1's (modes {} / {})",
-                           Mode(player_two_camera::OperatorOne()), Mode(two));
+        void* seatOperator = player_two_camera::Operator(seat);
+        if (seatOperator != nullptr && Mode(seatOperator) == 1)
+        {
+            LeaveSeat(seatOperator);
+            ++g_counts[seat].leaves;
+            platform::LogDebug(L"operator battle mode: {}'s operator left battle mode with player 1's (modes {} / {})", SeatName(seat),
+                               Mode(player_two_camera::OperatorOne()), Mode(seatOperator));
+        }
     }
 }
 
@@ -190,6 +199,22 @@ std::wstring Describe(void* cameraOperator) noexcept
                        FlavorActive(cameraOperator, facts::kFlavorTargetLength) ? L"on" : L"off");
 }
 
+std::wstring Reading()
+{
+    std::wstring text = std::format(L"player 1's {}", Describe(player_two_camera::OperatorOne()));
+    for (int seat = 1; seat <= kSeatsBuilt; ++seat)
+    {
+        text += std::format(L"; {}'s {}", SeatName(seat), Describe(player_two_camera::Operator(seat)));
+    }
+    text += std::format(L"; enters {}, leaves {}", g_enters, g_leaves);
+    for (int seat = 1; seat <= kSeatsBuilt; ++seat)
+    {
+        text += std::format(L" ({}'s: enters {}, leaves {}, joins in battle {})", SeatName(seat), g_counts[seat].enters, g_counts[seat].leaves,
+                            g_counts[seat].joins);
+    }
+    return text;
+}
+
 void RestoreAll() noexcept
 {
     g_popCall.Restore();
@@ -211,7 +236,7 @@ bool Install(const platform::GameImage& image) noexcept
     const auto popSite    = image.Rebase(facts::kCameraSettingPopRequestBattleEndCall, 5);
     if (!enter || !pop || !setFree || !resetMove || !data || !popSite)
     {
-        platform::Log(L"operator battle mode: an engine check failed; player 2's camera plays battles on the field setting");
+        platform::Log(L"operator battle mode: an engine check failed; a seat's camera plays battles on the field setting");
         return false;
     }
     g_enter           = reinterpret_cast<EnterFn>(*enter);
@@ -229,17 +254,13 @@ bool Install(const platform::GameImage& image) noexcept
     if (!installed)
     {
         RestoreAll();
-        platform::Log(L"operator battle mode: a call site could not be redirected; player 2's camera plays battles on the field setting");
+        platform::Log(L"operator battle mode: a call site could not be redirected; a seat's camera plays battles on the field setting");
         return false;
     }
     control::Register({.name = L"operator-battle-mode", .shape = control::Shape::Text,
-                       .help = L"each operator's battle mode, and how often player 2's entered and left it with player 1's",
-                       .get  = [] {
-                           return control::Value{std::format(L"player 1's {}; player 2's {}; enters {} (player 2's {}), leaves {} (player 2's {}), joins in battle {}",
-                                                             Describe(player_two_camera::OperatorOne()), Describe(player_two_camera::OperatorTwo()),
-                                                             g_enters, g_entersTwo, g_leaves, g_leavesTwo, g_joins)};
-                       }});
-    platform::Log(L"operator battle mode: player 2's operator enters and leaves battle mode with player 1's");
+                       .help = L"each operator's battle mode, and how often each seat's entered and left it with player 1's",
+                       .get  = [] { return control::Value{Reading()}; }});
+    platform::Log(L"operator battle mode: each seat's operator enters and leaves battle mode with player 1's");
     return true;
 }
 
@@ -248,17 +269,17 @@ void Remove() noexcept
     RestoreAll();
 }
 
-void OnOperatorStarted(void* operatorTwo, void* operatorOne) noexcept
+void OnOperatorStarted(int seat, void* seatOperator, void* operatorOne) noexcept
 {
-    if (g_enter == nullptr || operatorTwo == nullptr || Mode(operatorOne) != 1)
+    if (g_enter == nullptr || !SeatBuilt(seat) || seatOperator == nullptr || Mode(operatorOne) != 1)
     {
         return;
     }
-    if (EnterTwo(0, 0, 0, 0))
+    if (EnterSeat(seat, 0, 0, 0, 0))
     {
-        ++g_joins;
-        platform::Log(L"operator battle mode: player 2's operator entered battle mode at its spawn (player 1's is in battle); now {}",
-                      Describe(operatorTwo));
+        ++g_counts[seat].joins;
+        platform::Log(L"operator battle mode: {}'s operator entered battle mode at its spawn (player 1's is in battle); now {}",
+                      SeatName(seat), Describe(seatOperator));
     }
 }
 

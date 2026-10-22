@@ -8,11 +8,13 @@
 #include "platform/verified_code.h"
 #include "platform/vtable_entry.h"
 #include "players/scopes.h"
+#include "players/seats.h"
 
 #include <array>
 #include <cstddef>
 #include <cstdint>
 #include <format>
+#include <string>
 
 namespace lss::players::nav_area_two {
 
@@ -26,7 +28,6 @@ using TickFn      = void (*)(void* component, float deltaTime, int tickType, voi
 using RefreshFn   = void (*)(void* component, float deltaTime);   // the diff the tick tail-jumps to
 using RemoveKeyFn = std::uint64_t (*)(void* map, std::uint64_t key);  // the entered map's own Remove, 1 if removed
 
-constexpr int         kPlayer     = 1;
 constexpr std::size_t kMaxEntered = 32;  // a leader stands in at most 16 nav areas
 
 // Set at install, then only read.
@@ -35,11 +36,28 @@ RefreshFn             g_refresh   = nullptr;  // null: the re-enter at a spawn i
 RemoveKeyFn           g_removeKey = nullptr;
 platform::VTableEntry g_slot;
 
-// Game thread.
-std::uint32_t g_ticksTwo    = 0;  // ticks of player 2's controller's component
-std::uint32_t g_ticksScoped = 0;  // of them, run with all three scopes held
-std::uint32_t g_spawns      = 0;  // operator spawns the re-enter ran at
-std::uint32_t g_reentered   = 0;  // volumes forgotten and entered again over them
+// Game thread. Index = seat ([0] unused).
+struct Counts
+{
+    std::uint32_t ticks     = 0;  // ticks of the seat's controller's component
+    std::uint32_t scoped    = 0;  // of them, run with all three scopes held
+    std::uint32_t spawns    = 0;  // operator spawns the re-enter ran at
+    std::uint32_t reentered = 0;  // volumes forgotten and entered again over them
+};
+std::array<Counts, scopes::kMaxPlayers> g_counts;
+
+/// The seat whose controller owns `controller`, else 0.
+int SeatOf(const void* controller) noexcept
+{
+    for (int seat = 1; controller != nullptr && seat <= kSeatsBuilt; ++seat)
+    {
+        if (scopes::Controller(seat) == controller)
+        {
+            return seat;
+        }
+    }
+    return 0;
+}
 
 /// The keys (FNames) of the volumes the component lists as entered: the map's elements whose allocation bit is set.
 std::size_t EnteredKeys(void* component, std::array<std::uint64_t, kMaxEntered>& keys) noexcept
@@ -77,19 +95,32 @@ std::size_t EnteredKeys(void* component, std::array<std::uint64_t, kMaxEntered>&
 void TickComponent(void* component, float deltaTime, int tickType, void* tickFunction)
 {
     void* controller = nullptr;
-    if (!Read(static_cast<std::uint8_t*>(component) + facts::kNavAreaComponentController, controller) ||
-        controller == nullptr || controller != scopes::Controller(kPlayer))
+    Read(static_cast<std::uint8_t*>(component) + facts::kNavAreaComponentController, controller);
+    const int seat = SeatOf(controller);
+    if (seat == 0)
     {
         g_tick(component, deltaTime, tickType, tickFunction);
         return;
     }
-    ++g_ticksTwo;
-    const scopes::Scope scope(kPlayer, scopes::Primary | scopes::Operator | scopes::Leader);
+    ++g_counts[seat].ticks;
+    const scopes::Scope scope(seat, scopes::Primary | scopes::Operator | scopes::Leader);
     if (scope.Held())
     {
-        ++g_ticksScoped;
+        ++g_counts[seat].scoped;
     }
     g_tick(component, deltaTime, tickType, tickFunction);
+}
+
+std::wstring Reading()
+{
+    std::wstring text;
+    for (int seat = 1; seat <= kSeatsBuilt; ++seat)
+    {
+        const Counts& c = g_counts[seat];
+        text += std::format(L"{}{}: ticks {}, scoped {}, spawns {}, re-entered {}", seat == 1 ? L"" : L"; ", SeatName(seat), c.ticks,
+                            c.scoped, c.spawns, c.reentered);
+    }
+    return text;
 }
 
 }  // namespace
@@ -99,13 +130,13 @@ bool Install(const platform::GameImage& image) noexcept
     const auto tick = platform::FindFunction(image, facts::kNavAreaComponentTick.target);
     if (!tick)
     {
-        platform::Log(L"nav area 2: the component's tick differs; player 2's InDoor camera settings reach player 1's operator");
+        platform::Log(L"nav area 2: the component's tick differs; a seat's InDoor camera settings reach player 1's operator");
         return false;
     }
     g_tick = reinterpret_cast<TickFn>(*tick);
     if (!platform::ReplaceSlot(image, facts::kNavAreaComponentTick, reinterpret_cast<std::uintptr_t>(&TickComponent), g_slot))
     {
-        platform::Log(L"nav area 2: the component's tick slot could not be replaced; player 2's InDoor camera settings reach player 1's operator");
+        platform::Log(L"nav area 2: the component's tick slot could not be replaced; a seat's InDoor camera settings reach player 1's operator");
         return false;
     }
     const auto refresh   = platform::FindFunction(image, facts::kNavAreaRefreshFromLeader);
@@ -120,34 +151,32 @@ bool Install(const platform::GameImage& image) noexcept
         platform::Log(L"nav area 2: the component's diff or its map's Remove differs; a respawned operator keeps missing the InDoor setting pushed before it");
     }
     control::Register({.name = L"nav-area-two", .shape = control::Shape::Text,
-                       .help = L"player 2's controller's nav-area component ticks: all, of them in player 2's scopes; operator spawns re-entered at, volumes entered again",
-                       .get  = [] {
-                           return control::Value{std::format(L"ticks {}, scoped {}, spawns {}, re-entered {}", g_ticksTwo, g_ticksScoped,
-                                                             g_spawns, g_reentered)};
-                       }});
-    platform::Log(L"nav area 2: player 2's nav-area component ticks in player 2's scopes{}",
+                       .help = L"each seat's controller's nav-area component ticks: all, of them in the seat's scopes; operator spawns re-entered at, volumes entered again",
+                       .get  = [] { return control::Value{Reading()}; }});
+    platform::Log(L"nav area 2: each seat's nav-area component ticks in that seat's scopes{}",
                   g_refresh != nullptr ? L"; its volumes enter again at each operator spawn" : L"");
     return true;
 }
 
-void OnOperatorStarted(void* controllerTwo) noexcept
+void OnOperatorStarted(int seat, void* seatController) noexcept
 {
     void* component = nullptr;
     void* owner     = nullptr;
-    if (g_refresh == nullptr || controllerTwo == nullptr ||
-        !Read(static_cast<std::uint8_t*>(controllerTwo) + facts::kControllerNavAreaComponent, component) || component == nullptr)
+    if (g_refresh == nullptr || !SeatBuilt(seat) || seatController == nullptr ||
+        !Read(static_cast<std::uint8_t*>(seatController) + facts::kControllerNavAreaComponent, component) || component == nullptr)
     {
         return;
     }
-    if (!Read(static_cast<std::uint8_t*>(component) + facts::kNavAreaComponentController, owner) || owner != controllerTwo)
+    const wchar_t* name = SeatName(seat);
+    if (!Read(static_cast<std::uint8_t*>(component) + facts::kNavAreaComponentController, owner) || owner != seatController)
     {
-        platform::LogDebug(L"nav area 2: player 2's component has not begun play at the operator spawn; its first tick enters");
+        platform::LogDebug(L"nav area 2: {}'s component has not begun play at the operator spawn; its first tick enters", name);
         return;
     }
-    const scopes::Scope scope(kPlayer, scopes::Primary | scopes::Operator | scopes::Leader);
+    const scopes::Scope scope(seat, scopes::Primary | scopes::Operator | scopes::Leader);
     if (!scope.Held())
     {
-        platform::Log(L"nav area 2: player 2's scopes could not be held at the operator spawn; the volumes entered before it stay missing");
+        platform::Log(L"nav area 2: {}'s scopes could not be held at the operator spawn; the volumes entered before it stay missing", name);
         return;
     }
     // The game's own diff once, out of band as its camera reset runs it: volumes left during the scene Leave, new
@@ -167,10 +196,10 @@ void OnOperatorStarted(void* controllerTwo) noexcept
         }
     }
     platform::CallGuarded(g_refresh, component, 0.0f);
-    ++g_spawns;
-    g_reentered += removed;
-    platform::Log(L"nav area 2: player 2's component listed {} volumes at the operator spawn, {} forgotten and entered again on the new operator",
-                  listed, removed);
+    ++g_counts[seat].spawns;
+    g_counts[seat].reentered += removed;
+    platform::Log(L"nav area 2: {}'s component listed {} volumes at the operator spawn, {} forgotten and entered again on the new operator",
+                  name, listed, removed);
 }
 
 void Remove() noexcept
