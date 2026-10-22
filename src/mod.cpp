@@ -76,7 +76,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.38.1-line-up-wait";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.38.2-view-rect-override";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;

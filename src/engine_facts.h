@@ -1419,6 +1419,17 @@ inline constexpr std::uint32_t  kSystemResolutionWindowMode = 0x8;
 inline constexpr std::uintptr_t kLetterboxFirstCompare = 0x14228BF96;
 inline constexpr std::uintptr_t kLetterboxLastCompare  = 0x14251767C;
 inline constexpr std::size_t    kLetterboxCompares     = 321;
+/// ULocalPlayer::CalcSceneView, upstream of the final pass: `call [rax+0F0h]` (FViewport::GetWindowMode, the byte at
+/// FViewport+0xC4), `cmp eax, 1`, `jnz`. In window mode 1 the view init options' rect and constrained rect both
+/// become (0, 0, GSystemResolution.ResX, ResY) and the player's own rect is kept aside at +0xF0: Square Enix's one
+/// view at the option resolution, upscaled by the final pass. With two local players every view then covers the
+/// whole target and the last drawn wins (seen live 2026-10-21 on the spanned window: one view over both monitors
+/// with the 321 compares already patched). The patch rewrites this cmp's imm8 with the others.
+inline constexpr std::array<std::uint8_t, 11> kViewRectOverrideWitness{0xFF, 0x90, 0xF0, 0x00, 0x00, 0x00,  // call [rax+0F0h]
+                                                                        0x83, 0xF8, 0x01,                    // cmp eax, 1
+                                                                        0x75, 0x38};                         // jnz +0x38
+inline constexpr std::uintptr_t kViewRectOverrideSite      = 0x143018FAF;
+inline constexpr std::size_t    kViewRectOverrideImmediate = 8;  // the cmp's imm8 within the witness
 /// UGameMapsSettings (reflection dump EngineSettings.hpp): TwoPlayerSplitscreenLayout, 0 Horizontal (top and
 /// bottom), 1 Vertical (side by side); read by UGameViewportClient::UpdateActiveSplitscreenType every layout pass.
 inline constexpr std::uint32_t kGameMapsTwoPlayerLayout = 0x69;

@@ -31,33 +31,34 @@ constexpr std::uint8_t kNeverImmediate = 7;    // no window mode (0 Fullscreen, 
 bool                        g_installed = false;
 bool                        g_on        = true;   // the switch: the patch follows player 2 while on
 bool                        g_applied   = false;
-std::vector<std::uintptr_t> g_sites;              // live addresses of the compares
-std::uintptr_t              g_rangeStart = 0;     // the first site .. the last site's end, for the protection change
+std::vector<std::uintptr_t> g_sites;              // live addresses of the immediates: the 321 compares', then the
+                                                  // view-rect override's (CalcSceneView)
+std::uintptr_t              g_rangeStart = 0;     // the first compare .. the last compare's end, for the log
 std::size_t                 g_rangeBytes = 0;
 unsigned                    g_applies = 0, g_restores = 0;
 
-/// Writes `value` into the immediate of every site holding `expected`. Returns how many were written; -1 if the
-/// range could not be made writable.
+/// Writes `value` into every immediate holding `expected`. Returns how many were written; -1 if a page could not
+/// be made writable.
 int WriteImmediates(std::uint8_t expected, std::uint8_t value) noexcept
 {
-    DWORD was = 0;
-    if (!VirtualProtect(reinterpret_cast<void*>(g_rangeStart), g_rangeBytes, PAGE_EXECUTE_READWRITE, &was))
-    {
-        return -1;
-    }
     int written = 0;
     for (const auto site : g_sites)
     {
-        auto* immediate = reinterpret_cast<volatile std::uint8_t*>(site + kCompareBytes - 1);
+        DWORD was = 0;
+        if (!VirtualProtect(reinterpret_cast<void*>(site), 1, PAGE_EXECUTE_READWRITE, &was))
+        {
+            return -1;
+        }
+        auto* immediate = reinterpret_cast<volatile std::uint8_t*>(site);
         if (*immediate == expected)
         {
             *immediate = value;  // one byte: an atomic store, the instruction's length unchanged
             ++written;
         }
+        DWORD restored = 0;
+        VirtualProtect(reinterpret_cast<void*>(site), 1, was, &restored);
+        FlushInstructionCache(GetCurrentProcess(), reinterpret_cast<void*>(site), 1);
     }
-    DWORD restored = 0;
-    VirtualProtect(reinterpret_cast<void*>(g_rangeStart), g_rangeBytes, was, &restored);
-    FlushInstructionCache(GetCurrentProcess(), reinterpret_cast<void*>(g_rangeStart), g_rangeBytes);
     return written;
 }
 
@@ -68,7 +69,8 @@ void Apply() noexcept
     ++g_applies;
     if (written == static_cast<int>(g_sites.size()))
     {
-        platform::Log(L"letterbox patch: on; the {} compares no longer fit a view into the target while two views exist",
+        platform::Log(L"letterbox patch: on; the {} compares no longer fit a view into the target, and the view rects are "
+                      L"no longer overridden to the whole resolution, while two views exist",
                       written);
     }
     else
@@ -130,7 +132,7 @@ bool Install(const platform::GameImage& image) noexcept
     {
         if (IsCompare(code.data() + i, *first + i, *mode))
         {
-            g_sites.push_back(*first + i);
+            g_sites.push_back(*first + i + kCompareBytes - 1);  // the imm8
             i += kCompareBytes - 1;
         }
     }
@@ -142,6 +144,16 @@ bool Install(const platform::GameImage& image) noexcept
         g_sites.clear();
         return false;
     }
+    // Upstream of the pass: CalcSceneView's override of the view rects to the whole resolution in mode 1.
+    const auto override = image.Rebase(facts::kViewRectOverrideSite, facts::kViewRectOverrideWitness.size());
+    if (!override || !image.BytesMatch(facts::kViewRectOverrideSite, facts::kViewRectOverrideWitness))
+    {
+        platform::LogWarning(L"letterbox patch: CalcSceneView's view-rect override is not the code the research read; "
+                             L"unavailable (split in Borderless keeps the game's letterbox)");
+        g_sites.clear();
+        return false;
+    }
+    g_sites.push_back(*override + facts::kViewRectOverrideImmediate);
     g_rangeStart = *first;
     g_rangeBytes = *last + kCompareBytes - *first;
     g_installed  = true;
@@ -161,8 +173,9 @@ bool Install(const platform::GameImage& image) noexcept
     control::Register({.name = L"letterbox-patch.sites", .shape = control::Shape::Text,
                        .help = L"the window-mode compares found and how many are patched now",
                        .get  = [] { return control::Value{Reading()}; }});
-    platform::Log(L"letterbox patch: ready; {} window-mode compares found between {:#x} and {:#x}; patched while player 2 is in",
-                  g_sites.size(), g_rangeStart, g_rangeStart + g_rangeBytes);
+    platform::Log(L"letterbox patch: ready; {} window-mode compares found between {:#x} and {:#x}, and CalcSceneView's "
+                  L"view-rect override at {:#x}; patched while player 2 is in",
+                  g_sites.size() - 1, g_rangeStart, g_rangeStart + g_rangeBytes, *override);
     return true;
 }
 
@@ -206,13 +219,13 @@ std::wstring Reading() noexcept
     for (const auto site : g_sites)
     {
         std::uint8_t byte = 0;
-        if (platform::Read(reinterpret_cast<const void*>(site + kCompareBytes - 1), byte) && byte == kNeverImmediate)
+        if (platform::Read(reinterpret_cast<const void*>(site), byte) && byte == kNeverImmediate)
         {
             ++patched;
         }
     }
-    return std::format(L"{} compares, {} patched now; applied {} time(s), lifted {}", g_sites.size(), patched, g_applies,
-                       g_restores);
+    return std::format(L"{} compares and the view-rect override, {} patched now; applied {} time(s), lifted {}",
+                       g_sites.size() - 1, patched, g_applies, g_restores);
 }
 
 }  // namespace lss::views::letterbox_patch

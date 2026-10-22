@@ -10,13 +10,21 @@
 // instruction, each followed (after at most two moves) by a `jnz` over the fit. There is no single site to redirect
 // (research/RE-view-size-fov.md §7.2, RE-multi-monitor-views.md §6.3; the user approved the patch 2026-10-20).
 //
+// Upstream of the pass (found live 2026-10-21, when the spanned window showed one view over both monitors with the
+// 321 compares patched): ULocalPlayer::CalcSceneView asks the viewport's window mode and, in mode 1, replaces each
+// view's rect and constrained rect in the init options by (0, 0, ResX, ResY), the whole resolution, keeping the
+// player's rect aside. That is the first half of the upscale (one view at the option resolution; the pass then
+// fits it); with two players every view covers the whole target and the last drawn wins. The same one-byte rewrite
+// covers that `cmp eax, 1` (engine_facts kViewRectOverrideSite).
+//
 // While player 2 is in, the mod rewrites the immediate of every copy from 1 to a value the mode never takes, so the
-// `jnz` is always taken and no view is fitted; when player 2 leaves, the 1 goes back, so a solo option resolution
-// below the display's is upscaled as before. Each write is one byte inside an instruction whose length does not
-// change, so a thread running the compare sees the old or the new immediate, never a torn instruction. The sites
-// are found at install by their bytes (the compare's displacement must name the window-mode global) and the patch
-// refuses unless exactly 321 are found. In the Windowed mode the compare is false either way, so the patch changes
-// nothing there. Game thread.
+// `jnz` is always taken: the view rects stay the layout's and no view is fitted; when player 2 leaves, the 1 goes
+// back, so a solo option resolution below the display's is upscaled as before. Each write is one byte inside an
+// instruction whose length does not change, so a thread running the compare sees the old or the new immediate, never
+// a torn instruction. The sites are found at install by their bytes (the compare's displacement must name the
+// window-mode global; the override by its 11-byte witness) and the patch refuses unless exactly 321 compares and the
+// override are found. In the Windowed mode the compares are false either way, so the patch changes nothing there.
+// Game thread.
 
 #include <cstddef>
 #include <string>
