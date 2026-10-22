@@ -33,10 +33,10 @@ struct Seat
     std::uint32_t aims          = 0;  // the flavor's aim ran on this seat's operator
     std::uint32_t ownSlot       = 0;  // ... with the seat's own controller in the UI slot (player 1: the game's)
     std::uint32_t otherOperator = 0;  // ... on a flavor whose operator is not the ticking seat's (never expected)
-    std::uint32_t targets       = 0;  // the target the flavor settled on changed
+    std::uint32_t targets       = 0;  // the flavor's stored target changed since the last aim on this seat
     std::uint32_t scopesHeld    = 0;  // the UI scope around the operator tick, held
     std::uint32_t scopesRefused = 0;  // ... refused while the seat's menu was in battle
-    void*         lastTarget    = nullptr;
+    void*         lastTarget    = nullptr;  // the stored target at the last aim (set by the flavor's first tick, changed with the row)
     std::uint8_t  active        = 0;
     std::uint8_t  started       = 0;
 };
@@ -66,16 +66,17 @@ void Aim(void* flavor, float deltaSeconds, void* a3, void* a4, void* a5)
     {
         ++s.ownSlot;
     }
-    void*      before = nullptr;
-    const bool read   = Read(static_cast<std::uint8_t*>(flavor) + facts::kCommandFlavorTarget, before);
     g_aim(flavor, deltaSeconds, a3, a4, a5);
-    void* after = before;
     Read(static_cast<std::uint8_t*>(flavor) + facts::kFlavorActive, s.active);
     Read(static_cast<std::uint8_t*>(flavor) + facts::kFlavorStarted, s.started);
-    if (read && Read(static_cast<std::uint8_t*>(flavor) + facts::kCommandFlavorTarget, after) && after != before)
+    // The stored target is set by the flavor's first tick (before this slot runs in the same frame) and changed by
+    // this one when the cursor's row changes, so it is compared across frames, not around the call.
+    void* target = nullptr;
+    if (Read(static_cast<std::uint8_t*>(flavor) + facts::kCommandFlavorTarget, target) && target != s.lastTarget)
     {
         ++s.targets;
-        s.lastTarget = after;
+        s.lastTarget = target;
+        void* const after = target;
         platform::LogDebug(L"command camera 2: {}'s Command camera {} ({:#x}; UI slot {})", SeatName(seat),
                            after == nullptr ? L"let its target go" : L"frames a new target",
                            reinterpret_cast<std::uintptr_t>(after),
@@ -93,7 +94,7 @@ std::wstring Reading()
         {
             text += L"; ";
         }
-        text += std::format(L"{}: aims {} (own UI slot {}, other operator {}), targets {} (last {:#x}), active {} started {}",
+        text += std::format(L"{}: aims {} (own UI slot {}, other operator {}), target changes {} (now {:#x}), active {} started {}",
                             SeatName(seat), s.aims, s.ownSlot, s.otherOperator, s.targets,
                             reinterpret_cast<std::uintptr_t>(s.lastTarget), s.active, s.started);
         if (seat != 0)
