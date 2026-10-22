@@ -198,6 +198,13 @@ try
 {
     gameThread_                     = GetCurrentThreadId();
     ++ticks_;
+    // The instance lives as long as the game; found once (a UE4SS object walk, never per tick: one try a second until
+    // it exists), so LocalPlayer() answers before any join: the HUD's two-view layout under the mirror player read
+    // every view through it and saw none in a session without a join (the user, 2026-10-22 10:13: markers drifting).
+    if (gameInstance_ == nullptr && ticks_ % 60 == 1)
+    {
+        gameInstance_ = GameInstance();
+    }
     if (eventsInstalled_)
     {
         party_events::Tick();  // the entry redirects, placed from here (outside the functions, on their thread)
@@ -900,7 +907,7 @@ void Session::Status() const noexcept
 UObject* Session::LocalPlayer(int index) const noexcept
 try
 {
-    auto* players = LocalPlayers(gameInstance_);  // set at the first join; null before
+    auto* players = LocalPlayers(gameInstance_);  // found by Tick within a second of the start
     return players != nullptr && index >= 0 && index < players->Num() ? (*players)[index] : nullptr;
 }
 catch (...)

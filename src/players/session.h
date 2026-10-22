@@ -69,7 +69,8 @@ public:
     void Status() const noexcept;
 
     bool HasPlayerTwo() const noexcept { return playerTwo_ != nullptr; }
-    /// The game instance's local player `index` (0 or 1), or null. Game thread.
+    /// The game instance's local player `index` (0 or 1), or null (the instance is found within a second of the
+    /// first tick). Game thread.
     RC::Unreal::UObject* LocalPlayer(int index) const noexcept;
     /// Player 2 holds its member.
     bool Seated() const noexcept;

@@ -80,7 +80,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.44.1-movie-log";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.44.2-views-before-join";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
