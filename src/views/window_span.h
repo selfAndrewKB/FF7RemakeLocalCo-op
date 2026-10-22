@@ -66,6 +66,9 @@ bool In() noexcept;
 /// The hold is on: the span stays with any player count (`window-span.hold`).
 bool Held() noexcept;
 
+/// The columns the span is in with (0 when out): one per real player, the rest the mirror player's.
+std::int32_t Columns() noexcept;
+
 /// The `window-span.state` reading.
 std::wstring Reading() noexcept;
 

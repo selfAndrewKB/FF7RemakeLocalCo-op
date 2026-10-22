@@ -376,10 +376,20 @@ void UpdateCamera(void* self, float deltaSeconds)
 {
     const Players players    = CurrentPlayers();
     void*         managerTwo = nullptr;
+    if (void* mirror = views::scene_camera_two::MirrorManager(); mirror != nullptr && self == mirror)
+    {
+        // The mirror player's manager (views/mirror_player): every slot of player 1's set on it, under the mirror's
+        // primary scope so the game's primary-scoped setters (the blend records, the cut) reach it.
+        const PrimaryScope primary(views::scene_camera_two::MirrorController());
+        views::scene_camera_two::BeforeMirrorUpdate();
+        g_cameraUpdate(self, deltaSeconds);
+        return;
+    }
     if (players.two == nullptr ||
         !Read(static_cast<std::uint8_t*>(players.two) + facts::kControllerCameraManager, managerTwo) || self != managerTwo)
     {
-        if (players.two != nullptr && self == platform::ReadPointer(players.one, facts::kControllerCameraManager))
+        if ((players.two != nullptr && self == platform::ReadPointer(players.one, facts::kControllerCameraManager)) ||
+            (self != nullptr && self == views::scene_camera_two::MirrorSource()))
         {
             views::scene_camera_two::BeforeUpdateCamera(self, nullptr);  // player 1's: its camera cut noted for this frame
         }

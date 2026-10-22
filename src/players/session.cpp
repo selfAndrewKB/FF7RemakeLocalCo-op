@@ -19,6 +19,7 @@
 #include "players/field_exit.h"
 #include "players/game_state.h"
 #include "players/lead_gate.h"
+#include "players/local_player_list.h"
 #include "players/own_controller.h"
 #include "players/party_events.h"
 #include "players/party_member.h"
@@ -68,31 +69,6 @@ constexpr int                  kRejoinFailures = 3;
 constexpr std::uint32_t kSeatRetryTicks  = 60;
 constexpr std::uint32_t kFollowSlotTicks = 10;
 
-/// UGameplayStatics::CreatePlayer's parameter frame, checked against the UFunction's own size before use.
-struct CreatePlayerParams
-{
-    UObject*     WorldContextObject;
-    std::int32_t ControllerId;
-    bool         bSpawnPlayerController;
-    UObject*     ReturnValue;
-};
-static_assert(sizeof(CreatePlayerParams) == 24);
-
-using RemoveLocalPlayerFn = bool (*)(UObject* gameInstance, UObject* localPlayer);
-
-bool GuardedRemove(RemoveLocalPlayerFn remove, UObject* gameInstance, UObject* localPlayer) noexcept
-{
-    __try
-    {
-        remove(gameInstance, localPlayer);  // its result says nothing reliable; the list is checked instead
-        return true;
-    }
-    __except (platform::GuardFilter(GetExceptionCode()))
-    {
-        return false;
-    }
-}
-
 UObject* Field(const void* object, std::uint32_t offset) noexcept
 {
     UObject* value = nullptr;
@@ -102,34 +78,11 @@ UObject* Field(const void* object, std::uint32_t offset) noexcept
                : nullptr;
 }
 
-std::wstring Describe(UObject* object)
-{
-    if (object == nullptr)
-    {
-        return L"none";
-    }
-    try
-    {
-        return std::wstring(object->GetFullName());
-    }
-    catch (...)
-    {
-        return L"(unnamed)";
-    }
-}
+using local_player_list::Describe;
+using local_player_list::GameInstance;
 
 // UE4SS's object lookups can throw (a malformed path, or running out of memory), so every function here
 // that makes one catches: an exception escaping a noexcept function would end the game.
-
-UObject* GameInstance() noexcept
-try
-{
-    return UObjectGlobals::FindFirstOf(STR("GameInstance"));
-}
-catch (...)
-{
-    return nullptr;
-}
 
 RC::Unreal::TArray<UObject*>* LocalPlayers(UObject* gameInstance) noexcept
 try
@@ -141,13 +94,6 @@ try
 catch (...)
 {
     return nullptr;
-}
-
-/// An object's class pointer (UObjectBase::ClassPrivate, +0x10 in this build's UE4SS layout), read under a
-/// guard: a cheap check that an object read earlier is still the same kind of object.
-const void* ClassOf(const void* object) noexcept
-{
-    return Field(object, 0x10);
 }
 
 bool Contains(RC::Unreal::TArray<UObject*>& players, UObject* player) noexcept
@@ -172,36 +118,6 @@ try
         return false;
     }
     return GuardedProcessEvent(target, function, nullptr);
-}
-catch (...)
-{
-    return false;
-}
-
-/// Calls the stock UCameraComponent.SetConstraintAspectRatio(false) on a camera manager's main camera actor.
-bool FillHalf(UObject* cameraManager) noexcept
-try
-{
-    UObject* cameraActor = Field(cameraManager, facts::kCameraManagerMainCamera);
-    auto*    component   = cameraActor == nullptr
-                               ? nullptr
-                               : cameraActor->GetValuePtrByPropertyNameInChain<UObject*>(STR("CameraComponent"));
-    auto*    setter      = UObjectGlobals::StaticFindObject<UFunction*>(
-        nullptr, nullptr, STR("/Script/Engine.CameraComponent:SetConstraintAspectRatio"));
-    if (component == nullptr || *component == nullptr || setter == nullptr)
-    {
-        return false;
-    }
-    auto* parameter =
-        setter->FindProperty(RC::Unreal::FName(STR("bInConstrainAspectRatio"), RC::Unreal::FNAME_Find));
-    alignas(8) std::uint8_t frame[16]{};
-    if (parameter == nullptr || parameter->GetSize() != 1 || setter->GetParmsSize() > static_cast<std::int32_t>(sizeof(frame)) ||
-        parameter->GetOffset_Internal() < 0 || parameter->GetOffset_Internal() >= setter->GetParmsSize())
-    {
-        return false;
-    }
-    frame[parameter->GetOffset_Internal()] = 0;  // false: fill the view, keep the camera's FOV
-    return GuardedProcessEvent(*component, setter, frame);
 }
 catch (...)
 {
@@ -348,7 +264,7 @@ try
     auto*                      players = LocalPlayers(gameInstance_);
     // Player 1 on a character also keeps the title screen out (a field in the play state too, with no character).
     const bool ready = game.valid && game.state == kStatePlay && game.hasRoot && game.running && game.step == kStepSteady &&
-                       players != nullptr && players->Num() == 1 &&
+                       players != nullptr && players->Num() == 1 + Mirrors() &&
                        Field(Field((*players)[0], facts::kLocalPlayerController), facts::kControllerPawn) != nullptr;
     const auto now = std::chrono::steady_clock::now();
     if (!ready)
@@ -507,9 +423,11 @@ try
     }
     UObject* gameInstance = GameInstance();
     auto*    players      = LocalPlayers(gameInstance);
-    if (players == nullptr || players->Num() != 1)
+    const std::int32_t mirrors = Mirrors();  // the mirror player holds the column player 2 takes (views/mirror_player.h)
+    if (players == nullptr || players->Num() != 1 + mirrors)
     {
-        platform::Log(L"join refused: expected exactly one local player, found {}", players == nullptr ? -1 : players->Num());
+        platform::Log(L"join refused: expected exactly one local player{}, found {}", mirrors != 0 ? L" plus the mirror" : L"",
+                      players == nullptr ? -1 : players->Num());
         return;
     }
     UObject* playerOneController = Field((*players)[0], facts::kLocalPlayerController);
@@ -537,30 +455,22 @@ try
             return;
         }
     }
-    auto* function = UObjectGlobals::StaticFindObject<UFunction*>(nullptr, nullptr, STR("/Script/Engine.GameplayStatics:CreatePlayer"));
-    auto* statics  = UObjectGlobals::StaticFindObject<UClass*>(nullptr, nullptr, STR("/Script/Engine.GameplayStatics"));
-    if (function == nullptr || statics == nullptr || function->GetParmsSize() != sizeof(CreatePlayerParams))
+    // The mirror player leaves its column inside the join, so player 2 takes it on the same tick.
+    if (mirrors != 0)
     {
-        platform::Log(L"join refused: UGameplayStatics.CreatePlayer is not the function the mod expects");
-        return;
+        mirror_.clear(L"player 2 joins");
+        if (players->Num() != 1)
+        {
+            platform::Log(L"join refused: the mirror player did not leave its column ({} local players)", players->Num());
+            return;
+        }
     }
-
-    CreatePlayerParams params{};
-    params.WorldContextObject     = playerOneController;
-    params.ControllerId           = kPlayerTwoControllerId;
-    params.bSpawnPlayerController = true;
-    own_controller::Report report;
-    bool                   called = false;
+    const local_player_list::Added added = local_player_list::Add(playerOneController, kPlayerTwoControllerId);
+    if (!added.called && added.localPlayer == nullptr && !added.managerSeen)
     {
-        own_controller::JoinScope scope(playerOneController);
-        called = GuardedProcessEvent(static_cast<UObject*>(statics->GetClassDefaultObject()), function, &params);
-        report = scope.Result();
+        platform::Log(L"join refused: UGameplayStatics.CreatePlayer is not the function the mod expects, or raised at once");
     }
-    platform::Log(L"join: CreatePlayer {}; player 2's camera manager {}: owner {}, camera actor {}",
-                  called ? L"returned" : L"RAISED AN EXCEPTION",
-                  report.cameraManager != nullptr ? L"seen" : L"NOT SEEN",
-                  report.ownerFilled ? L"filled from Owner" : report.ownerRefused ? L"REFUSED" : L"already set",
-                  report.renamed ? L"named EndCameraActr2" : L"NOT RENAMED");
+    platform::Log(L"join: {}", added.Text(L"player 2's"));
 
     // The engine's list decides what happened: a player added before an exception must still be tracked,
     // so it can be removed before anything logs it in again.
@@ -575,8 +485,8 @@ try
     UObject* playerTwoController = Field(playerTwo_, facts::kLocalPlayerController);
     UObject* managerOne          = Field(playerOneController, facts::kControllerCameraManager);
     UObject* managerTwo          = Field(playerTwoController, facts::kControllerCameraManager);
-    const bool filledOne         = FillHalf(managerOne);
-    const bool filledTwo         = FillHalf(managerTwo);
+    const bool filledOne         = local_player_list::FillView(managerOne);
+    const bool filledTwo         = local_player_list::FillView(managerTwo);
     platform::Log(L"join: player 2 is in; halves filled: player 1 {}, player 2 {}", filledOne ? L"yes" : L"NO",
                   filledTwo ? L"yes" : L"NO");
     split_render::OnJoin();
@@ -637,10 +547,8 @@ try
     }
     // The actors player 2's controller and camera manager spawned, which nothing destroys (the End camera
     // manager has no EndPlay or Destroyed override). Read before the removal destroys their owners.
-    UObject* controller  = Field(playerTwo_, facts::kLocalPlayerController);
-    UObject* manager     = Field(controller, facts::kControllerCameraManager);
-    UObject* cameraActor = Field(manager, facts::kCameraManagerMainCamera);
-    UObject* battleTalk  = Field(controller, facts::kControllerBattleTalkActor);
+    UObject*   controller = Field(playerTwo_, facts::kLocalPlayerController);
+    const auto leftovers  = local_player_list::ReadLeftovers(playerTwo_);
     // Player 2's lock and target end, and its menu lets go of its focus layers inside its own context, while its
     // controller and member still exist.
     battle::targeting_two::OnLeave();
@@ -660,13 +568,10 @@ try
     // controller, which must still exist then.
     DestroyOperator();
 
-    const void* cameraClass = ClassOf(cameraActor);
-    const void* talkClass   = ClassOf(battleTalk);
-    platform::Log(L"leave: player 2's camera actor {}, battle-talk actor {}", Describe(cameraActor), Describe(battleTalk));
+    platform::Log(L"leave: player 2's {}", leftovers.Text());
 
-    // The engine's list is the evidence, whatever the call reported: it can remove the player and then fault.
-    const bool raised  = !GuardedRemove(reinterpret_cast<RemoveLocalPlayerFn>(removeLocalPlayer_), gameInstance_, playerTwo_);
-    const bool removed = !Contains(*players, playerTwo_);
+    bool       raised  = false;
+    const bool removed = local_player_list::Remove(gameInstance_, playerTwo_, removeLocalPlayer_, raised);
     if (!removed)
     {
         platform::Log(L"leave failed: the engine did not remove player 2{}", raised ? L" (the call raised an exception)" : L"");
@@ -685,15 +590,10 @@ try
     holdHand_      = false;
     hold_          = party_member::Wait::None;
     scopes::Unbind(kSeat);
-    // Research says nothing destroys these two with their owners; a changed class pointer would mean the
-    // memory was reused, and then they are left alone.
-    const bool cameraGone = cameraClass != nullptr && ClassOf(cameraActor) == cameraClass &&
-                            CallNoParams(cameraActor, STR("/Script/Engine.Actor:K2_DestroyActor"));
-    const bool talkGone   = talkClass != nullptr && ClassOf(battleTalk) == talkClass &&
-                            CallNoParams(battleTalk, STR("/Script/Engine.Actor:K2_DestroyActor"));
+    const auto gone = local_player_list::DestroyLeftovers(leftovers);
     platform::Log(L"leave: player 2 removed{}; leftovers destroyed: camera actor {}, battle-talk actor {}",
-                  raised ? L" (the call raised an exception after removing it)" : L"", cameraGone ? L"yes" : L"no",
-                  talkGone ? L"yes" : L"no");
+                  raised ? L" (the call raised an exception after removing it)" : L"", gone.camera ? L"yes" : L"no",
+                  gone.talk ? L"yes" : L"no");
     return true;
 }
 catch (...)

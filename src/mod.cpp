@@ -55,6 +55,7 @@
 #include "render/distortion_apply.h"
 #include "views/letterbox_patch.h"
 #include "views/display_align.h"
+#include "views/mirror_player.h"
 #include "views/scene_camera_two.h"
 #include "views/window_span.h"
 #include "world/anim_two_views.h"
@@ -77,7 +78,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.41.1-lineup-log";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.42.0-mirror-player";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
@@ -223,6 +224,7 @@ public:
             Hook::UnregisterCallback(tickCallback_);
         }
         remote_.Close();
+        lss::views::mirror_player::Clear(L"the mod unloads");
         lss::views::window_span::Leave(L"the mod unloads");
         lss::views::display_align::Restore();  // the leave's ticks never come: the monitors go back now
         lss::views::scene_camera_two::Remove();
@@ -284,6 +286,11 @@ public:
         lss::views::letterbox_patch::Install(*image);
         lss::views::window_span::Install(*image);
         lss::views::scene_camera_two::Install(*image);  // readings only; fine without
+        // Optional: without it a held span shows one view across the row while player 2 is out.
+        if (lss::views::mirror_player::Install(*image))
+        {
+            session_.SetMirrorPlayers({&lss::views::mirror_player::Count, &lss::views::mirror_player::Clear});
+        }
         lss::players::pad_buttons::Install(*image);  // optional: without it every pad presses player 1's buttons
         lss::players::pad_presence::Register();      // diagnostics: which XInput users have a pad
         lss::players::lead_gate::Install(*image);    // optional: without it a LEAD on player 2's member stays the player's
@@ -321,7 +328,7 @@ public:
         const Hook::FCallbackOptions options{false, false, STR("LocalSplitScreen"), STR("player intent")};
         tickCallback_ = Hook::RegisterEngineTickPreCallback(
             [this](Hook::TCallbackIterationData<void>&, RC::Unreal::UEngine*, float, bool) { OnEngineTick(); }, options);
-        Log(L"ready: every engine check passed. Ctrl+F7 adds player 2 (it takes the 2nd party slot's member), Ctrl+F8 removes player 2, Ctrl+F6 reports, Ctrl+F2 toggles the window span");
+        Log(L"ready: every engine check passed. Ctrl+F7 adds player 2 (it takes the 2nd party slot's member), Ctrl+F8 removes player 2, Ctrl+F6 reports, Ctrl+F2 toggles the window span; with window-span.hold on the mirror player fills the empty column");
     }
 
 private:
@@ -349,6 +356,8 @@ private:
         session_.Tick();
         lss::views::letterbox_patch::Tick(session_.HasPlayerTwo() || lss::views::window_span::Held());
         lss::views::window_span::Tick(session_.HasPlayerTwo());
+        lss::views::mirror_player::Tick(session_.HasPlayerTwo() ? 2 : 1,
+                                        lss::views::window_span::Held() ? lss::views::window_span::Columns() : 0);
         lss::views::scene_camera_two::Tick(CameraManagerOf(0), session_.HasPlayerTwo() ? CameraManagerOf(1) : nullptr);
         lss::battle::command_menu_two::Tick(session_.Seated());
         lss::battle::command_menu_tick::Tick();
@@ -409,12 +418,22 @@ private:
         lss::world::env_sets_two::Tick(memberTwo, in ? ControllerOf(1) : nullptr);
     }
 
-    /// The HUD layout follows the split and each player's view.
+    /// The HUD layout follows the split and each player's view. With the mirror player in (player 2 out) the HUD is
+    /// laid out for player 1's column and both views sample that one image: player 2's own pass and the per-view
+    /// targets stay off, since only player 2's pass would draw into a second target, leaving the mirror's view empty.
     void TickHud() noexcept
     {
         lss::hud::overlay_layout::ViewShare one, two;
-        const bool split = session_.HasPlayerTwo() && ReadView(0, one) && ReadView(1, two);
-        lss::hud::overlay_layout::Tick(split, one, two);
+        const bool mirror = !session_.HasPlayerTwo() && lss::views::mirror_player::Count() > 0;
+        const bool views  = (session_.HasPlayerTwo() || mirror) && ReadView(0, one) && ReadView(1, two);
+        const bool split  = views && session_.HasPlayerTwo();
+        lss::hud::overlay_layout::Tick(views, one, two);
+        if (mirror && lss::hud::ui_targets::Enabled())
+        {
+            lss::hud::ui_targets::SetEnabled(false);
+            Log(L"HUD targets: off while the mirror player is in and player 2 is out (each column samples player 1's HUD image; "
+                L"player 2's image turns them on again at its join)");
+        }
         lss::hud::second_image::Players players;
         for (int i = 0; split && i < 2; ++i)
         {
@@ -426,7 +445,7 @@ private:
         lss::hud::second_image::Tick(split, players);
         lss::hud::minimap_two::Tick(split && session_.Seated(), players.controller[1]);
         lss::hud::marker_replay::Tick();
-        lss::hud::root_placement::Tick(split && lss::hud::overlay_layout::BandApplies());
+        lss::hud::root_placement::Tick(views && lss::hud::overlay_layout::BandApplies());
     }
 
     // Declaration order matters: holds_ and remote_ hold references into session_, so it comes first.

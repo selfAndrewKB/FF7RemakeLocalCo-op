@@ -65,6 +65,7 @@ add_library(LocalSplitScreen SHARED
     src/players/field_exit.cpp
     src/players/game_state.cpp
     src/players/lead_gate.cpp
+    src/players/local_player_list.cpp
     src/players/own_controller.cpp
     src/players/pad_buttons.cpp
     src/players/pad_presence.cpp
@@ -85,6 +86,7 @@ add_library(LocalSplitScreen SHARED
     src/render/distortion_apply.cpp
     src/views/letterbox_patch.cpp
     src/views/display_align.cpp
+    src/views/mirror_player.cpp
     src/views/scene_camera_two.cpp
     src/views/monitor_row.cpp
     src/views/window_span.cpp

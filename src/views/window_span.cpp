@@ -638,6 +638,11 @@ void Toggle() noexcept
     }
 }
 
+std::int32_t Columns() noexcept
+{
+    return In() ? g_columns : 0;
+}
+
 void Tick(bool playerTwoIn) noexcept
 {
     if (!g_installed)

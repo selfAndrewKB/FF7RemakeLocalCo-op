@@ -89,6 +89,16 @@ public:
     /// player 1's controller). False if the call could not be made.
     static bool Console(const wchar_t* command) noexcept;
 
+    /// The mirror player's local players (views/mirror_player.h): how many are in (they fill the columns player 2 is
+    /// out of, so the join and the rejoin expect them beside player 1), and the call that takes them out inside the
+    /// join, right before CreatePlayer, so player 2 takes its column on the same tick.
+    struct MirrorPlayers
+    {
+        std::int32_t (*count)() noexcept           = nullptr;
+        void (*clear)(const wchar_t* why) noexcept = nullptr;
+    };
+    void SetMirrorPlayers(MirrorPlayers mirror) noexcept { mirror_ = mirror; }
+
 private:
     /// After a world change took player 2 out.
     struct Rejoin
@@ -132,7 +142,11 @@ private:
     /// Player 2's field camera operator forgotten and destroyed (the member's release or the leave).
     void DestroyOperator() noexcept;
 
+    /// The mirror players in now (0 without the module).
+    std::int32_t Mirrors() const noexcept { return mirror_.count != nullptr ? mirror_.count() : 0; }
+
     RC::Unreal::UObject* playerTwo_    = nullptr;  // ULocalPlayer
+    MirrorPlayers        mirror_;
     RC::Unreal::UObject* gameInstance_ = nullptr;  // kept after a leave: the instance lives as long as the game
     Rejoin               rejoin_;
     unsigned long        gameThread_         = 0;  // the engine tick's thread (Tick)

@@ -25,7 +25,7 @@ python ../tools/game.py status | launch | quit | relaunch --deploy --label v0.8.
 
 Every module registers its own commands (`src/control/registry.h`), so `help` on the running build is the list.
 Today: `join`, `leave`, `console <command>`, `report`, `quit`, `showflags <hex>`, `ao-origin on|off`,
-`bloom-origin on|off`, `distortion-apply on|off`, `pad-buttons on|off`, `menu-two on|off`, `targeting-two on|off`, `rates-two on|off`, `menu-two.leader`, `menu-two.route`, `window-span on|off`, `window-span.hold on|off` (the span with any player count, kept through loading screens), `lock-camera-two.requests`, `lock-camera-two.restore`, `camera-override-two`, `enemy-leader`, `sequence-camera-two`, `target-cursor-two`, `party-events`, `log-level error|warning|info|debug|trace` (Debug by default; Trace holds the per-frame lines), `hud.dump roots|shown|all [<text>]`, `hud-band on|off`, `hud-image on|off`, `hud-targets on|off`, `hud-targets-log <renders>`; readings `p2.in`, `p2.member`, `p2.state` (out|awaiting|in|playing|handed),
+`bloom-origin on|off`, `distortion-apply on|off`, `pad-buttons on|off`, `menu-two on|off`, `targeting-two on|off`, `rates-two on|off`, `menu-two.leader`, `menu-two.route`, `window-span on|off`, `window-span.hold on|off` (the span with any player count, kept through loading screens), `mirror-player on|off` (with the span held, an extra local player shows player 1's picture in the empty column; reading `mirror-player.state`), `lock-camera-two.requests`, `lock-camera-two.restore`, `camera-override-two`, `enemy-leader`, `sequence-camera-two`, `target-cursor-two`, `party-events`, `log-level error|warning|info|debug|trace` (Debug by default; Trace holds the per-frame lines), `hud.dump roots|shown|all [<text>]`, `hud-band on|off`, `hud-image on|off`, `hud-targets on|off`, `hud-targets-log <renders>`; readings `p2.in`, `p2.member`, `p2.state` (out|awaiting|in|playing|handed),
 `game.state` (title|loading|play|pause|menu|leaving|…), `game.paused`, `game.menu-kind`, `game.location`,
 `field.step` (13 = steady field), `field.running`, `hud.overlay`, `hud.layout`, `pad.events`, `pads` (the XInput users with a pad), `lead.gate` (the last LEAD on player 2's member judged), `menu-two.state`, `targeting-two.runs`, `targeting-two.lock`, `tick`, `version`. The language's own verbs (`src/control/script.h`): `get <name>`, `status`, `help [<name>]`,
 `wait <ticks>`, `wait-until <name> <op> <value> [<ticks>]`, `hold <player> stick <lx> <ly> <rx> <ry> <ticks>`,
@@ -96,6 +96,8 @@ src/
     field_exit            player 2 leaves inside the game's field-exit request (retry, load, jump, title);
                           session rejoins once the field is back (two call redirects)
     own_controller        the End camera manager's BeginPlay, made safe for a second player
+    local_player_list     the engine's list of local players: one added through CreatePlayer in the join scope, removed
+                          with its leftover actors destroyed, its view filled (the session's player 2, the mirror)
     player_two_camera     player 2's field camera operator and the per-player scopes
     party_member          which deployed member a seat plays: the row after player 1's in the party order
     field_hold.h          the hold rule: which field AI states leave a member a further player's, which hand it to its AI
@@ -136,6 +138,9 @@ src/
                           set on player 2's manager with the game's own setters while the scene holds the players
                           (its blends seeded from player 2's own field camera, its cut and end reset repeated)
     letterbox_patch       the Borderless single-view letterbox off while two views exist (321 one-byte immediates)
+    mirror_player         an extra local player in every column no player fills while the span is held, showing
+                          player 1's picture (its camera manager takes every slot of player 1's before each update);
+                          player 2's join takes its column, it stays through loading screens
   battle/ (the coin)
     enemy_coin            enemies share their attention between the humans: a coin per enemy decision at the game's
                           own decision gate, the script natives answered from it, both humans "the player" for the
