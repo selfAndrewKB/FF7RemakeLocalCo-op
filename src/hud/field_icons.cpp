@@ -7,7 +7,7 @@
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
-#include "players/player_two_camera.h"
+#include "players/weak_object.h"
 
 #include <array>
 #include <cstdint>
@@ -476,7 +476,7 @@ void Replay(int column, void* controller, void* member) noexcept
     for (const auto& call : g_calls)
     {
         std::int32_t liveWeak[2] = {-1, 0};
-        void*        widget      = players::player_two_camera::ObjectOf(call.weak);
+        void*        widget      = players::weak_object::ObjectOf(call.weak);
         if (call.canvas != canvasNow)
         {
             ++g_seen.canvasChanged;

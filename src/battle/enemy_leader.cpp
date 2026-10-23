@@ -7,7 +7,7 @@
 #include "platform/image.h"
 #include "platform/log.h"
 #include "platform/verified_code.h"
-#include "players/player_two_camera.h"
+#include "players/weak_object.h"
 #include "players/scopes.h"
 
 #ifndef WIN32_LEAN_AND_MEAN
@@ -88,7 +88,7 @@ void* GameLeader() noexcept
     const std::uintptr_t manager = players::scopes::PartyManagerAddress();
     std::int32_t         pair[2]{};
     return manager != 0 && Read(reinterpret_cast<const void*>(manager + facts::kPartyLeaderWeak), pair)
-               ? players::player_two_camera::ObjectOf(pair)
+               ? players::weak_object::ObjectOf(pair)
                : nullptr;
 }
 

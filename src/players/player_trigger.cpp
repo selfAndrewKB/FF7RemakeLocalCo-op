@@ -13,7 +13,7 @@
 #include "platform/log.h"
 #include "platform/verified_code.h"
 #include "players/game_state.h"
-#include "players/player_two_camera.h"
+#include "players/weak_object.h"
 #include "players/seats.h"
 #include "players/unreal_call.h"
 
@@ -157,7 +157,7 @@ void* Ensure(int seat, void* playerOneController) noexcept
         return nullptr;
     }
     const wchar_t* name = SeatName(seat);
-    if (void* existing = player_two_camera::ObjectOf(g_triggers[seat].weak); existing != nullptr)
+    if (void* existing = weak_object::ObjectOf(g_triggers[seat].weak); existing != nullptr)
     {
         return existing;
     }
@@ -192,7 +192,7 @@ void* Ensure(int seat, void* playerOneController) noexcept
         DestroyActor(copy);
         return nullptr;
     }
-    if (!player_two_camera::WeakPairOf(spawned, g_triggers[seat].weak))
+    if (!weak_object::WeakPairOf(spawned, g_triggers[seat].weak))
     {
         DestroyActor(copy);
         platform::Log(L"{}'s trigger: no weak pair for the copy; destroyed", name);
@@ -209,7 +209,7 @@ void Destroy(int seat) noexcept
     {
         return;
     }
-    void* trigger             = player_two_camera::ObjectOf(g_triggers[seat].weak);
+    void* trigger             = weak_object::ObjectOf(g_triggers[seat].weak);
     g_triggers[seat].weak[0] = -1;
     g_triggers[seat].weak[1] = 0;
     if (trigger != nullptr)
@@ -220,7 +220,7 @@ void Destroy(int seat) noexcept
 
 bool OwnedBy(int seat, const void* actor) noexcept
 {
-    return SeatBuilt(seat) && actor != nullptr && actor == player_two_camera::ObjectOf(g_triggers[seat].weak);
+    return SeatBuilt(seat) && actor != nullptr && actor == weak_object::ObjectOf(g_triggers[seat].weak);
 }
 
 }  // namespace lss::players::player_trigger

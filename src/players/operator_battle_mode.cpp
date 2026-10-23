@@ -8,6 +8,7 @@
 #include "platform/log.h"
 #include "platform/verified_code.h"
 #include "players/player_two_camera.h"
+#include "players/seat_objects.h"
 #include "players/scopes.h"
 #include "players/seats.h"
 
@@ -152,7 +153,7 @@ std::uint64_t Enter(std::uint64_t a1, std::uint64_t a2, std::uint64_t a3, std::u
         {
             ++g_counts[seat].enters;
             platform::LogDebug(L"operator battle mode: {}'s operator entered battle mode with player 1's (modes {} / {})", SeatName(seat),
-                               Mode(player_two_camera::OperatorOne()), Mode(player_two_camera::Operator(seat)));
+                               Mode(player_two_camera::OperatorOne()), Mode(seat_objects::Operator(seat)));
         }
     }
     return result;
@@ -166,7 +167,7 @@ void PopRequest(void* key, void* setting)
     ++g_leaves;
     for (int seat = 1; seat <= kSeatsBuilt; ++seat)
     {
-        void* seatOperator = player_two_camera::Operator(seat);
+        void* seatOperator = seat_objects::Operator(seat);
         if (seatOperator != nullptr && Mode(seatOperator) == 1)
         {
             LeaveSeat(seatOperator);
@@ -204,7 +205,7 @@ std::wstring Reading()
     std::wstring text = std::format(L"player 1's {}", Describe(player_two_camera::OperatorOne()));
     for (int seat = 1; seat <= kSeatsBuilt; ++seat)
     {
-        text += std::format(L"; {}'s {}", SeatName(seat), Describe(player_two_camera::Operator(seat)));
+        text += std::format(L"; {}'s {}", SeatName(seat), Describe(seat_objects::Operator(seat)));
     }
     text += std::format(L"; enters {}, leaves {}", g_enters, g_leaves);
     for (int seat = 1; seat <= kSeatsBuilt; ++seat)

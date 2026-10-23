@@ -32,10 +32,11 @@
 // taking its member again, once the field has been steady for a moment with player 1 on a character.
 //
 // State ownership: the session owns each seat's record (its local player, the rejoin, the wait, the hand and hold,
-// the member's weak pair, the log keys) and resets it on the leave, the release and the forget; the modules a seat
-// drives own the seat's game objects (its controller's scopes, its operator, its trigger, its member's seat). The
-// battle modules the session tells of a leave (the targeting copy, the command menu) are one instance each until
-// their step of plan/seats.md.
+// the member's weak pair, the log keys) and resets it on the leave, the release and the forget; the seat's game
+// objects (its controller, operator and member) are the registry's (players/seat_objects.h: the session binds the
+// controller at the join and forgets the seat at the leave), and the modules a seat drives own what they make (its
+// controller's scopes, its operator, its trigger, its member's seat). Every module the session tells of a leave is
+// per seat (plan/seats.md step 3).
 
 #include "players/party_member.h"
 #include "players/seat_state.h"

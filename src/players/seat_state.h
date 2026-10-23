@@ -26,14 +26,14 @@ struct SeatFlags
     bool rejoinPending = false;  // taken out by a world change, joins again when the field is back
 };
 
-/// One word for the flags. Out of the game: a pending rejoin first (the world change took the player out and
-/// brings them back), then a wait for a member, else out. In the game: without a member, "in"; with it, handed
-/// or playing.
+/// One word for the flags. Out of the game: a wait for a member first (a waiting player keeps waiting through a
+/// world change, which marks it for a rejoin too), then a pending rejoin (the world change took a playing player
+/// out and brings them back), else out. In the game: without a member, "in"; with it, handed or playing.
 constexpr SeatState StateOf(const SeatFlags& f) noexcept
 {
     if (!f.in)
     {
-        return f.rejoinPending ? SeatState::Rejoining : f.awaiting ? SeatState::Awaiting : SeatState::Out;
+        return f.awaiting ? SeatState::Awaiting : f.rejoinPending ? SeatState::Rejoining : SeatState::Out;
     }
     if (!f.seated)
     {

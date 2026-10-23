@@ -19,8 +19,9 @@
 // that player's pad record, and put back after (pad 1 = XInput user 0, a seat's pad = user `seat`).
 // The slot replacements find the seat from the object they are handed (its controller, operator or camera
 // manager), so one set of replacements serves every seat. All of this runs on the game thread.
-// Seats: players/seats.h (one wired today, player 2). State owned here: each seat's controller and operator
-// weak pairs (set by Start, cleared by Take), the stick holds and the call counts. The battle modules this one
+// Seats: players/seats.h (one wired today, player 2). State owned here: the stick holds and the call counts; each
+// seat's controller and operator are the registry's (players/seat_objects.h: the session binds the controller at the
+// join, Start binds the operator it spawns, Take unbinds it). The battle modules this one
 // calls around a tick (the lock camera, the sequence cameras, the targeting copy) are one instance each until
 // their own step of plan/seats.md; the operator's satellites (nav areas, battle mode, the override route) are
 // per seat.
@@ -31,20 +32,14 @@ class GameImage;
 
 namespace lss::players::player_two_camera {
 
-/// A UE4 weak pointer pair {GUObjectArray index, serial number} for a live object, made the way the game makes one
-/// (the serial allocated if the object has none yet). False if the object cannot be read. Game thread.
-bool WeakPairOf(void* object, std::int32_t (&pair)[2]) noexcept;
-
-/// The object a weak pair names, if it is still that object (same serial) and reachable; else nullptr.
-void* ObjectOf(const std::int32_t (&pair)[2]) noexcept;
-
 /// Checks every function, slot and global, and replaces the operator's BeginPlay and Tick slots, the End
 /// controller's ProcessPlayerInput and Tick_FieldMove slots and the End camera manager's UpdateCamera slot. False
 /// (logged) if anything differs.
 bool Install(const platform::GameImage& image) noexcept;
 
-/// Game thread, once the seat's controller holds `member`: spawns the seat's operator and points it at the
-/// member. False (logged) if the field has no operator or the spawn failed.
+/// Game thread, once the seat's controller holds `member` and the session has bound that controller in the
+/// registry (players/seat_objects.h): spawns the seat's operator and points it at the member. False (logged) if the
+/// field has no operator or the spawn failed.
 bool Start(int seat, void* playerOneController, void* seatController, void* member) noexcept;
 
 /// Game thread, before the seat's controller is removed: forgets the seat's operator and returns it (or

@@ -17,6 +17,7 @@
 #include "platform/image.h"
 #include "platform/log.h"
 #include "players/scopes.h"
+#include "players/seat_objects.h"
 #include "players/seats.h"
 
 #include <array>
@@ -261,9 +262,9 @@ public:
         {
             return;
         }
-        // The controller the HUD tick was handed must be the one the scopes lend (bound at the join): a controller
-        // the engine replaced without a leave is not lent to the compass either.
-        withPlayer_ = s.plays && s.controller != nullptr && s.controller == players::scopes::Controller(seat);
+        // The controller the HUD tick was handed must be the registry's (bound at the join, liveness-checked): a
+        // controller the engine replaced without a leave is not lent to the compass either.
+        withPlayer_ = s.plays && s.controller != nullptr && s.controller == players::seat_objects::Controller(seat);
         if (withPlayer_)
         {
             contexts_.emplace(seat, players::scopes::Primary | players::scopes::Leader);

@@ -36,13 +36,14 @@ bool Same(const wchar_t* a, const wchar_t* b)
     return std::wcscmp(a, b) == 0;
 }
 
-/// Out of the game: out, awaiting a member, or rejoining after a world change (the rejoin first).
+/// Out of the game: out, awaiting a member, or rejoining after a world change (a waiting player keeps waiting
+/// through a world change: the wait first).
 void OutOfTheGame()
 {
     EXPECT(StateOf({}) == SeatState::Out);
     EXPECT(StateOf({.awaiting = true}) == SeatState::Awaiting);
     EXPECT(StateOf({.rejoinPending = true}) == SeatState::Rejoining);
-    EXPECT(StateOf({.awaiting = true, .rejoinPending = true}) == SeatState::Rejoining);
+    EXPECT(StateOf({.awaiting = true, .rejoinPending = true}) == SeatState::Awaiting);
     // Stale member flags with the player out never make a word of their own.
     EXPECT(StateOf({.seated = true, .handedToAi = true}) == SeatState::Out);
 }

@@ -11,7 +11,9 @@
 #include "players/operator_battle_mode.h"
 #include "players/pad_buttons.h"
 #include "players/scopes.h"
+#include "players/seat_objects.h"
 #include "players/seats.h"
+#include "players/weak_object.h"
 #include "views/scene_camera_two.h"
 #include "battle/command_camera_two.h"
 #include "battle/lock_camera_two.h"
@@ -29,19 +31,14 @@ namespace lss::players::player_two_camera {
 namespace {
 
 using platform::Read;
-
-/// A UE4 FWeakObjectPtr as the game stores it: the object's index in GUObjectArray and its serial number.
-struct Weak
-{
-    std::int32_t index  = -1;
-    std::int32_t serial = 0;
-};
+using weak_object::MakeWeak;
+using weak_object::Resolve;
+using weak_object::Weak;
 
 using SpawnActorFn     = void* (*)(void* world, void* type, const void* transform, const void* parameters);
 using GetWorldFn       = void* (*)(void* gameMode);
 using StaticClassFn    = void* (*)();
 using SetOwnerCharaFn  = void (*)(void* cameraOperator, void* character);
-using AllocateSerialFn = std::int32_t (*)(void* objectArray, std::int32_t index);
 using ActorVoidFn      = void (*)(void* self);
 using ActorFloatFn     = void (*)(void* self, float deltaSeconds);
 using InputFn          = void (*)(void* self, float deltaSeconds, bool gamePaused);
@@ -56,14 +53,10 @@ void**           g_gameMode       = nullptr;
 std::uint64_t*   g_frameStamp     = nullptr;
 std::uint8_t*    g_corrections    = nullptr;
 std::uint32_t*   g_nameNone       = nullptr;
-std::uint8_t**   g_objects        = nullptr;
-std::int32_t*    g_objectCount    = nullptr;
-void*            g_objectArray    = nullptr;
 std::uint8_t**   g_squareInput    = nullptr;
 SpawnActorFn     g_spawnActor     = nullptr;
 StaticClassFn    g_staticClass    = nullptr;
 SetOwnerCharaFn  g_setOwnerChara  = nullptr;
-AllocateSerialFn g_allocateSerial = nullptr;
 
 platform::VTableEntry g_operatorBeginPlaySlot;
 platform::VTableEntry g_operatorTickSlot;
@@ -89,12 +82,10 @@ DWORD g_gameThread = 0;
 Weak  g_playerOne;  // player 1's controller while a seat is in (resolved at each use)
 bool  g_spawning = false;
 
-/// One seat's camera: its controller and its operator, as weak pairs (a controller the engine destroyed or
-/// replaced resolves to null, so the scopes stop applying).
+/// One seat's camera as this module keeps it: its controller and operator are the registry's (players/seat_objects.h;
+/// a controller the engine destroyed or replaced resolves to null there, so the scopes stop applying).
 struct SeatCamera
 {
-    Weak controller;
-    Weak cameraOperator;
     bool noPlayerInputLogged = false;
 };
 std::array<SeatCamera, kPlayers> g_seats;  // index = seat; [0] unused (player 1 is the game's)
@@ -125,49 +116,9 @@ struct PrimaryInput
 };
 PrimaryInput g_primaryInput;
 
-constexpr std::uint32_t kItemBytes       = 0x18;  // FUObjectItem: Object +0, Flags +8, SerialNumber +0x10
-constexpr std::uint32_t kItemFlags       = 0x08;
-constexpr std::uint32_t kItemSerial      = 0x10;
-constexpr std::int32_t  kUnreachableBits = 0x30000000;  // PendingKill | Unreachable: the pointer is not to be used
-
 bool OnGameThread() noexcept
 {
     return g_gameThread != 0 && GetCurrentThreadId() == g_gameThread;
-}
-
-/// The object a weak pair names, if it is still that object and alive (the engine's own validity rule).
-void* Resolve(const Weak& weak) noexcept
-{
-    std::uint8_t* objects = nullptr;
-    std::int32_t  count   = 0;
-    if (weak.index < 0 || weak.serial == 0 || !Read(g_objects, objects) || !Read(g_objectCount, count) ||
-        weak.index >= count || objects == nullptr)
-    {
-        return nullptr;
-    }
-    const std::uint8_t* item   = objects + static_cast<std::size_t>(weak.index) * kItemBytes;
-    void*               object = nullptr;
-    std::int32_t        flags = 0, serial = 0;
-    if (!Read(item, object) || !Read(item + kItemFlags, flags) || !Read(item + kItemSerial, serial) ||
-        serial != weak.serial || (flags & kUnreachableBits) != 0)
-    {
-        return nullptr;
-    }
-    return object;
-}
-
-/// A weak pair for a live object, the way the game builds one (InternalIndex plus the allocated serial).
-Weak MakeWeak(void* object) noexcept
-{
-    Weak weak;
-    std::int32_t index = -1;
-    std::int32_t serial = 0;
-    if (object != nullptr && Read(static_cast<std::uint8_t*>(object) + facts::kObjectIndex, index) && index >= 0 &&
-        platform::CallGuarded(g_allocateSerial, serial, g_objectArray, index) && serial != 0)
-    {
-        weak = {index, serial};
-    }
-    return weak;
 }
 
 }  // namespace
@@ -212,19 +163,6 @@ StickScope::~StickScope()
         platform::WriteGuarded(owner_ + facts::kStickAnalog, savedAnalog_, sizeof(savedAnalog_));
         platform::WriteGuarded(owner_ + facts::kStickDigital, savedDigital_, sizeof(savedDigital_));
     }
-}
-
-bool WeakPairOf(void* object, std::int32_t (&pair)[2]) noexcept
-{
-    const Weak weak = MakeWeak(object);
-    pair[0] = weak.index;
-    pair[1] = weak.serial;
-    return weak.index >= 0 && weak.serial != 0;
-}
-
-void* ObjectOf(const std::int32_t (&pair)[2]) noexcept
-{
-    return Resolve(Weak{pair[0], pair[1]});
 }
 
 namespace {
@@ -310,7 +248,14 @@ private:
 
 // --- The seats as the replacements see them ----------------------------------------------------------------
 
-/// A seat is in: its controller resolves (game thread only; off it nothing is a seat's).
+/// The seat's player plays a member (the registry's controller and member both resolve): the window this module's
+/// replacements act in, from the seating to the release, as its own pair was set at Start and cleared at Take.
+bool SeatActive(int seat) noexcept
+{
+    return seat_objects::Controller(seat) != nullptr && seat_objects::Member(seat) != nullptr;
+}
+
+/// Some seat's player plays a member (game thread only; off it nothing is a seat's).
 bool AnySeatIn() noexcept
 {
     if (!OnGameThread())
@@ -319,7 +264,7 @@ bool AnySeatIn() noexcept
     }
     for (int seat = 1; seat <= kSeatsBuilt; ++seat)
     {
-        if (Resolve(g_seats[seat].controller) != nullptr)
+        if (SeatActive(seat))
         {
             return true;
         }
@@ -327,44 +272,25 @@ bool AnySeatIn() noexcept
     return false;
 }
 
-/// The seat whose controller is `self`, else 0.
+/// The seat whose controller is `self`, while its player plays a member, else 0 (player 1's controller is never a seat's).
 int SeatOfController(const void* self) noexcept
 {
-    for (int seat = 1; self != nullptr && seat <= kSeatsBuilt; ++seat)
-    {
-        if (Resolve(g_seats[seat].controller) == self)
-        {
-            return seat;
-        }
-    }
-    return 0;
+    const int seat = seat_objects::SeatOf(self);
+    return seat != 0 && seat_objects::Controller(seat) == self && SeatActive(seat) ? seat : 0;
 }
 
-/// The seat whose own operator is `self`, else 0.
+/// The seat whose own operator is `self`, while its player plays a member, else 0.
 int SeatOfOperator(const void* self) noexcept
 {
-    for (int seat = 1; self != nullptr && seat <= kSeatsBuilt; ++seat)
-    {
-        if (Resolve(g_seats[seat].cameraOperator) == self)
-        {
-            return seat;
-        }
-    }
-    return 0;
+    const int seat = seat_objects::SeatOf(self);
+    return seat != 0 && seat_objects::Operator(seat) == self && SeatActive(seat) ? seat : 0;
 }
 
-/// The seat whose controller's camera manager is `self`, else 0.
+/// The seat whose controller's camera manager is `self`, while its player plays a member, else 0.
 int SeatOfManager(const void* self) noexcept
 {
-    for (int seat = 1; self != nullptr && seat <= kSeatsBuilt; ++seat)
-    {
-        void* controller = Resolve(g_seats[seat].controller);
-        if (controller != nullptr && platform::ReadPointer(controller, facts::kControllerCameraManager) == self)
-        {
-            return seat;
-        }
-    }
-    return 0;
+    const int seat = seat_objects::SeatOfCameraManager(self);
+    return seat != 0 && SeatActive(seat) ? seat : 0;
 }
 
 void* PlayerOne() noexcept
@@ -413,9 +339,9 @@ void OperatorTick(void* self, float deltaSeconds)
         return;
     }
     ++g_counts[seat].operatorTick;
-    void* const                      controller = Resolve(g_seats[seat].controller);
+    void* const                      controller = seat_objects::Controller(seat);
     const PrimaryScope               primary(controller);
-    const OperatorScope              scope(g_seats[seat].cameraOperator);
+    const OperatorScope              scope(seat_objects::OperatorWeak(seat));
     const StickScope                 stick(static_cast<std::uint32_t>(seat), true);  // a sequence shot's input offset reads the stick (RE-seq-camera-two.md L-H)
     // Its leader is the seat's member: the battle camera requests, the move and camera-input checks and the battle
     // sequence overrides the tick reads are keyed on the party leader (RE-lock-camera-two.md §1.4), as the lock
@@ -464,7 +390,7 @@ void UpdateCamera(void* self, float deltaSeconds)
         return;
     }
     ++g_counts[seat].cameraUpdate;
-    const PrimaryScope  primary(Resolve(g_seats[seat].controller));
+    const PrimaryScope  primary(seat_objects::Controller(seat));
     const scopes::Scope leader(seat, scopes::Leader);
     // A scene's camera (slots player 1's manager was given this frame) onto the seat's, with the game's own setters,
     // inside the scope so the primary-scoped ones reach the seat's manager.
@@ -495,7 +421,7 @@ void ProcessPlayerInput(void* self, float deltaSeconds, bool gamePaused)
         return;
     }
     ++g_counts[seat].input;
-    if (Resolve(g_seats[seat].cameraOperator) == nullptr)
+    if (seat_objects::Operator(seat) == nullptr)
     {
         // Without its own operator, the seat's stick would reach player 1's: a still stick instead.
         const StickScope stick(UINT32_MAX, true);
@@ -503,7 +429,7 @@ void ProcessPlayerInput(void* self, float deltaSeconds, bool gamePaused)
         return;
     }
     const PrimaryScope             primary(self);
-    const OperatorScope            scope(g_seats[seat].cameraOperator);
+    const OperatorScope            scope(seat_objects::OperatorWeak(seat));
     const StickScope               stick(static_cast<std::uint32_t>(seat), true);
     const pad_buttons::ButtonScope buttons(seat);
     // The right stick is the lock's while the leader is locked on a target in range (the stick switches targets
@@ -539,7 +465,7 @@ void FieldMove(void* self, float deltaSeconds)
     }
     ++g_counts[seat].move;
     const PrimaryScope             primary(self);
-    const OperatorScope            scope(g_seats[seat].cameraOperator);  // no-op while the seat has no operator
+    const OperatorScope            scope(seat_objects::OperatorWeak(seat));  // no-op while the seat has no operator
     const StickScope               stick(static_cast<std::uint32_t>(seat), true);
     const pad_buttons::ButtonScope buttons(seat);
     // Locked-on movement faces the target (strafes) on the seat's lock, not player 1's (RE-lock-camera-ledger.md X2).
@@ -566,11 +492,11 @@ void PhaseHook(void* world, void* context, std::int32_t phase, bool start)
     }
     for (int seat = 1; seat <= kSeatsBuilt && g_tickPlayerInput != nullptr; ++seat)
     {
-        void* controller  = Resolve(g_seats[seat].controller);
+        void* controller  = SeatActive(seat) ? seat_objects::Controller(seat) : nullptr;
         void* playerInput = nullptr;
         if (controller == nullptr)
         {
-            continue;
+            continue;  // no member yet, or gone: the seat's input step waits, as it did before the member was seated
         }
         if (!Read(static_cast<std::uint8_t*>(controller) + facts::kControllerPlayerInput, playerInput) || playerInput == nullptr)
         {
@@ -616,20 +542,16 @@ bool Install(const platform::GameImage& image) noexcept
     {
         return false;  // already installed: a second install must not undo the first
     }
-    const auto array = image.Rebase(facts::kObjectArray);
-    if (!Global(image, facts::kPartyManagerGlobal, g_partyManager) || !Global(image, facts::kEndGameRootGlobal, g_root) ||
+    if (!weak_object::Installed() || !Global(image, facts::kPartyManagerGlobal, g_partyManager) || !Global(image, facts::kEndGameRootGlobal, g_root) ||
         !Global(image, facts::kGameModeGlobal, g_gameMode) || !Global(image, facts::kOperatorFrameStamp, g_frameStamp) ||
         !Global(image, facts::kOperatorCorrections, g_corrections) || !Global(image, facts::kNameNoneIndex, g_nameNone) ||
-        !Global(image, facts::kObjectArrayObjects, g_objects) || !Global(image, facts::kObjectArrayCount, g_objectCount) ||
-        !Global(image, facts::kSquareInputOwnerGlobal, g_squareInput) || !array ||
+        !Global(image, facts::kSquareInputOwnerGlobal, g_squareInput) ||
         !FindInto(image, facts::kSpawnActor, g_spawnActor) || !FindInto(image, facts::kOperatorStaticClass, g_staticClass) ||
-        !FindInto(image, facts::kSetOwnerChara, g_setOwnerChara) ||
-        !FindInto(image, facts::kAllocateSerialNumber, g_allocateSerial))
+        !FindInto(image, facts::kSetOwnerChara, g_setOwnerChara))
     {
         platform::Log(L"the seats' cameras: an engine check failed; a seat keeps a still camera");
         return false;
     }
-    g_objectArray = reinterpret_cast<void*>(*array);
 
     const auto beginPlay = platform::FindFunction(image, facts::kOperatorBeginPlay.target);
     const auto tick      = platform::FindFunction(image, facts::kOperatorTick.target);
@@ -728,7 +650,12 @@ bool Start(int seat, void* playerOneController, void* seatController, void* memb
     g_gameThread        = GetCurrentThreadId();
     g_playerOne         = MakeWeak(playerOneController);
     g_seats[seat]       = {};
-    g_seats[seat].controller = MakeWeak(seatController);  // from here each player's sticks are their own pad's
+    seat_objects::BindOperator(seat, nullptr);  // no operator of an earlier start survives here
+    if (seat_objects::Controller(seat) != seatController)
+    {
+        platform::Log(L"{}'s camera: its controller is not the one that joined (gone or replaced); still camera", name);
+        return false;
+    }
 
     void* operatorOne = PlayerOneOperator();
     void* manager     = nullptr;
@@ -794,16 +721,17 @@ bool Start(int seat, void* playerOneController, void* seatController, void* memb
         platform::Log(L"{}'s camera: the operator spawn {}; still camera", name, called ? L"returned nothing" : L"RAISED AN EXCEPTION");
         return false;
     }
-    g_seats[seat].cameraOperator = MakeWeak(spawned);
+    seat_objects::BindOperator(seat, spawned);
     {
-        const std::int32_t pair[2]{g_seats[seat].cameraOperator.index, g_seats[seat].cameraOperator.serial};
+        const Weak         weak = seat_objects::OperatorWeak(seat);
+        const std::int32_t pair[2]{weak.index, weak.serial};
         scopes::BindOperator(seat, pair);  // the operator the game's camera and menu code finds in the seat's scopes
     }
 
     bool owned = false;
     {
         const PrimaryScope  primary(seatController);
-        const OperatorScope scope(g_seats[seat].cameraOperator);
+        const OperatorScope scope(seat_objects::OperatorWeak(seat));
         owned = platform::CallGuarded(g_setOwnerChara, spawned, member);
     }
     if (owned)
@@ -818,7 +746,7 @@ bool Start(int seat, void* playerOneController, void* seatController, void* memb
     const bool reowned = Read(static_cast<std::uint8_t*>(operatorOne) + facts::kOperatorOwnerChara, ownerOne) &&
                          ownerOne != nullptr && platform::CallGuarded(g_setOwnerChara, operatorOne, ownerOne);
     platform::Log(L"{}'s camera: own operator spawned (index {}), following {}'s member {}; player 1's operator {}", name,
-                  g_seats[seat].cameraOperator.index, name, owned ? L"yes" : L"NO (the owner call raised)",
+                  seat_objects::OperatorWeak(seat).index, name, owned ? L"yes" : L"NO (the owner call raised)",
                   reowned ? L"re-applied" : L"NOT re-applied");
     return owned;
 }
@@ -830,15 +758,21 @@ void* Take(int seat) noexcept
         return nullptr;
     }
     camera_override_two::Route(seat, nullptr);  // the member's delegate holds the game's handler again
-    void* cameraOperator = Resolve(g_seats[seat].cameraOperator);
+    void* cameraOperator = seat_objects::Operator(seat);
     g_seats[seat]        = {};
+    seat_objects::BindOperator(seat, nullptr);
     {
         const std::int32_t none[2]{-1, 0};
         scopes::BindOperator(seat, none);
     }
-    if (!AnySeatIn())
+    bool another = false;  // player 1's controller is kept only while some other seat still plays a member
+    for (int other = 1; other <= kSeatsBuilt; ++other)
     {
-        g_playerOne = {};  // player 1's controller is kept only while a seat needs the scopes
+        another = another || (other != seat && SeatActive(other));
+    }
+    if (!another)
+    {
+        g_playerOne = {};
     }
     return cameraOperator;
 }
@@ -872,7 +806,7 @@ void* OperatorOne() noexcept
 
 void* Operator(int seat) noexcept
 {
-    return SeatBuilt(seat) ? Resolve(g_seats[seat].cameraOperator) : nullptr;
+    return seat_objects::Operator(seat);
 }
 
 void LogCounts() noexcept
@@ -883,7 +817,7 @@ try
     constexpr std::uint32_t kCameraSensitivity = 0x9E8;
     for (int i = 0; i <= kSeatsBuilt; ++i)
     {
-        void* const          controller = i == 0 ? PlayerOne() : (OnGameThread() ? Resolve(g_seats[i].controller) : nullptr);
+        void* const          controller = i == 0 ? PlayerOne() : (OnGameThread() ? seat_objects::Controller(i) : nullptr);
         std::array<float, 3> rotation{};
         float                sensitivity = 0.0f;
         const auto*          base        = static_cast<const std::uint8_t*>(controller);

@@ -20,7 +20,7 @@
 #include "platform/log.h"
 #include "platform/verified_code.h"
 #include "platform/vtable_entry.h"
-#include "players/player_two_camera.h"
+#include "players/weak_object.h"
 #include "players/scopes.h"
 
 #ifndef WIN32_LEAN_AND_MEAN
@@ -523,7 +523,7 @@ bool MayScope(int seat, std::size_t lever, const wchar_t* what) noexcept
 int SeatOfWeak(const std::uint8_t* at) noexcept
 {
     std::int32_t pair[2]{};
-    return Read(at, pair) ? SeatOfMember(players::player_two_camera::ObjectOf(pair)) : 0;
+    return Read(at, pair) ? SeatOfMember(players::weak_object::ObjectOf(pair)) : 0;
 }
 
 char HitApply(void* context, void* hit)
@@ -881,7 +881,7 @@ void Tick() noexcept
     const std::uintptr_t manager = players::scopes::PartyManagerAddress();
     std::int32_t         pair[2]{};
     void* leader = manager != 0 && Read(reinterpret_cast<const void*>(manager + facts::kPartyLeaderWeak), pair)
-                       ? players::player_two_camera::ObjectOf(pair)
+                       ? players::weak_object::ObjectOf(pair)
                        : nullptr;
     g_members[0].store(leader, std::memory_order_relaxed);
     g_controllers[0].store(players::scopes::Controller(0), std::memory_order_relaxed);

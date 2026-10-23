@@ -8,6 +8,7 @@
 #include "platform/log.h"
 #include "platform/verified_code.h"
 #include "players/player_two_camera.h"
+#include "players/weak_object.h"
 #include "players/scopes.h"
 #include "players/seats.h"
 
@@ -102,7 +103,7 @@ unsigned RequiredMask() noexcept
 void* Sequence(const void* entry) noexcept
 {
     std::int32_t pair[2]{};
-    return Read(static_cast<const std::uint8_t*>(entry) + facts::kSeqEntrySequenceWeak, pair) ? players::player_two_camera::ObjectOf(pair)
+    return Read(static_cast<const std::uint8_t*>(entry) + facts::kSeqEntrySequenceWeak, pair) ? players::weak_object::ObjectOf(pair)
                                                                                                 : nullptr;
 }
 

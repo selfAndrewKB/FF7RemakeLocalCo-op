@@ -8,6 +8,7 @@
 #include "platform/verified_code.h"
 #include "platform/vtable_entry.h"
 #include "players/scopes.h"
+#include "players/seat_objects.h"
 #include "players/seats.h"
 
 #include <array>
@@ -46,17 +47,11 @@ struct Counts
 };
 std::array<Counts, scopes::kMaxPlayers> g_counts;
 
-/// The seat whose controller owns `controller`, else 0.
+/// The seat whose controller owns `controller`, else 0 (the registry's liveness-checked answer).
 int SeatOf(const void* controller) noexcept
 {
-    for (int seat = 1; controller != nullptr && seat <= kSeatsBuilt; ++seat)
-    {
-        if (scopes::Controller(seat) == controller)
-        {
-            return seat;
-        }
-    }
-    return 0;
+    const int seat = seat_objects::SeatOf(controller);
+    return seat != 0 && seat_objects::Controller(seat) == controller ? seat : 0;
 }
 
 /// The keys (FNames) of the volumes the component lists as entered: the map's elements whose allocation bit is set.

@@ -6,7 +6,7 @@
 #include "platform/image.h"
 #include "platform/log.h"
 #include "platform/verified_code.h"
-#include "players/player_two_camera.h"
+#include "players/weak_object.h"
 
 #include <cstdint>
 #include <format>
@@ -125,7 +125,7 @@ bool Apply(void* character, bool list) noexcept
 
 void Unlist(int type) noexcept
 {
-    if (void* old = players::player_two_camera::ObjectOf(g_listed[type]); old != nullptr)
+    if (void* old = players::weak_object::ObjectOf(g_listed[type]); old != nullptr)
     {
         const bool ok = Apply(old, false);
         platform::LogDebug(L"party fade: type {} {}: the mod's reason taken off (fade now {}, {} reason(s) left)", type,
@@ -146,7 +146,7 @@ void KeepAll() noexcept
     for (int type = 0; type < kTypes; ++type)
     {
         void* actor = ActorOfType(static_cast<std::uint8_t>(type));
-        void* held  = players::player_two_camera::ObjectOf(g_listed[type]);
+        void* held  = players::weak_object::ObjectOf(g_listed[type]);
         if (held != nullptr && held != actor)
         {
             Unlist(type);  // the slot holds another actor now (or none)
@@ -159,11 +159,11 @@ void KeepAll() noexcept
         const int  fadeOn = FadeOn(actor);
         if (listed && fadeOn == 0)
         {
-            players::player_two_camera::WeakPairOf(actor, g_listed[type]);
+            players::weak_object::WeakPairOf(actor, g_listed[type]);
             continue;
         }
         const bool ok = Apply(actor, true);
-        players::player_two_camera::WeakPairOf(actor, g_listed[type]);
+        players::weak_object::WeakPairOf(actor, g_listed[type]);
         ++changed;
         platform::LogDebug(L"party fade: type {}: reason {} (was listed {}, fade was {}) -> fade now {}, {} reason(s)", type,
                            ok ? L"listed" : L"could not be listed", listed, fadeOn, FadeOn(actor), ReasonCount(actor));

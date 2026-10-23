@@ -9,7 +9,7 @@
 #include "platform/log.h"
 #include "platform/verified_code.h"
 #include "platform/vtable_entry.h"
-#include "players/player_two_camera.h"
+#include "players/weak_object.h"
 #include "players/scopes.h"
 #include "players/seats.h"
 
@@ -110,7 +110,7 @@ void* Root(const void* controller, std::uint32_t weakOffset) noexcept
 {
     std::int32_t pair[2]{-1, 0};
     return controller != nullptr && Read(static_cast<const std::uint8_t*>(controller) + weakOffset, pair)
-               ? players::player_two_camera::ObjectOf(pair)
+               ? players::weak_object::ObjectOf(pair)
                : nullptr;
 }
 

@@ -5,7 +5,7 @@
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
-#include "players/player_two_camera.h"
+#include "players/weak_object.h"
 
 #include <array>
 #include <cstring>
@@ -170,7 +170,7 @@ void BindMember(int player, void* member, std::uint8_t type) noexcept
     p.member  = member;
     p.type    = member == nullptr ? kTypeNone : type;
     std::int32_t weak[2]{-1, 0};
-    if (member == nullptr || !player_two_camera::WeakPairOf(member, weak))
+    if (member == nullptr || !weak_object::WeakPairOf(member, weak))
     {
         p.leader.Clear();
         return;

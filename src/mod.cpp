@@ -48,6 +48,7 @@
 #include "players/nav_area_two.h"
 #include "players/operator_battle_mode.h"
 #include "players/player_two_camera.h"
+#include "players/weak_object.h"
 #include "players/game_state.h"
 #include "players/lead_gate.h"
 #include "players/session.h"
@@ -83,7 +84,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.62.0-seat-state";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.63.0-seat-objects";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
@@ -170,7 +171,7 @@ void RegisterSessionCommands(lss::players::Session& session)
               .help  = L"out, awaiting (asked for; joins once its member is free), rejoining (taken out by a world change; joins "
                        L"again once the field is back), in (between a seat and the next, momentary), playing (holds its member), "
                        L"or handed (its member is with its AI while the game's leader is: a scene, a field action, the lock; or "
-                       L"for the member's own hold: a script, an animation, a guide lead; the seat is kept); players/seat_state.h",
+                       L"for the member's own hold: a script, an animation, a guide lead; the seat is kept)",
               .get   = [&session] { return Value{std::wstring(lss::players::StateName(session.State(kSeatOne)))}; }});
     Register({.name  = L"showflags",
               .shape = Shape::Hex,
@@ -274,6 +275,10 @@ public:
     {
         Log(L"v{} starting", kVersion);
         const auto image = lss::platform::GameImage::Locate();
+        if (image)
+        {
+            lss::players::weak_object::Install(*image);  // first: every module that keeps a game object between ticks uses it
+        }
         if (!image || !session_.Install(*image))
         {
             Log(L"standing aside: an engine check failed (see above); nothing installed, the game runs unmodified");

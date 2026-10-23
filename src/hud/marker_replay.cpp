@@ -10,7 +10,7 @@
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
-#include "players/player_two_camera.h"
+#include "players/weak_object.h"
 #include "players/scopes.h"
 
 #ifndef WIN32_LEAN_AND_MEAN
@@ -259,7 +259,7 @@ void Fault(int kind, const wchar_t* what) noexcept
 /// before the overlay render).
 bool Alive(void* widget, const std::int32_t (&weak)[2]) noexcept
 {
-    return widget != nullptr && players::player_two_camera::ObjectOf(weak) == widget;
+    return widget != nullptr && players::weak_object::ObjectOf(weak) == widget;
 }
 
 /// Last call per widget wins (the tick may place a bar twice: creation and frame).
@@ -283,7 +283,7 @@ void Untargeted(void* manager, void* widget, const Vector3* location)
     {
         BarCall call{manager, widget};
         call.location = *location;
-        players::player_two_camera::WeakPairOf(widget, call.weak);
+        players::weak_object::WeakPairOf(widget, call.weak);
         Keep(g_bars, call);
         ++g_seen.untargeted;
     }
@@ -301,7 +301,7 @@ void Targeted(void* manager, void* widget, WeakKey* key, const Vector3* location
         call.key      = *key;
         call.halfSize = halfSize;
         call.skip     = skip;
-        players::player_two_camera::WeakPairOf(widget, call.weak);
+        players::weak_object::WeakPairOf(widget, call.weak);
         Keep(g_bars, call);
         ++g_seen.targeted;
     }
@@ -400,7 +400,7 @@ bool Cursor(void* controller, void* widget, const Vector3* location)
     {
         PointCall call{controller, widget};
         call.location = *location;
-        players::player_two_camera::WeakPairOf(widget, call.weak);
+        players::weak_object::WeakPairOf(widget, call.weak);
         KeepPoint(g_cursors, call);
         ++g_seen.cursors;
     }
@@ -414,7 +414,7 @@ void Lockon(void* controller, void* widget, const Vector3* location, std::uint8_
         PointCall call{controller, widget};
         call.location = *location;
         call.show     = show;
-        players::player_two_camera::WeakPairOf(widget, call.weak);
+        players::weak_object::WeakPairOf(widget, call.weak);
         KeepPoint(g_lockons, call);
         ++g_seen.lockons;
     }
@@ -643,7 +643,7 @@ void* SubWidget(const std::uint8_t* p, std::uint32_t field, std::int32_t (&weak)
     {
         return nullptr;
     }
-    return players::player_two_camera::ObjectOf(weak);
+    return players::weak_object::ObjectOf(weak);
 }
 
 /// The bar's look for this column when its class differs from the tick's: the bar, the name, the status panel and
@@ -1476,7 +1476,7 @@ void Replay(int column, void* localPlayer, void* controller) noexcept
         return;
     }
     std::int32_t context[2]{};
-    if (!players::player_two_camera::WeakPairOf(localPlayer, context))
+    if (!players::weak_object::WeakPairOf(localPlayer, context))
     {
         return;  // the looks are the tick's already (above)
     }

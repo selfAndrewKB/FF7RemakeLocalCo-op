@@ -81,7 +81,9 @@ add_library(LocalSplitScreen SHARED
     src/players/nav_area_two.cpp
     src/players/player_two_camera.cpp
     src/players/scopes.cpp
+    src/players/seat_objects.cpp
     src/players/session.cpp
+    src/players/weak_object.cpp
     src/players/split_render.cpp
     src/players/unreal_call.cpp
     src/render/ao_origin.cpp

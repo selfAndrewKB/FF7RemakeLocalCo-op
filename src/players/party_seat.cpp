@@ -6,8 +6,9 @@
 #include "platform/log.h"
 #include "platform/verified_code.h"
 #include "players/player_trigger.h"
-#include "players/seats.h"
 #include "players/scopes.h"
+#include "players/seat_objects.h"
+#include "players/seats.h"
 
 #include <array>
 #include <cstdint>
@@ -115,6 +116,7 @@ bool SeatMember(int seat, void* playerOneController, void* controller, void* mem
         state.member = member;
         state.type   = type;
         scopes::BindMember(seat, member, type);
+        seat_objects::BindMember(seat, member);
     }
     platform::Log(L"{}: its controller {} member type {} (its leader field {})", SeatName(seat),
                   seated ? L"now holds" : L"did NOT take", type, seated ? L"names it" : L"does not name it");
@@ -139,6 +141,7 @@ bool Unseat(int seat, void* playerOneController, void* controller) noexcept
     state.member            = nullptr;
     state.type              = facts::kPlayerTypeNone;
     scopes::BindMember(seat, nullptr, facts::kPlayerTypeNone);
+    seat_objects::BindMember(seat, nullptr);
     // With a borrowed trigger player 1's trigger rode on the member: re-seating player 1's own leader through the
     // same funnel puts it back. The seat's own trigger needs nothing: player 1's never moved.
     const bool borrowed  = !player_trigger::OwnedBy(seat, ReadPointer(controller, kTrigger));
@@ -159,6 +162,7 @@ void Forget(int seat) noexcept
     }
     g_seats[seat] = State{};
     scopes::BindMember(seat, nullptr, facts::kPlayerTypeNone);
+    seat_objects::BindMember(seat, nullptr);
     player_trigger::Destroy(seat);
 }
 

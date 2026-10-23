@@ -9,6 +9,7 @@
 #include "platform/verified_code.h"
 #include "platform/vtable_entry.h"
 #include "players/player_two_camera.h"
+#include "players/seat_objects.h"
 #include "players/seats.h"
 
 #include <array>
@@ -54,7 +55,7 @@ void Aim(void* flavor, float deltaSeconds, void* a3, void* a4, void* a5)
     Seat&     s    = g_seats[seat];
     ++s.aims;
     void* flavorOperator = nullptr;
-    void* expected       = seat == 0 ? players::player_two_camera::OperatorOne() : players::player_two_camera::Operator(seat);
+    void* expected       = seat == 0 ? players::player_two_camera::OperatorOne() : players::seat_objects::Operator(seat);
     if (Read(static_cast<std::uint8_t*>(flavor) + facts::kFlavorOperator, flavorOperator) && flavorOperator != expected)
     {
         ++s.otherOperator;

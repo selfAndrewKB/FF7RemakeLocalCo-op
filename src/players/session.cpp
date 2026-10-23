@@ -25,6 +25,8 @@
 #include "players/party_member.h"
 #include "players/party_seat.h"
 #include "players/player_two_camera.h"
+#include "players/seat_objects.h"
+#include "players/weak_object.h"
 #include "battle/command_menu_two.h"
 #include "battle/targeting_two.h"
 #include "battle/lock_camera_two.h"
@@ -465,6 +467,7 @@ void Session::Forget(Seat& seat) noexcept
     seat.localPlayer = nullptr;
     EndMemberModules(seat);
     scopes::Unbind(seat.index);
+    seat_objects::Forget(seat.index);
     split_render::OnLeave();
     pad_buttons::SetPlayers(1 + Count());
     if (cameraInstalled_)
@@ -576,6 +579,7 @@ try
     split_render::OnJoin();
     pad_buttons::SetPlayers(1 + Count());  // from here the seat's pad's buttons are its own
     scopes::BindController(seat.index, seatController);
+    seat_objects::BindController(seat.index, seatController);  // the one registry every module asks
     seat.seatRetryAt = 0;
     if (seatInstalled_)
     {
@@ -674,6 +678,7 @@ try
     }
     seat.ResetMember();
     scopes::Unbind(seat.index);
+    seat_objects::Forget(seat.index);
     const auto gone = local_player_list::DestroyLeftovers(leftovers);
     platform::Log(L"leave: {} removed{}; leftovers destroyed: camera actor {}, battle-talk actor {}", seat.Name(),
                   raised ? L" (the call raised an exception after removing it)" : L"", gone.camera ? L"yes" : L"no",
@@ -708,7 +713,7 @@ try
         seat.seatRetryAt = ticks_ + kSeatRetryTicks;  // the refusal is logged by the seat; tried again later, the player in
         return false;
     }
-    if (!player_two_camera::WeakPairOf(choice.member, seat.memberWeak))
+    if (!weak_object::WeakPairOf(choice.member, seat.memberWeak))
     {
         seat.memberWeak[0] = -1;
         seat.memberWeak[1] = 0;
@@ -793,7 +798,7 @@ try
         return;
     }
     // Destroyed under the player (a retry rebuilds the party without a field exit): nothing is called on it.
-    if (seat.memberWeak[1] != 0 && player_two_camera::ObjectOf(seat.memberWeak) != member)
+    if (seat.memberWeak[1] != 0 && weak_object::ObjectOf(seat.memberWeak) != member)
     {
         platform::Log(L"{}'s member was destroyed under it (the party rebuilt without a field exit); {} lets go and chooses again",
                       seat.Name(), seat.Name());
