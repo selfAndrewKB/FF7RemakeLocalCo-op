@@ -300,3 +300,10 @@ add_executable(LockCameraRulesTests
 target_include_directories(LockCameraRulesTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_compile_features(LockCameraRulesTests PRIVATE cxx_std_20)
 add_test(NAME lock_camera_rules COMMAND LockCameraRulesTests)
+
+add_executable(MinimapRulesTests
+    tests/minimap_rules_test.cpp
+)
+target_include_directories(MinimapRulesTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(MinimapRulesTests PRIVATE cxx_std_20)
+add_test(NAME minimap_rules COMMAND MinimapRulesTests)

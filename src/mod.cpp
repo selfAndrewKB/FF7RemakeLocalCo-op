@@ -83,7 +83,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.55.0-sequence-camera-by-seat";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.56.0-minimap-by-seat";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
@@ -475,7 +475,11 @@ private:
             columns.member[column] = column >= 1 ? lss::players::scopes::Member(column) : nullptr;
         }
         lss::hud::second_image::Tick(split, columns);
-        lss::hud::minimap_two::Tick(split && session_.Seated(kSeatOne), columns.controller[1]);
+        lss::hud::minimap_two::Tick();
+        for (int seat = 1; seat <= lss::players::kSeatsBuilt; ++seat)
+        {
+            lss::hud::minimap_two::TickSeat(seat, split && session_.Seated(seat), columns.controller[seat]);
+        }
         lss::hud::marker_replay::Tick();
         lss::hud::field_icons::Tick();
         lss::hud::root_placement::Tick(views && lss::hud::overlay_layout::BandApplies());
