@@ -12,6 +12,7 @@
 #include "platform/log.h"
 #include "platform/verified_code.h"
 #include "players/game_state.h"
+#include "views/column_rules.h"
 #include "views/display_align.h"
 #include "views/monitor_row.h"
 
@@ -52,7 +53,7 @@ constexpr std::uint32_t kRequestTicks           = 180;  // the engine applies a 
 constexpr std::uint32_t kReshapeSettleTicks     = 2;    // the window's rect is read after the engine's own follow
 constexpr std::uint32_t kReshapeRetryTicks      = 60;
 constexpr std::uint32_t kLineUpTicks            = 120;  // the desktop read as the row after a move: live 2 ms was too soon
-constexpr std::int32_t  kColumnsBuilt           = 2;    // the third column needs the third view and the layout-table write
+constexpr std::int32_t  kColumnsBuilt           = column_rules::kMaxColumns;  // one per monitor of the row, up to three
 constexpr std::uint8_t  kStatePlay              = 6;    // the game's play state (the title is one): the preset's hold waits for it
 constexpr std::uint8_t  kLayoutSideBySide       = 1;    // ETwoPlayerSplitScreenType::Vertical
 constexpr const wchar_t* kGameMapsSettingsPath  = L"/Script/EngineSettings.Default__GameMapsSettings";
@@ -545,7 +546,7 @@ bool Enter(std::int32_t columns) noexcept
     }
     if (columns > kColumnsBuilt)
     {
-        platform::Log(L"window span: {} columns asked for; only two are built (the third needs the third view)", columns);
+        platform::Log(L"window span: {} columns asked for; at most {} are built (one per monitor of the row)", columns, kColumnsBuilt);
         return false;
     }
     const wchar_t* why    = L"";
@@ -563,6 +564,16 @@ bool Enter(std::int32_t columns) noexcept
 
     Monitors monitors = Collect(window->hwnd);
     auto     choice   = monitor_row::Choose(monitors.list, monitors.gameAt, columns);
+    // As many columns as the row has monitors, up to the number asked for: a two-monitor row spans two columns
+    // when three are asked (the hold asks for every column built).
+    while (!choice.ok && columns > 2 && choice.rowMonitors >= 2)
+    {
+        const std::int32_t fewer = std::min(columns - 1, choice.rowMonitors);
+        platform::Log(L"window span: the longest row has {} equal monitor(s); {} columns instead of {}", choice.rowMonitors, fewer,
+                      columns);
+        columns = fewer;
+        choice  = monitor_row::Choose(monitors.list, monitors.gameAt, columns);
+    }
     if (!choice.ok)
     {
         platform::Log(L"window span: refused: {} ({} monitor(s) listed; the mod lines up a row's tops itself within {} px "

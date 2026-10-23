@@ -24,7 +24,8 @@
 //
 // Entered on player 2's join when a row of equal monitors qualifies (`window-span on`, the default), or by the
 // command / Ctrl+F2; left by the command, with player 2, and at the mod's end. The number of columns is the number
-// of seated players (two today). The hold (`window-span.hold on`, v0.41.0) spans the row with any player count and
+// of monitors in the row, up to three (plan/seats.md step 5; a three-monitor row is unplayed: none on this PC); the
+// mirror player fills the columns no player has. The hold (`window-span.hold on`, v0.41.0) spans the row with any player count and
 // keeps it when player 2 leaves (a loading screen, the main menu, a movie): the multi-monitor presentation modes
 // (plan/topics/views.md); the mirror player (views/mirror_player, v0.42.0) fills the empty column under it. The
 // preset `[Views] multi-monitor = off | on | auto` in LocalSplitScreen.ini (v0.43.0; platform/settings) sets the
