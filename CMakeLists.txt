@@ -91,8 +91,10 @@ add_library(LocalSplitScreen SHARED
     src/render/ao_origin.cpp
     src/render/bloom_origin.cpp
     src/render/distortion_apply.cpp
+    src/render/lighting_volume.cpp
     src/render/movie_frame.cpp
     src/render/ssr_origin.cpp
+    src/render/sun_cascades.cpp
     src/views/letterbox_patch.cpp
     src/views/column_layout.cpp
     src/views/display_align.cpp
@@ -203,6 +205,13 @@ add_executable(MenuPadsTests
 target_include_directories(MenuPadsTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_compile_features(MenuPadsTests PRIVATE cxx_std_20)
 add_test(NAME menu_pads COMMAND MenuPadsTests)
+
+add_executable(SunOwnerTests
+    tests/sun_owner_test.cpp
+)
+target_include_directories(SunOwnerTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(SunOwnerTests PRIVATE cxx_std_20)
+add_test(NAME sun_owner COMMAND SunOwnerTests)
 
 add_executable(InstructionPatchTests
     tests/instruction_patch_test.cpp

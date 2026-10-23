@@ -346,6 +346,49 @@ inline constexpr std::uint32_t kD3D12PsBytecode       = 0x48;  // const uint8* (
 inline constexpr std::uint32_t kD3D12PsBytecodeLength = 0x50;  // SIZE_T
 inline constexpr std::uint32_t kD3D12PsCode           = 0x58;  // TArray<uint8> {Data, Num, Max}
 
+// --- The sun's cascades per view, and the translucency lighting volume (RE-haze-per-view.md §2, §3, §9) -------------
+/// FProjectedShadowInfo::DependentView: the view a cascade was made for (SetupWholeSceneProjection 0x1425EC850 writes
+/// it; AddViewDependentWholeSceneShadowsForView passes &Views[i]); null for a shadow of no one view.
+inline constexpr std::uint32_t kShadowDependentView = 0x38;
+inline constexpr std::array<std::uint8_t, 16> kIsWholeSceneDirectionalShadowEntry{
+    0x8B, 0x81, 0x68, 0x05, 0x00, 0x00, 0xA8, 0x40, 0x74, 0x10, 0x83, 0xB9, 0x24, 0x05, 0x00, 0x00};
+inline constexpr platform::FunctionFact kIsWholeSceneDirectionalShadow{
+    L"FProjectedShadowInfo::IsWholeSceneDirectionalShadow", 0x142214700, kIsWholeSceneDirectionalShadowEntry};
+/// Its one call, in ComputeLightGrid's cascade loop (0x14221EA50; shadow in rcx). The view whose forward light data is
+/// filled sits in the caller's frame at [rsp+78h] (written once at 0x14221EC9B; rsp fixed after the prologue).
+inline constexpr std::uintptr_t kLightGridCascadeTestCall = 0x14221F483;
+inline constexpr std::uint32_t  kLightGridFilledView      = 0x78;  // caller's rsp offset at the call
+/// The caller's frame as the research read it, checked before the redirect: its stack allocation (after six pushes)
+/// and the one store of the filled view (`mov [rsp+78h], r13`, r13 = Views + 0x28B0 * i).
+inline constexpr std::uintptr_t kLightGridFrameAlloc = 0x14221EA61;
+inline constexpr std::uint8_t   kLightGridFrameAllocBytes[] = {0x48, 0x81, 0xEC, 0x08, 0x09, 0x00, 0x00};
+inline constexpr std::uintptr_t kLightGridViewStore = 0x14221EC9B;
+inline constexpr std::uint8_t   kLightGridViewStoreBytes[] = {0x4C, 0x89, 0x6C, 0x24, 0x78};
+inline constexpr std::array<std::uint8_t, 16> kInjectVolumeLightingEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x20, 0x55, 0x56, 0x57, 0x41, 0x54, 0x41, 0x55, 0x41, 0x56, 0x41, 0x57};
+/// InjectTranslucentVolumeLightingArray(RHICmdList, const FViewInfo* view, const TArray<injection>* lights): reads the
+/// list only ({Data, Num, Max}, 32-byte entries, the shadow at +8: render/sun_owner.h). Neither the list nor its data
+/// outlives the call: the list pointer stays in a local, each entry's fields are copied to locals, and the deferred
+/// commands it records hold render resources only (checked 0x1426285C1..E4) [CONFIRMED].
+inline constexpr platform::FunctionFact kInjectVolumeLighting{L"InjectTranslucentVolumeLightingArray", 0x142627520,
+                                                              kInjectVolumeLightingEntry};
+/// Its four calls: RenderLights' unshadowed and shadowed lights, and the two batch helpers; each passes Views[0].
+inline constexpr std::array<std::uintptr_t, 4> kInjectVolumeLightingCalls{0x1422354A8, 0x1422359F8, 0x142628964,
+                                                                          0x142628B02};
+inline constexpr std::array<std::uint8_t, 16> kCalcVolumeBoundsEntry{
+    0x48, 0x8B, 0xC4, 0x48, 0x89, 0x58, 0x08, 0x48, 0x89, 0x70, 0x18, 0x57, 0x48, 0x81, 0xEC, 0x70};
+/// FViewInfo::CalcTranslucencyLightingVolumeBounds(const FViewInfo* view, FBox* out): the volume's box from that view's
+/// camera. Called once, from FViewInfo::SetupUniformBufferParameters (0x1425C4240), for each view each frame; the
+/// result goes to the view's uniforms (+0x8F0..+0x92F) and fields (+0x2264..+0x2298). Return value unused.
+inline constexpr platform::FunctionFact kCalcVolumeBounds{L"FViewInfo::CalcTranslucencyLightingVolumeBounds",
+                                                          0x142623FC0, kCalcVolumeBoundsEntry};
+inline constexpr std::uintptr_t kCalcVolumeBoundsCall = 0x1425C4F78;
+/// FSceneView::Family (+0); FSceneViewFamily::Views {const FSceneView** Data, int32 Num} (+0, +8). The game's stereo
+/// rule just before the call reads the same fields (0x1425C4F10).
+inline constexpr std::uint32_t kViewFamily      = 0x00;
+inline constexpr std::uint32_t kFamilyViews     = 0x00;
+inline constexpr std::uint32_t kFamilyViewCount = 0x08;
+
 // --- The game's own input tick (RE-input-p2.md §1) ------------------------------------------------
 // AEndPlayerController's constructor turns off the stock per-controller input tick in PlayerTick for gameplay;
 // the game ticks only PartyManager+0's input, from its world-tick phase hook (phase 1, start), through a global
