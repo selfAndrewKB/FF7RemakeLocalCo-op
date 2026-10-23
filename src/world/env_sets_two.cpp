@@ -7,6 +7,7 @@
 #include "platform/image.h"
 #include "platform/log.h"
 #include "platform/verified_code.h"
+#include "players/seats.h"
 #include "world/env_set_view.h"
 
 #include <Unreal/NameTypes.hpp>
@@ -18,6 +19,7 @@
 #include <format>
 #include <span>
 #include <string>
+#include <utility>
 
 namespace lss::world::env_sets_two {
 
@@ -28,6 +30,11 @@ using view::Entry;
 using view::Name;
 using platform::Read;
 using platform::ReadPointer;
+using players::kSeatsBuilt;
+using players::SeatBuilt;
+using players::SeatName;
+
+constexpr int kMaxPlayers = players::scopes::kMaxPlayers;
 
 /// What the trace function reads: the owner tag (the character's first tag, for the engine's trace statistics) and
 /// the place to trace down from. The game passes a 0x18-byte slot.
@@ -58,6 +65,7 @@ using AttachedFn  = void (*)(void* actor, PointerArray* out);
 using FreeFn      = void (*)(void* block);
 
 using Actors = view::List<void*, view::kMaxHidden>;
+using Ids    = std::array<std::uint64_t, 3>;
 
 constexpr double kRefresh = 1.0;  // seconds between lookups while a set stands: actors that spawn or leave later
 
@@ -74,28 +82,35 @@ FreeFn                 g_free      = nullptr;
 std::uint8_t**         g_save      = nullptr;  // &the save data singleton
 std::uint8_t**         g_manager   = nullptr;  // &the manager (the reading)
 
-// Game thread only: Tick, and the two calls inside the manager's evaluation.
-bool          g_enabled       = true;
-bool          g_placed        = false;
-void*         g_two           = nullptr;  // player 2's character while in
-std::uint8_t* g_twoController = nullptr;  // and controller
-std::uint64_t g_twoHandle     = 0;        // player 2's trace, readable the frame after
-alignas(16) std::array<std::uint8_t, facts::kEnvSetBlockBytes> g_twoBlock{};  // player 2's set (zero = constructed)
-view::TwoSet  g_fresh;                    // this frame's read
-view::TwoSet  g_kept;                     // the last set read (kept through a no-hit)
-view::Paced   g_paced;                    // the set player 2's view follows
-std::array<std::uint64_t, 3> g_twoIds{};  // the kept set's ids (the reading and the log)
-std::array<std::uint64_t, 3> g_pacedIds{};
-bool          g_due           = false;    // the view's list is to be looked up again
-double        g_lookedUpAt    = -1.0e300;
+// Game thread only: the ticks, and the two calls inside the manager's evaluation.
+bool g_enabled = true;
+bool g_placed  = false;
 
-Actors        g_wanted;                   // this lookup's actors
-Actors        g_ours;                     // the actors the mod put in g_oursIn's list
-std::uint8_t* g_oursIn        = nullptr;
-
-std::uint64_t g_traces = 0, g_reads = 0, g_changes = 0, g_writes = 0;
-int           g_notFound = 0, g_hiddenEntries = 0, g_shownButHidden = 0, g_attachedCount = 0;
-std::wstring  g_problem;                  // the last thing that stopped player 2's part (logged on change)
+/// One further player's set and view, everything the module keeps per seat.
+struct Seat
+{
+    void*         member     = nullptr;  // the seat's character while in
+    std::uint8_t* controller = nullptr;  // and controller
+    std::uint64_t handle     = 0;        // the seat's trace, readable the frame after
+    alignas(16) std::array<std::uint8_t, facts::kEnvSetBlockBytes> block{};  // the seat's set (zero = constructed)
+    view::TwoSet fresh;                  // this frame's read
+    view::TwoSet kept;                   // the last set read (kept through a no-hit)
+    view::Paced  paced;                  // the set the seat's view follows
+    Ids          ids{};                  // the kept set's ids (the reading and the log)
+    Ids          pacedIds{};
+    bool         due        = false;     // the view's list is to be looked up again
+    bool         lookedUp   = false;     // a lookup has run (zero-based with lookedUpAt, so the records cost the DLL nothing)
+    double       lookedUpAt = 0.0;
+    Actors        wanted;                // this lookup's actors
+    Actors        ours;                  // the actors the mod put in oursIn's list
+    std::uint8_t* oursIn = nullptr;
+    std::uint64_t traces = 0, reads = 0, changes = 0, writes = 0;
+    int           notFound = 0, hiddenEntries = 0, shownButHidden = 0, attachedCount = 0;
+};
+std::array<Seat, kMaxPlayers> g_seats;  // by seat; [0] unused: all zero at start, so the records cost the DLL nothing
+// The last thing that stopped each player's part (logged on change). Apart from the records: a string's empty state
+// is not all zero, and one inside the record would put every record into the DLL's data (0.55 MB, measured).
+std::array<std::wstring, kMaxPlayers> g_problems;
 
 double Now() noexcept
 {
@@ -125,7 +140,7 @@ std::wstring Text(Name name)
     return platform::CallGuarded(&NameText, static_cast<std::int64_t>(Bits(name)), &text) && !text.empty() ? text : L"?";
 }
 
-std::wstring IdsText(const std::array<std::uint64_t, 3>& ids)
+std::wstring IdsText(const Ids& ids)
 {
     std::wstring out;
     for (const std::uint64_t id : ids)
@@ -140,16 +155,17 @@ std::wstring IdsText(const std::array<std::uint64_t, 3>& ids)
     return out.empty() ? L"none" : out;
 }
 
-void Problem(std::wstring_view what) noexcept
+/// The last thing that stopped the seat's part, formed and kept inside the guard; logged on change.
+template <class... A>
+void Problem(int seat, std::wformat_string<A...> text, A&&... args) noexcept
 try
 {
-    if (g_problem != what)
+    std::wstring  what    = std::format(text, std::forward<A>(args)...);
+    std::wstring& problem = g_problems[static_cast<std::size_t>(seat)];
+    if (problem != what)
     {
-        g_problem = what;
-        if (!what.empty())
-        {
-            platform::LogDebug(L"env sets 2: {}", what);
-        }
+        problem = std::move(what);
+        platform::LogDebug(L"env sets 2: {}: {}", SeatName(seat), problem);
     }
 }
 catch (...)
@@ -175,102 +191,114 @@ bool Levels(std::uint8_t* block, const Name*& data, std::int32_t& num) noexcept
 char Issue(void* unused, const TraceArg* arg, std::uint64_t r8, std::uint64_t r9, std::uint64_t* handle) noexcept
 {
     const char result = g_issue(unused, arg, r8, r9, handle);  // player 1's, as the game issues it
-    if (g_two == nullptr)
+    for (int seat = 1; seat <= kSeatsBuilt; ++seat)
     {
-        g_twoHandle = 0;
-        return result;
+        Seat& s = g_seats[seat];
+        if (s.member == nullptr)
+        {
+            s.handle = 0;
+            continue;
+        }
+        TraceArg      own{};
+        std::int32_t  tags = 0;
+        auto* const   root = static_cast<std::uint8_t*>(ReadPointer(s.member, facts::kActorRootComponent));
+        if (root == nullptr || !Read(root + facts::kComponentWorldLocation, own.location))
+        {
+            s.handle = 0;  // no place to trace from (the game would trace from the origin; the mod skips it)
+            continue;
+        }
+        if (Read(static_cast<std::uint8_t*>(s.member) + facts::kActorTags + 8, tags) && tags > 0)
+        {
+            Read(ReadPointer(s.member, facts::kActorTags), own.tag);
+        }
+        g_issue(nullptr, &own, 0, 0, &s.handle);
+        ++s.traces;
     }
-    TraceArg      two{};
-    std::int32_t  tags = 0;
-    auto* const   root = static_cast<std::uint8_t*>(ReadPointer(g_two, facts::kActorRootComponent));
-    if (root == nullptr || !Read(root + facts::kComponentWorldLocation, two.location))
-    {
-        g_twoHandle = 0;  // no place to trace from (the game would trace from the origin; the mod skips it)
-        return result;
-    }
-    if (Read(static_cast<std::uint8_t*>(g_two) + facts::kActorTags + 8, tags) && tags > 0)
-    {
-        Read(ReadPointer(g_two, facts::kActorTags), two.tag);
-    }
-    g_issue(nullptr, &two, 0, 0, &g_twoHandle);
-    ++g_traces;
     return result;
 }
 
 // --- 2. The read ---------------------------------------------------------------------------------------------------
 
-/// The game's read of player 2's trace into the mod's block (g_fresh), with the save data's set name kept player 1's.
-bool ReadTwo(void* manager) noexcept
+enum class ReadResult
 {
-    if (g_twoHandle == 0)
+    NoSet,     // no set for this seat this frame (no trace, no ground naming one, or unreadable)
+    Set,       // the seat's set is in s.fresh
+    NameLost,  // the save data's set name could not be put back: no further seat may blank it this frame
+};
+
+/// The game's read of the seat's trace into the mod's block (s.fresh), with the save data's set name kept player 1's.
+ReadResult ReadSeat(int seat, Seat& s, void* manager) noexcept
+{
+    if (s.handle == 0)
     {
-        return false;
+        return ReadResult::NoSet;
     }
     std::uint8_t* save  = nullptr;
     std::int32_t  state = 0;
     if (!Read(g_save, save) || save == nullptr || !Read(save + facts::kSaveDataState, state))
     {
-        Problem(L"the save data is not there; player 2's set is not read");
-        return false;
+        Problem(seat, L"the save data is not there; the set is not read");
+        return ReadResult::NoSet;
     }
     std::uint8_t* const name = state == facts::kSaveDataStateActive
                                    ? save + facts::kSaveDataActive + facts::kSaveDataEnvSetName
                                    : nullptr;
-    std::array<std::uint8_t, facts::kSaveDataEnvSetNameBytes> kept{};
+    std::array<std::uint8_t, facts::kSaveDataEnvSetNameBytes> savedName{};
     constexpr std::uint8_t kBlank = 0;
-    if (name != nullptr && (!platform::CopyGuarded(kept.data(), name, kept.size()) ||
+    if (name != nullptr && (!platform::CopyGuarded(savedName.data(), name, savedName.size()) ||
                             !platform::WriteGuarded(name, &kBlank, 1)))
     {
-        Problem(L"the save data's set name could not be kept; player 2's set is not read");
-        return false;
+        Problem(seat, L"the save data's set name could not be kept; the set is not read");
+        return ReadResult::NoSet;
     }
-    g_reset(g_twoBlock.data());
-    const char two = g_read(manager, &g_twoHandle, g_twoBlock.data());
-    if (name != nullptr && !platform::WriteGuarded(name, kept.data(), kept.size()))
+    g_reset(s.block.data());
+    const char read = g_read(manager, &s.handle, s.block.data());
+    ++s.reads;
+    if (name != nullptr && !platform::WriteGuarded(name, savedName.data(), savedName.size()))
     {
         platform::LogWarning(L"env sets 2: the save data's set name could not be put back");
+        Problem(seat, L"the save data's set name could not be put back; no other player's set is read this frame");
+        return ReadResult::NameLost;
     }
-    ++g_reads;
-    if (two == 0)
+    if (read == 0)
     {
-        return false;  // no ground under player 2 that names a set (or the trace not back yet)
+        return ReadResult::NoSet;  // no ground under the player that names a set (or the trace not back yet)
     }
     Entry*       entries = nullptr;
     const Name*  levels  = nullptr;
     std::int32_t entryCount = 0, levelCount = 0;
-    if (!Entries(g_twoBlock.data(), entries, entryCount) || !Levels(g_twoBlock.data(), levels, levelCount))
+    if (!Entries(s.block.data(), entries, entryCount) || !Levels(s.block.data(), levels, levelCount))
     {
-        return false;
+        return ReadResult::NoSet;
     }
     if (entryCount > view::kMaxEntries || levelCount > view::kMaxLevels)
     {
-        Problem(std::format(L"player 2's set lists {} actors and {} levels, more than the mod holds ({}, {}); kept the "
-                            L"last one",
-                            entryCount, levelCount, view::kMaxEntries, view::kMaxLevels));
-        return false;
+        Problem(seat, L"the set lists {} actors and {} levels, more than the mod holds ({}, {}); kept the last one",
+                entryCount, levelCount, view::kMaxEntries, view::kMaxLevels);
+        return ReadResult::NoSet;
     }
-    g_fresh.entries.count = 0;
-    g_fresh.levels.count  = 0;
+    s.fresh.entries.count = 0;
+    s.fresh.levels.count  = 0;
     for (std::int32_t i = 0; i < entryCount; ++i)
     {
-        g_fresh.entries.Add(entries[i]);
+        s.fresh.entries.Add(entries[i]);
     }
     for (std::int32_t i = 0; i < levelCount; ++i)
     {
-        g_fresh.levels.Add(levels[i]);
+        s.fresh.levels.Add(levels[i]);
     }
-    std::array<std::uint64_t, 3> ids{};
-    platform::CopyGuarded(ids.data(), g_twoBlock.data() + facts::kEnvSetBlockIds, sizeof(ids));
-    if (ids != g_twoIds)
+    Ids ids{};
+    platform::CopyGuarded(ids.data(), s.block.data() + facts::kEnvSetBlockIds, sizeof(ids));
+    if (ids != s.ids)
     {
-        platform::LogDebug(L"env sets 2: player 2's ground names set {} ({} actors, {} levels)", IdsText(ids),
-                           g_fresh.entries.count, g_fresh.levels.count);
-        g_twoIds = ids;
+        platform::LogDebug(L"env sets 2: {}'s ground names set {} ({} actors, {} levels)", SeatName(seat), IdsText(ids),
+                           s.fresh.entries.count, s.fresh.levels.count);
+        s.ids = ids;
     }
-    return true;
+    return ReadResult::Set;
 }
 
-// --- 3. Player 2's view --------------------------------------------------------------------------------------------
+// --- 3. The seat's view ---------------------------------------------------------------------------------------------
 
 bool AddOnce(Actors& list, void* actor) noexcept
 {
@@ -286,12 +314,12 @@ bool AddOnce(Actors& list, void* actor) noexcept
 
 view::LevelList g_lookupLevels;  // the set's levels that are in the manager's lookup set (this lookup)
 
-/// The levels of player 2's set the game's apply would search: those in the manager's lookup set.
-void LookupLevels(std::uint8_t* manager) noexcept
+/// The levels of the seat's set the game's apply would search: those in the manager's lookup set.
+void LookupLevels(std::uint8_t* manager, const Seat& s) noexcept
 {
     void* const lookup = manager + facts::kEnvSetMgrLookupLevels;
     g_lookupLevels.count = 0;
-    for (const Name level : g_paced.set.levels.View())
+    for (const Name level : s.paced.set.levels.View())
     {
         std::int32_t  index = -1;
         std::int32_t* found = nullptr;
@@ -319,7 +347,7 @@ std::uint8_t* Find(Name name) noexcept
 
 /// Every actor attached below `actor` (the game's own hide reaches them through their parent's reasons; the view list
 /// follows one attach level only, so they are listed themselves).
-void AddAttached(void* actor) noexcept
+void AddAttached(Seat& s, void* actor) noexcept
 {
     PointerArray out{nullptr, 0, 0};
     if (platform::CallGuarded(g_attached, actor, &out) && out.data != nullptr)
@@ -327,9 +355,9 @@ void AddAttached(void* actor) noexcept
         for (std::int32_t i = 0; i < out.num; ++i)
         {
             void* child = nullptr;
-            if (Read(out.data + i, child) && child != nullptr && AddOnce(g_wanted, child))
+            if (Read(out.data + i, child) && child != nullptr && AddOnce(s.wanted, child))
             {
-                ++g_attachedCount;
+                ++s.attachedCount;
             }
         }
     }
@@ -339,105 +367,107 @@ void AddAttached(void* actor) noexcept
     }
 }
 
-/// The actors player 2's view hides now (g_wanted), with the counts the reading shows.
-bool LookUp(std::uint8_t* manager) noexcept
+/// The actors the seat's view hides now (s.wanted), with the counts the reading shows.
+bool LookUp(int seat, Seat& s, std::uint8_t* manager) noexcept
 {
-    g_wanted.count  = 0;
-    g_notFound      = 0;
-    g_hiddenEntries = 0;
-    g_shownButHidden = 0;
-    g_attachedCount = 0;
-    LookupLevels(manager);
-    for (const Entry& entry : g_paced.set.entries.View())
+    s.wanted.count   = 0;
+    s.notFound       = 0;
+    s.hiddenEntries  = 0;
+    s.shownButHidden = 0;
+    s.attachedCount  = 0;
+    LookupLevels(manager, s);
+    for (const Entry& entry : s.paced.set.entries.View())
     {
         std::uint8_t* const actor = Find(entry.name);
         if (entry.hidden == 0)
         {
-            // Shown in player 2's single player; a hide of player 1's cannot be undone for one view alone.
+            // Shown in the player's single player; a hide of player 1's cannot be undone for one view alone.
             std::uint8_t flags = 0;
             if (actor != nullptr && Read(actor + facts::kActorHiddenFlags, flags) && (flags & facts::kActorHiddenBit) != 0)
             {
-                ++g_shownButHidden;
+                ++s.shownButHidden;
             }
             continue;
         }
-        ++g_hiddenEntries;
+        ++s.hiddenEntries;
         if (actor == nullptr)
         {
-            ++g_notFound;  // not loaded or not spawned yet: looked up again at the next refresh
+            ++s.notFound;  // not loaded or not spawned yet: looked up again at the next refresh
             continue;
         }
-        if (!AddOnce(g_wanted, actor))
+        if (!AddOnce(s.wanted, actor))
         {
-            Problem(L"more actors to hide in player 2's view than the mod holds; the rest stay");
+            Problem(seat, L"more actors to hide in the view than the mod holds; the rest stay");
             return false;
         }
-        AddAttached(actor);
+        AddAttached(s, actor);
     }
     return true;
 }
 
-/// Player 2's controller's HiddenActors: the mod's earlier entries out, this lookup's in; other code's entries kept.
-bool Write(std::uint8_t* controller) noexcept
+/// The seat's controller's HiddenActors: the mod's earlier entries out, this lookup's in; other code's entries kept.
+bool Write(int seat, Seat& s, std::uint8_t* controller) noexcept
 {
     auto* const  list = reinterpret_cast<PointerArray*>(controller + facts::kControllerHiddenActors);
     PointerArray now{};
     if (!Read(list, now) || now.num < 0 || now.max < now.num || (now.num > 0 && now.data == nullptr))
     {
-        Problem(L"player 2's hidden-actor list is not readable");
+        Problem(seat, L"the hidden-actor list is not readable");
         return false;
     }
-    if (g_oursIn != controller)
+    if (s.oursIn != controller)
     {
-        g_ours.count = 0;  // a new controller: nothing of the mod's there
+        s.ours.count = 0;  // a new controller: nothing of the mod's there
         std::uint8_t renders = 0;
         Read(controller + facts::kControllerRenderPrimitives, renders);
-        platform::LogDebug(L"env sets 2: player 2's controller builds its view's hidden list {} (bRenderPrimitiveComponents "
-                           L"{}); {} actors listed before the mod's", renders != 0 ? L"yes" : L"NO", renders, now.num);
+        platform::LogDebug(L"env sets 2: {}'s controller builds its view's hidden list {} (bRenderPrimitiveComponents {}); "
+                           L"{} actors listed before the mod's",
+                           SeatName(seat), renders != 0 ? L"yes" : L"NO", renders, now.num);
     }
     // The engine's own list memory, on the game thread, which also builds the views from it.
-    std::int32_t kept = now.num > 0 ? view::RemoveOurs(now.data, now.num, g_ours.View()) : 0;
-    const std::int32_t needed = kept + g_wanted.count;
+    std::int32_t kept = now.num > 0 ? view::RemoveOurs(now.data, now.num, s.ours.View()) : 0;
+    const std::int32_t needed = kept + s.wanted.count;
     if (needed > now.max)
     {
         const std::int32_t num = kept;
         platform::WriteGuarded(&list->num, &num, sizeof(num));
         if (!platform::CallGuarded(g_resize, list, needed) || !Read(list, now) || now.max < needed || now.data == nullptr)
         {
-            g_ours.count = 0;
-            Problem(L"player 2's hidden-actor list could not grow; nothing hidden in player 2's view");
+            s.ours.count = 0;
+            Problem(seat, L"the hidden-actor list could not grow; nothing hidden in the view");
             return false;
         }
     }
-    std::memcpy(now.data + kept, g_wanted.items.data(), sizeof(void*) * static_cast<std::size_t>(g_wanted.count));
+    std::memcpy(now.data + kept, s.wanted.items.data(), sizeof(void*) * static_cast<std::size_t>(s.wanted.count));
     platform::WriteGuarded(&list->num, &needed, sizeof(needed));
-    g_ours   = g_wanted;
-    g_oursIn = controller;
-    ++g_writes;
+    s.ours   = s.wanted;
+    s.oursIn = controller;
+    ++s.writes;
     return true;
 }
 
-void Refresh(std::uint8_t* manager, bool changed) noexcept
+void Refresh(int seat, Seat& s, std::uint8_t* manager, bool changed) noexcept
 {
     const double now = Now();
-    if (g_twoController == nullptr || (!changed && !g_due && now - g_lookedUpAt < kRefresh))
+    if (s.controller == nullptr || (!changed && !s.due && s.lookedUp && now - s.lookedUpAt < kRefresh))
     {
         return;
     }
-    g_due        = false;
-    g_lookedUpAt = now;
-    if (!LookUp(manager) || (g_oursIn == g_twoController && g_wanted == g_ours))
+    s.due        = false;
+    s.lookedUp   = true;
+    s.lookedUpAt = now;
+    if (!LookUp(seat, s, manager) || (s.oursIn == s.controller && s.wanted == s.ours))
     {
         return;
     }
-    if (Write(g_twoController))
+    if (Write(seat, s, s.controller))
     {
-        platform::LogDebug(L"env sets 2: player 2's view hides {} actors of set {} ({} attached; {} of its {} hidden "
-                           L"entries not found; {} it shows are hidden by player 1's set)",
-                           g_ours.count, IdsText(g_pacedIds), g_attachedCount, g_notFound, g_hiddenEntries,
-                           g_shownButHidden);
+        platform::LogDebug(L"env sets 2: {}'s view hides {} actors of set {} ({} attached; {} of its {} hidden entries not "
+                           L"found; {} it shows are hidden by player 1's set)",
+                           SeatName(seat), s.ours.count, IdsText(s.pacedIds), s.attachedCount, s.notFound, s.hiddenEntries,
+                           s.shownButHidden);
         platform::LogDebug(L"env sets 2: searched {} of the set's {} levels (the ones in the game's lookup set)",
-                           g_lookupLevels.count, g_paced.set.levels.count);
+                           g_lookupLevels.count, s.paced.set.levels.count);
     }
 }
 
@@ -446,25 +476,32 @@ char ReadSet(void* manager, const std::uint64_t* handle, std::uint8_t* block) no
     const char   one  = g_read(manager, handle, block);  // player 1's, as the game reads it
     std::uint8_t hold = 0;
     const bool   holding = Read(static_cast<std::uint8_t*>(manager) + facts::kEnvSetMgrHoldMode, hold) && hold != 0;
-    // Hold mode: one scripted set for everyone, nothing for player 2 alone. Off or out: nothing either.
-    const bool present  = g_two != nullptr && g_enabled && !holding;
-    const bool resolved = present && ReadTwo(manager);
-    if (!present)
+    bool nameLost = false;  // the save data's set name could not be put back: no further seat reads this frame
+    for (int seat = 1; seat <= kSeatsBuilt; ++seat)
     {
-        g_twoIds = {};
+        Seat& s = g_seats[seat];
+        // Hold mode: one scripted set for everyone, nothing for a further player alone. Off or out: nothing either.
+        const bool       present = s.member != nullptr && g_enabled && !holding;
+        const ReadResult read    = present && !nameLost ? ReadSeat(seat, s, manager) : ReadResult::NoSet;
+        const bool       resolved = read == ReadResult::Set;
+        nameLost                  = nameLost || read == ReadResult::NameLost;
+        if (!present)
+        {
+            s.ids = {};
+        }
+        const view::TwoSet& next = view::NextTwoSet(present, resolved, s.fresh, s.kept);
+        if (&next != &s.kept && !(next == s.kept))
+        {
+            s.kept = next;
+        }
+        const bool changed = view::Pace(s.paced, s.kept, Now());
+        if (changed)
+        {
+            ++s.changes;
+            s.pacedIds = present ? s.ids : Ids{};
+        }
+        Refresh(seat, s, static_cast<std::uint8_t*>(manager), changed);
     }
-    const view::TwoSet& next = view::NextTwoSet(present, resolved, g_fresh, g_kept);
-    if (&next != &g_kept && !(next == g_kept))
-    {
-        g_kept = next;
-    }
-    const bool changed = view::Pace(g_paced, g_kept, Now());
-    if (changed)
-    {
-        ++g_changes;
-        g_pacedIds = present ? g_twoIds : std::array<std::uint64_t, 3>{};
-    }
-    Refresh(static_cast<std::uint8_t*>(manager), changed);
     return one;
 }
 
@@ -487,8 +524,8 @@ bool Install(const platform::GameImage& image) noexcept
     if (!issueCall || !readCall || !issue || !read || !reset || !findId || !findActor || !resize || !attached ||
         !release || !save || !manager)
     {
-        platform::LogWarning(L"env sets 2: the EnvironmentSet code is not what the research read; player 2's view shows "
-                             L"what player 1's ground leaves");
+        platform::LogWarning(L"env sets 2: the EnvironmentSet code is not what the research read; every further player's "
+                             L"view shows what player 1's ground leaves");
         return false;
     }
     g_issue     = reinterpret_cast<IssueFn>(*issue);
@@ -503,15 +540,15 @@ bool Install(const platform::GameImage& image) noexcept
     g_manager   = reinterpret_cast<std::uint8_t**>(*manager);
     if (!g_readCall.Install(*readCall, *read, reinterpret_cast<std::uintptr_t>(&ReadSet)))
     {
-        platform::LogWarning(L"env sets 2: the read could not be redirected; player 2's view shows what player 1's "
-                             L"ground leaves");
+        platform::LogWarning(L"env sets 2: the read could not be redirected; every further player's view shows what player "
+                             L"1's ground leaves");
         return false;
     }
     g_issueSite   = *issueCall;
     g_issueTarget = *issue;
     control::Register({.name  = L"env-sets",
                        .shape = control::Shape::OnOff,
-                       .help  = L"player 2's view hides what the area hides under player 2, as player 1's does "
+                       .help  = L"each further player's view hides what the area hides under that player, as player 1's does "
                                 L"(world/env_sets_two.h; on)",
                        .set   = [](const control::Value& value) {
                            SetEnabled(std::get<bool>(value));
@@ -519,22 +556,31 @@ bool Install(const platform::GameImage& image) noexcept
                        },
                        .get = [] { return control::Value{g_enabled}; }});
     control::Register({.name = L"world.env-sets", .shape = control::Shape::Text,
-                       .help = L"player 2's EnvironmentSet and the actors hidden in player 2's view",
+                       .help = L"each further player's EnvironmentSet and the actors hidden in their view",
                        .get  = [] { return control::Value{Reading()}; }});
-    platform::Log(L"env sets 2: the read is redirected; player 2's trace is placed on the first tick; player 2's view "
-                  L"hides what player 2's ground hides (the world stays player 1's)");
+    platform::Log(L"env sets 2: the read is redirected; the further players' traces are placed on the first tick; each "
+                  L"further player's view hides what their ground hides (the world stays player 1's)");
     return true;
 }
 
-void Tick(void* memberTwo, void* controllerTwo) noexcept
+void TickSeat(int seat, void* seatMember, void* seatController) noexcept
 {
-    std::uint8_t* const controller = memberTwo != nullptr ? static_cast<std::uint8_t*>(controllerTwo) : nullptr;
-    if (controller != g_twoController)
+    if (!SeatBuilt(seat))
     {
-        g_due = true;  // a join (a new controller): its list is filled at the next read
+        return;
     }
-    g_two           = memberTwo;
-    g_twoController = controller;
+    Seat&               s          = g_seats[seat];
+    std::uint8_t* const controller = seatMember != nullptr ? static_cast<std::uint8_t*>(seatController) : nullptr;
+    if (controller != s.controller)
+    {
+        s.due = true;  // a join (a new controller): its list is filled at the next read
+    }
+    s.member     = seatMember;
+    s.controller = controller;
+}
+
+void Tick() noexcept
+{
     if (g_placed || g_issueSite == 0)
     {
         return;
@@ -542,38 +588,48 @@ void Tick(void* memberTwo, void* controllerTwo) noexcept
     g_placed = true;  // once, whatever the outcome; outside the world tick, as the crossing call needs
     if (g_issueCall.InstallFromOwnThread(g_issueSite, g_issueTarget, reinterpret_cast<std::uintptr_t>(&Issue)))
     {
-        platform::Log(L"env sets 2: the trace is redirected; player 2's view hides what player 2's ground hides");
+        platform::Log(L"env sets 2: the trace is redirected; each further player's view hides what their ground hides");
     }
     else
     {
-        platform::LogWarning(L"env sets 2: the trace could not be redirected; player 2's view shows what player 1's "
-                             L"ground leaves");
+        platform::LogWarning(L"env sets 2: the trace could not be redirected; every further player's view shows what player "
+                             L"1's ground leaves");
     }
 }
 
 void SetEnabled(bool on) noexcept
 {
     g_enabled = on;
-    g_due     = true;
-    platform::Log(L"env sets 2 {}", on ? L"on" : L"off (player 2's view hides nothing of its own from the next read)");
+    for (int seat = 1; seat <= kSeatsBuilt; ++seat)
+    {
+        g_seats[seat].due = true;
+    }
+    platform::Log(L"env sets 2 {}", on ? L"on" : L"off (a further player's view hides nothing of its own from the next read)");
 }
 
 std::wstring Reading() noexcept
 try
 {
-    std::array<std::uint64_t, 3> oneIds{};
+    Ids                 oneIds{};
     std::uint8_t* const manager = g_manager != nullptr ? *g_manager : nullptr;
     if (manager != nullptr)
     {
         platform::CopyGuarded(oneIds.data(), manager + facts::kEnvSetMgrSetIds, sizeof(oneIds));
     }
-    return std::format(L"{}; trace {}; player 1's set {}; player 2's ground {}; player 2's view follows {} (changes {}): "
-                       L"hides {} actors ({} attached), {} of {} hidden entries not found, {} shown entries hidden by "
-                       L"player 1's set; list writes {}; player 2's traces {}, reads {}{}",
-                       g_enabled ? L"on" : L"off", g_issueCall.IsInstalled() ? L"placed" : L"not placed",
-                       IdsText(oneIds), IdsText(g_twoIds), IdsText(g_pacedIds), g_changes, g_ours.count, g_attachedCount,
-                       g_notFound, g_hiddenEntries, g_shownButHidden, g_writes, g_traces, g_reads,
-                       g_problem.empty() ? std::wstring{} : L"; last problem: " + g_problem);
+    std::wstring text = std::format(L"{}; trace {}; player 1's set {}", g_enabled ? L"on" : L"off",
+                                    g_issueCall.IsInstalled() ? L"placed" : L"not placed", IdsText(oneIds));
+    for (int seat = 1; seat <= kSeatsBuilt; ++seat)
+    {
+        const Seat& s = g_seats[seat];
+        text += std::format(L"; {}: ground {}; view follows {} (changes {}): hides {} actors ({} attached), {} of {} hidden "
+                            L"entries not found, {} shown entries hidden by player 1's set; list writes {}; traces {}, reads {}{}",
+                            SeatName(seat), IdsText(s.ids), IdsText(s.pacedIds), s.changes, s.ours.count, s.attachedCount,
+                            s.notFound, s.hiddenEntries, s.shownButHidden, s.writes, s.traces, s.reads,
+                            g_problems[static_cast<std::size_t>(seat)].empty()
+                                ? std::wstring{}
+                                : L"; last problem: " + g_problems[static_cast<std::size_t>(seat)]);
+    }
+    return text;
 }
 catch (...)
 {

@@ -1,8 +1,8 @@
 #pragma once
 
-// The pieces of world/env_sets_two that need no game: player 2's EnvironmentSet as the mod keeps it, paced the way the
-// game paces player 1's, and the edit of a player's hidden-actor list that removes only the mod's own entries
-// (research/RE-picture-variants.md §9, §10). Host-tested (tests/env_set_view_test.cpp).
+// The pieces of world/env_sets_two that need no game: a further player's EnvironmentSet as the mod keeps it (one per
+// seat), paced the way the game paces player 1's, and the edit of a player's hidden-actor list that removes only the
+// mod's own entries (research/RE-picture-variants.md §9, §10). Host-tested (tests/env_set_view_test.cpp).
 //
 // An entry is the game's own {FName actor, u32 Hidden} (12 bytes, the block's actor array).
 
@@ -62,11 +62,11 @@ struct List
 
 inline constexpr int kMaxEntries = 2048;
 inline constexpr int kMaxLevels  = 256;
-inline constexpr int kMaxHidden  = 4096;  // actors hidden in player 2's view (listed ones and their attached actors)
+inline constexpr int kMaxHidden  = 4096;  // actors hidden in one further player's view (listed, plus their attached actors)
 using EntryList = List<Entry, kMaxEntries>;
 using LevelList = List<Name, kMaxLevels>;
 
-/// Player 2's set as the mod keeps it between the game's reads.
+/// A further player's set as the mod keeps it between the game's reads.
 struct TwoSet
 {
     EntryList entries;  // the set's actor list
@@ -74,9 +74,9 @@ struct TwoSet
     friend bool operator==(const TwoSet&, const TwoSet&) = default;
 };
 
-/// Player 2's set after one read. Out (or switched off): nothing. A set read: that set. No set read (no ground under
-/// player 2 that names one, or the trace not back yet): the last one kept, as the game keeps player 1's last set
-/// when the ground under player 1 names none.
+/// A further player's set after one read. Out (or switched off): nothing. A set read: that set. No set read (no ground
+/// under that player that names one, or the trace not back yet): the last one kept, as the game keeps player 1's last
+/// set when the ground under player 1 names none.
 inline const TwoSet& NextTwoSet(bool present, bool resolved, const TwoSet& fresh, const TwoSet& last) noexcept
 {
     static const TwoSet kNone{};
@@ -90,19 +90,21 @@ inline constexpr double kChangePause = 1.0;
 
 struct Paced
 {
-    TwoSet set;                   // the set player 2's view follows
-    double changedAt = -1.0e300;  // when it was taken (seconds, any steady clock)
+    TwoSet set;                // the set the player's view follows
+    double changedAt = 0.0;    // when it was taken (seconds, any steady clock), once `changed`
+    bool   changed   = false;  // a set has been taken (zero-based, so a record per seat costs the DLL nothing)
 };
 
-/// Takes `next` as player 2's set if it differs and the pause since the last change has run out. True on a change.
+/// Takes `next` as the player's set if it differs and the pause since the last change has run out. True on a change.
 inline bool Pace(Paced& paced, const TwoSet& next, double now) noexcept
 {
-    if (next == paced.set || now - paced.changedAt < kChangePause)
+    if (next == paced.set || (paced.changed && now - paced.changedAt < kChangePause))
     {
         return false;
     }
     paced.set       = next;
     paced.changedAt = now;
+    paced.changed   = true;
     return true;
 }
 

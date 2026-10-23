@@ -83,7 +83,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.60.0-detail-by-seat";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.61.0-env-sets-by-seat";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
@@ -431,10 +431,9 @@ private:
     /// able to see them.
     void TickWorld() noexcept
     {
-        // Seat 1 alone for the module not yet per seat: env_sets_two (plan/seats.md step 3).
-        const bool in        = session_.In(kSeatOne);
-        void*      memberTwo = in ? lss::players::scopes::Member(1) : nullptr;
-        bool       anyIn     = false;
+        // Every world module per built seat (plan/seats.md step 3): each told the seat's member, camera or controller
+        // while the seat's player is in, then its once-a-tick work.
+        bool anyIn = false;
         lss::world::party_fade::Tick(session_.Count());
         for (int seat = 1; seat <= lss::players::kSeatsBuilt; ++seat)
         {
@@ -446,12 +445,13 @@ private:
             lss::world::npc_crowd::TickSeat(seat, member);
             lss::world::npc_senses::TickSeat(seat, member);
             lss::world::npc_detail::TickSeat(seat, camera);
+            lss::world::env_sets_two::TickSeat(seat, member, seatIn ? ControllerOf(seat) : nullptr);
         }
         lss::world::anim_two_views::Tick();
         lss::world::npc_crowd::Tick();
         lss::world::npc_senses::Tick(anyIn ? PawnOf(0) : nullptr);
         lss::world::npc_detail::Tick(anyIn ? CameraManagerOf(0) : nullptr);
-        lss::world::env_sets_two::Tick(memberTwo, in ? ControllerOf(1) : nullptr);
+        lss::world::env_sets_two::Tick();
     }
 
     /// The HUD layout follows the split and each column's view (hud/overlay_pass.h: column 0 is player 1's, the seats'
