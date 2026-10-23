@@ -170,7 +170,7 @@ void KeepAll() noexcept
     }
     if (changed > 0)
     {
-        platform::Log(L"party fade: {} party member(s) kept from vanishing near a camera while player 2 is in", changed);
+        platform::Log(L"party fade: {} party member(s) kept from vanishing near a camera while a further player is in", changed);
     }
 }
 
@@ -213,24 +213,25 @@ bool Install(const platform::GameImage& image) noexcept
     control::Register({.name = L"world.fade", .shape = control::Shape::Text,
                        .help = L"each party member's near-camera fade switch and whether the mod's reason keeps it off",
                        .get  = [] { return control::Value{Reading()}; }});
-    platform::Log(L"party fade: installed; while player 2 is in, party members do not vanish near a camera (the game's own "
-                  L"switch for the player's character)");
+    platform::Log(L"party fade: installed; while a further player is in, party members do not vanish near a camera (the "
+                  L"game's own switch for the player's character)");
     return true;
 }
 
-void Tick(bool playerTwoIn) noexcept
+void Tick(int seatsIn) noexcept
 {
     if (g_apply == nullptr)
     {
         return;
     }
-    const bool changed = playerTwoIn != g_wasIn;
-    g_wasIn            = playerTwoIn;
+    const bool anyIn   = seatsIn > 0;
+    const bool changed = anyIn != g_wasIn;
+    g_wasIn            = anyIn;
     if (!changed && ++g_ticks % kCheckEveryTicks != 0)
     {
         return;
     }
-    if (playerTwoIn)
+    if (anyIn)
     {
         KeepAll();
     }

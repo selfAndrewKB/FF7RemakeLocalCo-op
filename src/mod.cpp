@@ -83,7 +83,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.56.0-minimap-by-seat";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.57.0-fade-and-crowd-by-seat";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
@@ -426,17 +426,23 @@ private:
         return lss::platform::ReadPointer(session_.LocalPlayer(index), lss::facts::kLocalPlayerController);
     }
 
-    /// The world around two views (world/): party members kept visible near a camera, characters animated by the
-    /// camera that sees them better, the NPCs near player 2 kept awake and spawned around it too, and able to see it.
+    /// The world around the views (world/): party members kept visible near a camera, characters animated by the
+    /// camera that sees them best, the NPCs near every further player kept awake and spawned around them too, and
+    /// able to see them.
     void TickWorld() noexcept
     {
-        const bool in        = session_.In(kSeatOne);  // seat 1: the world modules take one further player today (plan/seats.md)
+        // Seat 1 alone for the modules not yet per seat: anim_two_views, npc_detail, npc_senses, env_sets_two (plan/seats.md step 3).
+        const bool in        = session_.In(kSeatOne);
         void*      cameraTwo = in ? CameraManagerOf(1) : nullptr;
         void*      memberTwo = in ? lss::players::scopes::Member(1) : nullptr;
-        lss::world::party_fade::Tick(in);
+        lss::world::party_fade::Tick(session_.Count());
         lss::world::anim_two_views::Tick(cameraTwo, memberTwo);
         lss::world::npc_detail::Tick(in ? CameraManagerOf(0) : nullptr, cameraTwo);
-        lss::world::npc_crowd::Tick(memberTwo);
+        for (int seat = 1; seat <= lss::players::kSeatsBuilt; ++seat)
+        {
+            lss::world::npc_crowd::TickSeat(seat, session_.In(seat) ? lss::players::scopes::Member(seat) : nullptr);
+        }
+        lss::world::npc_crowd::Tick();
         lss::world::npc_senses::Tick(in ? PawnOf(0) : nullptr, memberTwo);
         lss::world::env_sets_two::Tick(memberTwo, in ? ControllerOf(1) : nullptr);
     }

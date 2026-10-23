@@ -7,8 +7,10 @@
 #include "platform/log.h"
 #include "platform/verified_code.h"
 #include "platform/vtable_entry.h"
+#include "players/seats.h"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstdint>
 #include <format>
@@ -20,6 +22,9 @@ namespace {
 
 using platform::Read;
 using platform::ReadPointer;
+using players::kSeatsBuilt;
+using players::SeatBuilt;
+using players::SeatName;
 
 using ScoreFn = std::int32_t (*)(void* evaluator, void* record);
 
@@ -28,16 +33,70 @@ constexpr auto kSummaryEvery = std::chrono::seconds(60);
 platform::VTableEntry g_slot;
 ScoreFn               g_score   = nullptr;
 bool                  g_enabled = true;
-void*                 g_member  = nullptr;  // player 2's character, set by Tick
 
-std::uint64_t g_calls = 0, g_twoHigher = 0, g_eventCentre = 0, g_writeFailed = 0;
+/// One seat: its character while its player is in (set by TickSeat), and its scores higher than every other's.
+struct Seat
+{
+    void*         member = nullptr;
+    std::uint64_t higher = 0;
+};
+std::array<Seat, players::scopes::kMaxPlayers> g_seats;  // by seat; [0] unused
+
+std::uint64_t g_calls = 0, g_eventCentre = 0, g_writeFailed = 0;
 std::wstring  g_summary = L"no summary yet";
 std::chrono::steady_clock::time_point g_lastSummary = std::chrono::steady_clock::now();
 
-bool MemberLocation(float (&out)[3]) noexcept
+bool AnyMember() noexcept
 {
-    void* root = ReadPointer(g_member, facts::kActorRootComponent);
+    for (int seat = 1; seat <= kSeatsBuilt; ++seat)
+    {
+        if (g_seats[seat].member != nullptr)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool MemberLocation(void* member, float (&out)[3]) noexcept
+{
+    void* root = ReadPointer(member, facts::kActorRootComponent);
     return root != nullptr && Read(static_cast<const std::uint8_t*>(root) + facts::kComponentWorldLocation, out);
+}
+
+enum class From
+{
+    Unread,     // the character's place could not be read: the game's score stands for this seat
+    Scored,     // scored from the seat's character, the centre put back
+    NotPutBack, // scored, but the centre could not be put back: no further seat may write it this call
+};
+
+/// The game's score with the seat's character as the centre for one call, the fields exactly as before after it.
+From ScoreFrom(void* evaluator, void* record, std::uint8_t* manager, const std::uint8_t (&centre)[facts::kCharaPopCentreBytes],
+               void* member, std::int32_t& out) noexcept
+{
+    float location[3]{};
+    if (!MemberLocation(member, location))
+    {
+        return From::Unread;
+    }
+    std::uint8_t asSeat[facts::kCharaPopCentreBytes]{};
+    std::copy(std::begin(centre), std::end(centre), std::begin(asSeat));
+    asSeat[0] = 1;
+    std::copy(reinterpret_cast<const std::uint8_t*>(location), reinterpret_cast<const std::uint8_t*>(location) + sizeof(location),
+              asSeat + 4);
+    if (!platform::WriteGuarded(manager + facts::kCharaPopCentre, asSeat, sizeof(asSeat)))
+    {
+        ++g_writeFailed;
+        return From::Unread;
+    }
+    out = g_score(evaluator, record);
+    if (!platform::WriteGuarded(manager + facts::kCharaPopCentre, centre, sizeof(centre)))
+    {
+        ++g_writeFailed;
+        return From::NotPutBack;
+    }
+    return From::Scored;
 }
 
 std::int32_t Score(void* evaluator, void* record) noexcept
@@ -49,15 +108,14 @@ std::int32_t Score(void* evaluator, void* record) noexcept
         return value;
     }();
     const std::int32_t one = g_score(evaluator, record);
-    if (!g_enabled || g_member == nullptr)
+    if (!g_enabled || !AnyMember())
     {
         return one;
     }
     ++g_calls;
-    auto*         manager = static_cast<std::uint8_t*>(ReadPointer(record, facts::kCharaPopRecordManager));
-    std::uint8_t  centre[facts::kCharaPopCentreBytes]{};
-    float         location[3]{};
-    if (manager == nullptr || !Read(manager + facts::kCharaPopCentre, centre) || !MemberLocation(location))
+    auto*        manager = static_cast<std::uint8_t*>(ReadPointer(record, facts::kCharaPopRecordManager));
+    std::uint8_t centre[facts::kCharaPopCentreBytes]{};
+    if (manager == nullptr || !Read(manager + facts::kCharaPopCentre, centre))
     {
         return one;
     }
@@ -66,21 +124,41 @@ std::int32_t Score(void* evaluator, void* record) noexcept
         ++g_eventCentre;  // an event's centre: the game's single score
         return one;
     }
-    // Player 2's character as the centre for one call, the fields exactly as before after it.
-    std::uint8_t asTwo[facts::kCharaPopCentreBytes]{};
-    std::copy(std::begin(centre), std::end(centre), std::begin(asTwo));
-    asTwo[0] = 1;
-    std::copy(reinterpret_cast<const std::uint8_t*>(location), reinterpret_cast<const std::uint8_t*>(location) + sizeof(location),
-              asTwo + 4);
-    if (!platform::WriteGuarded(manager + facts::kCharaPopCentre, asTwo, sizeof(asTwo)))
+    // The highest score among the game's and every seat's: the nearest player's.
+    std::int32_t best     = one;
+    int          bestSeat = 0;
+    bool         scored   = false;  // some seat's score ran
+    for (int seat = 1; seat <= kSeatsBuilt; ++seat)
     {
-        ++g_writeFailed;
-        return one;
+        if (g_seats[seat].member == nullptr)
+        {
+            continue;
+        }
+        std::int32_t score = 0;
+        const From   from  = ScoreFrom(evaluator, record, manager, centre, g_seats[seat].member, score);
+        if (from == From::Unread)
+        {
+            continue;
+        }
+        scored = true;
+        if (score > best)
+        {
+            best     = score;
+            bestSeat = seat;
+        }
+        if (from == From::NotPutBack)
+        {
+            break;  // the centre is this seat's until the game writes it again: no further seat writes over it
+        }
     }
-    const std::int32_t two = g_score(evaluator, record);
-    platform::WriteGuarded(manager + facts::kCharaPopCentre, centre, sizeof(centre));
-    const std::int32_t best = std::max(one, two);
-    g_twoHigher += two > one ? 1 : 0;
+    if (!scored)
+    {
+        return one;  // the game's one call, its side effect as it left it
+    }
+    if (bestSeat != 0)
+    {
+        ++g_seats[bestSeat].higher;
+    }
     // The evaluator keeps its last non-zero score, as one game call would have left it.
     const std::int32_t kept = best != 0 ? best : before;
     platform::WriteGuarded(self + facts::kCharaPopEvaluatorScore, &kept, sizeof(kept));
@@ -100,11 +178,20 @@ try
     {
         return;
     }
-    g_summary = std::format(L"last minute: {} NPC scores, {} higher from player 2 ({:.0f} %), {} kept single for an event's "
-                            L"centre, {} centre write(s) failed",
-                            g_calls, g_twoHigher, g_calls ? 100.0 * g_twoHigher / g_calls : 0.0, g_eventCentre, g_writeFailed);
+    std::wstring higher;
+    for (int seat = 1; seat <= kSeatsBuilt; ++seat)
+    {
+        const std::uint64_t n = g_seats[seat].higher;
+        higher += std::format(L"{} higher from {} ({:.0f} %), ", n, SeatName(seat), g_calls ? 100.0 * n / g_calls : 0.0);
+    }
+    g_summary = std::format(L"last minute: {} NPC scores, {}{} kept single for an event's centre, {} centre write(s) failed",
+                            g_calls, higher, g_eventCentre, g_writeFailed);
     platform::LogDebug(L"npc crowd: {}", g_summary);
-    g_calls = g_twoHigher = g_eventCentre = g_writeFailed = 0;
+    g_calls = g_eventCentre = g_writeFailed = 0;
+    for (int seat = 1; seat <= kSeatsBuilt; ++seat)
+    {
+        g_seats[seat].higher = 0;  // after the summary is formed: every counter starts the minute together
+    }
 }
 catch (...)
 {
@@ -122,26 +209,34 @@ bool Install(const platform::GameImage& image) noexcept
     g_score = reinterpret_cast<ScoreFn>(g_slot.Original());
     control::Register({.name  = L"npc-crowd",
                        .shape = control::Shape::OnOff,
-                       .help  = L"each NPC is scored from the nearer player, so the crowd is around both (world/npc_crowd.h; on)",
+                       .help  = L"each NPC is scored from the nearest player, so the crowd is around every player (world/npc_crowd.h; on)",
                        .set   = [](const control::Value& value) {
                            SetEnabled(std::get<bool>(value));
                            return control::Outcome{};
                        },
                        .get = [] { return control::Value{g_enabled}; }});
     control::Register({.name = L"world.npc-crowd", .shape = control::Shape::Text,
-                       .help = L"the last minute's NPC scores and how many were higher from player 2",
+                       .help = L"the last minute's NPC scores and how many were higher from each further player",
                        .get  = [] { return control::Value{Reading()}; }});
-    platform::Log(L"npc crowd: installed; while player 2 is in, each NPC is scored from the nearer player");
+    platform::Log(L"npc crowd: installed; while a further player is in, each NPC is scored from the nearest player");
     return true;
 }
 
-void Tick(void* memberTwo) noexcept
+void TickSeat(int seat, void* seatMember) noexcept
+{
+    if (g_score == nullptr || !SeatBuilt(seat))
+    {
+        return;
+    }
+    g_seats[seat].member = seatMember;
+}
+
+void Tick() noexcept
 {
     if (g_score == nullptr)
     {
         return;
     }
-    g_member = memberTwo;
     Summarise();
 }
 
