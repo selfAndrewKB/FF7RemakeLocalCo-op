@@ -86,7 +86,8 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.66.1-span-columns-by-row";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.66.2-three-columns-review";
+static_assert(lss::views::column_rules::kMaxColumns == lss::hud::overlay_pass::kMaxColumns, "the columns the views and the HUD count");  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
@@ -231,6 +232,7 @@ public:
         }
         remote_.Close();
         lss::views::mirror_player::Clear(L"the mod unloads");
+        lss::players::split_render::Remove();  // after the mirrors: the mask back to zero so a reinstall finds it free
         lss::views::column_layout::Remove();
         lss::views::window_span::Leave(L"the mod unloads");
         lss::views::display_align::Restore();  // the leave's ticks never come: the monitors go back now
@@ -387,7 +389,7 @@ private:
         const int viewColumns = lss::views::column_rules::Wanted(playersIn, spanColumns, lss::views::column_layout::Override());
         const int aloneColumns = lss::views::column_rules::Wanted(1, spanColumns, lss::views::column_layout::Override());
         lss::views::column_layout::Tick(viewColumns, playersIn + lss::views::mirror_player::Count());
-        lss::views::mirror_player::Tick(playersIn, viewColumns, aloneColumns);
+        lss::views::mirror_player::Tick(playersIn, session_.SeatIds(), viewColumns, aloneColumns);
         lss::players::split_render::Tick(session_.Count() + lss::views::mirror_player::Count() > 0);
         lss::views::scene_camera_two::Tick(CameraManagerOf(0), session_.In(kSeatOne) ? CameraManagerOf(1) : nullptr);  // seat 1 today
         for (int seat = 1; seat <= lss::players::kSeatsBuilt; ++seat)

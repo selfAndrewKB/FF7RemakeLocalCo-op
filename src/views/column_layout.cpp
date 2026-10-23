@@ -239,6 +239,7 @@ void Apply(bool threeWanted) noexcept
             }
             break;
         case Action::Foreign:
+            g_fault = nullptr;  // the entry was read: a read or write fault is over, the foreign content is the state now
             if (!g_foreign)
             {
                 g_foreign = true;
@@ -309,7 +310,8 @@ void Tick(int columns, int localPlayers) noexcept
     // would otherwise be laid out in the stock quadrants).
     const bool threeWanted = columns >= 3 || localPlayers >= 3;
     const bool change      = threeWanted != g_written && !g_foreign && g_fault == nullptr;
-    const bool cadence     = g_ticks % kCheckTicks == 0 && (g_written || g_foreign || g_fault != nullptr || threeWanted);
+    const bool cadence     = g_ticks % kCheckTicks == 0 &&
+                         (g_written || g_foreign || g_fault != nullptr || threeWanted || g_settingByte != nullptr);
     if (change || cadence || !g_reached)
     {
         Apply(threeWanted);

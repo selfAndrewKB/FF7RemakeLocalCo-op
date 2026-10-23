@@ -49,9 +49,12 @@ struct Added
     std::wstring Text(const wchar_t* whose) const;
 };
 
-/// Adds a local player with controller id `controllerId` through CreatePlayer, inside the join scope. The list must
-/// hold exactly `controllerId` players before (the caller's check). Logged only on the caller's side.
+/// Adds a local player with controller id `controllerId` through CreatePlayer, inside the join scope. The id must
+/// be free (the engine refuses a duplicate; the caller's check), the list's new last entry is the player's. Logged
+/// only on the caller's side. The first form finds the game instance (an object walk; the session caches its own),
+/// the second takes the caller's.
 Added Add(RC::Unreal::UObject* playerOneController, std::int32_t controllerId) noexcept;
+Added Add(RC::Unreal::UObject* gameInstance, RC::Unreal::UObject* playerOneController, std::int32_t controllerId) noexcept;
 
 /// The actors a local player's controller and camera manager spawned, read before the removal destroys their owners;
 /// each with its class pointer, so a reused address is told from the actor.

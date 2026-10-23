@@ -156,11 +156,15 @@ std::wstring Added::Text(const wchar_t* whose) const
 }
 
 Added Add(UObject* playerOneController, std::int32_t controllerId) noexcept
+{
+    return Add(GameInstance(), playerOneController, controllerId);
+}
+
+Added Add(UObject* gameInstance, UObject* playerOneController, std::int32_t controllerId) noexcept
 try
 {
-    Added    added;
-    UObject* gameInstance = GameInstance();
-    auto*    players      = List(gameInstance);
+    Added added;
+    auto* players = List(gameInstance);
     auto* function = UObjectGlobals::StaticFindObject<UFunction*>(nullptr, nullptr, STR("/Script/Engine.GameplayStatics:CreatePlayer"));
     auto* statics  = UObjectGlobals::StaticFindObject<UClass*>(nullptr, nullptr, STR("/Script/Engine.GameplayStatics"));
     if (players == nullptr || function == nullptr || statics == nullptr || function->GetParmsSize() != sizeof(CreatePlayerParams))

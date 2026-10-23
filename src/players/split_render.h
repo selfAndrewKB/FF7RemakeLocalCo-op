@@ -25,8 +25,12 @@ bool Install(const platform::GameImage& image) noexcept;
 void OnJoin() noexcept;
 /// Each engine tick, after the session's and the mirrors': `furtherViews` whether any local player beyond player 1
 /// is in. Forces the mask while one is, puts it back to zero (if it still holds what the mod wrote) once none is;
-/// a count-free reconcile, so a seat leaving beside a mirror keeps the mirror's view whole. Game thread.
+/// a count-free reconcile, so a seat leaving beside a mirror keeps the mirror's view whole. A failed write is
+/// logged once and tried again twice a second. Game thread.
 void Tick(bool furtherViews) noexcept;
+/// The mask back to zero if it still holds what the mod wrote. At the mod's end, after the mirrors and the seats
+/// are out (a reinstall would otherwise find the mask in use and refuse).
+void Remove() noexcept;
 
 /// The bits forced on while player 2 is in. Default 0x1008 (TAA and 0x1000); the mod raises it to 0x100A (bloom too)
 /// when render/bloom_origin installs, since bloom leaks player 1's rows into player 2's half without it. Applied at

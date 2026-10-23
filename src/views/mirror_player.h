@@ -46,13 +46,15 @@ bool Install(const platform::GameImage& image) noexcept;
 /// Each engine tick after the session's and the span's: adds a mirror for an empty column once the field is steady
 /// (one per tick), removes the mirrors beyond the columns, all of them when the switch is off. `playersIn` counts
 /// the real players (player 1 and the seats in); `columns` the columns the frame shows (at least the players);
+/// `seatIds` the controller ids the players hold (bit i: id i; bit 0 player 1), so a mirror never takes a seat's;
 /// `columnsAlone` the columns with player 1 alone (the span's, or the console's: what a leave for a world change
 /// fills; in a plain split that is one, so nothing is filled).
-void Tick(std::int32_t playersIn, std::int32_t columns, std::int32_t columnsAlone) noexcept;
+void Tick(std::int32_t playersIn, std::uint32_t seatIds, std::int32_t columns, std::int32_t columnsAlone) noexcept;
 
-/// Inside player 2's leave for a world change (players/session), with player 2 already out of the engine's list:
+/// Inside a seat's leave for a world change (players/session), with that seat already out of the engine's list:
 /// fills the empty columns now, before the loading screen, where the steady-field add would come too late.
-void FillAtLeave(const wchar_t* why) noexcept;
+/// `playersIn` and `seatIds` as the list stands after the leave.
+void FillAtLeave(const wchar_t* why, std::int32_t playersIn, std::uint32_t seatIds) noexcept;
 
 /// Removes every mirror now (the session's join, the switch, the mod's end). `why` is logged.
 void Clear(const wchar_t* why) noexcept;

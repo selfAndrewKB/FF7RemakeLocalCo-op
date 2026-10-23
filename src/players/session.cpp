@@ -192,6 +192,16 @@ int Session::Count() const noexcept
     return count;
 }
 
+std::uint32_t Session::SeatIds() const noexcept
+{
+    std::uint32_t ids = 1;  // player 1's id 0
+    for (int seat = 1; seat <= kSeatsBuilt; ++seat)
+    {
+        ids |= seats_[seat].localPlayer != nullptr ? 1u << seats_[seat].ControllerId() : 0u;
+    }
+    return ids;
+}
+
 UObject* Session::Controller(const Seat& seat) const noexcept
 {
     return Field(seat.localPlayer, facts::kLocalPlayerController);
@@ -240,7 +250,7 @@ void Session::LeaveForWorldChange(const wchar_t* why) noexcept
         if (mirror_.fillAtLeave != nullptr)
         {
             // The column held through the loading screen (the seat's column, once per seat that leaves).
-            mirror_.fillAtLeave(std::format(L"{} left for a world change", seat.Name()).c_str());
+            mirror_.fillAtLeave(std::format(L"{} left for a world change", seat.Name()).c_str(), 1 + Count(), SeatIds());
         }
         platform::Log(L"world change: {} joins again once the field is back (Ctrl+F8 cancels)", seat.Name());
     }

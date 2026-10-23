@@ -84,6 +84,8 @@ public:
     bool In(int seat) const noexcept { return SeatBuilt(seat) && seats_[seat].localPlayer != nullptr; }
     /// How many further players are in (the views beyond player 1's that a seat fills).
     int Count() const noexcept;
+    /// The controller ids the players hold, as bits (bit 0 player 1, bit i a seat in): what a mirror may not take.
+    std::uint32_t SeatIds() const noexcept;
     /// The game instance's local player `index` (a column: 0 is player 1), or null (the instance is found within a
     /// second of the first tick). Game thread.
     RC::Unreal::UObject* LocalPlayer(int index) const noexcept;
@@ -117,9 +119,10 @@ public:
     /// fills the column the tick a seat leaves for a world change, so the loading screen is drawn by every view.
     struct MirrorPlayers
     {
-        std::int32_t (*count)() noexcept                 = nullptr;
-        void (*clear)(const wchar_t* why) noexcept       = nullptr;
-        void (*fillAtLeave)(const wchar_t* why) noexcept = nullptr;
+        std::int32_t (*count)() noexcept           = nullptr;
+        void (*clear)(const wchar_t* why) noexcept = nullptr;
+        /// `playersIn` and `seatIds` (bit i: controller id i is a player's) as the list stands after the leave.
+        void (*fillAtLeave)(const wchar_t* why, std::int32_t playersIn, std::uint32_t seatIds) noexcept = nullptr;
     };
     void SetMirrorPlayers(MirrorPlayers mirror) noexcept { mirror_ = mirror; }
 

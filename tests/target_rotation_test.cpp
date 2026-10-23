@@ -145,8 +145,8 @@ void NoColumnZeroYet()
     EXPECT(r.rotation.TakeHeld(held) == 0);
 }
 
-/// A post-process for a column whose UI pass did not run samples the member as it is (nothing is swapped in) and
-/// nothing is held for it.
+/// A post-process for a column whose UI pass did not run: a mirror's column samples column 0's target; a player's
+/// column with no target of its own samples the member as it is (nothing is swapped in, nothing held for it).
 void PostProcessWithoutPass()
 {
     Render r;
@@ -154,8 +154,50 @@ void PostProcessWithoutPass()
     r.UiPass(1, true);
     EXPECT(r.PostProcess(2, 2) == A);  // a mirror's column with no pass of its own: column 0's target
     EXPECT(r.PostProcess(1, 2) == B);
+    EXPECT(r.PostProcess(2, 3) == B);  // a player's column without a pass: the member as it stands
     void* held[kMaxColumns];
     EXPECT(r.rotation.TakeHeld(held) == 1 && held[0] == A);
+}
+
+/// A column passed twice in one Render keeps its first target and moves nothing: every target stays in the member
+/// or held exactly once (no leak, no double release).
+void RepeatedColumn()
+{
+    Render r;
+    r.UiPass(0, true);
+    r.UiPass(1, true);
+    r.UiPass(1, true);  // again: B stays column 1's, nothing moved out
+    EXPECT(r.allocated == 2 && r.member == B);
+    EXPECT(r.rotation.Target(1) == B && r.rotation.Held(0) && !r.rotation.Held(1));
+    EXPECT(r.PostProcess(0, 2) == A);
+    EXPECT(r.PostProcess(1, 2) == B);
+    void* held[kMaxColumns];
+    EXPECT(r.rotation.TakeHeld(held) == 1 && held[0] == A);
+    // Column 0 passed again after column 1: no move, its target kept.
+    Render s;
+    s.UiPass(0, true);
+    s.UiPass(1, true);
+    s.UiPass(0, true);
+    EXPECT(s.allocated == 2 && s.rotation.Target(0) == A && s.rotation.Target(1) == B);
+    EXPECT(s.PostProcess(0, 2) == A && s.PostProcess(1, 2) == B);
+    EXPECT(s.rotation.TakeHeld(held) == 1 && held[0] == A);
+}
+
+/// A post-process with the member naming a target no column listed (something else swapped it in): the wanted one
+/// is set, nothing is held for the stranger, and the target it displaced (column 1's, whose reference went with
+/// the member) is not the mod's to release.
+void MemberUnlisted()
+{
+    Render r;
+    r.UiPass(0, true);
+    r.UiPass(1, true);
+    int   x = 0;
+    void* X = &x;
+    r.member = X;
+    EXPECT(r.PostProcess(0, 2) == A);
+    EXPECT(!r.rotation.Held(1) && !r.rotation.Held(0));
+    void* held[kMaxColumns];
+    EXPECT(r.rotation.TakeHeld(held) == 0);
 }
 
 /// Bad inputs: columns outside the range are ignored.
@@ -181,6 +223,8 @@ int main()
     Disabled();
     NoColumnZeroYet();
     PostProcessWithoutPass();
+    RepeatedColumn();
+    MemberUnlisted();
     BadInputs();
     std::printf(g_failures == 0 ? "target_rotation: all passed\n" : "target_rotation: %d failure(s)\n", g_failures);
     return g_failures == 0 ? 0 : 1;

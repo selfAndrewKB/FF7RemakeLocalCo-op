@@ -29,10 +29,13 @@ public:
 
     /// Column `column`'s UI pass is about to run with the member naming `member` (null when the game released it).
     /// True when the member's target is to be moved out first (the caller then sets the member null): a further
-    /// column, the moves enabled, column 0's pass seen, and the member naming a target of a column listed so far.
+    /// column not listed yet, the moves enabled, column 0's pass seen, and the member naming a target of a column
+    /// listed so far. A column passed again keeps its first target and moves nothing (the engine's loop runs each
+    /// view once; the guard keeps the "in the member or held once" invariant whatever the loop does).
     constexpr bool BeforeUiPass(int column, const void* member, bool enabled) noexcept
     {
-        if (column <= 0 || column >= kMaxColumns || !enabled || targets_[0] == nullptr || member == nullptr)
+        if (column <= 0 || column >= kMaxColumns || !enabled || targets_[0] == nullptr || member == nullptr ||
+            targets_[column] != nullptr)
         {
             return false;
         }
@@ -45,10 +48,11 @@ public:
         return true;
     }
 
-    /// Column `column`'s UI pass ran; the member names `target` now (that column's own, or a shared one).
+    /// Column `column`'s UI pass ran; the member names `target` now (that column's own, or a shared one). A column
+    /// listed already keeps its first target.
     constexpr void AfterUiPass(int column, void* target) noexcept
     {
-        if (column < 0 || column >= kMaxColumns)
+        if (column < 0 || column >= kMaxColumns || targets_[column] != nullptr)
         {
             return;
         }

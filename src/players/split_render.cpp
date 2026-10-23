@@ -9,13 +9,56 @@ namespace lss::players::split_render {
 
 namespace {
 
+constexpr std::uint32_t kRetryTicks = 30;  // a failed write tried again twice a second at 60
+
 std::uint32_t* g_forceOn = nullptr;                      // set once at install
 std::uint32_t  g_mask    = facts::kSplitForcedFlags;    // game thread
 std::uint32_t  g_written = 0;                           // what the mod last wrote (0 = nothing)
+std::uint32_t  g_ticks   = 0;
+const wchar_t* g_fault   = nullptr;                     // a failed write, logged once until one succeeds
 
 bool Write(std::uint32_t value) noexcept
 {
     return g_forceOn != nullptr && platform::WriteGuarded(g_forceOn, &value, sizeof(value));
+}
+
+void Fault(const wchar_t* why) noexcept
+{
+    if (g_fault != why)
+    {
+        g_fault = why;
+        platform::LogWarning(L"split render: {}", why);
+    }
+}
+
+/// The mask back to 0 if it still holds what the mod wrote. True when nothing of the mod's is left in it.
+bool Clear(const wchar_t* why) noexcept
+{
+    std::uint32_t now = 0;
+    if (g_forceOn == nullptr || g_written == 0)
+    {
+        return true;
+    }
+    if (!platform::CopyGuarded(&now, g_forceOn, sizeof(now)))
+    {
+        Fault(L"the show-flag force mask could not be read; tried again twice a second");
+        return false;
+    }
+    if (now != g_written)
+    {
+        platform::Log(L"split render: the force mask changed under the mod (0x{:X}); left alone", now);
+        g_written = 0;
+        return true;
+    }
+    if (!Write(0))
+    {
+        Fault(L"the show-flag force mask could not be put back to 0; tried again twice a second");
+        return false;
+    }
+    g_fault   = nullptr;
+    g_written = 0;
+    platform::Log(L"split render: show-flag force mask back to 0 ({})", why);
+    return true;
 }
 
 }  // namespace
@@ -39,9 +82,20 @@ void OnJoin() noexcept
     {
         return;
     }
-    const bool wrote = Write(g_mask);
-    g_written        = wrote ? g_mask : 0;
-    platform::Log(L"split render: show flags 0x{:X} forced on for both halves {}", g_mask, wrote ? L"" : L"(the write FAILED)");
+    if (!Write(g_mask))
+    {
+        g_written = 0;
+        Fault(L"the show-flag force mask could not be written; the further views keep the engine's reduced effects; tried again "
+              L"twice a second");
+        return;
+    }
+    const bool change = g_written != g_mask;
+    g_written         = g_mask;
+    g_fault           = nullptr;
+    if (change)
+    {
+        platform::Log(L"split render: show flags 0x{:X} forced on for every view", g_mask);
+    }
 }
 
 void Tick(bool furtherViews) noexcept
@@ -50,28 +104,24 @@ void Tick(bool furtherViews) noexcept
     {
         return;
     }
+    ++g_ticks;
     if (furtherViews)
     {
-        if (g_written != g_mask)
+        if (g_written != g_mask && g_ticks % kRetryTicks == 0)
         {
-            OnJoin();  // a further view with the mask not yet written (a join whose first write failed, or a reinstall)
+            OnJoin();  // a further view with the mask not written (a failed write, or a view the join did not report)
         }
         return;
     }
-    std::uint32_t now = 0;
-    if (g_written == 0 || !platform::CopyGuarded(&now, g_forceOn, sizeof(now)))
+    if (g_written != 0 && (g_fault == nullptr || g_ticks % kRetryTicks == 0))
     {
-        return;
+        Clear(L"no further view");
     }
-    if (now == g_written && Write(0))
-    {
-        platform::Log(L"split render: show-flag force mask back to 0 (no further view)");
-    }
-    else
-    {
-        platform::Log(L"split render: the force mask changed under the mod (0x{:X}); left alone", now);
-    }
-    g_written = 0;
+}
+
+void Remove() noexcept
+{
+    Clear(L"the mod unloads");
 }
 
 void SetMask(std::uint32_t mask, bool playerTwoIn) noexcept

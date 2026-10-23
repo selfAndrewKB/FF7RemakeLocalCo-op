@@ -44,6 +44,7 @@ struct RenderState
     void*                     views[kMaxColumns] = {};  // the views whose UI passes ran this Render (by column)
     int                       count              = 0;   // views listed this Render (the highest column + 1)
     target_rotation::Rotation rotation;                 // each column's target and which the mod holds (pure rule)
+    int                       playerColumns      = overlay_pass::kMaxColumns;  // the columns with their own image, as of column 0's pass
     int                       composited         = 0;   // views post-processed since the last UI pass of column 0
 };
 RenderState g_render;
@@ -81,7 +82,8 @@ int ColumnOf(const void* view, std::int32_t (&rect)[4]) noexcept
             return column;  // a view passed again in this Render keeps its column
         }
     }
-    return std::clamp(g_render.count, 1, kMaxColumns - 1);
+    // A view beyond the columns built is listed nowhere: nothing moves for it, it samples the member as it stands.
+    return g_render.count < kMaxColumns ? std::max(g_render.count, 1) : -1;
 }
 
 /// Releases one reference the mod holds (IPooledRenderTarget::Release, vt+0x30).
@@ -126,29 +128,31 @@ bool Logging() noexcept
 std::uint64_t UiPass(void* sceneTargets, void* commandList, void* view, platform::CallRedirect& call)
 {
     std::int32_t rect[4];
-    const int    column = ColumnOf(view, rect);
-    void* const  before = Member();
-    bool         moved  = false;
+    const int    column  = ColumnOf(view, rect);
+    void* const  before  = Member();
+    const bool   enabled = g_enabled.load(std::memory_order_relaxed);  // read once: the move and the gate agree
+    bool         moved   = false;
     if (column == 0)
     {
         ReleaseHeld();  // a Render whose post-process loop did not run leaves its held targets behind
         g_render = {};
-        g_render.views[0] = view;
-        g_render.count    = 1;
+        g_render.views[0]      = view;
+        g_render.count         = 1;
+        g_render.playerColumns = g_playerColumns.load(std::memory_order_relaxed);  // one rule for the whole Render
     }
-    else
+    else if (column > 0)
     {
         g_render.views[column] = view;
         g_render.count         = std::max(g_render.count, column + 1);
         // The member's target (the previous column's) is moved out for a further column's view, the mod holding its
         // reference, so the game's allocator gives this view a target of its own (hud/target_rotation.h).
-        moved = g_render.rotation.BeforeUiPass(column, before, g_enabled.load(std::memory_order_relaxed));
+        moved = g_render.rotation.BeforeUiPass(column, before, enabled);
         if (moved)
         {
             SetMember(nullptr);
         }
     }
-    image_entries::BeginUiPass(g_enabled.load(std::memory_order_relaxed) ? column : -1);
+    image_entries::BeginUiPass(enabled ? column : -1);
     const std::uint64_t bound = reinterpret_cast<AllocBindFn>(call.Original())(sceneTargets, commandList);
     void* const after = Member();
     g_render.rotation.AfterUiPass(column, after);
@@ -185,8 +189,7 @@ void PostProcess(void* postProcessing, void* commandList, void* view, void* velo
     }
     // The member names the target this view samples: its own column's, or column 0's for a mirror's column; the
     // one it named goes back to the held set (hud/target_rotation.h).
-    if (void* wanted = g_render.rotation.BeforePostProcess(column, Member(), g_playerColumns.load(std::memory_order_relaxed));
-        wanted != nullptr)
+    if (void* wanted = g_render.rotation.BeforePostProcess(column, Member(), g_render.playerColumns); wanted != nullptr)
     {
         SetMember(wanted);
     }

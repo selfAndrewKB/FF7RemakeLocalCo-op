@@ -95,8 +95,10 @@ struct MirrorPlayer
 };
 
 // Game thread.
-std::array<Slots, 3>                   g_slots;    // player 1's, player 2's, the first mirror's
+constexpr int                          kReadSlots = 2 + kMirrorSlots;  // the managers read for the readings
+std::array<Slots, kReadSlots>          g_slots;    // player 1's, player 2's, the mirrors'
 std::array<MirrorPlayer, kMirrorSlots> g_mirrors;  // one copy record per mirror slot (views/mirror_player)
+static_assert(kMirrorSlots == 2, "the readings name two mirrors");
 Scene                g_scene;
 bool                 g_logged = false;
 bool                 g_enabled = true;
@@ -371,7 +373,7 @@ void Mirror(void* managerOne, void* managerTwo) noexcept
             platform::LogDebug(L"scene camera: camera cut raised on player 2's manager");
         }
     }
-    g_cutNoted = false;
+    // The note is player 1's update's, rewritten every frame; the mirrors' updates after this one read it too.
 }
 
 /// Every slot of player 1's manager onto the mirror player's (the caller holds the mirror's primary scope): a blend
@@ -534,8 +536,10 @@ bool Install(const platform::GameImage& image) noexcept
               .get = [] { return Value{SlotsText(g_slots[0])}; }});
     Register({.name = L"camera-slots.two", .shape = Shape::Text, .help = L"player 2's camera manager, the same",
               .get = [] { return Value{SlotsText(g_slots[1])}; }});
-    Register({.name = L"camera-slots.mirror", .shape = Shape::Text, .help = L"the mirror player's camera manager, the same",
+    Register({.name = L"camera-slots.mirror", .shape = Shape::Text, .help = L"the first mirror player's camera manager, the same",
               .get = [] { return Value{SlotsText(g_slots[2])}; }});
+    Register({.name = L"camera-slots.mirror-2", .shape = Shape::Text, .help = L"the second mirror player's camera manager, the same",
+              .get = [] { return Value{SlotsText(g_slots[3])}; }});
     Register({.name = L"scene-camera-two", .shape = Shape::OnOff,
               .help = L"the scene camera (a cutscene, a talk or event camera) on player 2's view too, while the scene holds the players",
               .set  = [](const Value& v) {
@@ -574,12 +578,13 @@ void Tick(void* managerOne, void* managerTwo) noexcept
     {
         platform::Log(L"scene camera: {}", SceneText(scene));
     }
-    const std::array<Slots, 3> slots{ReadSlots(managerOne), ReadSlots(managerTwo), ReadSlots(g_mirrors[0].manager)};
-    for (int player = 0; player < 3; ++player)
+    const std::array<Slots, kReadSlots> slots{ReadSlots(managerOne), ReadSlots(managerTwo), ReadSlots(g_mirrors[0].manager),
+                                              ReadSlots(g_mirrors[1].manager)};
+    for (int player = 0; player < kReadSlots; ++player)
     {
         const Slots&   now  = slots[static_cast<std::size_t>(player)];
         const Slots&   was  = g_slots[static_cast<std::size_t>(player)];
-        const wchar_t* name = player == 0 ? L"player 1's" : player == 1 ? L"player 2's" : L"the mirror's";
+        const wchar_t* name = player == 0 ? L"player 1's" : player == 1 ? L"player 2's" : player == 2 ? L"the first mirror's" : L"the second mirror's";
         if (!now.valid && !was.valid)
         {
             continue;
@@ -647,7 +652,23 @@ void SetMirror(int slot, void* controller, void* manager, void* managerOne) noex
     MirrorPlayer& mirror = g_mirrors[static_cast<std::size_t>(slot)];
     if (manager != mirror.manager)
     {
-        mirror.mirrored = 0;  // a new manager starts from nothing; a gone one is not touched
+        // A manager another slot's record already copies to (the mirror module moved it down a slot): the record
+        // moves with it, its slots set as they are. Else a new manager starts from nothing; a gone one is not touched.
+        bool moved = false;
+        for (int other = 0; manager != nullptr && other < kMirrorSlots && !moved; ++other)
+        {
+            MirrorPlayer& record = g_mirrors[static_cast<std::size_t>(other)];
+            if (other != slot && record.manager == manager)
+            {
+                mirror = record;
+                record = MirrorPlayer{};
+                moved  = true;
+            }
+        }
+        if (!moved)
+        {
+            mirror.mirrored = 0;
+        }
     }
     mirror.controller = controller;
     mirror.manager    = manager;
