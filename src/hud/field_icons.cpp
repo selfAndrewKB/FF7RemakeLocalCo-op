@@ -99,6 +99,14 @@ struct Seen
 Seen          g_seen;
 std::uint32_t g_run = 0, g_runRecorded = 0;  // consecutive frames with icons (an Info line when a run starts and ends)
 std::uint32_t g_replayed[kMaxColumns] = {};
+
+/// Whose view a column is, for the log and the reading: the seat in it (player 3 in column 1, counted from 0, while
+/// player 2 is out).
+std::wstring PlayerOf(int column)
+{
+    const int seat = overlay_pass::SeatOf(column);
+    return seat >= 0 ? std::format(L"player {}", seat + 1) : std::format(L"column {} (no player)", column + 1);
+}
 bool          g_firstReplayLogged = false;
 
 /// The replays made for the further columns together.
@@ -527,14 +535,15 @@ void Replay(int column, void* controller, void* member) noexcept
         ++g_replayed[column];
     }
     g_replaying = false;
-    if (column == 0 && !g_firstReplayLogged && FurtherReplayed() != 0)
+    if (column == 0 && !g_firstReplayLogged && FurtherReplayed() != 0 && platform::Enabled(platform::Level::Debug))
     {
         g_firstReplayLogged = true;
-        platform::LogDebug(L"field icons: the first icon placed per view: tick ({:.0f},{:.0f}), player 2 ({:.0f},{:.0f}{}), "
-                           L"player 1 ({:.0f},{:.0f}{}); alpha tick {:.2f}, player 2's {:.2f}; player 2's member {}",
-                           g_seen.tickAt[0], g_seen.tickAt[1], g_seen.at[1][0], g_seen.at[1][1],
+        const std::wstring further = PlayerOf(1);  // the further pass that runs last before player 1's: column 1's
+        platform::LogDebug(L"field icons: the first icon placed per view: tick ({:.0f},{:.0f}), {} ({:.0f},{:.0f}{}), "
+                           L"player 1 ({:.0f},{:.0f}{}); alpha tick {:.2f}, {}'s {:.2f}; {}'s member {}",
+                           g_seen.tickAt[0], g_seen.tickAt[1], further, g_seen.at[1][0], g_seen.at[1][1],
                            g_seen.projected[1] ? L"" : L" behind", g_seen.at[0][0], g_seen.at[0][1],
-                           g_seen.projected[0] ? L"" : L" behind", g_seen.alphaTick, g_seen.alphaFurther,
+                           g_seen.projected[0] ? L"" : L" behind", g_seen.alphaTick, further, g_seen.alphaFurther, further,
                            g_seen.memberKnown ? L"read" : L"not read (the tick's leader location used)");
     }
 }
@@ -568,16 +577,23 @@ void EndFrame() noexcept
 std::wstring Reading()
 {
     const Seen&  s = g_seen;
+    std::wstring replayed;
+    for (int column = 0; column < kMaxColumns; ++column)
+    {
+        replayed += std::format(L"{}{} {}", column == 0 ? L"" : L", ", PlayerOf(column), s.replays[column]);
+    }
+    const std::wstring further = PlayerOf(1);
     std::wstring text = std::format(
-        L"{} frames, {} with icons; recorded {}; replayed p2 {} p1 {}; skipped: canvas changed {}, entry gone {}, widget gone "
-        L"{}, slot not found {}; faults {}; player 2's member {}",
-        s.frames, s.framesWithIcons, s.recorded, s.replays[1], s.replays[0], s.canvasChanged, s.entryGone, s.widgetGone,
-        s.noSlot, s.faults, s.memberKnown ? L"read" : L"not read");
+        L"{} frames, {} with icons; recorded {}; replayed: {}; skipped: canvas changed {}, entry gone {}, widget gone "
+        L"{}, slot not found {}; faults {}; {}'s member {}",
+        s.frames, s.framesWithIcons, s.recorded, replayed, s.canvasChanged, s.entryGone, s.widgetGone, s.noSlot, s.faults,
+        further, s.memberKnown ? L"read" : L"not read");
     if (s.icon != nullptr)
     {
-        text += std::format(L" | icon {}: tick ({:.0f},{:.0f}) p2 ({:.0f},{:.0f}{}) p1 ({:.0f},{:.0f}{}); alpha tick {:.2f} p2 {:.2f}",
-                            s.icon, s.tickAt[0], s.tickAt[1], s.at[1][0], s.at[1][1], s.projected[1] ? L"" : L" behind",
-                            s.at[0][0], s.at[0][1], s.projected[0] ? L"" : L" behind", s.alphaTick, s.alphaFurther);
+        text += std::format(L" | icon {}: tick ({:.0f},{:.0f}) {} ({:.0f},{:.0f}{}) player 1 ({:.0f},{:.0f}{}); alpha tick {:.2f} "
+                            L"{} {:.2f}",
+                            s.icon, s.tickAt[0], s.tickAt[1], further, s.at[1][0], s.at[1][1], s.projected[1] ? L"" : L" behind",
+                            s.at[0][0], s.at[0][1], s.projected[0] ? L"" : L" behind", s.alphaTick, further, s.alphaFurther);
     }
     g_seen = {};
     return text;

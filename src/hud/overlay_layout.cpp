@@ -56,10 +56,12 @@ std::uintptr_t         g_overlay      = 0;  // &g_SEndRootOverlay
 ContainScaleFn         g_containScale = nullptr;
 bool                   g_installed    = false;
 
-// The two 16:9 assumptions (hud/layout_code.h), acting while this byte is set: by the rect call, for the render it
-// lays out, so it describes the UI size every HUD placement reads until the next render.
+// The 16:9 assumptions (hud/layout_code.h: the frame, the field arrows, the battle arrows), acting while this byte is
+// set: by the rect call, for the render it lays out, so it describes the UI size every HUD placement reads until the
+// next render.
 platform::CodeRedirect  g_frameCode;
 platform::CodeRedirect  g_arrowCode;
+platform::CodeRedirect  g_battleArrowCode;
 alignas(8) std::uint8_t g_bandApplies = 0;
 
 // Game thread only.
@@ -108,6 +110,7 @@ struct Logged
     float   viewW   = -1.0f;
     float   viewH   = -1.0f;
     int     applied = -1;
+    int     seat    = -2;  // whose view the column is (a seat's change of column is logged too)
 };
 Logged      g_logged[kMaxColumns];  // per column: player 1's (and the single render), then the further columns'
 bool        g_entryLogged[kMaxColumns] = {};
@@ -165,14 +168,19 @@ IntRect* LayoutRect(IntRect* out)
     const bool    applied = g_bandOn && host > 0.0f && place.scaleX != 0.0f;
     g_loggedColumn = column;
     Logged& logged = g_logged[column];
+    // Column 0 (and the single render) is player 1's; a further column is the seat the engine lists there (with player 2
+    // out, player 3 fills column 1).
+    const int seat = column == 0 ? 0 : overlay_pass::SeatOf(column);
     if (!(image == logged.image) || !(band == logged.band) || viewW != logged.viewW || viewH != logged.viewH ||
-        static_cast<int>(applied) != logged.applied)
+        static_cast<int>(applied) != logged.applied || seat != logged.seat)
     {
-        logged                = {image, band, viewW, viewH, applied ? 1 : 0};
+        logged                = {image, band, viewW, viewH, applied ? 1 : 0, seat};
         g_entryLogged[column] = false;
-        g_lastText    = std::format(L"image {}x{}, player {}'s view {:.0f}x{:.0f} at ({:.0f},{:.0f}); band ({},{})-({},{}), "
+        g_lastText    = std::format(L"image {}x{}, {}'s view {:.0f}x{:.0f} at ({:.0f},{:.0f}); band ({},{})-({},{}), "
                                     L"layout scale {:.3f}, marker host scale {:.4f}: {}",
-                                    image.Width(), image.Height(), column + 1, viewW, viewH, share.originX * hostW,
+                                    image.Width(), image.Height(),
+                                    seat >= 0 ? std::format(L"player {}", seat + 1) : std::format(L"column {}", column + 1),
+                                    viewW, viewH, share.originX * hostW,
                                     share.originY * hostH, band.minX, band.minY, band.maxX, band.maxY, uiScale, host,
                                     applied ? L"applied" : g_bandOn ? L"NOT applied (unusable band)" : L"off (hud-band off)");
         platform::Log(L"HUD layout: {}", g_lastText);
@@ -327,6 +335,30 @@ void InstallArrowCode(const platform::GameImage& image) noexcept
                                                                 : L"keep the game's 16:9 edge split (its code differs)");
 }
 
+/// Optional: the battle's off-screen enemy arrows, the same rule in their own placement (hud/layout_code.h).
+void InstallBattleArrowCode(const platform::GameImage& image) noexcept
+{
+    namespace c          = layout_code;
+    const auto site      = image.Rebase(c::kBattleArrowSite, sizeof(c::kBattleArrowAdd));
+    const auto resume    = image.Rebase(c::kBattleArrowResume);
+    const auto side      = image.Rebase(c::kBattleArrowSide);
+    const auto topBottom = image.Rebase(c::kBattleArrowTopBottom);
+    const auto sixty     = image.Rebase(c::kArrowSixty, sizeof(float));
+    float      sixtyValue = 0.0f;
+    bool       held = site && resume && side && topBottom && sixty &&
+                image.BytesMatch(c::kBattleArrowCheckStart, c::kBattleArrowBytes);
+    if (held)
+    {
+        std::memcpy(&sixtyValue, reinterpret_cast<const void*>(*sixty), sizeof(float));
+        held = sixtyValue == 60.0f &&
+               g_battleArrowCode.Install(*site, c::kBattleArrowAdd, c::BattleArrowCode(g_bandApplies, *side, *topBottom, sixtyValue),
+                                         *resume);
+    }
+    platform::Log(L"HUD layout: the battle's off-screen enemy arrows {}",
+                  held ? L"pick their edge by where the ray leaves a band"
+                       : L"keep the game's 16:9 edge split (its code differs)");
+}
+
 }  // namespace
 
 bool Install(const platform::GameImage& image) noexcept
@@ -377,6 +409,7 @@ bool Install(const platform::GameImage& image) noexcept
     platform::Log(L"HUD layout: installed (hud-band on); the rect call follows on the game thread");
     InstallFrameCode(image);
     InstallArrowCode(image);
+    InstallBattleArrowCode(image);
     return true;
 }
 
@@ -398,6 +431,10 @@ void Remove() noexcept
     if (g_arrowCode.IsInstalled() && !g_arrowCode.Restore())
     {
         platform::Log(L"HUD layout: the arrow edge code was changed after us; left in place (it acts only in a band)");
+    }
+    if (g_battleArrowCode.IsInstalled() && !g_battleArrowCode.Restore())
+    {
+        platform::Log(L"HUD layout: the battle arrows' edge code was changed after us; left in place (it acts only in a band)");
     }
     // A call crossing two blocks is restored only from the game thread; elsewhere it stays and passes the engine's
     // rect through (the split is off).

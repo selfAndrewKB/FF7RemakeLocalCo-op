@@ -17,8 +17,8 @@
 // Timers per seat (a seat keeps them when its column changes), keyed by the arrow's weak widget and the source it was
 // made for (a widget reused from the pool starts at 0, as the game's new arrow does); a seat's arrows not seen in a
 // frame are forgotten, and all of a seat's when its column did not run (out, no battle).
-// Not covered: the corner test of the one-window band layouts (the 60/120 degree split at 0x1413E3977 picks the wrong
-// edge near a 32:9 half's corners; each monitor's full 16:9 column is right).
+// The corner test of the one-window band layouts (the 60/120 degree split at 0x1413E3977, the wrong edge near a band's
+// corners) is hud/layout_code.h's third piece, installed by hud/overlay_layout.
 // Game thread only (the HUD tick, the overlay driver and the redirects' installation run there).
 
 namespace lss::platform {

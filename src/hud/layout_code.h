@@ -1,6 +1,6 @@
 #pragma once
 
-// The machine code for the two 16:9 assumptions in Square's HUD placement that misplace things in a split half's band
+// The machine code for the 16:9 assumptions in Square's HUD placement that misplace things in a split half's band
 // (RE-hud-overlay-pass.md §6.2, §6.3; Rebirth's hud/centered_frame_code.h and hud/arrow_edge_code.h, re-found here).
 // Each is installed with platform::CodeRedirect over ONE game instruction inside one aligned 16-byte block, reads a
 // flag byte the HUD layout sets while the band applies (hud/overlay_layout.h), and with the flag clear does exactly
@@ -24,6 +24,14 @@
 //    that follow it in the game (two stack loads and an add, which leave the flags alone), then jumps to the side
 //    branch (0x141450726) or the top/bottom branch (0x14145075E). Flag clear: the game's own two compares, against
 //    copies of its 60.0 and 120.0 (read from the game at install: the code pool may lie beyond rel32 reach of them).
+//
+// 3. The battle's off-screen enemy arrows, the same split in their own placement (EndUI_BattleOutsideIcon_
+//    PlaceEdgeClamped60_120 0x1413E3640; RE-outside-icons-per-view.md §5, §6): the same rule while the band applies.
+//    Replaced: `addss xmm12, [rsp+20h]` (7 bytes at 0x1413E3977), which makes ySide; the flags of the game's 60° compare
+//    are live across it. There xmm1 = |angle|, xmm6 = 0, xmm11 = L.H - h, [rsp+20h] = the centre's y; rcx is free (set
+//    by the atan2f call before, next written at 0x1413E39E1, read by neither branch). Flag set: the side branch
+//    (0x1413E3989) or the top/bottom branch (0x1413E39B9), each of which sets its own flags. Flag clear: the add, the
+//    60° compare again (the flag test destroyed its flags), and back to the game's own jbe and 120° compare.
 
 #include <array>
 #include <cstddef>
@@ -77,7 +85,7 @@ inline constexpr std::uintptr_t kArrowCheckStart = 0x1414506C6;  // checked from
 inline constexpr std::uintptr_t kArrowSite       = 0x141450703;
 inline constexpr std::uintptr_t kArrowResume     = 0x14145070A;  // never reached: the code always jumps to a branch
 inline constexpr std::uintptr_t kArrowSide       = 0x141450726;  // the side branch
-inline constexpr std::uintptr_t kArrowTopBottom  = 0x14145075E;  // the top/bottom branch (...through its first byte)
+inline constexpr std::uintptr_t kArrowTopBottom  = 0x14145075E;  // the top/bottom branch (checked through its first instruction)
 inline constexpr std::uintptr_t kArrowSixty      = 0x144F92520;  // 60.0f
 inline constexpr std::uintptr_t kArrowOneTwenty  = 0x144F925D0;  // 120.0f
 
@@ -147,6 +155,70 @@ inline std::array<std::uint8_t, kArrowCodeSize> ArrowCode(const std::uint8_t& ba
     put(131, &kVerticalAbove, sizeof(float));
     put(135, &sixty, sizeof(float));
     put(139, &oneTwenty, sizeof(float));
+    return code;
+}
+
+// --- 3. The battle arrows' edge -------------------------------------------------------------------------------
+inline constexpr std::uintptr_t kBattleArrowCheckStart = 0x1413E3938;  // checked from here...
+inline constexpr std::uintptr_t kBattleArrowSite       = 0x1413E3977;
+inline constexpr std::uintptr_t kBattleArrowResume     = 0x1413E397E;  // the game's jbe (top/bottom at 60° or less)
+inline constexpr std::uintptr_t kBattleArrowSide       = 0x1413E3989;  // the side branch
+inline constexpr std::uintptr_t kBattleArrowTopBottom  = 0x1413E39B9;  // the top/bottom branch (checked through its first instruction)
+
+/// 0x1413E3938 through 0x1413E39BC: the atan2f call and its scaling, the 60° compare (against kArrowSixty), the site,
+/// the 120° compare (kArrowOneTwenty), the side branch and the top/bottom branch's first instruction, as the research
+/// read them.
+inline constexpr std::uint8_t kBattleArrowBytes[] = {
+    0xE8, 0x33, 0x07, 0x83, 0x00, 0xF3, 0x0F, 0x59, 0x05, 0xC3, 0xEB, 0xBA, 0x03, 0xF3, 0x45, 0x0F, 0x59, 0xD5, 0x44,
+    0x0F, 0x28, 0x6C, 0x24, 0x70, 0x0F, 0x28, 0xC8, 0x0F, 0x54, 0x0D, 0x46, 0x16, 0xBB, 0x03, 0x0F, 0x2F, 0x0D, 0xBF,
+    0xEB, 0xBA, 0x03, 0xF3, 0x45, 0x0F, 0x59, 0xE6, 0xF3, 0x45, 0x0F, 0x58, 0xD7, 0x44, 0x0F, 0x28, 0x7C, 0x24, 0x50,
+    0x44, 0x0F, 0x28, 0x74, 0x24, 0x60, 0xF3, 0x44, 0x0F, 0x58, 0x64, 0x24, 0x20, 0x76, 0x39, 0x0F, 0x2F, 0x0D, 0x49,
+    0xEC, 0xBA, 0x03, 0x73, 0x30, 0x0F, 0x2F, 0xC6, 0x73, 0x0A, 0xF3, 0x0F, 0x10, 0x0D, 0xFA, 0xEB, 0xBA, 0x03, 0xEB,
+    0x08, 0xF3, 0x0F, 0x10, 0x0D, 0x20, 0xF3, 0xBA, 0x03, 0x73, 0x0A, 0x44, 0x0F, 0x28, 0xD6, 0x45, 0x0F, 0x28, 0xC4,
+    0xEB, 0x2C, 0xF3, 0x44, 0x0F, 0x10, 0x54, 0x24, 0x30, 0x45, 0x0F, 0x28, 0xC4, 0xEB, 0x1F, 0x44, 0x0F, 0x2F, 0xC6};
+static_assert(sizeof(kBattleArrowBytes) == 0x1413E39BD - kBattleArrowCheckStart);
+
+/// The instruction replaced: addss xmm12, [rsp+20h].
+inline constexpr std::uint8_t kBattleArrowAdd[] = {0xF3, 0x44, 0x0F, 0x58, 0x64, 0x24, 0x20};
+
+inline constexpr std::size_t kBattleArrowCodeSize = 106;
+
+/// Live addresses: the band flag and the two branches; the game's 60.0 by value. The game path falls into the jump
+/// back CodeRedirect appends (to kBattleArrowResume).
+inline std::array<std::uint8_t, kBattleArrowCodeSize> BattleArrowCode(const std::uint8_t& band, std::uintptr_t side,
+                                                                      std::uintptr_t topBottom, float sixty) noexcept
+{
+    std::array<std::uint8_t, kBattleArrowCodeSize> code = {
+        0x48, 0xB9, 0, 0, 0, 0, 0, 0, 0, 0,        //   0: mov    rcx, &band
+        0x80, 0x39, 0x00,                          //  10: cmp    byte [rcx], 0
+        0x74, 0x4D,                                //  13: je     game (92)
+        0xF3, 0x44, 0x0F, 0x58, 0x64, 0x24, 0x20,  //  15: addss  xmm12, [rsp+20h]   ySide (the replaced instruction)
+        0x0F, 0x2F, 0x0D, 0x33, 0, 0, 0,           //  22: comiss xmm1, [rip+vertical below] (80)
+        0x72, 0x23,                                //  29: jb     topBottom (66)       straight up or down
+        0x0F, 0x2F, 0x0D, 0x2E, 0, 0, 0,           //  31: comiss xmm1, [rip+vertical above] (84)
+        0x77, 0x1A,                                //  38: ja     topBottom (66)
+        0x44, 0x0F, 0x2F, 0xE6,                    //  40: comiss xmm12, xmm6         ySide < 0: leaves by the top
+        0x72, 0x14,                                //  44: jb     topBottom (66)
+        0x45, 0x0F, 0x2F, 0xE3,                    //  46: comiss xmm12, xmm11        ySide > L.H - h: by the bottom
+        0x77, 0x0E,                                //  50: ja     topBottom (66)
+        0xFF, 0x25, 0, 0, 0, 0,                    //  52: side: jmp [rip+0]
+        0, 0, 0, 0, 0, 0, 0, 0,                    //  58:   the side branch
+        0xFF, 0x25, 0, 0, 0, 0,                    //  66: topBottom: jmp [rip+0]
+        0, 0, 0, 0, 0, 0, 0, 0,                    //  72:   the top/bottom branch
+        0, 0, 0, 0,                                //  80: vertical below
+        0, 0, 0, 0,                                //  84: vertical above
+        0, 0, 0, 0,                                //  88: sixty
+        0xF3, 0x44, 0x0F, 0x58, 0x64, 0x24, 0x20,  //  92: game: addss xmm12, [rsp+20h]
+        0x0F, 0x2F, 0x0D, 0xEE, 0xFF, 0xFF, 0xFF,  //  99: comiss xmm1, [rip+sixty] (88): the game's flags again
+    };                                             // 106: (the appended jump back to the game's jbe)
+    const auto put = [&code](std::size_t at, const void* value, std::size_t size) { std::memcpy(&code[at], value, size); };
+    const auto flag = reinterpret_cast<std::uint64_t>(&band);
+    put(2, &flag, sizeof(flag));
+    put(58, &side, sizeof(side));
+    put(72, &topBottom, sizeof(topBottom));
+    put(80, &kVerticalBelow, sizeof(float));
+    put(84, &kVerticalAbove, sizeof(float));
+    put(88, &sixty, sizeof(float));
     return code;
 }
 

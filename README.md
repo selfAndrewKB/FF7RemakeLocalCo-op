@@ -84,8 +84,8 @@ src/
     hud_probe             logging only: hud.dump (every HUD widget's fields) and the hud.overlay reading
     overlay_band          the band arithmetic: visible band, layout size, host scale, clip map (host-tested; from Rebirth)
     overlay_layout        the HUD laid out in the band each half shows; markers on their objects (three call redirects)
-    layout_code           the centred 1920x1080 frame and the off-screen arrows' edge in a band (two code redirects,
-                          host-tested by executing them)
+    layout_code           the centred 1920x1080 frame and the off-screen arrows' edge in a band, the field's and the
+                          battle's (three code redirects, host-tested by executing them)
     root_placement        the minimap, command menu and party panel in their corners of the half (the game's setters)
     ui_targets            one UI target per view through the game's own pool (render thread; on with hud-image); a
                           mirror's view samples player 1's

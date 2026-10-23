@@ -241,12 +241,130 @@ void TestArrow()
     EXPECT(redirect.Restore());
 }
 
+// --- 3. The battle arrows' edge -------------------------------------------------------------------------------------
+// int BattleArrow(float io[8]): xmm1 = io[0] |angle|, xmm6 = 0, xmm11 = io[1] L.H-h, xmm12 = io[2] the side point's y
+// from the centre, [rsp+20h] = io[3] the centre's y; the game's 60° compare, then the site (block offset 7), the game's
+// jbe to top/bottom, its 120° compare and jae, then the side branch. Returns 1 from its side label, 2 from its
+// top/bottom label; writes xmm12 (ySide, made by the site) to io[4].
+struct BattleArrowStandIn
+{
+    using Fn = int (*)(float* io);
+    Fn            fn = nullptr;
+    std::size_t   site = 0, side = 0, topBottom = 0;
+    std::uint8_t* page = nullptr;
+
+    BattleArrowStandIn()
+    {
+        Builder     b;
+        const auto  rel8 = [&b](std::size_t field, std::size_t target) {
+            b.bytes[field] = static_cast<std::uint8_t>(static_cast<std::int8_t>(target - (field + 1)));
+        };
+        b.Put({0x48, 0x81, 0xEC, 0xA8, 0x00, 0x00, 0x00});  // sub rsp, 0A8h (rsp 16-aligned)
+        b.Put({0x48, 0x89, 0xCA});                          // mov rdx, rcx (the code uses rcx)
+        b.Put({0x0F, 0x11, 0x74, 0x24, 0x30});              // movups [rsp+30h], xmm6
+        b.Put({0x44, 0x0F, 0x11, 0x5C, 0x24, 0x40});        // movups [rsp+40h], xmm11
+        b.Put({0x44, 0x0F, 0x11, 0x64, 0x24, 0x50});        // movups [rsp+50h], xmm12
+        b.Put({0xF3, 0x0F, 0x10, 0x0A});                    // movss xmm1, [rdx]
+        b.Put({0x0F, 0x57, 0xF6});                          // xorps xmm6, xmm6
+        b.Put({0xF3, 0x44, 0x0F, 0x10, 0x5A, 0x04});        // movss xmm11, [rdx+4]
+        b.Put({0xF3, 0x44, 0x0F, 0x10, 0x62, 0x08});        // movss xmm12, [rdx+8]
+        b.Put({0xF3, 0x0F, 0x10, 0x42, 0x0C});              // movss xmm0, [rdx+0Ch]
+        b.Put({0xF3, 0x0F, 0x11, 0x44, 0x24, 0x20});        // movss [rsp+20h], xmm0
+        const std::size_t sixtyCompare = b.At();
+        b.Put({0x0F, 0x2F, 0x0D, 0, 0, 0, 0});              // comiss xmm1, [rip+sixty] (fixed below)
+        b.PadTo(code::kBattleArrowSite & 0xF);              // nops: the flags stay the compare's
+        site = b.At();
+        b.Put(code::kBattleArrowAdd, sizeof(code::kBattleArrowAdd));  // the site: addss xmm12, [rsp+20h]
+        const std::size_t jbe = b.At();
+        b.Put({0x76, 0x00});                                // jbe topBottom
+        const std::size_t oneTwentyCompare = b.At();
+        b.Put({0x0F, 0x2F, 0x0D, 0, 0, 0, 0});              // comiss xmm1, [rip+oneTwenty]
+        const std::size_t jae = b.At();
+        b.Put({0x73, 0x00});                                // jae topBottom
+        side = b.At();
+        b.Put({0xB8, 0x01, 0x00, 0x00, 0x00});              // side: mov eax, 1
+        const std::size_t toEpilogue = b.At();
+        b.Put({0xEB, 0x00});                                // jmp epilogue
+        topBottom = b.At();
+        b.Put({0xB8, 0x02, 0x00, 0x00, 0x00});              // topBottom: mov eax, 2
+        const std::size_t epilogue = b.At();
+        b.Put({0xF3, 0x44, 0x0F, 0x11, 0x62, 0x10});        // movss [rdx+10h], xmm12
+        b.Put({0x0F, 0x10, 0x74, 0x24, 0x30});              // movups xmm6, [rsp+30h]
+        b.Put({0x44, 0x0F, 0x10, 0x5C, 0x24, 0x40});        // movups xmm11, [rsp+40h]
+        b.Put({0x44, 0x0F, 0x10, 0x64, 0x24, 0x50});        // movups xmm12, [rsp+50h]
+        b.Put({0x48, 0x81, 0xC4, 0xA8, 0x00, 0x00, 0x00, 0xC3});  // add rsp, 0A8h; ret
+        b.PadTo(0);
+        const std::size_t constants = b.At();
+        const float       values[2] = {60.0f, 120.0f};
+        b.Put(reinterpret_cast<const std::uint8_t*>(values), sizeof(values));
+        rel8(jbe + 1, topBottom);
+        rel8(jae + 1, topBottom);
+        rel8(toEpilogue + 1, epilogue);
+        const auto disp = [&b](std::size_t compare, std::size_t target) {
+            const auto rel = static_cast<std::int32_t>(target - (compare + 7));
+            std::memcpy(&b.bytes[compare + 3], &rel, sizeof(rel));
+        };
+        disp(sixtyCompare, constants);
+        disp(oneTwentyCompare, constants + 4);
+        page = Load(b.bytes);
+        fn   = reinterpret_cast<Fn>(page);
+    }
+};
+
+int RunBattleArrow(BattleArrowStandIn& s, float angle, float lMinusH, float yFromCentre, float cy, float& ySide)
+{
+    float io[8] = {angle, lMinusH, yFromCentre, cy};
+    const int branch = s.fn(io);
+    ySide = io[4];
+    return branch;
+}
+
+void TestBattleArrow()
+{
+    std::puts("battle arrow edge: the game's 60/120 split with the flag clear, the ray's real edge with it set");
+    BattleArrowStandIn          s;
+    alignas(8) std::uint8_t     band = 0;
+    lss::platform::CodeRedirect redirect;
+    const auto bytes = code::BattleArrowCode(band, reinterpret_cast<std::uintptr_t>(s.page + s.side),
+                                             reinterpret_cast<std::uintptr_t>(s.page + s.topBottom), 60.0f);
+    EXPECT(redirect.Install(reinterpret_cast<std::uintptr_t>(s.page + s.site), code::kBattleArrowAdd, bytes,
+                            reinterpret_cast<std::uintptr_t>(s.page + s.site + sizeof(code::kBattleArrowAdd))));
+    float y = 0;
+    // The game's rule (L.H - h = 1000, centre 500): top/bottom at 60 or less and at 120 or more, whatever ySide says.
+    EXPECT(RunBattleArrow(s, 30.0f, 1000.0f, -550.0f, 500.0f, y) == 2);
+    EXPECT(y == -50.0f);  // the replaced add ran
+    EXPECT(RunBattleArrow(s, 60.0f, 1000.0f, 0.0f, 500.0f, y) == 2);
+    EXPECT(RunBattleArrow(s, 61.0f, 1000.0f, 4500.0f, 500.0f, y) == 1);  // ySide ignored by the game
+    EXPECT(y == 5000.0f);
+    EXPECT(RunBattleArrow(s, 119.0f, 1000.0f, -510.0f, 500.0f, y) == 1);
+    EXPECT(RunBattleArrow(s, 120.0f, 1000.0f, 0.0f, 500.0f, y) == 2);
+    EXPECT(RunBattleArrow(s, std::nanf(""), 1000.0f, 0.0f, 500.0f, y) == 2);  // unordered: jbe taken
+    band = 1;
+    // A wide band: a ray at 65 degrees whose side point lies below the band leaves by the bottom.
+    EXPECT(RunBattleArrow(s, 65.0f, 1000.0f, 700.0f, 500.0f, y) == 2);
+    EXPECT(y == 1200.0f);
+    EXPECT(RunBattleArrow(s, 80.0f, 1000.0f, 400.0f, 500.0f, y) == 1);    // within: side
+    EXPECT(y == 900.0f);
+    EXPECT(RunBattleArrow(s, 40.0f, 1000.0f, -200.0f, 500.0f, y) == 1);   // a narrow column: side below 60
+    EXPECT(RunBattleArrow(s, 100.0f, 1000.0f, -501.0f, 500.0f, y) == 2);  // above the top
+    EXPECT(RunBattleArrow(s, 100.0f, 1000.0f, -500.0f, 500.0f, y) == 1);  // on the corner: side
+    EXPECT(RunBattleArrow(s, 100.0f, 1000.0f, 500.0f, 500.0f, y) == 1);   // on the corner: side
+    EXPECT(RunBattleArrow(s, 150.0f, 1000.0f, 300.0f, 500.0f, y) == 1);   // past 120 but within: side
+    EXPECT(RunBattleArrow(s, 0.0f, 1000.0f, 0.0f, 500.0f, y) == 2);       // vertical: ySide degenerates to the centre
+    EXPECT(RunBattleArrow(s, 179.99999f, 1000.0f, 0.0f, 500.0f, y) == 2);
+    EXPECT(RunBattleArrow(s, std::nanf(""), 1000.0f, 0.0f, 500.0f, y) == 2);
+    band = 0;  // back to the game's
+    EXPECT(RunBattleArrow(s, 40.0f, 1000.0f, -200.0f, 500.0f, y) == 2);
+    EXPECT(redirect.Restore());
+}
+
 }  // namespace
 
 int main()
 {
     TestFrame();
     TestArrow();
+    TestBattleArrow();
     if (g_failures == 0)
     {
         std::puts("all tests passed");
