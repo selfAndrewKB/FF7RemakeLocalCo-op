@@ -1,0 +1,81 @@
+// Host-side tests for the view columns' pure rules (views/column_rules.h). Run without the game.
+
+#include "views/column_rules.h"
+
+#include <cstdio>
+
+namespace {
+
+using namespace lss::views::column_rules;
+
+int g_failures = 0;
+
+#define EXPECT(condition)                                                    \
+    do                                                                       \
+    {                                                                        \
+        if (!(condition))                                                    \
+        {                                                                    \
+            std::printf("  FAILED line %d: %s\n", __LINE__, #condition);     \
+            ++g_failures;                                                    \
+        }                                                                    \
+    } while (false)
+
+/// The columns a frame shows: the players, the span's columns, the console's override, within one and the most.
+void WantedColumns()
+{
+    EXPECT(Wanted(1, 0, 0) == 1);  // player 1 alone, no span
+    EXPECT(Wanted(2, 0, 0) == 2);  // player 2 in, no span: the split
+    EXPECT(Wanted(1, 2, 0) == 2);  // the span held over two monitors with player 2 out: the mirror's column
+    EXPECT(Wanted(2, 2, 0) == 2);
+    EXPECT(Wanted(1, 3, 0) == 3);  // a three-monitor row: two mirrors
+    EXPECT(Wanted(2, 3, 0) == 3);  // one mirror beside the two players
+    EXPECT(Wanted(3, 3, 0) == 3);
+    EXPECT(Wanted(1, 0, 3) == 3);  // the console's override on one monitor
+    EXPECT(Wanted(2, 2, 3) == 3);  // the override over a two-monitor span: three columns across the pair
+    EXPECT(Wanted(2, 3, 2) == 2);  // the override may ask for fewer than the span, never fewer than the players
+    EXPECT(Wanted(3, 0, 1) == 3);
+    EXPECT(Wanted(1, 7, 0) == kMaxColumns);  // never beyond the columns built
+    EXPECT(Wanted(0, 0, 0) == 1);            // bad input: at least one
+    static_assert(Wanted(2, 3, 0) == 3, "constexpr");
+}
+
+/// The layout records: the stock entry and the mod's columns are distinct, the columns tile the width exactly.
+void Records()
+{
+    EXPECT(!Same(kStockFavorTop, kThreeColumns));
+    EXPECT(Same(kThreeColumns, kThreeColumns));
+    float width = 0;
+    for (int i = 0; i < kThreePlayerRecords; ++i)
+    {
+        EXPECT(kThreeColumns[i].sizeY == 1.0f && kThreeColumns[i].originY == 0.0f);
+        EXPECT(kThreeColumns[i].originX == width);
+        width += kThreeColumns[i].sizeX;
+    }
+    EXPECT(width > 0.999f && width < 1.001f);
+    EXPECT(kStockFavorTop[0].sizeX == 1.0f && kStockFavorTop[2].originX == 0.5f && kStockFavorTop[2].originY == 0.5f);
+}
+
+/// What the module does with the entry it read.
+void Decisions()
+{
+    EXPECT(Decide(kStockFavorTop, true) == Action::Write);
+    EXPECT(Decide(kStockFavorTop, false) == Action::Nothing);
+    EXPECT(Decide(kThreeColumns, true) == Action::Nothing);
+    EXPECT(Decide(kThreeColumns, false) == Action::Restore);
+    Record foreign[kThreePlayerRecords] = {{0.5f, 1.0f, 0.0f, 0.0f}, {0.5f, 1.0f, 0.5f, 0.0f}, {1.0f, 1.0f, 0.0f, 0.0f}};
+    EXPECT(Decide(foreign, true) == Action::Foreign);
+    EXPECT(Decide(foreign, false) == Action::Foreign);
+    Record zero[kThreePlayerRecords] = {};
+    EXPECT(Decide(zero, true) == Action::Foreign);
+}
+
+}  // namespace
+
+int main()
+{
+    WantedColumns();
+    Records();
+    Decisions();
+    std::printf(g_failures == 0 ? "column_rules: all passed\n" : "column_rules: %d failure(s)\n", g_failures);
+    return g_failures == 0 ? 0 : 1;
+}

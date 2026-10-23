@@ -91,6 +91,7 @@ add_library(LocalSplitScreen SHARED
     src/render/distortion_apply.cpp
     src/render/movie_frame.cpp
     src/views/letterbox_patch.cpp
+    src/views/column_layout.cpp
     src/views/display_align.cpp
     src/views/mirror_player.cpp
     src/views/scene_camera_two.cpp
@@ -309,6 +310,13 @@ add_executable(MinimapRulesTests
 target_include_directories(MinimapRulesTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_compile_features(MinimapRulesTests PRIVATE cxx_std_20)
 add_test(NAME minimap_rules COMMAND MinimapRulesTests)
+
+add_executable(ColumnRulesTests
+    tests/column_rules_test.cpp
+)
+target_include_directories(ColumnRulesTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(ColumnRulesTests PRIVATE cxx_std_20)
+add_test(NAME column_rules COMMAND ColumnRulesTests)
 
 add_executable(SeatStateTests
     tests/seat_state_test.cpp

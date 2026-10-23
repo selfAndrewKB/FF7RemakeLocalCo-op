@@ -58,6 +58,8 @@
 #include "render/bloom_origin.h"
 #include "render/distortion_apply.h"
 #include "render/movie_frame.h"
+#include "views/column_layout.h"
+#include "views/column_rules.h"
 #include "views/letterbox_patch.h"
 #include "views/display_align.h"
 #include "views/mirror_player.h"
@@ -84,7 +86,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.63.0-seat-objects";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.64.0-column-layout";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
@@ -229,6 +231,7 @@ public:
         }
         remote_.Close();
         lss::views::mirror_player::Clear(L"the mod unloads");
+        lss::views::column_layout::Remove();
         lss::views::window_span::Leave(L"the mod unloads");
         lss::views::display_align::Restore();  // the leave's ticks never come: the monitors go back now
         lss::views::scene_camera_two::Remove();
@@ -296,6 +299,7 @@ public:
         // Optional: without them split in Borderless keeps the game's letterbox, and the window stays on one monitor.
         lss::views::letterbox_patch::Install(*image);
         lss::views::window_span::Install(*image);
+        lss::views::column_layout::Install(*image);     // optional: without it three local players take the stock quadrants
         lss::views::scene_camera_two::Install(*image);  // readings only; fine without
         // Optional: without it a held span shows one view across the row while player 2 is out.
         if (lss::views::mirror_player::Install(*image))
@@ -378,7 +382,11 @@ private:
         const int playersIn = 1 + session_.Count();  // player 1 and the seats in: the columns the players fill
         lss::views::letterbox_patch::Tick(playersIn > 1 || lss::views::window_span::Held());
         lss::views::window_span::Tick(playersIn > 1);
-        lss::views::mirror_player::Tick(playersIn, lss::views::window_span::Held() ? lss::views::window_span::Columns() : 0);
+        // The columns this frame shows (views/column_rules.h): the players, the span's while held, or the console's.
+        const int viewColumns = lss::views::column_rules::Wanted(
+            playersIn, lss::views::window_span::Held() ? lss::views::window_span::Columns() : 0, lss::views::column_layout::Override());
+        lss::views::column_layout::Tick(viewColumns);
+        lss::views::mirror_player::Tick(playersIn, viewColumns);
         lss::views::scene_camera_two::Tick(CameraManagerOf(0), session_.In(kSeatOne) ? CameraManagerOf(1) : nullptr);  // seat 1 today
         for (int seat = 1; seat <= lss::players::kSeatsBuilt; ++seat)
         {

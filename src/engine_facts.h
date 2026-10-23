@@ -1528,6 +1528,19 @@ inline constexpr std::size_t    kViewRectOverrideImmediate = 8;  // the cmp's im
 /// UGameMapsSettings (reflection dump EngineSettings.hpp): TwoPlayerSplitscreenLayout, 0 Horizontal (top and
 /// bottom), 1 Vertical (side by side); read by UGameViewportClient::UpdateActiveSplitscreenType every layout pass.
 inline constexpr std::uint32_t kGameMapsTwoPlayerLayout = 0x69;
+/// ThreePlayerSplitscreenLayout: 0 FavorTop, 1 FavorBottom (4.18 has no three-column value; RE-multi-monitor-views §7).
+inline constexpr std::uint32_t kGameMapsThreePlayerLayout = 0x6A;
+/// UGameViewportClient::SplitscreenInfo (research/RE-layout-fov.md §2.1, RE-three-views.md §1): TArray<FSplitscreenData>
+/// of the six 4.18 split types (0 None, 1 TwoPlayer_Horizontal, 2 TwoPlayer_Vertical, 3 ThreePlayer_FavorTop,
+/// 4 ThreePlayer_FavorBottom, 5 FourPlayer), filled by the constructor (0x142F61900) and read by LayoutPlayers
+/// (0x142F68540) on every redraw; each entry a 16-byte TArray<FPerPlayerSplitscreenData>, each record four floats
+/// {SizeX, SizeY, OriginX, OriginY}. A TArray's Num is the int32 after its data pointer.
+inline constexpr std::uint32_t kViewportClientSplitscreenInfo = 0x60;
+inline constexpr std::uint32_t kTArrayNum                     = 0x08;
+inline constexpr std::int32_t  kSplitscreenTypes              = 6;
+inline constexpr std::uint32_t kSplitscreenDataBytes          = 0x10;
+inline constexpr std::uint32_t kPerPlayerSplitBytes           = 0x10;
+inline constexpr std::uint32_t kSplitTypeThreePlayerFavorTop  = 3;
 
 // --- The camera manager's pose slots and the scene signals (research/RE-camera.md §2.2-2.4, RE-lifecycle-world.md) --
 /// AEndPlayerCameraManager keeps 25 pose slots (48 bytes each) inline at +0x1E48 (its own SetCameraSlot 0x141687EB0
