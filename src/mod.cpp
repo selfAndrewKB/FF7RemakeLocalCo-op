@@ -83,7 +83,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.57.0-fade-and-crowd-by-seat";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.58.0-anim-by-seat";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
@@ -323,7 +323,7 @@ public:
         }
         lss::players::game_state::Install(*image);  // readings only; fine without
         lss::world::party_fade::Install(*image);    // optional: without it a member near player 2's camera vanishes in both halves
-        lss::world::anim_two_views::Install(*image);  // optional: without it characters near player 2 animate by player 1's camera
+        lss::world::anim_two_views::Install(*image);  // optional: without it characters near a further player animate by player 1's camera
         lss::world::npc_detail::Install(*image);      // optional: without it NPCs near player 2 pause by player 1's camera
         lss::world::npc_crowd::Install(*image);       // optional: without it the crowd is spawned around player 1 only
         lss::world::npc_senses::Install(*image);      // optional: without it NPCs see nobody beyond player 1's grid
@@ -431,18 +431,21 @@ private:
     /// able to see them.
     void TickWorld() noexcept
     {
-        // Seat 1 alone for the modules not yet per seat: anim_two_views, npc_detail, npc_senses, env_sets_two (plan/seats.md step 3).
+        // Seat 1 alone for the modules not yet per seat: npc_detail, npc_senses, env_sets_two (plan/seats.md step 3).
         const bool in        = session_.In(kSeatOne);
         void*      cameraTwo = in ? CameraManagerOf(1) : nullptr;
         void*      memberTwo = in ? lss::players::scopes::Member(1) : nullptr;
         lss::world::party_fade::Tick(session_.Count());
-        lss::world::anim_two_views::Tick(cameraTwo, memberTwo);
-        lss::world::npc_detail::Tick(in ? CameraManagerOf(0) : nullptr, cameraTwo);
         for (int seat = 1; seat <= lss::players::kSeatsBuilt; ++seat)
         {
-            lss::world::npc_crowd::TickSeat(seat, session_.In(seat) ? lss::players::scopes::Member(seat) : nullptr);
+            const bool seatIn = session_.In(seat);
+            lss::world::anim_two_views::TickSeat(seat, seatIn ? CameraManagerOf(seat) : nullptr,
+                                                 seatIn ? lss::players::scopes::Member(seat) : nullptr);
+            lss::world::npc_crowd::TickSeat(seat, seatIn ? lss::players::scopes::Member(seat) : nullptr);
         }
+        lss::world::anim_two_views::Tick();
         lss::world::npc_crowd::Tick();
+        lss::world::npc_detail::Tick(in ? CameraManagerOf(0) : nullptr, cameraTwo);
         lss::world::npc_senses::Tick(in ? PawnOf(0) : nullptr, memberTwo);
         lss::world::env_sets_two::Tick(memberTwo, in ? ControllerOf(1) : nullptr);
     }

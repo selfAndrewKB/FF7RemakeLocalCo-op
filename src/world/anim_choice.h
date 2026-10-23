@@ -1,6 +1,6 @@
 #pragma once
 
-// Which camera the game's animation judge reads for one mesh, and player 2's camera snapshot in the game's own form
+// Which camera the game's animation judge reads for one mesh, and a further player's camera snapshot in the game's own form
 // (research/RE-anim-two-views.md §1.2, §1.3, §2.4). Pure, host-tested (tests/anim_choice_test.cpp).
 //
 // The judge (EndSkelMeshComp_AnimOptimizationEval) turns a mesh's distance and angle to ONE camera snapshot into its
@@ -9,12 +9,12 @@
 //   bones refreshed          unless distance >= 20 m and angle >= 60 deg (and the mode is not full)
 //   cloth and hair reduced   when angle >= 60 deg and distance >= 5 m
 //   significance             max(100 m - distance, 0), a tenth of it outside the cone
-// Tier() names the best of these a camera gives; the mesh is judged from player 2's camera when its tier is higher, or
-// the same with a higher significance. A tie keeps player 1's (the game's own choice).
+// Tier() names the best of these a camera gives; the mesh is judged from a further player's camera when its tier is
+// higher, or the same with a higher significance. A tie keeps player 1's (the game's own choice), then the lower seat's.
 //
 // The snapshot is the allocator's block at +0xDC..+0xFB, in its order: the location predicted 0.1 s ahead, the forward
 // predicted 1.3 turns ahead, the speed, the turn rate. Predict() is the game's formula (AnimBudgetAllocator_Update_SE),
-// fed with player 2's camera manager instead of player 1's: the one recreated piece, the input only.
+// fed with a further player's camera manager instead of player 1's: the one recreated piece, the input only.
 
 #include <algorithm>
 #include <cmath>
@@ -74,11 +74,27 @@ inline float Significance(const View& v) noexcept
     return std::max(kFar - v.distance, 0.0f) * (v.angle >= kHalfCone ? 0.1f : 1.0f);
 }
 
-/// The mesh is judged from player 2's camera.
+/// The mesh is judged from the second camera (player 2's, or any later one) rather than the first.
 inline bool PreferTwo(const View& one, const View& two) noexcept
 {
     const int a = Tier(one), b = Tier(two);
     return b > a || (b == a && Significance(two) > Significance(one));
+}
+
+/// The camera that sees the mesh best among `count` views, as an index: 0 is player 1's (the game's own), the later
+/// ones the further players' in seat order. A later camera is taken only when it sees the mesh better (PreferTwo),
+/// so a tie keeps the earlier one: player 1's, then the lower seat's.
+inline int Best(const View* views, int count) noexcept
+{
+    int best = 0;
+    for (int i = 1; i < count; ++i)
+    {
+        if (PreferTwo(views[best], views[i]))
+        {
+            best = i;
+        }
+    }
+    return best;
 }
 
 /// The allocator's snapshot block (+0xDC..+0xFB), field for field.
@@ -91,7 +107,7 @@ struct Snapshot
 };
 static_assert(sizeof(Snapshot) == 32, "the allocator's block is 32 bytes");
 
-/// What the prediction keeps between frames (the allocator's +0xC4, +0xD0 and +0xFC, for player 2).
+/// What the prediction keeps between frames (the allocator's +0xC4, +0xD0 and +0xFC, kept per further player).
 struct History
 {
     Vec  location;

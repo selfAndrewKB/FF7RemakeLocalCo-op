@@ -1,4 +1,4 @@
-// Host test for world/anim_choice.h: the camera choice for the game's animation judge and player 2's snapshot.
+// Host test for world/anim_choice.h: the camera choice for the game's animation judge and a further player's snapshot.
 
 #include "world/anim_choice.h"
 
@@ -45,6 +45,21 @@ int main()
     Check(!PreferTwo(one, one), "a tie keeps player 1's camera");
     // Same tier, the nearer (higher significance) wins.
     Check(PreferTwo({800.0f, 10.0f * kDeg}, {600.0f, 10.0f * kDeg}), "same tier: nearer player 2 chosen");
+
+    // The best of several cameras: player 1's, then each further player's in seat order; a tie keeps the earlier.
+    const View three = Measure(mesh, {200, 0, 0}, {-1, 0, 0});  // 2 m, facing it: better than player 2's
+    const View views2[] = {one, two};
+    const View views3[] = {one, two, three};
+    const View views3b[] = {one, three, two};
+    const View tie2[] = {two, two};
+    const View tie3[] = {one, two, two};
+    Check(Best(views2, 2) == 1 && Best(views2, 1) == 0, "two cameras: the same choice as PreferTwo; one camera: player 1's");
+    Check(Best(views3, 3) == 2, "three cameras: player 3's when it sees the mesh best");
+    Check(Best(views3b, 3) == 1, "three cameras: player 2's when it sees the mesh best");
+    Check(Best(tie2, 2) == 0, "a tie keeps player 1's camera");
+    Check(Best(tie3, 3) == 1, "a tie between the further players keeps the lower seat's");
+    const View none[] = {two, one, one};
+    Check(Best(none, 3) == 0, "player 1's camera kept when no further player's sees the mesh better");
 
     // The snapshot: a reset frame, then a moving and turning camera.
     History h;
