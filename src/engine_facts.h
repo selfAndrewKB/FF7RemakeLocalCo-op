@@ -388,6 +388,13 @@ inline constexpr std::uintptr_t kCalcVolumeBoundsCall = 0x1425C4F78;
 inline constexpr std::uint32_t kViewFamily      = 0x00;
 inline constexpr std::uint32_t kFamilyViews     = 0x00;
 inline constexpr std::uint32_t kFamilyViewCount = 0x08;
+/// APlayerCameraManager::SetGameCameraCutThisFrame (stock 4.18, `or [rcx+1E18h], 400h; ret`): the next draw's views of
+/// that player drop their history (RE-haze-history.md §4). The engine clears the bit on every manager after each draw
+/// (FViewport::Draw, 0x14330DA82).
+inline constexpr std::array<std::uint8_t, 16> kSetGameCameraCutEntry{
+    0x81, 0x89, 0x18, 0x1E, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0xC3, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC};
+inline constexpr platform::FunctionFact kSetGameCameraCut{L"APlayerCameraManager::SetGameCameraCutThisFrame",
+                                                          0x143719650, kSetGameCameraCutEntry};
 
 // --- The game's own input tick (RE-input-p2.md §1) ------------------------------------------------
 // AEndPlayerController's constructor turns off the stock per-controller input tick in PlayerTick for gameplay;

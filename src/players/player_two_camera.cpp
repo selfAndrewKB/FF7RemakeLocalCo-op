@@ -14,6 +14,7 @@
 #include "players/seat_objects.h"
 #include "players/seats.h"
 #include "players/weak_object.h"
+#include "render/history_cut.h"
 #include "views/scene_camera_two.h"
 #include "battle/command_camera_two.h"
 #include "battle/lock_camera_two.h"
@@ -379,6 +380,7 @@ void UpdateCamera(void* self, float deltaSeconds)
         const PrimaryScope primary(views::scene_camera_two::MirrorController(mirror));
         views::scene_camera_two::BeforeMirrorUpdate(mirror);
         g_cameraUpdate(self, deltaSeconds);
+        render::history_cut::AfterCameraUpdate(self, false);
         return;
     }
     const bool  seatsIn = AnySeatIn();
@@ -386,12 +388,17 @@ void UpdateCamera(void* self, float deltaSeconds)
     const int   seat    = seatsIn ? SeatOfManager(self) : 0;
     if (seat == 0)
     {
-        if ((seatsIn && self == platform::ReadPointer(one, facts::kControllerCameraManager)) ||
+        void* const managerOne = platform::ReadPointer(one, facts::kControllerCameraManager);
+        if ((seatsIn && self == managerOne) ||
             (self != nullptr && self == views::scene_camera_two::MirrorSource()))
         {
             views::scene_camera_two::BeforeUpdateCamera(self, 0, nullptr);  // player 1's: its camera cut noted for this frame
         }
         g_cameraUpdate(self, deltaSeconds);
+        if (self != nullptr && self == managerOne)
+        {
+            render::history_cut::AfterCameraUpdate(self, true);
+        }
         return;
     }
     ++g_counts[seat].cameraUpdate;
@@ -401,6 +408,7 @@ void UpdateCamera(void* self, float deltaSeconds)
     // inside the scope so the primary-scoped ones reach the seat's manager.
     views::scene_camera_two::BeforeUpdateCamera(platform::ReadPointer(one, facts::kControllerCameraManager), seat, self);
     g_cameraUpdate(self, deltaSeconds);
+    render::history_cut::AfterCameraUpdate(self, false);
 }
 
 /// AEndPlayerController::ProcessPlayerInput: each player's right stick reaches that player's operator.
