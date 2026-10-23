@@ -5,7 +5,10 @@
 //
 // Each client has its own queue, so a connection is its own script: its actions and switches run in order, a
 // bounded number per tick; its `wait` and `wait-until` hold only its own queue back; its `hold`s run alongside the
-// commands after them until their ticks run out. Queries (get, status, help) answer at once. A failure drops the
+// commands after them until their ticks run out. Queries (get, status, help, note) answer where they stand: at once
+// when the client has nothing pending, otherwise in turn behind its earlier commands (a status after a wait-until
+// reads the state after the wait; a note marks the log where it stands in the script). A line that does not parse
+// is rejected at once, out of turn, and stops nothing. A failure drops the
 // commands the client queued behind it and releases its holds: a script, sent whole, stops at its first failure;
 // a shell, which sends one line at a time, just sees the failure. A client that goes away drops its queue and
 // releases its holds, so a later player on the same pad never inherits one. `abort` does that for every client.
@@ -57,8 +60,8 @@ public:
 
     Runner(const Registry& registry, Holds& holds) noexcept : registry_(registry), holds_(holds) {}
 
-    /// One line from a client: parsed now (a bad line is rejected at once), a query answered now, an action
-    /// queued, an abort acted on. Replies go to TakeReplies.
+    /// One line from a client: parsed now (a bad line is rejected at once), a query answered now if the client has
+    /// nothing pending (else queued behind it), an action queued, an abort acted on. Replies go to TakeReplies.
     void Submit(ClientId client, std::wstring_view line);
 
     /// The client went away: its queue is dropped and its holds released.

@@ -74,7 +74,14 @@ void Runner::Submit(ClientId id, std::wstring_view line)
     case Verb::Status:
     case Verb::Help:
     case Verb::Note:
-        Answer(client, number, command);
+        if (client.queue.empty())
+        {
+            Answer(client, number, command);
+        }
+        else
+        {
+            client.queue.push_back({number, command});  // behind this client's earlier commands, as it stands in its script
+        }
         return;
     case Verb::Abort:
         for (auto& each : clients_)
@@ -281,6 +288,12 @@ bool Runner::Run(Client& client)
     Outcome outcome;
     switch (command.verb)
     {
+    case Verb::Get:
+    case Verb::Status:
+    case Verb::Help:
+    case Verb::Note:
+        Answer(client, head.line, command);  // a query that waited its turn
+        return true;
     case Verb::Entry:
         if (const Entry* entry = registry_.Find(command.name); entry != nullptr && entry->set)
         {

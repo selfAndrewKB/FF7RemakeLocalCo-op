@@ -147,6 +147,43 @@ void TestWaitBlocksButQueriesAnswer()
     EXPECT(replies.size() == 2 && replies[0] == L"ok 1 wait 3" && replies[1] == L"ok 2 join");
 }
 
+void TestQueriesWaitTheirTurn()
+{
+    Harness h;
+    // A script sent whole: the note and the get stand behind the wait-until and the join, in order.
+    h.runner.Submit(1, L"note before");
+    EXPECT((h.Replies() == std::vector<std::wstring>{L"note 1 before"}));  // nothing pending: at once
+    h.runner.Submit(1, L"wait-until counter >= 2 10");
+    h.runner.Submit(1, L"note after the wait");
+    h.runner.Submit(1, L"get counter");
+    h.runner.Submit(1, L"join");
+    h.runner.Submit(1, L"status");
+    EXPECT(h.Replies().empty());
+    h.Ticks(1);
+    EXPECT(h.Replies().empty());
+    h.fake.counter = 2;
+    h.Ticks(1);
+    const auto replies = h.Replies();
+    EXPECT((replies == std::vector<std::wstring>{L"ok 2 wait-until counter >= 2 10", L"note 3 after the wait",
+                                                 L"value counter 2", L"ok 4 get counter", L"ok 5 join",
+                                                 L"value bloom-origin on", L"value counter 2", L"ok 6 status"}));
+    EXPECT(h.runner.Idle());
+
+    // A failure ahead of a queued query drops it like any command.
+    h.fake.joinFails = true;
+    h.runner.Submit(1, L"join");
+    h.runner.Submit(1, L"get counter");
+    h.Ticks(1);
+    EXPECT((h.Replies() == std::vector<std::wstring>{L"failed 7 join -- no", L"dropped 8 get counter -- after a failure"}));
+
+    // So does a closed connection.
+    h.runner.Submit(1, L"wait 5");
+    h.runner.Submit(1, L"note never");
+    h.runner.ClientClosed(1);
+    EXPECT((h.Replies() == std::vector<std::wstring>{L"dropped 9 wait 5 -- the client went away",
+                                                     L"dropped 10 note never -- the client went away"}));
+}
+
 void TestWaitUntil()
 {
     Harness h;
@@ -261,6 +298,7 @@ int main()
     TestActionsAndReplies();
     TestRejectedAndQueries();
     TestWaitBlocksButQueriesAnswer();
+    TestQueriesWaitTheirTurn();
     TestWaitUntil();
     TestHoldsRunAlongsideAndRelease();
     TestClientsAreSeparate();
