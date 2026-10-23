@@ -293,3 +293,10 @@ add_executable(CommandMenuRulesTests
 target_include_directories(CommandMenuRulesTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_compile_features(CommandMenuRulesTests PRIVATE cxx_std_20)
 add_test(NAME command_menu_rules COMMAND CommandMenuRulesTests)
+
+add_executable(LockCameraRulesTests
+    tests/lock_camera_rules_test.cpp
+)
+target_include_directories(LockCameraRulesTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(LockCameraRulesTests PRIVATE cxx_std_20)
+add_test(NAME lock_camera_rules COMMAND LockCameraRulesTests)

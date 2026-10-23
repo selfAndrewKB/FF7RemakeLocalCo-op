@@ -426,9 +426,9 @@ void OperatorTick(void* self, float deltaSeconds)
     const battle::command_camera_two::TickScope ui(seat);
     const battle::targeting_two::FieldsScope targets(seat);
     g_tickingSeat = seat;
-    battle::lock_camera_two::BeforeOperatorTick(self, controller);  // one instance
+    battle::lock_camera_two::BeforeOperatorTick(seat, self, controller);
     g_operatorTick(self, deltaSeconds);
-    battle::lock_camera_two::AfterOperatorTick(self);
+    battle::lock_camera_two::AfterOperatorTick(seat, self);
     g_tickingSeat = 0;
     battle::sequence_camera_two::AfterOperatorTick(seat + 1);
     // The owner's camera-override route follows the owner (the tick may have changed it: the LeaderChange flavor).
@@ -511,7 +511,7 @@ void ProcessPlayerInput(void* self, float deltaSeconds, bool gamePaused)
     const scopes::Scope                      leader(seat, scopes::Leader);
     const battle::targeting_two::FieldsScope targets(seat);
     g_processInput(self, deltaSeconds, gamePaused);
-    battle::lock_camera_two::AfterInput(self);
+    battle::lock_camera_two::AfterInput(seat, self);
 }
 
 /// AEndPlayerController::Tick_FieldMove: each player's left stick moves only that player's character. A seat's

@@ -27,6 +27,7 @@
 #include "players/player_two_camera.h"
 #include "battle/command_menu_two.h"
 #include "battle/targeting_two.h"
+#include "battle/lock_camera_two.h"
 #include "players/pad_buttons.h"
 #include "players/scopes.h"
 #include "players/split_render.h"
@@ -197,6 +198,7 @@ UObject* Session::Controller(const Seat& seat) const noexcept
 void Session::EndMemberModules(const Seat& seat) noexcept
 {
     battle::targeting_two::OnLeave(seat.index);
+    battle::lock_camera_two::OnLeave(seat.index);
     battle::command_menu_two::OnLeave(seat.index);
 }
 
