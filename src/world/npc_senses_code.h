@@ -6,11 +6,13 @@
 //
 // The NPCs' senses look through one grid of 15 x 15 x 3 cells of 4 m that the game centres every field tick on
 // player 1's character (EndInterMgr_BuildGrid_CentreOnPC0Pawn: PlayerControllerList[0]'s pawn). A character outside
-// it is seen by no NPC. The game has no second grid and no other centre, so when player 2 would fall outside, the
-// mod moves the centre toward player 2, only as far as keeps player 1 at least a cell inside the edge (player 1
-// first), never in height and never in battle (the grid also holds the battle heat map). That choice is the one
+// it is seen by no NPC. The game has no second grid and no other centre, so when a further player would fall outside,
+// the mod moves the centre toward them, only as far as keeps player 1 at least a cell inside the edge (player 1
+// first; with two further players, the lower seat is held first and one that cannot sit in the same grid is left
+// out), never in height and never in battle (the grid also holds the battle heat map). That choice is the one
 // recreated piece (documented in the plan's world topic); the grid build, the senses and the reactions are the game's.
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -24,7 +26,7 @@ namespace lss::world::npc_senses_code {
 // --- The cell rule and the centre ------------------------------------------------------------------------------------
 
 inline constexpr int kHalfCells = 7;  // the grid holds cells -7..7 around its centre (x, y); -1..1 in height
-inline constexpr int kReach     = 6;  // how far from the centre the mod lets either player sit: one cell inside
+inline constexpr int kReach     = 6;  // how far from the centre the mod lets any player sit: one cell inside
 
 struct Cell
 {
@@ -46,40 +48,72 @@ inline Cell CellOf(const float (&location)[3]) noexcept
 
 enum class Fit : std::uint8_t
 {
-    Inside,       // player 2 is within reach of player 1's centre: the game's centre stands
-    Shifted,      // the centre moved toward player 2, player 1 still within reach
-    TooFar,       // more than two reaches apart across the ground: the game's centre (player 1 first)
-    OtherFloor,   // more than one cell apart in height: the game's centre
+    Inside,       // a further player within reach of player 1's cell (held; the centre need not move for them)
+    Shifted,      // a further player held by moving the centre toward them, player 1 still within reach
+    TooFar,       // a further player left out: too far across the ground from player 1 and the players already held
+    OtherFloor,   // a further player left out: more than one cell apart in height from player 1
 };
+
+inline constexpr int kMaxOthers = 3;  // the further players a choice can hold (players/scopes.h: seats 1..3)
 
 struct Choice
 {
-    Fit  fit = Fit::Inside;
-    Cell centre;  // the centre to use (player 1's cell unless Shifted)
+    Fit  fit = Fit::Inside;  // the choice as a whole: Shifted when the centre moved, else the first left-out player's reason, else Inside
+    Cell centre;             // the centre to use (player 1's cell unless Shifted)
+    std::array<Fit, kMaxOthers> fits{};  // each further player's own fit, in the order given
 };
 
-/// The centre for player 1's cell `one` and player 2's cell `two`.
+/// The centre for player 1's cell `one` and the further players' cells `others[0..count)`, player 1 first: the game's
+/// centre (player 1's cell) unless a further player would fall outside, then moved toward them only as far as keeps
+/// player 1 within reach, and the least that does. A further player on another floor, or too far from player 1 or
+/// from the players already held to sit within one grid with them (in the order given: the lower seat first), is left
+/// out: the grid stays where it is for the others.
+inline Choice ChooseCentre(Cell one, const Cell* others, int count) noexcept
+{
+    Choice choice;
+    choice.centre = one;
+    // The cells held so far span [min, max] on each axis; the centre must be within reach of every one of them, so
+    // the span may not exceed two reaches.
+    int minX = one.x, maxX = one.x, minY = one.y, maxY = one.y;
+    bool anyHeld = false;
+    for (int i = 0; i < count && i < kMaxOthers; ++i)
+    {
+        const Cell& other = others[i];
+        if (std::abs(other.z - one.z) > 1)
+        {
+            choice.fits[static_cast<std::size_t>(i)] = Fit::OtherFloor;
+            continue;
+        }
+        const int nMinX = std::min(minX, other.x), nMaxX = std::max(maxX, other.x);
+        const int nMinY = std::min(minY, other.y), nMaxY = std::max(maxY, other.y);
+        if (nMaxX - nMinX > 2 * kReach || nMaxY - nMinY > 2 * kReach)
+        {
+            choice.fits[static_cast<std::size_t>(i)] = Fit::TooFar;
+            continue;
+        }
+        minX = nMinX, maxX = nMaxX, minY = nMinY, maxY = nMaxY;
+        anyHeld = true;
+        choice.fits[static_cast<std::size_t>(i)] =
+            std::abs(other.x - one.x) <= kReach && std::abs(other.y - one.y) <= kReach ? Fit::Inside : Fit::Shifted;
+    }
+    // Player 1's cell, moved the least into the interval that reaches every held cell.
+    const auto into = [](int a, int lo, int hi) { return a < lo ? lo : a > hi ? hi : a; };
+    choice.centre = {into(one.x, maxX - kReach, minX + kReach), into(one.y, maxY - kReach, minY + kReach), one.z};
+    if (!(choice.centre == one))
+    {
+        choice.fit = Fit::Shifted;
+    }
+    else if (!anyHeld && count > 0)
+    {
+        choice.fit = choice.fits[0];
+    }
+    return choice;
+}
+
+/// The centre for player 1's cell `one` and player 2's cell `two` (the two-player case).
 inline Choice ChooseCentre(Cell one, Cell two) noexcept
 {
-    if (std::abs(two.z - one.z) > 1)
-    {
-        return {Fit::OtherFloor, one};
-    }
-    bool       tooFar = false;
-    const auto axis   = [&tooFar](int a, int b) {
-        const int d = b - a;
-        if (d > 2 * kReach || d < -2 * kReach)
-        {
-            tooFar = true;
-        }
-        return d > kReach ? b - kReach : d < -kReach ? b + kReach : a;
-    };
-    const Cell centre{axis(one.x, two.x), axis(one.y, two.y), one.z};
-    if (tooFar)
-    {
-        return {Fit::TooFar, one};
-    }
-    return {centre == one ? Fit::Inside : Fit::Shifted, centre};
+    return ChooseCentre(one, &two, 1);
 }
 
 // --- The code at the grid build -------------------------------------------------------------------------------------

@@ -8,6 +8,8 @@
 #include "platform/log.h"
 #include "platform/verified_code.h"
 #include "platform/vtable_entry.h"
+#include "players/scopes.h"
+#include "players/seats.h"
 #include "world/npc_senses_code.h"
 
 #include <Unreal/NameTypes.hpp>
@@ -27,6 +29,12 @@ namespace {
 namespace code = npc_senses_code;
 using platform::Read;
 using platform::ReadPointer;
+using players::kSeatsBuilt;
+using players::SeatBuilt;
+using players::SeatName;
+
+constexpr int kMaxPlayers = players::scopes::kMaxPlayers;
+static_assert(kSeatsBuilt <= code::kMaxOthers, "the centre choice holds every built seat");
 
 using UpdateFn = void (*)(void* intention, void* context);
 
@@ -38,24 +46,36 @@ constexpr float kSetAside      = 1.0f;   // a timer the look skips, for the one 
 // What the grid is doing this tick (the reading and the log name it).
 enum class Grid : std::uint8_t
 {
-    Off,         // switched off, player 2 out, or a character unread: the game's centre
+    Off,         // switched off, no further player in, or a character unread: the game's centre
     Battle,      // the game's centre (the battle heat map)
-    Inside,      // player 2 within reach of player 1's centre
-    Shifted,     // moved toward player 2
-    TooFar,      // the game's centre: too far apart to hold both
-    OtherFloor,  // the game's centre: more than a floor apart
+    Inside,      // the game's centre: every further player held sits within reach of it (each player's fit says which)
+    Shifted,     // moved toward a further player (each player's fit says who is held)
+    TooFar,      // the game's centre: no further player held, the first too far to hold with player 1
+    OtherFloor,  // the game's centre: no further player held, the first on another floor
 };
 
 const wchar_t* GridText(Grid grid) noexcept
 {
     switch (grid)
     {
-    case Grid::Off: return L"on player 1 (no player 2)";
+    case Grid::Off: return L"on player 1 (no further player)";
     case Grid::Battle: return L"on player 1 (battle)";
-    case Grid::Inside: return L"on player 1, player 2 inside";
-    case Grid::Shifted: return L"moved toward player 2";
-    case Grid::TooFar: return L"on player 1, player 2 too far to hold both";
-    case Grid::OtherFloor: return L"on player 1, player 2 on another floor";
+    case Grid::Inside: return L"on player 1";
+    case Grid::Shifted: return L"moved toward a further player";
+    case Grid::TooFar: return L"on player 1, a further player too far to hold with player 1";
+    case Grid::OtherFloor: return L"on player 1, a further player on another floor";
+    }
+    return L"?";
+}
+
+const wchar_t* FitText(code::Fit fit) noexcept
+{
+    switch (fit)
+    {
+    case code::Fit::Inside: return L"inside";
+    case code::Fit::Shifted: return L"reached by the move";
+    case code::Fit::TooFar: return L"too far, left out";
+    case code::Fit::OtherFloor: return L"on another floor, left out";
     }
     return L"?";
 }
@@ -69,11 +89,14 @@ std::uint8_t**                g_root   = nullptr;  // &g_EndGameRoot
 // Written by the game thread; the look reads them on the AI's worker threads (research/RE-npc-reactions.md §10.5).
 std::atomic<bool>  g_enabled{true};
 std::atomic<void*> g_one{nullptr};  // player 1's character
-std::atomic<void*> g_two{nullptr};  // player 2's character, while in
+std::array<std::atomic<void*>, kMaxPlayers> g_members{};  // each seat's character while in; [0] unused
 unsigned long g_gameThread = 0;
 Grid          g_grid       = Grid::Off;
 code::Cell    g_centreNow;
+std::array<code::Fit, kMaxPlayers> g_fits{};  // each seat's fit at the last decision (game thread; the reading)
+std::array<bool, kMaxPlayers>      g_fitRead{};  // the seat had a readable character at the last decision
 
+std::wstring  g_fitsLogged;        // the fits as last logged (game thread)
 std::uint64_t g_shiftedTicks = 0;  // game thread
 std::atomic<std::uint64_t> g_bothSeen{0}, g_oneFirst{0}, g_gameAfter{0}, g_offThread{0}, g_oneFirstTotal{0};
 std::wstring  g_summary = L"no summary yet";
@@ -115,12 +138,31 @@ bool InBattle() noexcept
            state == facts::kFieldBattleStateBattle;
 }
 
-/// The grid's state for this tick, and the centre to write when it moved.
+/// The grid's state for this tick, and the centre to write when it moved; each seat's fit kept for the reading.
 Grid Decide(code::Cell& centre) noexcept
 {
-    float one[3]{}, two[3]{};
-    if (!g_enabled || g_one.load() == nullptr || g_two.load() == nullptr || !Location(g_one.load(), one) ||
-        !Location(g_two.load(), two))
+    g_fitRead = {};
+    float one[3]{};
+    if (!g_enabled || g_one.load() == nullptr || !Location(g_one.load(), one))
+    {
+        return Grid::Off;
+    }
+    // Every seat with a readable character, in seat order (the lower seat held first by the rule).
+    std::array<code::Cell, code::kMaxOthers> cells{};
+    std::array<int, code::kMaxOthers>        seatOf{};
+    int                                      count = 0;
+    for (int seat = 1; seat <= kSeatsBuilt; ++seat)
+    {
+        void* member = g_members[static_cast<std::size_t>(seat)].load();
+        float at[3]{};
+        if (member != nullptr && Location(member, at))
+        {
+            cells[static_cast<std::size_t>(count)]  = code::CellOf(at);
+            seatOf[static_cast<std::size_t>(count)] = seat;
+            ++count;
+        }
+    }
+    if (count == 0)
     {
         return Grid::Off;
     }
@@ -128,8 +170,14 @@ Grid Decide(code::Cell& centre) noexcept
     {
         return Grid::Battle;
     }
-    const auto choice = code::ChooseCentre(code::CellOf(one), code::CellOf(two));
+    const auto choice = code::ChooseCentre(code::CellOf(one), cells.data(), count);
     centre            = choice.centre;
+    for (int i = 0; i < count; ++i)
+    {
+        const int seat = seatOf[static_cast<std::size_t>(i)];
+        g_fits[static_cast<std::size_t>(seat)]    = choice.fits[static_cast<std::size_t>(i)];
+        g_fitRead[static_cast<std::size_t>(seat)] = true;
+    }
     switch (choice.fit)
     {
     case code::Fit::Inside: return Grid::Inside;
@@ -160,8 +208,14 @@ bool Candidate(float timer, float interest, float experience, float threshold) n
 void Update(void* intention, void* context) noexcept
 {
     void* const one = g_one.load(std::memory_order_acquire);  // this call's snapshot of the players
-    void* const two = g_two.load(std::memory_order_acquire);
-    if (!g_enabled.load(std::memory_order_relaxed) || one == nullptr || two == nullptr)
+    std::array<void*, kMaxPlayers> members{};
+    bool                           anyMember = false;
+    for (int seat = 1; seat <= kSeatsBuilt; ++seat)
+    {
+        members[static_cast<std::size_t>(seat)] = g_members[static_cast<std::size_t>(seat)].load(std::memory_order_acquire);
+        anyMember = anyMember || members[static_cast<std::size_t>(seat)] != nullptr;
+    }
+    if (!g_enabled.load(std::memory_order_relaxed) || one == nullptr || !anyMember)
     {
         g_update(intention, context);
         return;
@@ -196,10 +250,12 @@ void Update(void* intention, void* context) noexcept
         g_update(intention, context);
         return;
     }
-    // Both players must be candidates for this NPC this update; every other candidate is set aside for the one call.
+    // Player 1 and a further player must both be candidates for this NPC this update; every other candidate is set
+    // aside for the one call.
     std::array<SetAside, kMaxCognitions> aside{};
     int  asideCount = 0;
-    bool oneSeen = false, twoSeen = false;
+    bool oneSeen    = false;
+    int  seatSeen   = 0;  // the lowest seat whose character is a candidate (0 none)
     for (int i = 0; i < count; ++i)
     {
         if ((words[i / 32] >> (i % 32) & 1u) == 0)
@@ -220,12 +276,18 @@ void Update(void* intention, void* context) noexcept
             oneSeen = true;
             continue;
         }
-        twoSeen = twoSeen || actor == two;
+        for (int seat = 1; seat <= kSeatsBuilt && seatSeen == 0; ++seat)
+        {
+            if (members[static_cast<std::size_t>(seat)] != nullptr && actor == members[static_cast<std::size_t>(seat)])
+            {
+                seatSeen = seat;  // the lowest seat whose character is a candidate
+            }
+        }
         aside[asideCount++] = {entry, timer};
     }
-    if (!oneSeen || !twoSeen)
+    if (!oneSeen || seatSeen == 0)
     {
-        g_update(intention, context);  // the game's pick: player 1 is not competing with player 2 here
+        g_update(intention, context);  // the game's pick: player 1 is not competing with a further player here
         return;
     }
     g_bothSeen.fetch_add(1, std::memory_order_relaxed);
@@ -251,8 +313,8 @@ void Update(void* intention, void* context) noexcept
     {
         g_oneFirst.fetch_add(1, std::memory_order_relaxed);
         g_oneFirstTotal.fetch_add(1, std::memory_order_relaxed);
-        platform::LogDebug(L"npc senses: {} looks at player 1 first (player 2 was in its sight too)",
-                           ObjectName(ReadPointer(context, facts::kAiContextCharacter)));
+        platform::LogDebug(L"npc senses: {} looks at player 1 first ({} was in its sight too)",
+                           ObjectName(ReadPointer(context, facts::kAiContextCharacter)), SeatName(seatSeen));
         return;
     }
     g_gameAfter.fetch_add(1, std::memory_order_relaxed);
@@ -274,15 +336,34 @@ try
     {
         return;
     }
-    g_summary = std::format(L"last minute: grid moved toward player 2 on {} ticks, {} grid writes in all; both players "
-                            L"in one NPC's sight {} times, player 1 looked at first {}, the game's own pick after {}; "
-                            L"looks run off the game thread {}",
+    g_summary = std::format(L"last minute: grid moved toward a further player on {} ticks, {} grid writes in all; player 1 "
+                            L"and a further player in one NPC's sight {} times, player 1 looked at first {}, the game's own "
+                            L"pick after {}; looks run off the game thread {}",
                             g_shiftedTicks, g_centre.writes, bothSeen, oneFirst, gameAfter, offThread);
     platform::LogDebug(L"npc senses: {}", g_summary);
     g_shiftedTicks = 0;
 }
 catch (...)
 {
+}
+
+/// Each further player's fit at the last decision, for the reading and the log (empty when none was decided).
+std::wstring FitsText() noexcept
+try
+{
+    std::wstring out;
+    for (int seat = 1; seat <= kSeatsBuilt; ++seat)
+    {
+        if (g_fitRead[static_cast<std::size_t>(seat)])
+        {
+            out += std::format(L"{}{} {}", out.empty() ? L"" : L", ", SeatName(seat), FitText(g_fits[static_cast<std::size_t>(seat)]));
+        }
+    }
+    return out;
+}
+catch (...)
+{
+    return {};
 }
 
 }  // namespace
@@ -323,25 +404,33 @@ bool Install(const platform::GameImage& image) noexcept
     }
     control::Register({.name  = L"npc-senses",
                        .shape = control::Shape::OnOff,
-                       .help  = L"NPCs see player 2 as they see player 1, player 1's look first (world/npc_senses.h; on)",
+                       .help  = L"NPCs see every further player as they see player 1, player 1's look first (world/npc_senses.h; on)",
                        .set   = [](const control::Value& value) {
                            SetEnabled(std::get<bool>(value));
                            return control::Outcome{};
                        },
                        .get = [] { return control::Value{g_enabled.load()}; }});
     control::Register({.name = L"world.npc-senses", .shape = control::Shape::Text,
-                       .help = L"where the NPCs' sensing grid is, and the looks given to player 1 first",
+                       .help = L"where the NPCs' sensing grid is, each further player's fit, and the looks given to player 1 first",
                        .get  = [] { return control::Value{Reading()}; }});
-    platform::Log(L"npc senses: installed (grid {}, look {}); while player 2 is in, NPCs can see both players, player 1 "
-                  L"first", grid ? L"on" : L"off", look ? L"on" : L"off");
+    platform::Log(L"npc senses: installed (grid {}, look {}); while a further player is in, NPCs can see every player, "
+                  L"player 1 first", grid ? L"on" : L"off", look ? L"on" : L"off");
     return true;
 }
 
-void Tick(void* memberOne, void* memberTwo) noexcept
+void TickSeat(int seat, void* seatMember) noexcept
+{
+    if (!SeatBuilt(seat))
+    {
+        return;
+    }
+    g_members[static_cast<std::size_t>(seat)].store(seatMember, std::memory_order_release);
+}
+
+void Tick(void* memberOne) noexcept
 {
     g_gameThread = GetCurrentThreadId();
     g_one.store(memberOne, std::memory_order_release);
-    g_two.store(memberTwo, std::memory_order_release);
     if (!g_centreCode.IsInstalled())
     {
         Summarise();
@@ -367,12 +456,16 @@ void Tick(void* memberOne, void* memberTwo) noexcept
     {
         g_centre.on = 0;
     }
-    if (grid != g_grid)
+    const std::wstring fits = FitsText();
+    if (grid != g_grid || fits != g_fitsLogged)
     {
-        platform::LogDebug(L"npc senses: the grid is {}{}", GridText(grid),
+        // A state change, or one player's fit changing under the same state (a third player left out or held again).
+        platform::LogDebug(L"npc senses: the grid is {}{}{}", GridText(grid),
                            grid == Grid::Shifted ? std::format(L" (centre cell ({}, {}, {}))", centre.x, centre.y, centre.z)
-                                                 : std::wstring{});
-        g_grid = grid;
+                                                 : std::wstring{},
+                           fits.empty() ? std::wstring{} : L": " + fits);
+        g_grid       = grid;
+        g_fitsLogged = fits;
     }
     Summarise();
 }
@@ -390,12 +483,13 @@ void SetEnabled(bool on) noexcept
 std::wstring Reading() noexcept
 try
 {
-    return std::format(L"{}; grid {}{}; looks given to player 1 first so far {}; {}", g_enabled.load() ? L"on" : L"off",
+    const std::wstring fits = FitsText();
+    return std::format(L"{}; grid {}{}{}; looks given to player 1 first so far {}; {}", g_enabled.load() ? L"on" : L"off",
                        GridText(g_grid),
                        g_grid == Grid::Shifted ? std::format(L" (centre cell ({}, {}, {}))", g_centreNow.x, g_centreNow.y,
                                                              g_centreNow.z)
                                                : std::wstring{},
-                       g_oneFirstTotal.load(), g_summary);
+                       fits.empty() ? std::wstring{} : L" (" + fits + L")", g_oneFirstTotal.load(), g_summary);
 }
 catch (...)
 {

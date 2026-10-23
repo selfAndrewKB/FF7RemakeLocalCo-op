@@ -85,6 +85,110 @@ void TestChooseCentre()
     }
 }
 
+/// The two-player rule as it stood before the N form (v0.29.0 .. v0.58.0), kept verbatim as the reference.
+code::Choice OldChooseCentre(code::Cell one, code::Cell two) noexcept
+{
+    if (std::abs(two.z - one.z) > 1)
+    {
+        return {code::Fit::OtherFloor, one};
+    }
+    bool       tooFar = false;
+    const auto axis   = [&tooFar](int a, int b) {
+        const int d = b - a;
+        if (d > 2 * code::kReach || d < -2 * code::kReach)
+        {
+            tooFar = true;
+        }
+        return d > code::kReach ? b - code::kReach : d < -code::kReach ? b + code::kReach : a;
+    };
+    const code::Cell centre{axis(one.x, two.x), axis(one.y, two.y), one.z};
+    if (tooFar)
+    {
+        return {code::Fit::TooFar, one};
+    }
+    return {centre == one ? code::Fit::Inside : code::Fit::Shifted, centre};
+}
+
+void TestChooseCentreThree()
+{
+    std::puts("centre with three players: moved the least that reaches every player it can hold, player 1 first, then "
+              "player 2 before player 3; a player too far from those held is left out");
+    const code::Cell one{10, 20, 3};
+    auto choose = [&](code::Cell two, code::Cell three) {
+        const code::Cell others[] = {two, three};
+        return code::ChooseCentre(one, others, 2);
+    };
+
+    auto c = choose({12, 20, 3}, {14, 22, 3});  // both inside
+    EXPECT(c.fit == code::Fit::Inside && c.centre == one && c.fits[0] == code::Fit::Inside && c.fits[1] == code::Fit::Inside);
+    c = choose({12, 20, 3}, {18, 20, 3});  // player 3 eight cells out: the centre moves two, player 2 still inside
+    EXPECT(c.fit == code::Fit::Shifted && (c.centre == code::Cell{12, 20, 3}) && c.fits[0] == code::Fit::Inside &&
+           c.fits[1] == code::Fit::Shifted);
+    c = choose({18, 20, 3}, {2, 20, 3});  // players 2 and 3 on opposite sides, 16 apart: player 2 held (the lower seat), player 3 left out
+    EXPECT(c.fit == code::Fit::Shifted && (c.centre == code::Cell{12, 20, 3}) && c.fits[0] == code::Fit::Shifted &&
+           c.fits[1] == code::Fit::TooFar);
+    c = choose({18, 20, 3}, {4, 20, 3});  // 14 apart across the players: still more than two reaches, player 3 out
+    EXPECT(c.fit == code::Fit::Shifted && (c.centre == code::Cell{12, 20, 3}) && c.fits[1] == code::Fit::TooFar);
+    c = choose({16, 20, 3}, {4, 20, 3});  // 12 apart: one grid holds all three, the centre at 10 (player 1's own cell)
+    EXPECT(c.fit == code::Fit::Inside && c.centre == one && c.fits[0] == code::Fit::Inside && c.fits[1] == code::Fit::Inside);
+    c = choose({17, 20, 3}, {5, 20, 3});  // 12 apart but player 1 off their middle: the centre moves one, both reached
+    EXPECT(c.fit == code::Fit::Shifted && (c.centre == code::Cell{11, 20, 3}) && c.fits[0] == code::Fit::Shifted &&
+           c.fits[1] == code::Fit::Inside);
+    c = choose({12, 20, 5}, {17, 20, 3});  // player 2 two floors up: left out, player 3 moves the centre
+    EXPECT(c.fit == code::Fit::Shifted && (c.centre == code::Cell{11, 20, 3}) && c.fits[0] == code::Fit::OtherFloor &&
+           c.fits[1] == code::Fit::Shifted);
+    c = choose({30, 20, 3}, {12, 20, 5});  // nobody held: the first left-out player's reason
+    EXPECT(c.fit == code::Fit::TooFar && c.centre == one && c.fits[0] == code::Fit::TooFar && c.fits[1] == code::Fit::OtherFloor);
+    EXPECT(code::ChooseCentre(one, nullptr, 0).fit == code::Fit::Inside && code::ChooseCentre(one, nullptr, 0).centre == one);
+
+    // The N form with one further player is the old two-cell rule (a verbatim copy, above) on every input: every cell
+    // within 15 either way, two floors up and down.
+    for (int dz = -2; dz <= 2; ++dz)
+    {
+        for (int dx = -15; dx <= 15; ++dx)
+        {
+            for (int dy = -15; dy <= 15; ++dy)
+            {
+                const code::Cell two{one.x + dx, one.y + dy, one.z + dz};
+                const auto       a = OldChooseCentre(one, two);
+                const auto       b = code::ChooseCentre(one, &two, 1);
+                EXPECT(a.fit == b.fit && a.centre == b.centre && b.fits[0] == a.fit);
+            }
+        }
+    }
+    // Whatever the choice with three players: player 1 always within reach of the centre; every held player too; and
+    // the centre moved the least (a step back toward player 1's cell on either axis would lose a held player).
+    const auto held = [](code::Fit fit) { return fit == code::Fit::Inside || fit == code::Fit::Shifted; };
+    const auto reaches = [](code::Cell centre, code::Cell cell) {
+        return std::abs(centre.x - cell.x) <= code::kReach && std::abs(centre.y - cell.y) <= code::kReach;
+    };
+    for (int dx = -15; dx <= 15; ++dx)
+    {
+        for (int dy = -15; dy <= 15; ++dy)
+        {
+            const code::Cell two{one.x + dx, one.y + dy, one.z};
+            const code::Cell three{one.x - dy, one.y + dx, one.z};
+            const auto       r = choose(two, three);
+            EXPECT(reaches(r.centre, one));
+            EXPECT(!held(r.fits[0]) || reaches(r.centre, two));
+            EXPECT(!held(r.fits[1]) || reaches(r.centre, three));
+            for (const int axis : {0, 1})
+            {
+                code::Cell back = r.centre;
+                int&       v    = axis == 0 ? back.x : back.y;
+                const int  own  = axis == 0 ? one.x : one.y;
+                if (v == own)
+                {
+                    continue;
+                }
+                v += v > own ? -1 : 1;
+                const bool stillAll = (!held(r.fits[0]) || reaches(back, two)) && (!held(r.fits[1]) || reaches(back, three));
+                EXPECT(!stillAll);
+            }
+        }
+    }
+}
+
 struct Builder
 {
     std::vector<std::uint8_t> bytes;
