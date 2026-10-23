@@ -16,7 +16,7 @@
 // the field systems' tick) runs again for each seat's cursor with the same exchanges. The releases the game makes for
 // player 1 alone (a battle suspension) release every seat's with the game's reflected HideBattleTargetIcon; the
 // battle's end and a leave the same. In each column's pass of the HUD render every other player's cursor is
-// transparent (the game's SetColorAndOpacity; a seat's column is its index), as the mod hides player 1's field
+// transparent (the game's SetColorAndOpacity; a seat's column from overlay_pass's map), as the mod hides player 1's field
 // cursors. The enemy bar's targeted look and the ability label in a seat's column follow the seat's key from here
 // (hud/marker_replay classes the bars per column with DisplayedTarget). Not covered: the shared weak-point marker
 // edges. Game thread only.

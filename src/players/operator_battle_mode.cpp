@@ -29,6 +29,7 @@ using platform::Read;
 using EnterFn         = std::uint64_t (*)(std::uint64_t, std::uint64_t, std::uint64_t, std::uint64_t);
 using PopRequestFn    = void (*)(void* key, void* setting);
 using OperatorVoidFn  = void (*)(void* cameraOperator);
+using SetDistanceFn   = std::uint64_t (*)(std::uint8_t field, std::uint8_t battle);
 
 // Set at install, then only read.
 EnterFn        g_enter           = nullptr;
@@ -38,6 +39,8 @@ OperatorVoidFn g_resetMoveFollow = nullptr;
 std::uint8_t** g_data            = nullptr;  // the data singleton (the options block)
 std::array<platform::CallRedirect, facts::kFieldCameraEnterBattleModeCalls.size()> g_enterCalls;
 platform::CallRedirect g_popCall;
+std::array<platform::CallRedirect, facts::kFieldCameraSetDistanceOptionsCalls.size()> g_distanceCalls;
+SetDistanceFn          g_setDistance = nullptr;
 
 // Game thread.
 std::uint32_t g_enters = 0;  // the game's enter calls
@@ -47,6 +50,7 @@ struct Counts
     std::uint32_t enters = 0;  // of the game's, run again on the seat's operator
     std::uint32_t leaves = 0;  // of the game's, mirrored on the seat's operator
     std::uint32_t joins  = 0;  // the seat's operator entered battle mode at its spawn
+    std::uint32_t distances = 0;  // the options menu's Camera Distance changes made on the seat's operator
 };
 std::array<Counts, scopes::kMaxPlayers> g_counts;  // index = seat ([0] unused)
 
@@ -159,6 +163,36 @@ std::uint64_t Enter(std::uint64_t a1, std::uint64_t a2, std::uint64_t a3, std::u
     return result;
 }
 
+/// At the options menu's two Camera Distance calls: the game's (player 1's operator), then the same values on each
+/// seat's operator inside its operator scope (the menu's arguments passed through: the options block still holds the
+/// old values while the menu calls).
+std::uint64_t SetDistance(std::uint8_t field, std::uint8_t battle)
+{
+    const std::uint64_t result = g_setDistance(field, battle);
+    if (!player_two_camera::IsGameThread())
+    {
+        static bool told = false;  // the scopes are the game thread's: player 1's change only
+        if (!told)
+        {
+            told = true;
+            platform::LogWarning(L"operator battle mode: the Camera Distance option was set off the game thread; only player 1's camera took it");
+        }
+        return result;
+    }
+    for (int seat = 1; seat <= kSeatsBuilt; ++seat)
+    {
+        const scopes::Scope scope(seat, scopes::Operator);
+        std::uint64_t       ignored = 0;
+        if (scope.Held() && platform::CallGuarded(g_setDistance, ignored, field, battle))
+        {
+            ++g_counts[seat].distances;
+            platform::LogDebug(L"operator battle mode: {}'s camera distance options set with player 1's (field {}, battle {})", SeatName(seat),
+                               field, battle);
+        }
+    }
+    return result;
+}
+
 /// At the battle-off block's pop of the Battle request: the game's pop (player 1's operator), then the whole block
 /// on each seat's operator that is in battle mode.
 void PopRequest(void* key, void* setting)
@@ -194,10 +228,12 @@ std::wstring Describe(void* cameraOperator) noexcept
         }
         return count;
     };
-    return std::format(L"mode {} (Battle requests {}, InDoor {}, Town {}, SpaceOffset {}, TargetLength {})", Mode(cameraOperator),
-                       requests(facts::kOperatorSettingBattle), requests(facts::kOperatorSettingInDoor), requests(facts::kOperatorSettingTown),
-                       FlavorActive(cameraOperator, facts::kFlavorSpaceOffset) ? L"on" : L"off",
-                       FlavorActive(cameraOperator, facts::kFlavorTargetLength) ? L"on" : L"off");
+    std::uint8_t distance[2]{0xFF, 0xFF};  // the field and battle Camera Distance options
+    Read(Bytes(cameraOperator) + facts::kOperatorFieldDistanceOption, distance);
+    return std::format(L"mode {} (Battle requests {}, InDoor {}, Town {}, SpaceOffset {}, TargetLength {}, distance options {}/{})",
+                       Mode(cameraOperator), requests(facts::kOperatorSettingBattle), requests(facts::kOperatorSettingInDoor),
+                       requests(facts::kOperatorSettingTown), FlavorActive(cameraOperator, facts::kFlavorSpaceOffset) ? L"on" : L"off",
+                       FlavorActive(cameraOperator, facts::kFlavorTargetLength) ? L"on" : L"off", distance[0], distance[1]);
 }
 
 std::wstring Reading()
@@ -210,14 +246,18 @@ std::wstring Reading()
     text += std::format(L"; enters {}, leaves {}", g_enters, g_leaves);
     for (int seat = 1; seat <= kSeatsBuilt; ++seat)
     {
-        text += std::format(L" ({}'s: enters {}, leaves {}, joins in battle {})", SeatName(seat), g_counts[seat].enters, g_counts[seat].leaves,
-                            g_counts[seat].joins);
+        text += std::format(L" ({}'s: enters {}, leaves {}, joins in battle {}, distance changes {})", SeatName(seat), g_counts[seat].enters,
+                            g_counts[seat].leaves, g_counts[seat].joins, g_counts[seat].distances);
     }
     return text;
 }
 
 void RestoreAll() noexcept
 {
+    for (auto& call : g_distanceCalls)
+    {
+        call.Restore();
+    }
     g_popCall.Restore();
     for (auto& call : g_enterCalls)
     {
@@ -258,10 +298,29 @@ bool Install(const platform::GameImage& image) noexcept
         platform::Log(L"operator battle mode: a call site could not be redirected; a seat's camera plays battles on the field setting");
         return false;
     }
+    // The Camera Distance option stands alone: if its check fails, battle mode still goes in.
+    const auto setDistance = platform::FindFunction(image, facts::kFieldCameraSetDistanceOptions);
+    bool       distance    = setDistance.has_value();
+    g_setDistance          = distance ? reinterpret_cast<SetDistanceFn>(*setDistance) : nullptr;
+    for (std::size_t i = 0; distance && i < g_distanceCalls.size(); ++i)
+    {
+        const auto site = image.Rebase(facts::kFieldCameraSetDistanceOptionsCalls[i], 5);
+        distance        = site && g_distanceCalls[i].Install(*site, *setDistance, reinterpret_cast<std::uintptr_t>(&SetDistance));
+    }
+    if (!distance)
+    {
+        for (auto& call : g_distanceCalls)
+        {
+            call.Restore();
+        }
+        platform::Log(L"operator battle mode: the Camera Distance option's calls are not what the research read; a change made "
+                      L"during play reaches player 1's camera only");
+    }
     control::Register({.name = L"operator-battle-mode", .shape = control::Shape::Text,
                        .help = L"each operator's battle mode, and how often each seat's entered and left it with player 1's",
                        .get  = [] { return control::Value{Reading()}; }});
-    platform::Log(L"operator battle mode: each seat's operator enters and leaves battle mode with player 1's");
+    platform::Log(L"operator battle mode: each seat's operator enters and leaves battle mode with player 1's{}",
+                  distance ? L" and takes the Camera Distance option when it changes" : L"");
     return true;
 }
 

@@ -8,6 +8,7 @@
 #include "platform/log.h"
 #include "platform/verified_code.h"
 #include "platform/vtable_entry.h"
+#include "players/player_two_camera.h"
 #include "players/scopes.h"
 #include "players/seats.h"
 
@@ -28,10 +29,12 @@ using platform::Read;
 using PassiveAtbFn = void (*)(void* component, float deltaTime);
 using UcpcFlagFn   = char (*)(void* component, std::int64_t a2, std::int64_t a3);
 using StaggerFn    = char (*)(float* burst, void* attacker, void* hit);
+using SteerFn      = char (*)(void* component, float deltaTime);
 
 std::array<platform::VTableEntry, facts::kBattleCompVTables.size()> g_passiveSlots;
 std::array<platform::VTableEntry, facts::kBattleCompVTables.size()> g_flagSlots;
 platform::CallRedirect                                             g_staggerCall;
+platform::CallRedirect                                             g_steerCall;
 PassiveAtbFn                                                       g_passive = nullptr;
 UcpcFlagFn                                                         g_flag    = nullptr;
 
@@ -39,9 +42,11 @@ UcpcFlagFn                                                         g_flag    = n
 DWORD  g_thread    = 0;
 std::array<void*, players::scopes::kMaxPlayers> g_components{};  // each seat's member's battle component this tick; [0] unused
 bool   g_enabled   = true;
-std::uint32_t g_offThread[3]{};
-bool          g_offThreadLogged[3]{};
-bool          g_appliedLogged[3]{};
+constexpr int kLevers = 4;  // the passive ATB tick, the ability flag, the stagger hit, the turn during a roll
+std::uint32_t g_offThread[kLevers]{};
+bool          g_offThreadLogged[kLevers]{};
+bool          g_appliedLogged[kLevers]{};
+std::array<bool, players::scopes::kMaxPlayers> g_turnOpen{};  // per seat: its member's turn window was open last call
 
 /// The seat whose member's battle component this is (0 none).
 int SeatOfComponent(const void* component) noexcept
@@ -127,6 +132,50 @@ char Stagger(float* burst, void* attacker, void* hit)
     return original(burst, attacker, hit);
 }
 
+/// The turn during an action: a seat's member turns by that player's stick in that player's camera; the window's
+/// opening is logged once per window (an event: Debug).
+char Steer(void* component, float deltaTime)
+{
+    const auto original = reinterpret_cast<SteerFn>(g_steerCall.Original());
+    const int  seat     = SeatOfComponent(component);
+    if (seat == 0)
+    {
+        return original(component, deltaTime);
+    }
+    float              rate = 0.0f;
+    const std::uint8_t* c   = static_cast<const std::uint8_t*>(component);
+    const bool          open = Read(c + facts::kBattleCompTurnRate, rate) && rate != 0.0f;
+    if (!open)
+    {
+        if (GetCurrentThreadId() == g_thread)
+        {
+            g_turnOpen[static_cast<std::size_t>(seat)] = false;
+        }
+        return original(component, deltaTime);  // closed: the game's function returns at its rate test
+    }
+    if (!Scoped(seat, 3, L"the turn during a roll"))
+    {
+        return original(component, deltaTime);  // off the game thread (counted) or off: the game's own reads
+    }
+    const players::scopes::Scope primary(seat, players::scopes::Primary);
+    if (!g_turnOpen[static_cast<std::size_t>(seat)])
+    {
+        std::uint8_t state = 0, force = 0;
+        Read(c + facts::kBattleCompActionState, state);
+        Read(c + facts::kBattleCompTurnForce, force);
+        platform::LogDebug(L"member rates: {}'s member may turn by {} (rate {:.2f}, force {}, action state {}{})", players::SeatName(seat),
+                           primary.Held() ? L"that player's stick and camera" : L"player 1's stick and camera (ITS CAMERA BASIS IS NOT BOUND)",
+                           rate, force, state, state == facts::kBattleCompStateDodge ? L": a roll" : L"");
+    }
+    g_turnOpen[static_cast<std::size_t>(seat)] = true;
+    if (!primary.Held())
+    {
+        return original(component, deltaTime);  // never the seat's stick against player 1's camera
+    }
+    const players::player_two_camera::StickScope stick(static_cast<std::uint32_t>(seat), true);
+    return original(component, deltaTime);
+}
+
 }  // namespace
 
 bool Install(const platform::GameImage& image) noexcept
@@ -135,6 +184,8 @@ bool Install(const platform::GameImage& image) noexcept
     const auto flag    = platform::FindFunction(image, facts::kBattleCompSetUcpcFlag);
     const auto stagger = platform::FindFunction(image, facts::kBattleStaggerRewards);
     const auto site    = image.Rebase(facts::kBattleStaggerRewardsCall, 5);
+    const auto steer   = platform::FindFunction(image, facts::kBattleCompSteerToStick);
+    const auto steerAt = image.Rebase(facts::kBattleCompSteerToStickCall, 5);
     if (!passive || !flag || !stagger || !site)
     {
         platform::Log(L"member rates: an engine check failed; the further players' members keep the AI-ally rates");
@@ -142,6 +193,11 @@ bool Install(const platform::GameImage& image) noexcept
     }
     g_passive = reinterpret_cast<PassiveAtbFn>(*passive);
     g_flag    = reinterpret_cast<UcpcFlagFn>(*flag);
+    // The turn during a roll stands alone: if its check fails the rates still go in, and the rolls keep player 1's stick.
+    if (!steer || !steerAt || !g_steerCall.Install(*steerAt, *steer, reinterpret_cast<std::uintptr_t>(&Steer)))
+    {
+        platform::Log(L"member rates: the turn during a roll is not what the research read; the further players' rolls keep turning by player 1's stick");
+    }
     bool installed = g_staggerCall.Install(*site, *stagger, reinterpret_cast<std::uintptr_t>(&Stagger));
     for (std::size_t i = 0; installed && i < facts::kBattleCompVTables.size(); ++i)
     {
@@ -166,14 +222,16 @@ bool Install(const platform::GameImage& image) noexcept
     }
     control::Register({.name  = L"rates-two",
                        .shape = control::Shape::OnOff,
-                       .help  = L"each further player's member fills ATB, flags abilities and staggers at the player's rates (battle/member_rates.h; on)",
+                       .help  = L"each further player's member fills ATB, flags abilities and staggers at the player's rates, and turns by "
+                                L"that player's stick during a roll (battle/member_rates.h; on)",
                        .set   = [](const control::Value& value) {
                            g_enabled = std::get<bool>(value);
                            platform::Log(L"member rates {}", g_enabled ? L"on" : L"off");
                            return control::Outcome{};
                        },
                        .get = [] { return control::Value{g_enabled}; }});
-    platform::Log(L"member rates: installed; each further player's member's ATB, ability flag and staggers run as the player's");
+    platform::Log(L"member rates: installed; each further player's member's ATB, ability flag and staggers run as the player's{}",
+                  g_steerCall.IsInstalled() ? L", its turn during a roll by the player's own stick and camera" : L"");
     return true;
 }
 
@@ -188,6 +246,7 @@ void Remove() noexcept
         slot.Restore();
     }
     g_staggerCall.Restore();
+    g_steerCall.Restore();
 }
 
 void Tick() noexcept

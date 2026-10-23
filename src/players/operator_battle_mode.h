@@ -17,7 +17,11 @@
 //     call), the same steps run on each seat's operator, the game's own functions where they exist (the pop,
 //     SetStateFree, the MoveFollow elapsed reset) and the block's byte and pointer writes mirrored. A recreation:
 //     no game path leaves battle mode on a further operator (the RE doc's §4).
-// Game thread only (the on/off table and the encounter manager run there).
+// The options menu's Camera Distance (field and battle) reached player 1's operator only, for the same reason: its
+// setter writes the root operator's two option bytes. Each seat's operator copies them at its spawn; a change made
+// during play is now made on each seat's operator too, the game's setter run again inside its operator scope with
+// the menu's own values (RE-camera-distance-option.md).
+// Game thread only (the on/off table, the encounter manager and the options menu run there).
 
 #include <cstdint>
 

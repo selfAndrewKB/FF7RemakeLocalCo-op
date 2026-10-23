@@ -123,6 +123,11 @@ bool OnGameThread() noexcept
 
 }  // namespace
 
+bool IsGameThread() noexcept
+{
+    return OnGameThread();
+}
+
 StickScope::StickScope(std::uint32_t user, bool clearKeys) noexcept
 {
     std::uint8_t* owner = nullptr;

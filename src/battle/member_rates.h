@@ -12,6 +12,10 @@
 //     and the guard coefficient are both read inside it;
 //   - the component's "ability by the player" flag setter (slot +0x748);
 //   - the enemy's stagger-gauge hit (one call site), where the attacker is an argument.
+// And the turn during a roll (RE-roll-direction-two.md): the component's tick turns its character toward the game's
+// merged move stick rotated by PartyManager+0's camera while an animation's turn window is open, so a further
+// player's roll bent toward player 1's stick in player 1's camera. That call (one site in the component's tick) runs
+// in the seat's primary scope (its camera basis) with its own pad's stick.
 // The leader scope writes the party manager's leader bytes, which only the game thread may do: a call made off it
 // runs the game's function unchanged and is counted (logged once). Game thread only.
 

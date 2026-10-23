@@ -790,6 +790,18 @@ inline constexpr platform::FunctionFact kBattleCompSetUcpcFlag{L"BattlePlayerCom
 inline constexpr platform::FunctionFact kBattleStaggerRewards{L"BattleBurst_OnHit_AddBP_StaggerRewards", 0x140966EE0,
                                                               kBattleStaggerRewardsEntry};
 inline constexpr std::uintptr_t kBattleStaggerRewardsCall = 0x140892DB8;  // its one call site
+/// BattlePlayerComp_SteerToMoveStick_InputDirRotate(comp, float dt): while an animation's turn window is open
+/// (comp+0x758, set by UEndAnimNotifyStateBattleInputDirectionRotate) and the action is a dodge (comp+0x611 == 6), has no
+/// live target or forces it (comp+0x75C), turns the character toward the move stick rotated by PartyManager+0's camera
+/// (RE-roll-direction-two.md). Its one call site is in BattlePlayerComp_Tick, outside every scope.
+inline constexpr std::array<std::uint8_t, 16> kBattleCompSteerToStickEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x18, 0x55, 0x48, 0x8B, 0xEC, 0x48, 0x81, 0xEC, 0x80, 0x00, 0x00, 0x00};
+inline constexpr platform::FunctionFact kBattleCompSteerToStick{L"BattlePlayerComp_SteerToMoveStick_InputDirRotate", 0x140979020,
+                                                                kBattleCompSteerToStickEntry};
+inline constexpr std::uintptr_t kBattleCompSteerToStickCall = 0x14096B730;  // E8 in BattlePlayerComp_Tick (rcx comp, xmm1 dt)
+inline constexpr std::uint8_t   kBattleCompStateDodge       = 6;          // kBattleCompActionState (below): a dodge
+inline constexpr std::uint32_t  kBattleCompTurnRate        = 0x758;      // float: the turn window's rate (0 closed)
+inline constexpr std::uint32_t  kBattleCompTurnForce        = 0x75C;      // u8: the window turns even with a live target
 
 // --- The lock camera (RE-lock-camera-two.md §1.4) --------------------------------------------------------------
 // The operator tick's Lock-state call of BattleCamRequests_FindActiveRotation(reqMgr, &rot, owner, view, params, 0):
@@ -866,6 +878,15 @@ inline constexpr std::uint32_t kFlavorTargetOffset          = 5;
 inline constexpr std::uint32_t kOperatorSpaceOffsetByRow    = 0x7A8;  // u8: the SpaceOffset flavor follows the active setting row
 inline constexpr std::uint32_t kOperatorDistanceOptionPtr   = 0x8C0;  // u8*: the active camera-distance option byte
 inline constexpr std::uint32_t kOperatorFieldDistanceOption = 0x8BA;  // u8 (+0x8BB the battle one)
+/// FieldCamera_SetDistanceOptions(u8 field, u8 battle): the options menu's Camera Distance writes both bytes on the field
+/// root's operator (player 1's) and reads nothing else (RE-camera-distance-option.md). A further operator copies the
+/// options at its BeginPlay only.
+inline constexpr std::array<std::uint8_t, 16> kFieldCameraSetDistanceOptionsEntry{
+    0x48, 0x8B, 0x05, 0x39, 0xB6, 0x81, 0x04, 0x44, 0x0F, 0xB6, 0xC9, 0x44, 0x8B, 0x80, 0xB4, 0x09};
+inline constexpr platform::FunctionFact kFieldCameraSetDistanceOptions{L"FieldCamera_SetDistanceOptions", 0x140FCE390,
+                                                                       kFieldCameraSetDistanceOptionsEntry};
+/// Its two calls, OptionsMenu_SetOptionValue's cases 14 (CameraDistanceField) and 15 (CameraDistanceBattle).
+inline constexpr std::array<std::uintptr_t, 2> kFieldCameraSetDistanceOptionsCalls{0x1412D6C66, 0x1412D6C7C};
 inline constexpr std::uint32_t kOperatorActiveScales        = 0x8F8;  // 3 float*: the active FOV/length/height scales
 inline constexpr std::uint32_t kOperatorFieldScales         = 0x8C8;  // 3 float*: CameraLengthFieldScale* (+0x8E0 the battle set)
 inline constexpr std::uint32_t kOperatorActivePitchLimits   = 0x930;  // 2 float*: the active pitch limits

@@ -64,6 +64,9 @@ void LogCounts() noexcept;
 /// The seat whose own operator's Tick runs now (inside its scopes), else 0.
 int TickingSeat() noexcept;
 
+/// Whether the caller is the game thread (as noted each engine tick; false before the first).
+bool IsGameThread() noexcept;
+
 /// Player 1's field camera operator (the field root's), and a seat's own; null when none.
 void* OperatorOne() noexcept;
 void* Operator(int seat) noexcept;

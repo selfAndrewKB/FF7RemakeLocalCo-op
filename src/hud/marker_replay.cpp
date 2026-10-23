@@ -12,6 +12,7 @@
 #include "platform/log.h"
 #include "players/weak_object.h"
 #include "players/scopes.h"
+#include "players/seats.h"
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -210,6 +211,8 @@ struct Seen
     // The bars' class per further column: bars classed otherwise than the tick (per column), looks set and put back,
     // status-icon refreshes made, and column 0's checks of the rule against the tick.
     std::uint32_t reclassed[kMaxColumns] = {}, looksSet = 0, looksRestored = 0, iconsRefreshed = 0, disagreements = 0;
+    std::uint32_t keptBeforePlace = 0;   // bars a further column placed targeted, the tick's visibility kept first
+    std::uint32_t putBackAfterPlace = 0;  // targeted placements of the tick's class whose visibility was put back at once
     // The sampled bar's class in the further column that last replayed it, and its own visibility before and after.
     bool         sampleTickTargeted = false, sampleOwnTargeted = false;
     std::uint8_t sampleBarBefore = 0xFF, sampleBarAfter = 0xFF;
@@ -507,17 +510,18 @@ WeakKey LiveKey(const void* manager) noexcept
     return key;
 }
 
-/// A column's own key: column 0 the live one; a further column its seat's copy (a seat's column is its index). No
-/// copy, or one open: an empty key, which classes every bar as untargeted there (the single-player look of a player
-/// with no target).
+/// A column's own key: column 0's and a mirror's the live one (player 1's look); a seat's column its seat's copy (the
+/// seat of the column from overlay_pass's map: with player 2 out, player 3 is in column 1). No copy, or one open: an
+/// empty key, which classes every bar as untargeted there (the single-player look of a player with no target).
 WeakKey ColumnKey(int column, const void* manager) noexcept
 {
-    if (column == 0)
+    const int seat = overlay_pass::SeatOf(column);
+    if (seat < 1)
     {
         return LiveKey(manager);
     }
     WeakKey key{};
-    battle::target_cursor_two::DisplayedTarget(column, key.object, key.controller);
+    battle::target_cursor_two::DisplayedTarget(seat, key.object, key.controller);
     return key;
 }
 
@@ -612,21 +616,32 @@ Look LookFor(const BarObjects& objects, bool targeted) noexcept
     return look;
 }
 
-/// One widget's visibility set for this pass with the game's setter, the tick's value kept for the restore.
-void SetLook(void* widget, const std::int32_t (&weak)[2], std::uint8_t value) noexcept
+/// A widget's visibility as it stands, kept for the restore. False when it could not be read or kept.
+bool KeepLook(void* widget, const std::int32_t (&weak)[2], std::uint8_t& now) noexcept
 {
-    std::uint8_t now = 0xFF;
+    now = 0xFF;
     if (widget == nullptr || !platform::CallGuarded(g_getVisibility, now, widget))
     {
-        return;
+        return false;
     }
     try
     {
-        g_looks.push_back({widget, {weak[0], weak[1]}, now});  // the restore first: a look is never set without one
+        g_looks.push_back({widget, {weak[0], weak[1]}, now});
     }
     catch (...)
     {
-        return;
+        return false;
+    }
+    return true;
+}
+
+/// One widget's visibility set for this pass with the game's setter, the value before it kept for the restore.
+void SetLook(void* widget, const std::int32_t (&weak)[2], std::uint8_t value) noexcept
+{
+    std::uint8_t now = 0xFF;
+    if (!KeepLook(widget, weak, now))
+    {
+        return;  // the restore first: a look is never set without one
     }
     if (now != value && platform::CallGuarded(g_setVisibility, widget, value))
     {
@@ -784,17 +799,19 @@ void PlaceBar(int column, bool ownColumn, const BarCall& bar, std::uint8_t* p, c
     const float        halfSize = bar.targeted ? bar.halfSize : HalfSizeOf(objects);
     const std::uint8_t skip     = ownColumn ? (caseC ? 1 : 0) : bar.skip;
     AddWeakReference(key.controller);  // the placement releases one
-    bool placed = false;
-    if (ownColumn && skip == 0)
+    bool      placed = false;
+    const int seat   = overlay_pass::SeatOf(column);  // a mirror's column (no seat) clamps against player 1's leader, as the tick
+    if (ownColumn && skip == 0 && seat >= 1)
     {
-        const players::scopes::Scope leader(column, players::scopes::Leader);
+        const players::scopes::Scope leader(seat, players::scopes::Leader);
         if (!leader.Held())
         {
-            static bool told = false;
-            if (!told)
+            static bool told[players::scopes::kMaxPlayers]{};  // once per seat (seat >= 1 here)
+            if (!told[seat])
             {
-                told = true;
-                platform::LogDebug(L"HUD markers: player {}'s leader scope is not bound; its target's bar is clamped away from player 1's leader", column + 1);
+                told[seat] = true;
+                platform::Log(L"HUD markers: {}'s leader scope is not bound; its target's bar is clamped away from player 1's leader",
+                              players::SeatName(seat));
             }
         }
         placed = platform::CallGuarded(reinterpret_cast<PlaceTargetedFn>(g_targeted.Original()), bar.manager, bar.widget, &key,
@@ -950,7 +967,39 @@ void ReplayBars(int column, const std::int32_t (&context)[2], void* controller) 
             g_seen.pcUnderSwap = nullptr;
             platform::CallGuarded(g_contextPc, g_seen.pcUnderSwap, static_cast<const void*>(widget + facts::kUserWidgetPlayerWeak));
         }
+        // The game's targeted placement makes the bar visible itself (SetVisibility 3, RE-enemy-bar-three-leaks.md (a)); the
+        // tick's loop then gives it its final look. Every pass starts from the tick's looks (RestoreLooks), so the value found
+        // here is the tick's: kept for the restore when this column's class differs (its own look follows in LookAfter;
+        // RestoreLooks puts the earliest kept value back last), put back right after the placement when the class is the
+        // tick's (column 0 always), so no pass draws a bar the tick hid. Not readable: the tick's class, never targeted
+        // without a restore.
+        std::uint8_t found   = 0xFF;
+        bool         putBack = false;
+        if (targeted && targeted != bar.targeted)
+        {
+            if (KeepLook(bar.widget, bar.weak, found))
+            {
+                ++g_seen.keptBeforePlace;
+            }
+            else
+            {
+                targeted = bar.targeted;
+            }
+        }
+        else if (targeted)
+        {
+            putBack = platform::CallGuarded(g_getVisibility, found, bar.widget);
+        }
         PlaceBar(column, ownColumn, bar, p, objects, known, targeted, verdict.caseC, keys.two, sample);
+        if (putBack)
+        {
+            std::uint8_t now = 0xFF;
+            if (platform::CallGuarded(g_getVisibility, now, bar.widget) && now != found &&
+                platform::CallGuarded(g_setVisibility, bar.widget, found))
+            {
+                ++g_seen.putBackAfterPlace;
+            }
+        }
         platform::WriteGuarded(widget + facts::kUserWidgetPlayerWeak, saved, sizeof(saved));
         if (ownColumn && known && LookAfter(bar, p, objects, targeted, sample))
         {
@@ -968,17 +1017,18 @@ void ReplayBars(int column, const std::int32_t (&context)[2], void* controller) 
         if (reclassed != g_reclassedLogged[column])
         {
             g_reclassedLogged[column] = reclassed;
+            const wchar_t* who = players::SeatName(overlay_pass::SeatOf(column));  // "a player" for a mirror's column
             if (!g_reclassedTold && reclassed != 0)
             {
                 g_reclassedTold = true;
-                platform::Log(L"HUD markers: player {}'s view shows its own target's enemy bar for the first time ({} bar(s) "
-                              L"classed by player {}'s target this frame, their look set for its pass and put back for player 1's)",
-                              column + 1, reclassed, column + 1);
+                platform::Log(L"HUD markers: {}'s view (column {}) shows its own target's enemy bar for the first time ({} bar(s) "
+                              L"classed by that player's target this frame, their look set for its pass and put back for player 1's)",
+                              who, column + 1, reclassed);
             }
             else
             {
-                platform::LogDebug(L"HUD markers: player {}'s view: {} enemy bar(s) classed otherwise than the tick (own target {}, its main target {})",
-                                   column + 1, reclassed, two.own, two.main);
+                platform::LogDebug(L"HUD markers: {}'s view (column {}): {} enemy bar(s) classed otherwise than the tick (own target {}, its main target {})",
+                                   who, column + 1, reclassed, two.own, two.main);
             }
         }
     }
@@ -993,24 +1043,30 @@ void ReplayBars(int column, const std::int32_t (&context)[2], void* controller) 
     }
 }
 
-/// The displayed-target key on the bar manager answered for a further column while its label tick runs again (the
-/// ability label sits over that key's bar, RE-enemy-bar-two-classification.md §6; the tick only reads it).
+/// The displayed-target key on the bar manager answered for a seat's column while its label tick runs again (the
+/// ability label sits over that key's bar, RE-enemy-bar-two-classification.md §6; the tick only reads it). A seat with
+/// no target gets the empty key: the label's bar lookup then finds nothing and the label stays at its own point, the
+/// single-player look of a player with no target (RE-enemy-bar-three-leaks.md (b)); left alone, the live key would put
+/// it over player 1's target. A mirror's column keeps the live key (player 1's look).
 class ColumnKeyScope
 {
 public:
     explicit ColumnKeyScope(int column) noexcept
     {
         void* manager = nullptr;
-        if (column < 1 || !g_ownClasses || g_barSlot == nullptr || !platform::CopyGuarded(&manager, g_barSlot, sizeof(manager)) ||
-            manager == nullptr)
+        if (column < 1 || column >= kMaxColumns || !g_ownClasses || g_barSlot == nullptr ||
+            !platform::CopyGuarded(&manager, g_barSlot, sizeof(manager)) || manager == nullptr)
         {
             return;
         }
-        const WeakKey key = ColumnKey(column, manager);
-        if (key.object == nullptr)
+        const int seat = overlay_pass::SeatOf(column);
+        if (seat < 1)
         {
+            Note(column, seat, Choice::Live);
             return;
         }
+        const WeakKey key = ColumnKey(column, manager);  // empty when the seat has no target
+        Note(column, seat, key.object != nullptr ? Choice::Seat : Choice::Empty);
         slot_ = static_cast<std::uint8_t*>(manager) + facts::kEnemyBarDisplayedTarget;
         held_ = platform::CopyGuarded(&saved_, slot_, sizeof(saved_)) && platform::WriteGuarded(slot_, &key, sizeof(key));
     }
@@ -1025,6 +1081,27 @@ public:
     ColumnKeyScope& operator=(const ColumnKeyScope&) = delete;
 
 private:
+    enum class Choice : std::uint8_t
+    {
+        Unset,
+        Live,   // a mirror's column: player 1's target
+        Seat,   // the column's player's own target
+        Empty,  // the column's player has none
+    };
+    /// Which key the column's labels follow, logged when it changes (an event: Debug).
+    static void Note(int column, int seat, Choice choice) noexcept
+    {
+        static Choice s_last[kMaxColumns]{};
+        if (s_last[column] == choice)
+        {
+            return;
+        }
+        s_last[column] = choice;
+        platform::LogDebug(L"HUD markers: column {}'s ability labels follow {}{}", column + 1,
+                           choice == Choice::Live ? L"player 1's target (a mirror's column)" : players::SeatName(seat),
+                           choice == Choice::Seat ? L"'s target" : choice == Choice::Empty ? L" with no target: none" : L"");
+    }
+
     std::uint8_t* slot_ = nullptr;
     WeakKey       saved_{};
     bool          held_ = false;
@@ -1541,40 +1618,42 @@ std::wstring Reading()
     const Seen&  s = g_seen;
     std::wstring text = std::format(
         L"{} frames, {} with markers; recorded {} untargeted, {} targeted, {} texts (UMG {}, Slate {}, other {}); replayed "
-        L"p2 {} p1 {}; visibilities {}; UMG unmatched {}; faults {}",
+        L"column 3 {} column 2 {} column 1 {}; visibilities {}; UMG unmatched {}; faults {}",
         s.frames, s.framesWithMarkers, s.untargeted, s.targeted, s.texts, s.textKinds[1], s.textKinds[2], s.textKinds[0],
-        s.replays[1], s.replays[0], s.visibilities, s.umgUnmatched, s.faults);
+        s.replays[2], s.replays[1], s.replays[0], s.visibilities, s.umgUnmatched, s.faults);
     if (s.bar != nullptr)
     {
-        text += std::format(L" | bar {} ({}): tick ({:.0f},{:.0f}) p2 ({:.0f},{:.0f}) p1 ({:.0f},{:.0f}); context {}/{} -> "
-                            L"p2 {}/{}: resolves {} (p2's {}: {})",
+        text += std::format(L" | bar {} ({}): tick ({:.0f},{:.0f}) column 2 ({:.0f},{:.0f}) column 1 ({:.0f},{:.0f}); context {}/{} -> "
+                            L"a further column's {}/{}: resolves {} (that column's {}: {})",
                             s.bar, s.barTargeted ? L"targeted" : L"untargeted", s.barTick[0], s.barTick[1], s.barAt[1][0],
                             s.barAt[1][1], s.barAt[0][0], s.barAt[0][1], s.contextBefore[0], s.contextBefore[1],
                             s.contextFurther[0], s.contextFurther[1], s.pcUnderSwap, s.pcFurther,
                             s.pcUnderSwap == s.pcFurther ? L"same" : L"DIFFERENT");
     }
-    text += std::format(L" | classes: p2 {} bar(s) classed by its own target ({} looks set, {} put back, {} status-icon "
-                        L"refreshes), p1 rule disagreements {}; sample bar: tick {}, p2 {}, its visibility {} -> {}, p2 ease {:.1f}",
-                        s.reclassed[1], s.looksSet, s.looksRestored, s.iconsRefreshed, s.disagreements,
+    text += std::format(L" | classes: bars classed by the column's own target: column 2 {}, column 3 {} ({} looks set, {} "
+                        L"kept before a targeted placement, {} put back after one, {} restored, {} status-icon refreshes), "
+                        L"p1 rule disagreements {}; sample bar: tick {}, further {}, its visibility {} -> {}, further ease {:.1f}",
+                        s.reclassed[1], s.reclassed[2], s.looksSet, s.keptBeforePlace, s.putBackAfterPlace, s.looksRestored,
+                        s.iconsRefreshed, s.disagreements,
                         s.sampleTickTargeted ? L"targeted" : L"untargeted", s.sampleOwnTargeted ? L"targeted" : L"untargeted",
                         s.sampleBarBefore, s.sampleBarAfter, s.sampleEase);
     text += std::format(L" | cursors {}, lock-on markers {} recorded; labels run {}, weak points run {}, lookups answered {}",
                         s.cursors, s.lockons, s.labelRuns, s.weakRuns, s.overridden);
     if (s.cursor != nullptr)
     {
-        text += std::format(L" | cursor {}: tick ({:.0f},{:.0f}) p2 ({:.0f},{:.0f}) p1 ({:.0f},{:.0f})", s.cursor,
+        text += std::format(L" | cursor {}: tick ({:.0f},{:.0f}) column 2 ({:.0f},{:.0f}) column 1 ({:.0f},{:.0f})", s.cursor,
                             s.cursorAt[0][0], s.cursorAt[0][1], s.cursorAt[2][0], s.cursorAt[2][1], s.cursorAt[1][0],
                             s.cursorAt[1][1]);
     }
     if (s.lockon != nullptr)
     {
-        text += std::format(L" | lock-on {}: tick ({:.0f},{:.0f}) p2 ({:.0f},{:.0f}) p1 ({:.0f},{:.0f})", s.lockon,
+        text += std::format(L" | lock-on {}: tick ({:.0f},{:.0f}) column 2 ({:.0f},{:.0f}) column 1 ({:.0f},{:.0f})", s.lockon,
                             s.lockonAt[0][0], s.lockonAt[0][1], s.lockonAt[2][0], s.lockonAt[2][1], s.lockonAt[1][0],
                             s.lockonAt[1][1]);
     }
     if (s.text != nullptr)
     {
-        text += std::format(L" | text {}: p2 ({:.0f},{:.0f}{}) p1 ({:.0f},{:.0f}{})", s.text, s.textAt[1][0], s.textAt[1][1],
+        text += std::format(L" | text {}: column 2 ({:.0f},{:.0f}{}) column 1 ({:.0f},{:.0f}{})", s.text, s.textAt[1][0], s.textAt[1][1],
                             s.textProjected[1] ? L"" : L" off", s.textAt[0][0], s.textAt[0][1], s.textProjected[0] ? L"" : L" off");
     }
     g_seen = {};
