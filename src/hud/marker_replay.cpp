@@ -507,9 +507,9 @@ WeakKey LiveKey(const void* manager) noexcept
     return key;
 }
 
-/// A column's own key: column 0 the live one; a further column its seat's copy (seat 1's today: every further column
-/// shows player 2's target until the seats hold one key each, plan/seats.md step 6). No copy, or one open: an empty
-/// key, which classes every bar as untargeted there (the single-player look of a player with no target).
+/// A column's own key: column 0 the live one; a further column its seat's copy (a seat's column is its index). No
+/// copy, or one open: an empty key, which classes every bar as untargeted there (the single-player look of a player
+/// with no target).
 WeakKey ColumnKey(int column, const void* manager) noexcept
 {
     if (column == 0)
@@ -517,7 +517,7 @@ WeakKey ColumnKey(int column, const void* manager) noexcept
         return LiveKey(manager);
     }
     WeakKey key{};
-    battle::target_cursor_two::DisplayedTarget(key.object, key.controller);
+    battle::target_cursor_two::DisplayedTarget(column, key.object, key.controller);
     return key;
 }
 

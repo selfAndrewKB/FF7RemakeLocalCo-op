@@ -18,8 +18,10 @@
 #include "platform/log.h"
 #include "platform/verified_code.h"
 #include "players/scopes.h"
+#include "players/seats.h"
 #include "players/unreal_call.h"
 
+#include <array>
 #include <cstdint>
 #include <cstring>
 #include <format>
@@ -31,6 +33,9 @@ namespace lss::battle::target_cursor_two {
 namespace {
 
 using platform::Read;
+using players::kSeatsBuilt;
+using players::SeatBuilt;
+using players::SeatName;
 using RC::Unreal::UClass;
 using RC::Unreal::UFunction;
 using RC::Unreal::UObject;
@@ -38,8 +43,6 @@ namespace UObjectGlobals = RC::Unreal::UObjectGlobals;
 
 using SysFn      = void (*)(void* system);
 using SetColorFn = void (*)(void* widget, const float* color);
-
-constexpr int kPlayer = 1;
 
 // Set once at install.
 void**         g_system   = nullptr;
@@ -51,24 +54,36 @@ SetColorFn     g_setColor = nullptr;
 platform::CallRedirect  g_lineOfSightRedirect;  // the call crosses a block: placed from the game thread
 platform::EntryRedirect g_suspendRedirect;
 
-// Game thread.
-platform::ByteContext g_copy;  // player 2's cursor slot and HUD keys
-void*                 g_copySystem = nullptr;
-std::uint8_t*         g_copyBar = nullptr, *g_copyIcon = nullptr;
-bool                  g_placed = false;
-UFunction*            g_hide   = nullptr;  // /Script/EndGame.EndMenuAPI:HideBattleTargetIcon
-UObject*              g_api    = nullptr;  // its class default object
-bool                  g_hideLookedUp = false;
-int                   g_column = hud::overlay_pass::kSingle;  // the column whose pass runs (hud/overlay_pass.h)
-void*                 g_hidden = nullptr;  // the widget made transparent for this pass
-alignas(16) float     g_hiddenColor[4]{};
-
 struct Counts
 {
-    std::uint32_t runs = 0, shown = 0, releases = 0, lineOfSight = 0, hides = 0;
+    std::uint32_t runs = 0, shown = 0, releases = 0, lineOfSight = 0;
 };
-Counts g_counts;
-bool   g_cursorSeen = false;  // the copy held a widget at the last run
+
+// Game thread. Index = seat ([0] unused): each seat's cursor slot and HUD keys, copied.
+struct Seat
+{
+    platform::ByteContext copy;              // the seat's cursor slot and HUD keys
+    void*                 system     = nullptr;
+    std::uint8_t*         bar        = nullptr;
+    std::uint8_t*         icon       = nullptr;
+    Counts                counts;
+    bool                  cursorSeen = false;  // the copy held a widget at the last run
+};
+std::array<Seat, players::scopes::kMaxPlayers> g_seats;
+bool                                           g_placed = false;
+UFunction*                                     g_hide   = nullptr;  // /Script/EndGame.EndMenuAPI:HideBattleTargetIcon
+UObject*                                       g_api    = nullptr;  // its class default object
+bool                                           g_hideLookedUp = false;
+std::uint32_t                                  g_hides  = 0;  // per-pass hides, all passes
+
+/// The widgets made transparent for this pass (player 1's and the other seats'), put back at its end.
+struct Hidden
+{
+    void*             widget = nullptr;
+    alignas(16) float color[4]{};
+};
+std::array<Hidden, players::scopes::kMaxPlayers> g_hidden;
+int                                              g_hiddenCount = 0;
 
 void* System() noexcept
 {
@@ -76,46 +91,52 @@ void* System() noexcept
     return Read(g_system, system) ? system : nullptr;
 }
 
-void* CopyWidget() noexcept
+void* CopyWidget(const Seat& s) noexcept
 {
     void* widget = nullptr;
-    if (g_copy.Defined())
+    if (s.copy.Defined())
     {
-        std::memcpy(&widget, g_copy.Value(0).data(), sizeof(widget));
+        std::memcpy(&widget, s.copy.Value(0).data(), sizeof(widget));
     }
     return widget;
 }
 
-/// Player 2's copy for this battle system and these UI objects (all zero: no cursor, no keys).
-bool CopyFor(void* system) noexcept
+void ReleaseCopy(int seat, const wchar_t* why) noexcept;
+
+/// The seat's copy for this battle system and these UI objects (all zero: no cursor, no keys).
+bool CopyFor(int seat, void* system) noexcept
 {
+    Seat&         s    = g_seats[seat];
     std::uint8_t* bar  = nullptr;
     std::uint8_t* icon = nullptr;
     if (!Read(g_barSlot, bar) || !Read(g_iconSlot, icon) || bar == nullptr || icon == nullptr)
     {
         return false;
     }
-    if (g_copy.Defined() && system == g_copySystem && bar == g_copyBar && icon == g_copyIcon)
+    if (s.copy.Defined() && system == s.system && bar == s.bar && icon == s.icon)
     {
         return true;
     }
-    if (CopyWidget() != nullptr)
+    if (CopyWidget(s) != nullptr)
     {
-        End();  // the old copy's cursor released before the copy goes
+        ReleaseCopy(seat, L"the battle system or the HUD objects changed");  // the old copy's cursor released before the copy goes
     }
     const platform::ByteContext::Range ranges[] = {
         {reinterpret_cast<std::uintptr_t>(system) + facts::kBattleSysCursorWidget, sizeof(void*), platform::ByteContext::Kind::Exchange},
         {reinterpret_cast<std::uintptr_t>(bar) + facts::kEnemyBarDisplayedTarget, facts::kEnemyBarDisplayedTargetBytes, platform::ByteContext::Kind::Exchange},
         {reinterpret_cast<std::uintptr_t>(icon) + facts::kOutsideIconTargetName, facts::kOutsideIconTargetNameBytes, platform::ByteContext::Kind::Exchange},
     };
-    if (!g_copy.Define(ranges))
+    if (!s.copy.Define(ranges))
     {
+        s.system = nullptr;  // the record empty, as after End
+        s.bar = s.icon = nullptr;
         return false;
     }
-    g_copySystem = system;
-    g_copyBar    = bar;
-    g_copyIcon   = icon;
-    platform::LogDebug(L"target cursor 2: player 2's cursor slot and HUD keys start empty on battle system {:#x}", reinterpret_cast<std::uintptr_t>(system));
+    s.system = system;
+    s.bar    = bar;
+    s.icon   = icon;
+    platform::LogDebug(L"target cursor 2: {}'s cursor slot and HUD keys start empty on battle system {:#x}", SeatName(seat),
+                       reinterpret_cast<std::uintptr_t>(system));
     return true;
 }
 
@@ -133,7 +154,7 @@ try
     if (g_hide == nullptr || g_api == nullptr || g_hide->GetParmsSize() != sizeof(void*))
     {
         g_hide = nullptr;
-        platform::Log(L"target cursor 2: EndMenuAPI.HideBattleTargetIcon is not the function the mod expects; player 2's cursor is not released on a suspension");
+        platform::Log(L"target cursor 2: EndMenuAPI.HideBattleTargetIcon is not the function the mod expects; every seat's cursor is dropped without the game's hide when it goes");
         return false;
     }
     return true;
@@ -144,10 +165,11 @@ catch (...)
     return false;
 }
 
-/// The game's own release of a cursor widget (the three steps its inline releases make), on player 2's.
-void ReleaseCopy(const wchar_t* why) noexcept
+/// The game's own release of a cursor widget (the three steps its inline releases make), on the seat's.
+void ReleaseCopy(int seat, const wchar_t* why) noexcept
 {
-    void* widget = CopyWidget();
+    Seat& s      = g_seats[seat];
+    void* widget = CopyWidget(s);
     if (widget == nullptr)
     {
         return;
@@ -159,54 +181,79 @@ void ReleaseCopy(const wchar_t* why) noexcept
         hidden      = players::GuardedProcessEvent(g_api, g_hide, &frame);
     }
     void* none = nullptr;
-    std::memcpy(g_copy.Value(0).data(), &none, sizeof(none));
-    g_cursorSeen = false;
-    ++g_counts.releases;
-    platform::LogDebug(L"target cursor 2: player 2's cursor {} ({})", hidden ? L"released with the game's hide" : L"DROPPED (the hide could not run)", why);
+    std::memcpy(s.copy.Value(0).data(), &none, sizeof(none));
+    s.cursorSeen = false;
+    ++s.counts.releases;
+    platform::LogDebug(L"target cursor 2: {}'s cursor {} ({})", SeatName(seat),
+                       hidden ? L"released with the game's hide" : L"DROPPED (the hide could not run)", why);
 }
 
-/// The line-of-sight step at the game's call: the game's run, then player 2's with its cursor and trace.
+/// The line-of-sight step at the game's call: the game's run, then each seat's with its cursor and trace.
 void LineOfSight(void* system)
 {
     reinterpret_cast<SysFn>(g_lineOfSight)(system);
-    if (players::scopes::Member(kPlayer) == nullptr || !g_copy.Defined() || system != g_copySystem || CopyWidget() == nullptr)
+    for (int seat = 1; seat <= kSeatsBuilt; ++seat)
     {
-        return;
-    }
-    const players::scopes::Scope     scope(kPlayer, players::scopes::Primary | players::scopes::Leader);
-    const targeting_two::FieldsScope fields(kPlayer);
-    const platform::ByteScope        copy(g_copy);
-    if (scope.Held() && fields.Held() && copy.Held())
-    {
-        ++g_counts.lineOfSight;
-        platform::CallGuarded(reinterpret_cast<SysFn>(g_lineOfSight), system);
+        Seat& s = g_seats[seat];
+        if (players::scopes::Member(seat) == nullptr || !s.copy.Defined() || system != s.system || CopyWidget(s) == nullptr)
+        {
+            continue;
+        }
+        const players::scopes::Scope     scope(seat, players::scopes::Primary | players::scopes::Leader);
+        const targeting_two::FieldsScope fields(seat);
+        const platform::ByteScope        copy(s.copy);
+        if (scope.Held() && fields.Held() && copy.Held())
+        {
+            ++s.counts.lineOfSight;
+            platform::CallGuarded(reinterpret_cast<SysFn>(g_lineOfSight), system);
+        }
     }
 }
 
-/// The battle suspension: the game releases player 1's cursor; player 2's goes the same way.
+/// The battle suspension: the game releases player 1's cursor; every seat's goes the same way.
 void Suspend(void* system)
 {
     reinterpret_cast<SysFn>(g_suspendRedirect.Original())(system);
-    if (g_copy.Defined() && system == g_copySystem)
+    for (int seat = 1; seat <= kSeatsBuilt; ++seat)
     {
-        ReleaseCopy(L"the battle was suspended");
+        if (g_seats[seat].copy.Defined() && system == g_seats[seat].system)
+        {
+            ReleaseCopy(seat, L"the battle was suspended");
+        }
     }
 }
 
 void Transparent(void* widget) noexcept
 {
     alignas(16) float colour[4];
-    if (widget == nullptr || !Read(static_cast<const std::uint8_t*>(widget) + facts::kUserWidgetColor, colour) || colour[3] == 0.0f)
+    if (widget == nullptr || g_hiddenCount >= static_cast<int>(g_hidden.size()) ||
+        !Read(static_cast<const std::uint8_t*>(widget) + facts::kUserWidgetColor, colour) || colour[3] == 0.0f)
     {
         return;
     }
-    std::memcpy(g_hiddenColor, colour, sizeof(colour));
+    Hidden& hidden = g_hidden[g_hiddenCount];
+    std::memcpy(hidden.color, colour, sizeof(colour));
     colour[3] = 0.0f;
     if (platform::CallGuarded(g_setColor, widget, static_cast<const float*>(colour)))
     {
-        g_hidden = widget;
-        ++g_counts.hides;
+        hidden.widget = widget;
+        ++g_hiddenCount;
+        ++g_hides;
     }
+}
+
+/// Each seat's driver runs, runs with a cursor, releases and line-of-sight runs, its cursor now; the per-pass hides.
+std::wstring Reading()
+{
+    std::wstring text;
+    for (int seat = 1; seat <= kSeatsBuilt; ++seat)
+    {
+        const Seat& s = g_seats[seat];
+        text += std::format(L"{}{}: runs {} (with a cursor {}), releases {}, line of sight {}, cursor now {}", seat == 1 ? L"" : L"; ",
+                            SeatName(seat), s.counts.runs, s.counts.shown, s.counts.releases, s.counts.lineOfSight,
+                            CopyWidget(s) != nullptr ? L"shown" : L"none");
+    }
+    return text + std::format(L"; hides {}", g_hides);
 }
 
 template <class Fn>
@@ -230,7 +277,7 @@ bool Install(const platform::GameImage& image) noexcept
     const auto setColor = image.Rebase(facts::kSetColorAndOpacity);
     if (!system || !bar || !icon || !los || !losCall || !suspend || !setColor || !FindInto(image, facts::kCursorDriver, g_driver))
     {
-        platform::Log(L"target cursor 2: an engine check failed; player 2 has no cursor of its own");
+        platform::Log(L"target cursor 2: an engine check failed; no seat has a cursor of its own");
         return false;
     }
     g_system          = reinterpret_cast<void**>(*system);
@@ -241,12 +288,9 @@ bool Install(const platform::GameImage& image) noexcept
     g_suspend         = *suspend;
     g_setColor        = reinterpret_cast<SetColorFn>(*setColor);
     control::Register({.name = L"target-cursor-two", .shape = control::Shape::Text,
-                       .help = L"player 2's cursor: driver runs, runs with a cursor, releases, line-of-sight runs, per-pass hides",
-                       .get  = [] {
-                           return control::Value{std::format(L"runs {} (with a cursor {}), releases {}, line of sight {}, hides {}; cursor now {}",
-                                                             g_counts.runs, g_counts.shown, g_counts.releases, g_counts.lineOfSight,
-                                                             g_counts.hides, CopyWidget() != nullptr ? L"shown" : L"none")};
-                       }});
+                       .help = L"each seat's cursor: driver runs, runs with a cursor, releases, line-of-sight runs, its cursor now; "
+                               L"the per-pass hides",
+                       .get  = [] { return control::Value{Reading()}; }});
     return true;
 }
 
@@ -268,57 +312,64 @@ void Tick() noexcept
     // runs it, and it is here, outside [ASSUMPTION: its delegate tables fire on the game thread].
     const bool suspend = g_suspendRedirect.Install(g_suspend, std::span(facts::kBattleSuspendEntry.data(), facts::kBattleSuspendFirstBytes),
                                                    reinterpret_cast<std::uintptr_t>(&Suspend));
-    platform::Log(L"target cursor 2: installed; the game's cursor driver runs again for player 2 (line of sight {}, suspension {})",
+    platform::Log(L"target cursor 2: installed; the game's cursor driver runs again for each seat (line of sight {}, suspension {})",
                   los ? L"redirected" : L"NOT redirected", suspend ? L"redirected" : L"NOT redirected");
 }
 
-void RunForPlayerTwo(void* system) noexcept
+void RunForSeat(int seat, void* system) noexcept
 {
-    if (g_driver == nullptr || !CopyFor(system))
+    if (g_driver == nullptr || !SeatBuilt(seat) || !CopyFor(seat, system))
     {
         return;
     }
-    const platform::ByteScope copy(g_copy);
+    Seat&                     s = g_seats[seat];
+    const platform::ByteScope copy(s.copy);
     if (!copy.Held())
     {
         return;
     }
-    ++g_counts.runs;
+    ++s.counts.runs;
     if (!platform::CallGuarded(g_driver, system))
     {
-        platform::Log(L"target cursor 2: the cursor driver for player 2 RAISED AN EXCEPTION");
+        platform::Log(L"target cursor 2: the cursor driver for {} RAISED AN EXCEPTION", SeatName(seat));
     }
-    const bool shown = CopyWidget() != nullptr;
+    const bool shown = CopyWidget(s) != nullptr;
     if (shown)
     {
-        ++g_counts.shown;
+        ++s.counts.shown;
     }
-    if (shown != g_cursorSeen)
+    if (shown != s.cursorSeen)
     {
-        g_cursorSeen = shown;
-        platform::LogDebug(L"target cursor 2: player 2's cursor {} (the game's driver, player 2's target)", shown ? L"shown" : L"gone");
+        s.cursorSeen = shown;
+        platform::LogDebug(L"target cursor 2: {}'s cursor {} (the game's driver, on that player's target)", SeatName(seat),
+                           shown ? L"shown" : L"gone");
     }
 }
 
-void End() noexcept
+void End(int seat) noexcept
 {
-    if (!g_copy.Defined())
+    if (!SeatBuilt(seat) || !g_seats[seat].copy.Defined())
     {
         return;
     }
-    ReleaseCopy(L"the battle ended or player 2 left");
-    g_copy.Clear();
-    g_copySystem = nullptr;
+    ReleaseCopy(seat, L"the battle ended or its player left");
+    g_seats[seat].copy.Clear();
+    g_seats[seat].system = nullptr;
 }
 
-bool DisplayedTarget(void*& object, void*& controller) noexcept
+bool DisplayedTarget(int seat, void*& object, void*& controller) noexcept
 {
     object = controller = nullptr;
-    if (!g_copy.Defined() || g_copy.IsOpen() || System() != g_copySystem)
+    if (!SeatBuilt(seat))
     {
-        return false;  // open: the live key is player 2's just now; the passes never run inside the targeting run
+        return false;
     }
-    const auto key = g_copy.Value(1);
+    const Seat& s = g_seats[seat];
+    if (!s.copy.Defined() || s.copy.IsOpen() || System() != s.system)
+    {
+        return false;  // open: the live key is the seat's just now; the passes never run inside the targeting run
+    }
+    const auto key = s.copy.Value(1);
     if (key.size() < 2 * sizeof(void*))
     {
         return false;
@@ -330,18 +381,18 @@ bool DisplayedTarget(void*& object, void*& controller) noexcept
 
 void BeginPass(int column) noexcept
 {
-    g_column = column;
-    g_hidden = nullptr;
-    if (column < 0 || !g_copy.Defined())
+    g_hiddenCount = 0;
+    if (column < 0)
     {
         return;
     }
     void* system = System();
-    if (system == nullptr || system != g_copySystem)
+    if (system == nullptr)
     {
         return;
     }
-    if (column >= 1)  // every further column shows player 2's cursor until the module keeps one per seat (seats.md step 3)
+    // A seat's column is its index: the column's own cursor stays, every other player's goes transparent.
+    if (column >= 1)
     {
         void* one = nullptr;
         if (Read(static_cast<const std::uint8_t*>(system) + facts::kBattleSysCursorWidget, one))
@@ -349,20 +400,24 @@ void BeginPass(int column) noexcept
             Transparent(one);  // player 1's cursor out of the further column
         }
     }
-    else
+    for (int seat = 1; seat <= kSeatsBuilt; ++seat)
     {
-        Transparent(CopyWidget());  // player 2's cursor out of player 1's column
+        const Seat& s = g_seats[seat];
+        if (seat != column && s.copy.Defined() && system == s.system)
+        {
+            Transparent(CopyWidget(s));  // the seat's cursor out of another player's column
+        }
     }
 }
 
 void EndPass() noexcept
 {
-    if (g_hidden != nullptr)
+    for (int i = 0; i < g_hiddenCount; ++i)
     {
-        platform::CallGuarded(g_setColor, g_hidden, static_cast<const float*>(g_hiddenColor));
-        g_hidden = nullptr;
+        platform::CallGuarded(g_setColor, g_hidden[i].widget, static_cast<const float*>(g_hidden[i].color));
+        g_hidden[i].widget = nullptr;
     }
-    g_column = hud::overlay_pass::kSingle;
+    g_hiddenCount = 0;
 }
 
 }  // namespace lss::battle::target_cursor_two

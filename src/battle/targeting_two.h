@@ -16,7 +16,7 @@
 // target row), the seat's pad's buttons and right stick, and the seat's own copy of the target fields exchanged
 // into the battle system. A seat's lock toggle posts the game-wide Global.LockOn, so player 1's lock is put back
 // through the game's setter before the copy comes out. The game's cursor driver runs again right after
-// (battle/target_cursor_two.h; one cursor, seat 1's, until its own conversion). At the battle's end (the battle HUD
+// (battle/target_cursor_two.h, the seat's own cursor). At the battle's end (the battle HUD
 // mode falling to 0, or the battle system changing) every seat's lock and target are ended with the game's own
 // clear, on its copy.
 // Game thread only.

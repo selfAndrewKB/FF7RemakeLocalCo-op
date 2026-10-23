@@ -59,9 +59,6 @@ struct Seat
     std::uint32_t         runs     = 0;
 };
 std::array<Seat, players::scopes::kMaxPlayers> g_seats;
-// The cursor (battle/target_cursor_two.h) is one instance, seat 1's: RunSeat's driver call and End's release are
-// gated on seat 1 until that module keeps one per seat (plan/seats.md step 3).
-static_assert(kSeatsBuilt == 1, "the cursor driver and its release run for seat 1 alone until target_cursor_two is per seat");
 bool                                           g_enabled  = true;
 bool                                           g_placed   = false;
 bool                                           g_inBattle = false;
@@ -124,10 +121,7 @@ void End(int seat, const wchar_t* why) noexcept
         platform::LogDebug(L"targeting 2: {}'s targets' end deferred, its copy is in use ({})", SeatName(seat), why);
         return;
     }
-    if (seat == 1)
-    {
-        target_cursor_two::End();  // the seat's cursor released while its member and the battle system exist
-    }
+    target_cursor_two::End(seat);  // the seat's cursor released while its member and the battle system exist
     void* system = System();
     if (system != nullptr && system == s.system)
     {
@@ -168,11 +162,7 @@ void RunSeat(int seat, void* system, float deltaTime) noexcept
         ++s.runs;
         g_preTick(system);
         reinterpret_cast<SysDtFn>(g_target)(system, deltaTime);
-        // The game's cursor driver follows its targeting call: one cursor, seat 1's (the pin above).
-        if (seat == 1)
-        {
-            target_cursor_two::RunForPlayerTwo(system);
-        }
+        target_cursor_two::RunForSeat(seat, system);  // the game's cursor driver follows its targeting call
     }
     const std::uint8_t lock = LockOf(s);
     if (lock != s.lastLock)
