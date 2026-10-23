@@ -25,7 +25,7 @@ python ../tools/game.py status | launch | quit | relaunch --deploy --label v0.8.
 
 Every module registers its own commands (`src/control/registry.h`), so `help` on the running build is the list.
 Today: `join`, `leave`, `console <command>`, `report`, `quit`, `showflags <hex>`, `ao-origin on|off`,
-`bloom-origin on|off`, `distortion-apply on|off`, `pad-buttons on|off`, `menu-two on|off`, `targeting-two on|off`, `rates-two on|off`, `menu-two.leader`, `menu-two.route`, `window-span on|off`, `window-span.hold on|off` (the span with any player count, kept through loading screens), `mirror-player on|off` (with the span held, an extra local player shows player 1's picture in the empty column; reading `mirror-player.state`), `lock-camera-two.requests`, `lock-camera-two.restore`, `camera-override-two`, `enemy-leader`, `sequence-camera-two`, `target-cursor-two`, `party-events`, `log-level error|warning|info|debug|trace` (Debug by default; Trace holds the per-frame lines), `hud.dump roots|shown|all [<text>]`, `hud-band on|off`, `hud-image on|off`, `hud-targets on|off`, `hud-targets-log <renders>`, `movie-frame on|off` (a pre-rendered movie in every view; reading `movie-frame.state`); readings `p2.in`, `p2.member`, `p2.state` (out|awaiting|rejoining|in|playing|handed),
+`bloom-origin on|off`, `distortion-apply on|off`, `pad-buttons on|off`, `menu-two on|off`, `targeting-two on|off`, `rates-two on|off`, `menu-two.leader`, `menu-two.route`, `window-span on|off`, `window-span.hold on|off` (the span with any player count, kept through loading screens), `mirror-player on|off` (an extra local player in every column no player fills shows player 1's picture, up to two; reading `mirror-player.state`), `view-columns 0..3` (the columns the window shows, side by side; 0 = as the span and the players decide; reading `column-layout.state`), `lock-camera-two.requests`, `lock-camera-two.restore`, `camera-override-two`, `enemy-leader`, `sequence-camera-two`, `target-cursor-two`, `party-events`, `log-level error|warning|info|debug|trace` (Debug by default; Trace holds the per-frame lines), `hud.dump roots|shown|all [<text>]`, `hud-band on|off`, `hud-image on|off`, `hud-targets on|off`, `hud-targets-log <renders>`, `movie-frame on|off` (a pre-rendered movie in every view; reading `movie-frame.state`); readings `p2.in`, `p2.member`, `p2.state` (out|awaiting|rejoining|in|playing|handed),
 `game.state` (title|loading|play|pause|menu|leaving|…), `game.paused`, `game.menu-kind`, `game.location`,
 `field.step` (13 = steady field), `field.running`, `hud.overlay`, `hud.layout`, `pad.events`, `pads` (the XInput users with a pad), `lead.gate` (the last LEAD on player 2's member judged), `menu-two.state`, `targeting-two.runs`, `targeting-two.lock`, `tick`, `version`. The language's own verbs (`src/control/script.h`): `get <name>`, `status`, `help [<name>]`,
 `wait <ticks>`, `wait-until <name> <op> <value> [<ticks>]`, `hold <player> stick <lx> <ly> <rx> <ry> <ticks>`,
@@ -62,8 +62,8 @@ UE4SS v3.0.1 (the build Rebirth uses) with the RE-UE4SS custom config `Final Fan
 and add `LocalSplitScreen : 1` to `Mods/mods.txt`. Close the game first. `LocalSplitScreen.ini` goes next to the
 `dlls` folder (`tools/game.py relaunch --deploy` copies it when none is there): `[Views] multi-monitor = off | on |
 auto`. `on` spans a row of equal monitors from the start and keeps the span whatever the player count (the title,
-loading screens, the field and the menus on every monitor; the empty column mirrors player 1's picture until
-player 2 joins); `auto` (the default) spans while player 2 is in; `off` leaves it to the console and Ctrl+F2.
+loading screens, the field and the menus on every monitor; every column no player fills mirrors player 1's picture
+until a player joins); `auto` (the default) spans while player 2 is in; `off` leaves it to the console and Ctrl+F2.
 
 ## Layout
 
@@ -87,7 +87,9 @@ src/
     layout_code           the centred 1920x1080 frame and the off-screen arrows' edge in a band (two code redirects,
                           host-tested by executing them)
     root_placement        the minimap, command menu and party panel in their corners of the half (the game's setters)
-    ui_targets            one UI target per view through the game's own pool (render thread; on with hud-image)
+    ui_targets            one UI target per view through the game's own pool (render thread; on with hud-image); a
+                          mirror's view samples player 1's
+    target_rotation.h     which target each view samples with up to three columns, and which the mod holds (pure, host-tested)
     second_image          player 2's HUD image: the overlay rendered first for player 2 (DeltaTime 0, fade kept,
                           one acquire, one submit; the render delegate's vtable slot and three call redirects)
     overlay_pass          which player's pass of the overlay render is running
@@ -145,9 +147,14 @@ src/
                           set on player 2's manager with the game's own setters while the scene holds the players
                           (its blends seeded from player 2's own field camera, its cut and end reset repeated)
     letterbox_patch       the Borderless single-view letterbox off while two views exist (321 one-byte immediates)
-    mirror_player         an extra local player in every column no player fills while the span is held, showing
-                          player 1's picture (its camera manager takes every slot of player 1's before each update);
-                          player 2's join takes its column, it stays through loading screens
+    column_layout         three equal columns through the engine's own layout table: its three-player entry written
+                          to thirds while three columns are wanted (the span's, or view-columns), the stock records
+                          put back after; the layout code stays the engine's
+    column_rules.h        the columns a frame shows, the layout records and the decision over the entry (pure, host-tested)
+    mirror_player         an extra local player in every column no player fills (up to two), showing player 1's
+                          picture (its camera manager takes every slot of player 1's before each update); a mirror's
+                          column is its place in the engine's list, its controller id the lowest free one; player 2's
+                          join takes a column, the mirrors stay through loading screens
   battle/ (the coin)
     enemy_coin            enemies share their attention between the humans: a coin per enemy decision at the game's
                           own decision gate, the script natives answered from it, both humans "the player" for the
