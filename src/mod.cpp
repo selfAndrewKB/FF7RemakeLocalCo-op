@@ -89,7 +89,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.68.0-own-rolls-bars-distance";
+constexpr const wchar_t* kVersion = L"0.68.1-camera-distance-live";
 static_assert(lss::views::column_rules::kMaxColumns == lss::hud::overlay_pass::kMaxColumns, "the columns the views and the HUD count");  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
@@ -436,6 +436,7 @@ private:
         }
         lss::battle::command_menu_tick::Tick();
         lss::battle::party_switch::Tick();
+        lss::players::operator_battle_mode::Tick();
         lss::battle::targeting_two::Tick();
         lss::battle::target_cursor_two::Tick();
         lss::battle::lock_camera_two::Tick();

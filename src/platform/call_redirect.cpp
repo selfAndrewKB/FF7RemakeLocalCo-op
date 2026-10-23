@@ -70,9 +70,17 @@ bool CallRedirect::Place(std::uintptr_t site, std::uintptr_t target, std::uintpt
     const std::uintptr_t block   = site & ~(kCodeBlockSize - 1);
     const std::size_t    at      = site - block;
     const bool           crosses = at + kCallLength > kCodeBlockSize;
+    if (crosses && !crossingAllowed)
+    {
+        // A wrong install method for this site, not a game difference: say so, or the caller's log blames the research.
+        LogWarning(L"a call or jump at {:#x} crosses a 16-byte block: this way of placing it cannot change it safely (a crossing "
+                   L"call must be placed from the game thread, outside the function that holds it)",
+                   site);
+        return false;
+    }
     // The thunk jumps into our compiled code, so the DLL must outlive any chance of the call being
     // taken (platform/module_pin.h).
-    if (block_ != 0 || replacement == 0 || (crosses && !crossingAllowed) || !PinThisModule())
+    if (block_ != 0 || replacement == 0 || !PinThisModule())
     {
         return false;
     }

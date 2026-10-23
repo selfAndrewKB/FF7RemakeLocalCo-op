@@ -13,6 +13,7 @@
 #include "players/seats.h"
 
 #include <array>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <format>
@@ -40,9 +41,13 @@ std::uint8_t** g_data            = nullptr;  // the data singleton (the options 
 std::array<platform::CallRedirect, facts::kFieldCameraEnterBattleModeCalls.size()> g_enterCalls;
 platform::CallRedirect g_popCall;
 std::array<platform::CallRedirect, facts::kFieldCameraSetDistanceOptionsCalls.size()> g_distanceCalls;
+std::array<std::uintptr_t, facts::kFieldCameraSetDistanceOptionsCalls.size()> g_distanceSites{};  // live; 0 until checked
 SetDistanceFn          g_setDistance = nullptr;
 
 // Game thread.
+// The battle option's call crosses a 16-byte block, so both calls go in from the game thread's tick, outside the menu.
+enum class Distance : std::uint8_t { Off, Waiting, Installed, Refused };
+Distance      g_distance = Distance::Off;
 std::uint32_t g_enters = 0;  // the game's enter calls
 std::uint32_t g_leaves = 0;  // the game's battle-end pops
 struct Counts
@@ -171,10 +176,9 @@ std::uint64_t SetDistance(std::uint8_t field, std::uint8_t battle)
     const std::uint64_t result = g_setDistance(field, battle);
     if (!player_two_camera::IsGameThread())
     {
-        static bool told = false;  // the scopes are the game thread's: player 1's change only
-        if (!told)
+        static std::atomic<bool> told{false};  // the scopes are the game thread's: player 1's change only
+        if (!told.exchange(true))
         {
-            told = true;
             platform::LogWarning(L"operator battle mode: the Camera Distance option was set off the game thread; only player 1's camera took it");
         }
         return result;
@@ -243,7 +247,11 @@ std::wstring Reading()
     {
         text += std::format(L"; {}'s {}", SeatName(seat), Describe(seat_objects::Operator(seat)));
     }
-    text += std::format(L"; enters {}, leaves {}", g_enters, g_leaves);
+    static constexpr const wchar_t* kDistance[]{L"player 1's camera only (the setter did not match the research)",
+                                                L"not placed yet (placed on the next frame)", L"on",
+                                                L"player 1's camera only (its calls could not be redirected)"};
+    text += std::format(L"; enters {}, leaves {}; the Camera Distance option for every player: {}", g_enters, g_leaves,
+                        kDistance[static_cast<int>(g_distance)]);
     for (int seat = 1; seat <= kSeatsBuilt; ++seat)
     {
         text += std::format(L" ({}'s: enters {}, leaves {}, joins in battle {}, distance changes {})", SeatName(seat), g_counts[seat].enters,
@@ -298,35 +306,72 @@ bool Install(const platform::GameImage& image) noexcept
         platform::Log(L"operator battle mode: a call site could not be redirected; a seat's camera plays battles on the field setting");
         return false;
     }
-    // The Camera Distance option stands alone: if its check fails, battle mode still goes in.
+    // The Camera Distance option stands alone: if its check fails, battle mode still goes in. Its calls are placed by
+    // Tick (one crosses a 16-byte block); CallRedirect checks each holds a call to the setter before writing.
     const auto setDistance = platform::FindFunction(image, facts::kFieldCameraSetDistanceOptions);
     bool       distance    = setDistance.has_value();
     g_setDistance          = distance ? reinterpret_cast<SetDistanceFn>(*setDistance) : nullptr;
-    for (std::size_t i = 0; distance && i < g_distanceCalls.size(); ++i)
+    for (std::size_t i = 0; distance && i < g_distanceSites.size(); ++i)
     {
-        const auto site = image.Rebase(facts::kFieldCameraSetDistanceOptionsCalls[i], 5);
-        distance        = site && g_distanceCalls[i].Install(*site, *setDistance, reinterpret_cast<std::uintptr_t>(&SetDistance));
+        const auto site    = image.Rebase(facts::kFieldCameraSetDistanceOptionsCalls[i], 5);
+        g_distanceSites[i] = site ? *site : 0;
+        distance           = site.has_value();
     }
+    g_distance = distance ? Distance::Waiting : Distance::Off;
     if (!distance)
     {
-        for (auto& call : g_distanceCalls)
-        {
-            call.Restore();
-        }
-        platform::Log(L"operator battle mode: the Camera Distance option's calls are not what the research read; a change made "
+        platform::LogWarning(L"operator battle mode: the Camera Distance option's setter is not what the research read; a change made "
                       L"during play reaches player 1's camera only");
     }
     control::Register({.name = L"operator-battle-mode", .shape = control::Shape::Text,
-                       .help = L"each operator's battle mode, and how often each seat's entered and left it with player 1's",
+                       .help = L"each operator's battle mode, and how often each seat's entered and left it with player 1's; "
+                               L"whether the Camera Distance option reaches every player's camera",
                        .get  = [] { return control::Value{Reading()}; }});
-    platform::Log(L"operator battle mode: each seat's operator enters and leaves battle mode with player 1's{}",
-                  distance ? L" and takes the Camera Distance option when it changes" : L"");
+    platform::Log(L"operator battle mode: each seat's operator enters and leaves battle mode with player 1's");
     return true;
 }
 
 void Remove() noexcept
 {
     RestoreAll();
+    g_distance = Distance::Off;
+}
+
+void Tick() noexcept
+{
+    if (g_distance != Distance::Waiting)
+    {
+        return;
+    }
+    static constexpr const wchar_t* kWhich[]{L"field", L"battle"};
+    std::size_t failed = g_distanceCalls.size();
+    for (std::size_t i = 0; failed == g_distanceCalls.size() && i < g_distanceCalls.size(); ++i)
+    {
+        if (!g_distanceCalls[i].InstallFromOwnThread(g_distanceSites[i], reinterpret_cast<std::uintptr_t>(g_setDistance),
+                                                     reinterpret_cast<std::uintptr_t>(&SetDistance)))
+        {
+            failed = i;
+        }
+    }
+    if (failed == g_distanceCalls.size())
+    {
+        g_distance = Distance::Installed;
+        platform::Log(L"operator battle mode: a Camera Distance change made in the options reaches every player's camera");
+        return;
+    }
+    g_distance = Distance::Refused;
+    platform::LogWarning(L"operator battle mode: the {} Camera Distance call at {:#x} could not be redirected; a change made during "
+                         L"play reaches player 1's camera only",
+                         kWhich[failed], facts::kFieldCameraSetDistanceOptionsCalls[failed]);
+    for (std::size_t i = 0; i < g_distanceCalls.size(); ++i)
+    {
+        if (!g_distanceCalls[i].Restore())
+        {
+            g_distance = Distance::Installed;  // the reading must not deny a call that stays ours
+            platform::LogWarning(L"operator battle mode: the {} Camera Distance call stayed redirected (its code changed after us)",
+                                 kWhich[i]);
+        }
+    }
 }
 
 void OnOperatorStarted(int seat, void* seatOperator, void* operatorOne) noexcept

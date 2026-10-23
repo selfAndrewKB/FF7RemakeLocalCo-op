@@ -885,7 +885,9 @@ inline constexpr std::array<std::uint8_t, 16> kFieldCameraSetDistanceOptionsEntr
     0x48, 0x8B, 0x05, 0x39, 0xB6, 0x81, 0x04, 0x44, 0x0F, 0xB6, 0xC9, 0x44, 0x8B, 0x80, 0xB4, 0x09};
 inline constexpr platform::FunctionFact kFieldCameraSetDistanceOptions{L"FieldCamera_SetDistanceOptions", 0x140FCE390,
                                                                        kFieldCameraSetDistanceOptionsEntry};
-/// Its two calls, OptionsMenu_SetOptionValue's cases 14 (CameraDistanceField) and 15 (CameraDistanceBattle).
+/// Its two calls, OptionsMenu_SetOptionValue's cases 14 (CameraDistanceField) and 15 (CameraDistanceBattle). The second
+/// crosses a block (placed from the game thread); its second block also holds case 16's call (MoveFollow): a redirect
+/// there too could only be restored in reverse order.
 inline constexpr std::array<std::uintptr_t, 2> kFieldCameraSetDistanceOptionsCalls{0x1412D6C66, 0x1412D6C7C};
 inline constexpr std::uint32_t kOperatorActiveScales        = 0x8F8;  // 3 float*: the active FOV/length/height scales
 inline constexpr std::uint32_t kOperatorFieldScales         = 0x8C8;  // 3 float*: CameraLengthFieldScale* (+0x8E0 the battle set)

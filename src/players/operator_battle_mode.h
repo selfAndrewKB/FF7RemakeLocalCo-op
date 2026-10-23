@@ -36,6 +36,10 @@ namespace lss::players::operator_battle_mode {
 bool Install(const platform::GameImage& image) noexcept;
 void Remove() noexcept;
 
+/// Game thread, once per frame: places the Camera Distance option's two calls the first time (one crosses a 16-byte
+/// block, so it goes in from the thread that runs the menu, outside the menu).
+void Tick() noexcept;
+
 /// The seat's operator was just spawned and owned (its scope bound): enters battle mode on it now if player 1's
 /// operator is in battle mode.
 void OnOperatorStarted(int seat, void* seatOperator, void* operatorOne) noexcept;
