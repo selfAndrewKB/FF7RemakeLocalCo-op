@@ -59,6 +59,7 @@
 #include "engine_facts.h"
 #include "render/ao_origin.h"
 #include "render/bloom_origin.h"
+#include "render/shadows_per_view.h"
 #include "render/distortion_apply.h"
 #include "render/movie_frame.h"
 #include "views/column_layout.h"
@@ -90,7 +91,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.69.0-arrows-and-numbers";
+constexpr const wchar_t* kVersion = L"0.70.0-shadows-per-view";
 static_assert(lss::views::column_rules::kMaxColumns == lss::hud::overlay_pass::kMaxColumns, "the columns the views and the HUD count");  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
@@ -269,6 +270,7 @@ public:
         lss::hud::image_entries::Remove();
         lss::hud::ui_targets::Remove();
         lss::render::movie_frame::Remove();
+        lss::render::shadows_per_view::Remove();
         lss::players::pad_buttons::Remove();
         lss::battle::sequence_camera_two::Remove();
         lss::battle::target_cursor_two::Remove();
@@ -314,6 +316,7 @@ public:
         lss::render::ao_origin::Install(*image);  // optional: without it player 2's half keeps the AO ghost
         // Optional: without it a distortion crossing the split line streaks over the other half.
         lss::render::distortion_apply::Install(*image);
+        lss::render::shadows_per_view::Install(*image);  // optional: without it one camera decides some shadows for every view
         // Optional: without it player 2's bloom would be built from player 1's rows, so bloom stays off in split.
         if (lss::render::bloom_origin::Install(*image))
         {

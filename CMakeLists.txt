@@ -45,6 +45,7 @@ add_library(LocalSplitScreen SHARED
     src/hud/marker_replay.cpp
     src/hud/minimap_two.cpp
     src/hud/outside_icons.cpp
+    src/render/shadows_per_view.cpp
     src/hud/overlay_pass.cpp
     src/hud/pass_hide.cpp
     src/hud/second_image.cpp
@@ -339,3 +340,19 @@ add_executable(ArrowTimersTests
 target_include_directories(ArrowTimersTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_compile_features(ArrowTimersTests PRIVATE cxx_std_20)
 add_test(NAME arrow_timers COMMAND ArrowTimersTests)
+
+add_executable(ShadowCodeTests
+    tests/shadow_code_test.cpp
+    src/platform/code_redirect.cpp
+    src/platform/code_memory.cpp
+)
+target_include_directories(ShadowCodeTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(ShadowCodeTests PRIVATE cxx_std_20)
+add_test(NAME shadow_code COMMAND ShadowCodeTests)
+
+add_executable(AreaChainsTests
+    tests/area_chains_test.cpp
+)
+target_include_directories(AreaChainsTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(AreaChainsTests PRIVATE cxx_std_20)
+add_test(NAME area_chains COMMAND AreaChainsTests)
