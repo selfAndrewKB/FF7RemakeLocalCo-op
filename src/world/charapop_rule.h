@@ -2,7 +2,7 @@
 
 // CharaPop's Light/Middle rule, as its evaluators apply it to one camera (research/RE-npc-near-player-two.md §1.3,
 // RE-world-two-views.md §1.2: CharaPopEntry_EvalLOD_Light_PrimaryCam 0x140F8E080, _Middle_PrimaryCam 0x140F8E6E0), for
-// the entries player 2's camera needs (world/npc_detail.h). Pure, host-tested (tests/charapop_rule_test.cpp). Taken from
+// the entries a further player's camera needs (world/npc_detail.h). Pure, host-tested (tests/charapop_rule_test.cpp). Taken from
 // Rebirth's player_two/charapop_rule.h (cleanup-2026-10, 9c355f2) unchanged in logic: Remake's evaluators apply the
 // same rule with the same parameter names.
 //
@@ -61,20 +61,20 @@ constexpr bool KeepsAwakeOrShown(const LodDistances& lod, const EntryView& view,
     return keeps.awake || keeps.shown;
 }
 
-/// True when player 1's camera already gives the entry everything player 2's camera asks for, so the game
-/// alone keeps it as player 2 needs and raising it would add only cost.
+/// True when player 1's camera already gives the entry everything a further player's camera asks for, so the game
+/// alone keeps it as that player needs and raising it would add only cost.
 constexpr bool Covers(const Keeps& one, const Keeps& two) noexcept
 {
     return (!two.awake || one.awake) && (!two.shown || one.shown);
 }
 
 // The margins that keep an entry from toggling on the edge: a raised entry stays raised until it is this far
-// past player 2's distances, or this far inside player 1's.
+// past a further player's distances, or this far inside player 1's.
 inline constexpr float kKeepScale   = 1.1f;
 inline constexpr float kKeepDegrees = 5.0f;
 
-/// Whether to raise an entry not raised yet: player 2's view, at `reach` times the game's distances, keeps
-/// it, and player 1's camera (when read) does not already.
+/// Whether to raise an entry not raised yet: a further player's view, at `reach` times the game's distances,
+/// keeps it, and player 1's camera (when read) does not already.
 constexpr bool ShouldRaise(const LodDistances& lod, const EntryView& two, const EntryView* one, float reach) noexcept
 {
     const Keeps forTwo = KeepsOf(lod, two, reach);
@@ -88,7 +88,7 @@ constexpr bool ShouldRaise(const LodDistances& lod, const EntryView& two, const 
 enum class Hold
 {
     Keep,             // still needed
-    OutOfReach,       // past player 2's distances (with the margin)
+    OutOfReach,       // past the further players' distances (with the margin)
     PlayerOneCovers,  // player 1's camera keeps it (with the margin)
 };
 
@@ -105,6 +105,42 @@ constexpr Hold HoldOf(const LodDistances& lod, const EntryView& two, const Entry
         return Hold::PlayerOneCovers;
     }
     return Hold::Keep;
+}
+
+// The same two questions for several further players' views at once (plan/seats.md step 3: the detail reach is the
+// union of every further player's): an entry is raised when any of their views needs it and player 1's camera does
+// not cover what that view asks; a raised entry is kept while any of their views still needs it.
+
+/// Whether to raise an entry not raised yet: some further player's view, at `reach` times the game's distances,
+/// keeps it, and player 1's camera (when read) does not already.
+constexpr bool ShouldRaise(const LodDistances& lod, const EntryView* views, int count, const EntryView* one,
+                           float reach) noexcept
+{
+    for (int i = 0; i < count; ++i)
+    {
+        if (ShouldRaise(lod, views[i], one, reach))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+/// For an entry the mod raised: kept while any further player's view still needs it; else player 1's camera covers
+/// it if it covers every view that still reaches it, and out of reach when none reaches it.
+constexpr Hold HoldOf(const LodDistances& lod, const EntryView* views, int count, const EntryView* one, float reach) noexcept
+{
+    bool covered = false;
+    for (int i = 0; i < count; ++i)
+    {
+        const Hold hold = HoldOf(lod, views[i], one, reach);
+        if (hold == Hold::Keep)
+        {
+            return Hold::Keep;
+        }
+        covered = covered || hold == Hold::PlayerOneCovers;
+    }
+    return covered ? Hold::PlayerOneCovers : Hold::OutOfReach;
 }
 
 }  // namespace lss::world::charapop

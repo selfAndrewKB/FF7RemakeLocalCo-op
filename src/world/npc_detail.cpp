@@ -6,6 +6,7 @@
 #include "platform/image.h"
 #include "platform/log.h"
 #include "platform/verified_code.h"
+#include "players/seats.h"
 #include "world/anim_choice.h"
 #include "world/charapop_rule.h"
 
@@ -23,6 +24,11 @@ namespace {
 
 using platform::Read;
 using platform::ReadPointer;
+using players::kSeatsBuilt;
+using players::SeatBuilt;
+using players::SeatName;
+
+constexpr int kMaxPlayers = players::scopes::kMaxPlayers;
 
 using SetMinLevelFn = bool (*)(const std::uint64_t* objectName, std::uint8_t level, bool evaluateNow);
 
@@ -55,9 +61,18 @@ struct Camera
     bool             read = false;
 };
 
+/// The further players' views of one entry, in seat order: the seats whose camera read this pass.
+struct SeatViews
+{
+    std::array<charapop::EntryView, kMaxPlayers> views{};
+    std::array<int, kMaxPlayers>                 seatOf{};
+    int                                          count = 0;
+};
+
 SetMinLevelFn   g_setMinLevel = nullptr;
 std::uint8_t**  g_root        = nullptr;
 bool            g_enabled     = true;
+std::array<void*, kMaxPlayers> g_cameras{};  // each seat's camera manager while its player is in; [0] unused
 
 std::array<Raised, kMaxRaised> g_raised{};
 int                            g_raisedCount = 0;
@@ -213,8 +228,24 @@ catch (...)
     return {};
 }
 
-void HandleRaised(int index, const charapop::LodDistances& lod, const charapop::EntryView& two,
-                  const charapop::EntryView* one) noexcept
+/// Each further player's view of the entry, named: "player 2: 20 m at 10 deg, player 3: ...".
+std::wstring WhereSeats(const SeatViews& seats) noexcept
+try
+{
+    std::wstring out;
+    for (int i = 0; i < seats.count; ++i)
+    {
+        out += std::format(L"{}{}: {}", i == 0 ? L"" : L", ", SeatName(seats.seatOf[static_cast<std::size_t>(i)]),
+                           Where(&seats.views[static_cast<std::size_t>(i)]));
+    }
+    return out;
+}
+catch (...)
+{
+    return {};
+}
+
+void HandleRaised(int index, const charapop::LodDistances& lod, const SeatViews& seats, const charapop::EntryView* one) noexcept
 {
     Raised& raised = g_raised[static_cast<std::size_t>(index)];
     raised.seen    = true;
@@ -224,7 +255,7 @@ void HandleRaised(int index, const charapop::LodDistances& lod, const charapop::
         Drop(index);
         return;
     }
-    const charapop::Hold hold = charapop::HoldOf(lod, two, one, 1.0f);
+    const charapop::Hold hold = charapop::HoldOf(lod, seats.views.data(), seats.count, one, 1.0f);
     if (hold != charapop::Hold::OutOfReach)
     {
         ++g_needed;
@@ -238,8 +269,9 @@ void HandleRaised(int index, const charapop::LodDistances& lod, const charapop::
     const bool covered = hold == charapop::Hold::PlayerOneCovers;
     if (platform::Enabled(platform::Level::Debug))
     {
-        platform::LogDebug(L"npc detail: released {} ({}; player 2: {}, player 1: {})", Name(raised.name),
-                           covered ? L"player 1's camera keeps it" : L"out of player 2's reach", Where(&two), Where(one));
+        platform::LogDebug(L"npc detail: released {} ({}; {}, player 1: {})", Name(raised.name),
+                           covered ? L"player 1's camera keeps it" : L"out of every further player's reach", WhereSeats(seats),
+                           Where(one));
     }
     if (Clear(index))
     {
@@ -247,15 +279,20 @@ void HandleRaised(int index, const charapop::LodDistances& lod, const charapop::
     }
 }
 
-void HandleCandidate(std::uint8_t* record, std::uint8_t level, const charapop::LodDistances& lod,
-                     const charapop::EntryView& two, const charapop::EntryView* one) noexcept
+void HandleCandidate(std::uint8_t* record, std::uint8_t level, const charapop::LodDistances& lod, const SeatViews& seats,
+                     const charapop::EntryView* one) noexcept
 {
-    if (!charapop::KeepsAwakeOrShown(lod, two, 1.0f))
+    bool needed = false;
+    for (int i = 0; i < seats.count && !needed; ++i)
+    {
+        needed = charapop::KeepsAwakeOrShown(lod, seats.views[static_cast<std::size_t>(i)], 1.0f);
+    }
+    if (!needed)
     {
         return;
     }
     ++g_needed;
-    if (!charapop::ShouldRaise(lod, two, one, 1.0f))
+    if (!charapop::ShouldRaise(lod, seats.views.data(), seats.count, one, 1.0f))
     {
         ++g_coveredNow;
         return;
@@ -265,7 +302,8 @@ void HandleCandidate(std::uint8_t* record, std::uint8_t level, const charapop::L
         if (!g_fullLogged)
         {
             g_fullLogged = true;
-            platform::Log(L"npc detail: {} NPCs raised, the most kept: further NPCs near player 2 are left as the game has them",
+            platform::Log(L"npc detail: {} NPCs raised, the most kept: more NPCs near the further players are left as the "
+                          L"game has them",
                           kMaxRaised);
         }
         return;
@@ -279,12 +317,12 @@ void HandleCandidate(std::uint8_t* record, std::uint8_t level, const charapop::L
     ++g_raisedTotal;
     if (platform::Enabled(platform::Level::Debug))
     {
-        platform::LogDebug(L"npc detail: raised {} (level {}; player 2: {}, player 1: {}, which does not keep it)", Name(name),
-                           level, Where(&two), Where(one));
+        platform::LogDebug(L"npc detail: raised {} (level {}; {}, player 1: {}, which does not keep it)", Name(name), level,
+                           WhereSeats(seats), Where(one));
     }
 }
 
-void Pass(void* cameraOne, void* cameraTwo) noexcept
+void Pass(void* cameraOne) noexcept
 {
     std::uint8_t* root    = nullptr;
     std::uint8_t* manager = Read(g_root, root) ? static_cast<std::uint8_t*>(ReadPointer(root, facts::kRootCharaPop)) : nullptr;
@@ -298,16 +336,30 @@ void Pass(void* cameraOne, void* cameraTwo) noexcept
         g_raisedCount = 0;
         g_manager     = manager;
     }
-    if (!g_enabled || cameraTwo == nullptr || manager == nullptr)
+    bool anySeat = false;
+    for (int seat = 1; seat <= kSeatsBuilt; ++seat)
     {
-        ClearAll(!g_enabled ? L"switched off" : L"player 2 left");
+        anySeat = anySeat || g_cameras[static_cast<std::size_t>(seat)] != nullptr;
+    }
+    if (!g_enabled || !anySeat || manager == nullptr)
+    {
+        ClearAll(!g_enabled ? L"switched off" : L"every further player left");
         return;
     }
+    // The cameras this pass judges from: player 1's, and each seat's that reads.
     const Camera one = CameraOf(cameraOne);
-    const Camera two = CameraOf(cameraTwo);
-    if (!two.read)
+    std::array<Camera, kMaxPlayers> cameras{};
+    bool                            anyRead = false, anyUnread = false;
+    for (int seat = 1; seat <= kSeatsBuilt; ++seat)
     {
-        return;
+        void* const manager = g_cameras[static_cast<std::size_t>(seat)];
+        cameras[static_cast<std::size_t>(seat)] = CameraOf(manager);
+        anyRead   = anyRead || cameras[static_cast<std::size_t>(seat)].read;
+        anyUnread = anyUnread || (manager != nullptr && !cameras[static_cast<std::size_t>(seat)].read);
+    }
+    if (!anyRead || anyUnread)
+    {
+        return;  // a further player's camera unreadable this pass: everything held, as one unread camera always did
     }
     auto* records = static_cast<std::uint8_t*>(ReadPointer(manager, facts::kCharaPopRecordsHeap));
     if (records == nullptr)
@@ -344,16 +396,26 @@ void Pass(void* cameraOne, void* cameraTwo) noexcept
         }
         const auto                   category = Field<std::uint8_t>(record, facts::kCharaPopRecordCategory);
         const charapop::LodDistances lod      = DistancesFor(manager, level);
-        const charapop::EntryView    fromTwo  = ViewFrom(two, at, category);
-        const charapop::EntryView    fromOne  = ViewFrom(one, at, category);
-        const charapop::EntryView*   onePtr   = one.read ? &fromOne : nullptr;
+        SeatViews                    seats;
+        for (int seat = 1; seat <= kSeatsBuilt; ++seat)
+        {
+            const Camera& camera = cameras[static_cast<std::size_t>(seat)];
+            if (camera.read)
+            {
+                seats.views[static_cast<std::size_t>(seats.count)]  = ViewFrom(camera, at, category);
+                seats.seatOf[static_cast<std::size_t>(seats.count)] = seat;
+                ++seats.count;
+            }
+        }
+        const charapop::EntryView  fromOne = ViewFrom(one, at, category);
+        const charapop::EntryView* onePtr  = one.read ? &fromOne : nullptr;
         if (index >= 0)
         {
-            HandleRaised(index, lod, fromTwo, onePtr);
+            HandleRaised(index, lod, seats, onePtr);
         }
         else if (Field<std::uint8_t>(record, facts::kCharaPopRecordMinLevel) == 0)
         {
-            HandleCandidate(record, level, lod, fromTwo, onePtr);
+            HandleCandidate(record, level, lod, seats, onePtr);
         }
     }
     // A raised entry no longer judged (despawned, freed): cleared if it is still the mod's, then forgotten.
@@ -377,7 +439,10 @@ void Summarise() noexcept
         return;
     }
     g_lastSummary = now;
-    platform::LogDebug(L"npc detail: {}", Reading());
+    if (platform::Enabled(platform::Level::Debug))
+    {
+        platform::LogDebug(L"npc detail: {}", Reading());  // the reading's text formed only when it is written
+    }
 }
 
 }  // namespace
@@ -388,49 +453,58 @@ bool Install(const platform::GameImage& image) noexcept
     const auto root = image.Rebase(facts::kEndGameRootGlobal, sizeof(void*));
     if (!set || !root)
     {
-        platform::LogWarning(L"npc detail: a check failed; NPCs near player 2 keep the detail player 1's camera gives them");
+        platform::LogWarning(L"npc detail: a check failed; NPCs near a further player keep the detail player 1's camera gives them");
         return false;
     }
     g_setMinLevel = reinterpret_cast<SetMinLevelFn>(*set);
     g_root        = reinterpret_cast<std::uint8_t**>(*root);
     control::Register({.name  = L"npc-detail",
                        .shape = control::Shape::OnOff,
-                       .help  = L"NPCs near player 2 keep the detail player 2's camera would give them (world/npc_detail.h; on)",
+                       .help  = L"NPCs near a further player keep the detail that player's camera would give them (world/npc_detail.h; on)",
                        .set   = [](const control::Value& value) {
                            SetEnabled(std::get<bool>(value));
                            return control::Outcome{};
                        },
                        .get = [] { return control::Value{g_enabled}; }});
     control::Register({.name = L"world.npc-detail", .shape = control::Shape::Text,
-                       .help = L"NPCs raised for player 2's view now, and the counts so far",
+                       .help = L"NPCs raised for the further players' views now, and the counts so far",
                        .get  = [] { return control::Value{Reading()}; }});
-    platform::Log(L"npc detail: installed; while player 2 is in, the NPCs its camera needs are kept awake and shown with the "
-                  L"game's own setter");
+    platform::Log(L"npc detail: installed; while a further player is in, the NPCs their cameras need are kept awake and shown "
+                  L"with the game's own setter");
     return true;
 }
 
-void Tick(void* cameraManagerOne, void* cameraManagerTwo) noexcept
+void TickSeat(int seat, void* seatCameraManager) noexcept
+{
+    if (g_setMinLevel == nullptr || !SeatBuilt(seat))
+    {
+        return;
+    }
+    g_cameras[static_cast<std::size_t>(seat)] = seatCameraManager;
+}
+
+void Tick(void* cameraManagerOne) noexcept
 {
     if (g_setMinLevel == nullptr || ++g_ticks % kEvery != 0)
     {
         return;
     }
-    Pass(cameraManagerOne, cameraManagerTwo);
+    Pass(cameraManagerOne);
     Summarise();
 }
 
 void SetEnabled(bool on) noexcept
 {
     g_enabled = on;
-    platform::Log(L"npc detail {}", on ? L"on" : L"off (NPCs near player 2 get only what player 1's camera gives them)");
+    platform::Log(L"npc detail {}", on ? L"on" : L"off (NPCs near a further player get only what player 1's camera gives them)");
 }
 
 std::wstring Reading() noexcept
 try
 {
-    return std::format(L"{}; {} raised now; last pass player 2's view needed {}, player 1's camera already kept {} of them; so "
-                       L"far {} raised, {} released out of reach, {} released to player 1's camera, {} gone, {} taken over "
-                       L"by the game",
+    return std::format(L"{}; {} raised now; last pass the further players' views needed {}, player 1's camera already kept {} "
+                       L"of them; so far {} raised, {} released out of reach, {} released to player 1's camera, {} gone, {} "
+                       L"taken over by the game",
                        g_enabled ? L"on" : L"off", g_raisedCount, g_needed, g_coveredNow, g_raisedTotal, g_outOfReach,
                        g_covered, g_gone, g_takenBack);
 }

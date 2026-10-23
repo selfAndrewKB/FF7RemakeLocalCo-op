@@ -122,6 +122,49 @@ void TestHold()
     EXPECT(HoldOf(kMiddle, near, &oneClose, 1.0f) == Hold::PlayerOneCovers);
 }
 
+void TestSeveralViews()
+{
+    std::puts("several further players: raised when any view needs it; kept while any still does; covered only when "
+              "player 1's camera covers every view that reaches it");
+    const EntryView near{2000.0f, 10.0f};
+    const EntryView far{20000.0f, 10.0f};
+    const EntryView oneFar{20000.0f, 10.0f};
+    const EntryView oneClose{3000.0f, 20.0f};
+    const EntryView twoNear[] = {far, near};
+    const EntryView bothFar[] = {far, far};
+    EXPECT(ShouldRaise(kMiddle, twoNear, 2, &oneFar, 1.0f));     // player 3's view needs it, player 2's does not
+    EXPECT(ShouldRaise(kMiddle, twoNear, 2, nullptr, 1.0f));
+    EXPECT(!ShouldRaise(kMiddle, twoNear, 2, &oneClose, 1.0f));  // player 1's camera covers what player 3 asks
+    EXPECT(!ShouldRaise(kMiddle, bothFar, 2, &oneFar, 1.0f));    // neither needs it
+    EXPECT(!ShouldRaise(kMiddle, twoNear, 0, &oneFar, 1.0f));    // no further player: nothing to raise
+    EXPECT(ShouldRaise(kMiddle, twoNear + 1, 1, &oneFar, 1.0f) == ShouldRaise(kMiddle, near, &oneFar, 1.0f));
+    EXPECT(ShouldRaise(kMiddle, twoNear + 1, 1, &oneClose, 1.0f) == ShouldRaise(kMiddle, near, &oneClose, 1.0f));
+    // A hiding entry player 1 only shows: player 2's view asks the same (covered), player 3's needs it awake (not).
+    const EntryView oneShownOnly{9000.0f, 150.0f, true, false};
+    const EntryView shownOnly{8000.0f, 150.0f, true, false};
+    const EntryView awakeToo{900.0f, 10.0f, true, false};
+    const EntryView coveredAndNot[] = {shownOnly, awakeToo};
+    EXPECT(!ShouldRaise(kMiddle, coveredAndNot, 1, &oneShownOnly, 1.0f));  // player 2's view alone: covered
+    EXPECT(ShouldRaise(kMiddle, coveredAndNot, 2, &oneShownOnly, 1.0f));   // with player 3's: raised
+
+    const EntryView edge{6400.0f, 30.0f};   // within the keep margin
+    const EntryView gone{6700.0f, 30.0f};   // past it
+    const EntryView keepAndGone[] = {gone, edge};
+    const EntryView bothGone[] = {gone, gone};
+    const EntryView nearAndGone[] = {near, gone};
+    EXPECT(HoldOf(kMiddle, keepAndGone, 2, nullptr, 1.0f) == Hold::Keep);        // player 3's view still needs it
+    EXPECT(HoldOf(kMiddle, bothGone, 2, nullptr, 1.0f) == Hold::OutOfReach);     // nobody's does
+    EXPECT(HoldOf(kMiddle, nearAndGone, 2, &oneClose, 1.0f) == Hold::PlayerOneCovers);  // player 1 covers the one that reaches
+    EXPECT(HoldOf(kMiddle, nearAndGone, 2, &oneFar, 1.0f) == Hold::Keep);        // and not when it does not
+    EXPECT(HoldOf(kMiddle, nearAndGone, 0, &oneFar, 1.0f) == Hold::OutOfReach);  // no further player: released
+    EXPECT(HoldOf(kMiddle, nearAndGone, 1, &oneClose, 1.0f) == HoldOf(kMiddle, near, &oneClose, 1.0f));
+    EXPECT(HoldOf(kMiddle, bothGone, 1, nullptr, 1.0f) == HoldOf(kMiddle, gone, nullptr, 1.0f));  // OutOfReach either way
+    EXPECT(HoldOf(kMiddle, keepAndGone + 1, 1, nullptr, 1.0f) == HoldOf(kMiddle, edge, nullptr, 1.0f));  // Keep either way
+    const EntryView coveredThenKept[] = {shownOnly, awakeToo};  // player 1 covers player 2's view; player 3's still needs it
+    EXPECT(HoldOf(kMiddle, coveredThenKept, 1, &oneShownOnly, 1.0f) == Hold::PlayerOneCovers);
+    EXPECT(HoldOf(kMiddle, coveredThenKept, 2, &oneShownOnly, 1.0f) == Hold::Keep);
+}
+
 }  // namespace
 
 int main()
@@ -134,5 +177,6 @@ int main()
     TestRaiseHidingEntries();
     TestReducedReach();
     TestHold();
+    TestSeveralViews();
     return lss::test::Report();
 }
