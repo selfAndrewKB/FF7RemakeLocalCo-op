@@ -9,6 +9,7 @@
 namespace {
 
 namespace chains = lss::render::area_chains;
+using lss::render::shadow_code::FogRec;
 using lss::render::shadow_code::ViewRec;
 
 int g_failures = 0;
@@ -269,11 +270,118 @@ void TestNewSunProxy()
     EXPECT(Cascade0(w.records[0]) == 5.0f && w.records[0].sun == w.model.Sun());
 }
 
+/// A fog push's result as the setter leaves it: `density` in the first field group.
+FogRec FogNow(const void* scene, const void* fog, const void* component, std::uint8_t density)
+{
+    FogRec r;
+    r.valid     = 1;
+    r.scene     = scene;
+    r.fog       = fog;
+    r.component = component;
+    std::memset(r.heightToOpacity, density, sizeof(r.heightToOpacity));
+    std::memset(r.inscattering, 0x30, sizeof(r.inscattering));
+    std::memset(r.appendix, 0x40, sizeof(r.appendix));
+    r.lastField = 7;
+    return r;
+}
+
+void TestFog()
+{
+    std::puts("fog: the tag in the padding; a view's push its record, named by its light chain's state; untagged on every view");
+    std::uint8_t data[chains::kFogBlendSize];
+    std::memset(data, 0x77, sizeof(data));
+    chains::StampFog(data, {true, 2, nullptr});
+    const chains::Tag tag = chains::ReadFogTag(data);
+    EXPECT(tag.valid && tag.index == 2 && data[0x00] == 0x77 && data[0x03] == (chains::kMagic ^ 2) && data[0x04] == 0x77);
+    std::memset(data, 0x77, sizeof(data));
+    chains::StampFog(data, {});
+    EXPECT(data[0x01] == 0x77 && data[0x02] == 0x77 && data[0x03] == 0x77);  // no tag: the data untouched
+    std::memset(data, 0, sizeof(data));
+    EXPECT(!chains::ReadFogTag(data).valid);  // an untagged push
+    data[chains::kFogMagicAt] = chains::kMagic;
+    data[chains::kFogIndexAt] = 1;
+    EXPECT(!chains::ReadFogTag(data).valid);  // the magic and an index without the check byte: padding, not a tag
+    data[chains::kFogIndexAt] = 4;
+    data[chains::kFogCheckAt] = chains::kMagic ^ 4;
+    EXPECT(!chains::ReadFogTag(data).valid);  // an index past the records
+
+    int     scene = 0, fog = 0, component = 0, other = 0;
+    FogRec  game, fogs[lss::render::shadow_code::kRecords];
+    ViewRec views[lss::render::shadow_code::kRecords];
+    views[0].valid = views[1].valid = 1;
+    views[0].scene = views[1].scene = &scene;
+    views[0].state = &views[0];
+    views[1].state = &views[1];
+    // A frame: player 1's view in thin fog, player 2's in thick fog; the scene ends with player 2's (the last push).
+    EXPECT(chains::FogPush(game, fogs, FogNow(&scene, &fog, &component, 0x10), {true, 0, nullptr}, views) == 1);
+    EXPECT(chains::FogPush(game, fogs, FogNow(&scene, &fog, &component, 0x90), {true, 1, nullptr}, views) == 1);
+    EXPECT(fogs[0].valid && fogs[0].heightToOpacity[0] == 0x10 && fogs[0].state == &views[0]);
+    EXPECT(fogs[1].valid && fogs[1].heightToOpacity[0] == 0x90 && fogs[1].state == &views[1]);
+    EXPECT(game.heightToOpacity[0] == 0x90 && game.state == nullptr && game.lastField == 7);
+    EXPECT(chains::FogDiffers(fogs[0], game) && !chains::FogDiffers(fogs[1], game));
+    // A view whose light chain is not there (or of another scene): no record, the game's.
+    EXPECT(chains::FogPush(game, fogs, FogNow(&scene, &fog, &component, 0x20), {true, 2, nullptr}, views) == 0);
+    EXPECT(!fogs[2].valid);
+    views[1].scene = &other;
+    EXPECT(chains::FogPush(game, fogs, FogNow(&scene, &fog, &component, 0x20), {true, 1, nullptr}, views) == 0);
+    EXPECT(!fogs[1].valid);
+    views[1].scene = &scene;
+    chains::FogPush(game, fogs, FogNow(&scene, &fog, &component, 0x90), {true, 1, nullptr}, views);
+    // An untagged push (a scene capture) lands on every view of the same fog, as in the game; each keeps its state.
+    EXPECT(chains::FogPush(game, fogs, FogNow(&scene, &fog, &component, 0x55), {}, views) == 2);
+    EXPECT(fogs[0].heightToOpacity[0] == 0x55 && fogs[1].heightToOpacity[0] == 0x55 && fogs[1].state == &views[1]);
+    // Another fog component at the same address (the array compacted): an untagged push leaves the old records alone,
+    // and they no longer compare as the same fog.
+    EXPECT(chains::FogPush(game, fogs, FogNow(&scene, &fog, &other, 0x66), {}, views) == 0);
+    EXPECT(fogs[0].heightToOpacity[0] == 0x55 && !chains::FogDiffers(fogs[0], game));
+    // Another fog at another address with the same component: an untagged push leaves the old records alone too.
+    int otherFog = 0;
+    EXPECT(chains::FogPush(game, fogs, FogNow(&scene, &otherFog, &component, 0x67), {}, views) == 0);
+    // A view whose light chain has no state: no record.
+    views[2].valid = 1;
+    views[2].scene = &scene;
+    EXPECT(chains::FogPush(game, fogs, FogNow(&scene, &fog, &component, 0x20), {true, 2, nullptr}, views) == 0);
+    EXPECT(!fogs[2].valid);
+    // Only a colour differing still differs.
+    FogRec a = FogNow(&scene, &fog, &component, 0x10), b = a;
+    b.inscattering[3] ^= 1;
+    EXPECT(chains::FogDiffers(a, b));
+    b = a;
+    b.appendix[15] ^= 1;
+    EXPECT(chains::FogDiffers(a, b));
+    b = a;
+    b.lastField = 9;
+    EXPECT(!chains::FogDiffers(a, b));  // not a fog value the reading compares
+}
+
+void TestFogBeforeViews()
+{
+    std::puts("fog: the fog as it stands before the views is the game's; changed outside a push, the views' records drop");
+    int     scene = 0, fog = 0, component = 0, otherFog = 0;
+    FogRec  game, fogs[lss::render::shadow_code::kRecords];
+    game    = FogNow(&scene, &fog, &component, 0x30);
+    fogs[0] = FogNow(&scene, &fog, &component, 0x10);
+    fogs[1] = FogNow(&scene, &otherFog, &component, 0x11);
+    // As the last push left it: nothing dropped, the game's record the same.
+    EXPECT(!chains::FogBeforeViews(game, fogs, FogNow(&scene, &fog, &component, 0x30)));
+    EXPECT(fogs[0].valid && game.valid && game.heightToOpacity[0] == 0x30 && game.state == nullptr);
+    // Written outside a push (an inline setter, a world-origin shift): this fog's records drop, another fog's stay.
+    EXPECT(chains::FogBeforeViews(game, fogs, FogNow(&scene, &fog, &component, 0x31)));
+    EXPECT(!fogs[0].valid && fogs[1].valid && game.heightToOpacity[0] == 0x31);
+    // A first sight of a fog (no game record of it yet): nothing to call stale, the game's record taken.
+    fogs[0] = FogNow(&scene, &fog, &component, 0x10);
+    game.valid = 0;
+    EXPECT(!chains::FogBeforeViews(game, fogs, FogNow(&scene, &fog, &component, 0x40)));
+    EXPECT(fogs[0].valid && game.valid && game.heightToOpacity[0] == 0x40);
+}
+
 }  // namespace
 
 int main()
 {
     TestTag();
+    TestFog();
+    TestFogBeforeViews();
     TestTwoViews();
     TestUntaggedAndOneView();
     TestNewSunProxy();

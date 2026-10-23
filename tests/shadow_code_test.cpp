@@ -481,6 +481,113 @@ void TestSun()
     EXPECT(redirect.Restore());
 }
 
+void TestFog()
+{
+    std::puts("fog (A): the view's own fog when its fog, component and state match, else the game's, else nothing; off: nothing");
+    StandIn                     s(code::kFogSite & 0xF, code::kFogLoad, sizeof(code::kFogLoad));
+    alignas(16) static code::State state;
+    lss::platform::CodeRedirect redirect;
+    EXPECT(redirect.Install(s.At(s.site), code::kFogLoad, code::FogCode(state), s.At(s.resume)));
+    std::vector<std::uint8_t> scene(0x2000, 0), fog(0xC8, 0), view(0x10, 0);
+    const auto fogAt = Address(fog.data()), component = std::uint64_t{0xC0C0};
+    std::memcpy(scene.data() + code::kSceneFogs, &fogAt, 8);
+    std::memcpy(fog.data(), &component, 8);
+    const std::uint64_t viewState = 0xD1;
+    std::memcpy(view.data() + code::kViewState, &viewState, 8);
+    const auto record = [&](std::uint8_t fill, std::uint64_t state, std::uint64_t comp) {
+        code::FogRec r;
+        r.valid     = 1;
+        r.fog       = fog.data();
+        r.component = reinterpret_cast<const void*>(comp);
+        r.state     = reinterpret_cast<const void*>(state);
+        std::memset(r.heightToOpacity, fill, sizeof(r.heightToOpacity));
+        std::memset(r.inscattering, fill + 1, sizeof(r.inscattering));
+        std::memset(r.appendix, fill + 2, sizeof(r.appendix));
+        r.lastField = fill * 0x01010101u;
+        return r;
+    };
+    // Returns the fog's first field byte; checks the other spans moved with it and the bytes around them did not.
+    const auto run = [&](std::uint64_t index) {
+        std::memset(fog.data() + 8, 0xEE, fog.size() - 8);
+        Context c;
+        c.rbx = Address(scene.data());
+        c.r15 = index;
+        c.rdi = Address(view.data());
+        c.rax = c.rcx = c.rdx = 0x1234;
+        s.fn(&c);
+        EXPECT(c.rbx == fogAt && c.r15 == index && c.rdi == Address(view.data()));
+        const std::uint8_t first = fog[0x08];
+        EXPECT(fog[0x17] == first && fog[0x18] == 0xEE && fog[0x23] == 0xEE && fog[0x33] == fog[0x24] && fog[0x34] == 0xEE);
+        EXPECT(fog[0xAB] == fog[0x9C] && fog[0xAC] == 0xEE && fog[0x9B] == 0xEE && fog[0xC4] == 0xEE);
+        if (first != 0xEE)
+        {
+            EXPECT(fog[0x24] == first + 1 && fog[0x9C] == first + 2 && fog[0xC0] == first && fog[0xC3] == first);
+        }
+        return first;
+    };
+    state.fogs[1] = record(0x11, viewState, component);
+    state.fogGame = record(0x22, 0, component);
+    EXPECT(run(1) == 0xEE);  // off
+    state.on[code::kFog] = 1;
+    EXPECT(run(1) == 0x11);  // its own
+    EXPECT(run(0) == 0x22);  // no record: the game's
+    EXPECT(run(5) == 0x22);  // past the records: the game's
+    state.fogs[1].state = reinterpret_cast<const void*>(0xBB);
+    EXPECT(run(1) == 0x22);  // another view's state (a capture): the game's
+    state.fogs[1].state     = reinterpret_cast<const void*>(viewState);
+    state.fogs[1].component = reinterpret_cast<const void*>(0xC1C1);
+    EXPECT(run(1) == 0x22);  // another fog component at that address: the game's
+    state.fogs[1].component = reinterpret_cast<const void*>(component);
+    state.fogs[1].fog       = nullptr;
+    EXPECT(run(1) == 0x22);  // another fog
+    state.fogGame.component = reinterpret_cast<const void*>(0xC1C1);
+    EXPECT(run(1) == 0xEE);  // nothing of this fog: untouched
+    EXPECT(state.fogOwn == 1 && state.fogShared == 5);
+    state.fogGame.component = reinterpret_cast<const void*>(component);
+    state.fogs[1]           = record(0x11, viewState, component);
+    state.fogs[1].valid     = 0;
+    EXPECT(run(1) == 0x22);  // its record not valid, all else matching: the game's
+    state.fogGame.fog = nullptr;
+    EXPECT(run(1) == 0xEE);  // the game's record of another fog: untouched
+    state.fogGame.fog   = fog.data();
+    state.fogGame.valid = 0;
+    EXPECT(run(1) == 0xEE);  // no game's record: untouched
+    std::uint64_t kept = 0;
+    std::memcpy(&kept, fog.data(), 8);
+    EXPECT(kept == component);  // the fog's component is never written
+
+    // A round trip through FogField (the mapping the mod's own copies use): a record taken from the fog's bytes, the
+    // fog changed, the stub puts the same bytes back.
+    std::vector<std::uint8_t> before(fog.size());
+    for (std::size_t i = 8; i < fog.size(); ++i)
+    {
+        fog[i] = static_cast<std::uint8_t>(i * 7 + 1);
+    }
+    before = fog;
+    code::FogRec taken;
+    for (std::size_t i = 0; i < 4; ++i)
+    {
+        std::memcpy(code::FogField(taken, i), fog.data() + code::kFogFieldSpans[i][0], code::kFogFieldSpans[i][1]);
+    }
+    taken.valid      = 1;
+    taken.fog        = fog.data();
+    taken.component  = reinterpret_cast<const void*>(component);
+    taken.state      = reinterpret_cast<const void*>(viewState);
+    state.fogs[1]    = taken;
+    state.fogGame    = taken;
+    Context c;
+    for (std::size_t i = 0; i < 4; ++i)
+    {
+        std::memset(fog.data() + code::kFogFieldSpans[i][0], 0, code::kFogFieldSpans[i][1]);
+    }
+    c.rbx = Address(scene.data());
+    c.r15 = 1;
+    c.rdi = Address(view.data());
+    s.fn(&c);
+    EXPECT(fog == before);
+    EXPECT(redirect.Restore());
+}
+
 }  // namespace
 
 int main()
@@ -491,6 +598,7 @@ int main()
     TestCasters();
     TestArea();
     TestSun();
+    TestFog();
     if (g_failures != 0)
     {
         std::printf("%d failure(s)\n", g_failures);

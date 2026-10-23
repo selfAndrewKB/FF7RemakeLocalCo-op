@@ -16,8 +16,15 @@
 //     Cost: lamps that a far camera removed today render their shadow (at most what each player alone would render).
 //   - shadows-casters (C): a character casts a lamp's shadow when it is within the cutoff of the camera nearest to it,
 //     not only of player 1's. Cost: the characters near players 2 and 3 are added to the lamps' shadows.
-// Every stub keeps the game's code path while its switch is off; with one view (single player) B and C do too, and A's
-// stubs write the one view's own set, which is the game's.
+//   - fog-areas (A-fog): the same pushes carry each area's height fog, and the scene's first fog ended with the last
+//     camera's. Each view's push is kept on the render thread (its setter writes every field, so a record is a
+//     snapshot, not a chain; RE-fog-per-view-check.md) and a stub gives each view its own where InitFogConstants turns
+//     the fog into that view's parameters. What the fog held before that loop is put back after it, so volumetric fog
+//     (read later, from the first fog) stays the last camera's as in the game; and if anything but a push changed the
+//     fog since (the inline setter of unthreaded rendering, a world-origin shift), the records are dropped.
+// Every stub keeps the game's code path while its switch is off (the fog's put-back still runs, writing back the same
+// bytes); with one view (single player) B and C do too, and A's stubs write the one view's own set, which is the
+// game's.
 // Render thread (the stubs) and the console (the switches: one byte each, read by the stubs at every use).
 
 namespace lss::platform {

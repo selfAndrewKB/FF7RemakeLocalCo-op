@@ -18,6 +18,9 @@
 // distances), the last view's pushed (render/area_chains.h keeps one chain per view); the A stub writes the view's own
 // set into the scene at the head of each (light, view) pass of the light-LOD loop, the sun stub the view's own cascade
 // fields into the sun's proxy at each view of the sun's cascade setup.
+// A-fog, each view's height fog: the scene's first height fog holds the last view's blend of the fog controllers (the
+// game's setter writes every field at each push, so a view's fog is its own last push: no chain); the fog stub writes
+// the view's own into it at each view of InitFogConstants, the loop that turns it into that view's fog parameters.
 
 #include <cstddef>
 #include <cstdint>
@@ -57,6 +60,27 @@ static_assert(offsetof(ViewRec, scene) == 0x08 && offsetof(ViewRec, state) == 0x
 static_assert(offsetof(ViewRec, sceneFields) == 0x20 && offsetof(ViewRec, sunDistance) == 0x38);
 static_assert(offsetof(ViewRec, cascades) == 0x3C && offsetof(ViewRec, biasSharpen) == 0x50 && sizeof(ViewRec) == 0x60);
 
+/// One view's (or the game's) height fog as the scene's first fog holds it after that view's push: the fields the game's
+/// setter writes (FScene::SetHeightFogControllerBlendData, render thread).
+struct alignas(16) FogRec
+{
+    std::uint8_t  valid = 0;
+    std::uint8_t  pad[7]{};
+    const void*   fog   = nullptr;  // the scene's first fog (ExponentialFogs' data) when snapshot
+    const void*   state = nullptr;  // the view's state (from that view's area light chain: the fog push carries no room)
+    const void*   scene = nullptr;
+    std::uint8_t  heightToOpacity[16]{};  // fog +0x08..+0x17: height, density, height falloff, max opacity
+    std::uint8_t  inscattering[16]{};     // fog +0x24..+0x33: the inscattering colour
+    std::uint8_t  appendix[16]{};         // fog +0x9C..+0xAB: Square Enix's second colour
+    std::uint32_t lastField = 0;          // fog +0xC0
+    std::uint8_t  pad2[4]{};
+    const void*   component = nullptr;    // fog +0x00: the fog component it belongs to (the array appends and compacts,
+                                          // so the first fog's address can hold another fog)
+};
+static_assert(offsetof(FogRec, fog) == 0x08 && offsetof(FogRec, state) == 0x10 && offsetof(FogRec, heightToOpacity) == 0x20);
+static_assert(offsetof(FogRec, inscattering) == 0x30 && offsetof(FogRec, appendix) == 0x40 && offsetof(FogRec, lastField) == 0x50);
+static_assert(offsetof(FogRec, component) == 0x58 && sizeof(FogRec) == 0x60);
+
 inline constexpr std::size_t   kRecords          = 4;  // views 0..3 of the family; more take the game's set
 inline constexpr std::uint32_t kSceneFields      = 0x1608;
 inline constexpr std::uint32_t kSceneSunLight    = 0x1620;  // FLightSceneInfo* of the sun the controllers drive
@@ -65,6 +89,19 @@ inline constexpr std::uint32_t kSunDistance      = 0x1A8;
 inline constexpr std::uint32_t kSunCascades      = 0x1C0;
 inline constexpr std::uint32_t kSunBiasSharpen   = 0xDC;
 inline constexpr std::uint32_t kViewState        = 0x08;
+inline constexpr std::uint32_t kSceneFogs        = 0x1DC0;  // ExponentialFogs: data, then the count at +0x1DC8
+inline constexpr std::uint32_t kSceneFogCount    = 0x1DC8;
+/// The fog fields the setter writes, as {offset in the fog, size}: FogRec keeps them in this order from +0x20.
+inline constexpr std::uint32_t kFogFieldSpans[4][2] = {{0x08, 16}, {0x24, 16}, {0x9C, 16}, {0xC0, 4}};
+static_assert(sizeof(FogRec::heightToOpacity) == kFogFieldSpans[0][1] && sizeof(FogRec::inscattering) == kFogFieldSpans[1][1] &&
+              sizeof(FogRec::appendix) == kFogFieldSpans[2][1] && sizeof(FogRec::lastField) == kFogFieldSpans[3][1]);
+
+/// A record's copies of the fog fields, in kFogFieldSpans' order (the stub copies the same spans from +0x20).
+inline std::uint8_t* FogField(FogRec& r, std::size_t i) noexcept
+{
+    std::uint8_t* const fields[4] = {r.heightToOpacity, r.inscattering, r.appendix, reinterpret_cast<std::uint8_t*>(&r.lastField)};
+    return fields[i];
+}
 
 struct alignas(16) State
 {
@@ -80,6 +117,10 @@ struct alignas(16) State
     std::uint64_t sunGame     = 0;
     ViewRec       game;              // what the scene would hold without the mod (render/area_chains.h)
     ViewRec       records[kRecords];
+    std::uint64_t fogOwn      = 0;  // A-fog: views given their own fog
+    std::uint64_t fogShared   = 0;  // A-fog: views given the game's (no record of their own)
+    FogRec        fogGame;           // the fog after the last push: what the scene holds without the mod
+    FogRec        fogs[kRecords];
 };
 static_assert(offsetof(State, withinViews) == offsetof(State, beyondViews) + 8);  // the B counters are indexed by 1, 2
 static_assert(offsetof(State, beyondViews) >= 8);
@@ -511,6 +552,97 @@ inline std::vector<std::uint8_t> SunCode(State& s)
     c.Put({0x45, 0x89, 0x82, 0xD0, 0x01, 0x00, 0x00});  // mov [r10+1D0h],r8d
     c.Put({0x4D, 0x8B, 0x43, 0x50});                    // mov r8,[r11+50h]
     c.Put({0x4D, 0x89, 0x82, 0xDC, 0x00, 0x00, 0x00});  // mov [r10+0DCh],r8
+    c.Bind(done);
+    return c.Finish({&done, &game, &copy});
+}
+
+// --- A-fog --------------------------------------------------------------------------------------------------------------
+
+/// The fog: FScene's vtable entry +0x238 (the game thread's setter, which copies the 0x38-byte blend data whole into its
+/// render command); its render-thread half, called from the command's task with {FScene*, the data}.
+inline constexpr std::uintptr_t kSceneFogEntry  = 0x144D63C90;  // FScene vtable 0x144D63A58 + 0x238
+inline constexpr std::uintptr_t kSceneFogSetter = 0x14258BDE0;
+inline constexpr std::uintptr_t kSceneFogRt     = 0x14258C090;
+inline constexpr std::uintptr_t kSceneFogRtTask = 0x1425950F6;
+
+/// The one call of InitFogConstants (end of PostVisibilityFrameSetup): wrapped to put the scene's first fog back as the
+/// game left it once every view's parameters are made (volumetric fog reads it after, for every view).
+inline constexpr std::uintptr_t kFogConstantsCall = 0x1425D3784;
+inline constexpr std::uintptr_t kFogConstants     = 0x142205650;
+
+/// InitFogConstants' view loop (r15d = the view's index, rdi = the view, rbx = the scene, its fog count checked > 0):
+/// mov rbx,[rbx+1DC0h] (rbx = the first fog), which every field read of the view's fog parameters goes through. rax, rcx
+/// and rdx are written before any read after it (the powf call at 0x14220579C).
+inline constexpr std::uintptr_t kFogSite   = 0x142205768;
+inline constexpr std::uintptr_t kFogResume = 0x14220576F;
+inline constexpr std::uint8_t   kFogLoad[] = {0x48, 0x8B, 0x9B, 0xC0, 0x1D, 0x00, 0x00};
+/// 0x142205757..0x1422057A0 (checked at install: the scene from the renderer, the count test, the site, the reads after
+/// it through the powf call).
+inline constexpr std::uintptr_t kFogContextStart = 0x142205757;
+inline constexpr std::uint8_t   kFogContext[]    = {
+    0x49, 0x8B, 0x5E, 0x08, 0x44, 0x39, 0xAB, 0xC8, 0x1D, 0x00, 0x00, 0x0F, 0x8E, 0xE6, 0x03, 0x00, 0x00, 0x48, 0x8B, 0x9B,
+    0xC0, 0x1D, 0x00, 0x00, 0xF3, 0x0F, 0x10, 0x4B, 0x08, 0xF3, 0x0F, 0x5C, 0x8F, 0xB4, 0x04, 0x00, 0x00, 0xF3, 0x44, 0x0F,
+    0x10, 0x53, 0x10, 0xF3, 0x41, 0x0F, 0x59, 0xCA, 0x41, 0x0F, 0x2F, 0xCB, 0x73, 0x06, 0x41, 0x0F, 0x28, 0xCB, 0xEB, 0x05,
+    0xF3, 0x41, 0x0F, 0x5D, 0xCD, 0x41, 0x0F, 0x28, 0xC7, 0xE8, 0x65, 0xAC, 0xE2, 0x01};
+static_assert(sizeof(kFogContext) == 0x1422057A1 - kFogContextStart);
+
+inline std::vector<std::uint8_t> FogCode(State& s)
+{
+    Code        c;
+    Code::Label done, game, copy;
+    c.Put(kFogLoad);  // mov rbx,[rbx+1DC0h]   (replaced) the first fog
+    c.Put({0x48, 0xB8});  // mov rax,&state
+    c.Value(reinterpret_cast<std::uint64_t>(&s));
+    c.Put({0x80, 0xB8});  // cmp byte [rax+on[kFog]],0
+    c.Disp32(offsetof(State, on) + kFog);
+    c.Put({0x00});
+    c.Jcc(kJe, done);
+    c.Put({0x44, 0x89, 0xFA});                                       // mov edx,r15d             the view's index
+    c.Put({0x83, 0xFA, static_cast<std::uint8_t>(kRecords)});        // cmp edx,4
+    c.Jcc(kJae, game);
+    c.Put({0x48, 0x6B, 0xD2, static_cast<std::uint8_t>(sizeof(FogRec))});  // imul rdx,rdx,60h
+    c.Put({0x48, 0x8D, 0x94, 0x10});                                       // lea rdx,[rax+rdx+fogs]
+    c.Disp32(offsetof(State, fogs));
+    c.Put({0x80, 0x3A, 0x00});        // cmp byte [rdx],0           valid
+    c.Jcc(kJe, game);
+    c.Put({0x48, 0x3B, 0x5A, 0x08});  // cmp rbx,[rdx+8]            this fog
+    c.Jcc(kJne, game);
+    c.Put({0x48, 0x8B, 0x0B});        // mov rcx,[rbx]
+    c.Put({0x48, 0x3B, 0x4A, 0x58});  // cmp rcx,[rdx+58h]          of this fog component
+    c.Jcc(kJne, game);
+    c.Put({0x48, 0x8B, 0x4A, 0x10});  // mov rcx,[rdx+10h]
+    c.Put({0x48, 0x3B, 0x4F, 0x08});  // cmp rcx,[rdi+8]            this view's state (a player's view)
+    c.Jcc(kJne, game);
+    c.Put({0x48, 0xFF, 0x80});  // inc qword [rax+fogOwn]
+    c.Disp32(offsetof(State, fogOwn));
+    c.Jmp(copy);
+    c.Bind(game);
+    c.Put({0x48, 0x8D, 0x90});  // lea rdx,[rax+fogGame]
+    c.Disp32(offsetof(State, fogGame));
+    c.Put({0x80, 0x3A, 0x00});  // cmp byte [rdx],0
+    c.Jcc(kJe, done);
+    c.Put({0x48, 0x3B, 0x5A, 0x08});  // cmp rbx,[rdx+8]
+    c.Jcc(kJne, done);
+    c.Put({0x48, 0x8B, 0x0B});        // mov rcx,[rbx]
+    c.Put({0x48, 0x3B, 0x4A, 0x58});  // cmp rcx,[rdx+58h]
+    c.Jcc(kJne, done);
+    c.Put({0x48, 0xFF, 0x80});  // inc qword [rax+fogShared]
+    c.Disp32(offsetof(State, fogShared));
+    c.Bind(copy);
+    c.Put({0x48, 0x8B, 0x4A, 0x20});                          // mov rcx,[rdx+20h]
+    c.Put({0x48, 0x89, 0x4B, 0x08});                          // mov [rbx+8],rcx       height, density
+    c.Put({0x48, 0x8B, 0x4A, 0x28});                          // mov rcx,[rdx+28h]
+    c.Put({0x48, 0x89, 0x4B, 0x10});                          // mov [rbx+10h],rcx     height falloff, max opacity
+    c.Put({0x48, 0x8B, 0x4A, 0x30});                          // mov rcx,[rdx+30h]
+    c.Put({0x48, 0x89, 0x4B, 0x24});                          // mov [rbx+24h],rcx     inscattering colour
+    c.Put({0x48, 0x8B, 0x4A, 0x38});                          // mov rcx,[rdx+38h]
+    c.Put({0x48, 0x89, 0x4B, 0x2C});                          // mov [rbx+2Ch],rcx
+    c.Put({0x48, 0x8B, 0x4A, 0x40});                          // mov rcx,[rdx+40h]
+    c.Put({0x48, 0x89, 0x8B, 0x9C, 0x00, 0x00, 0x00});        // mov [rbx+9Ch],rcx     the second colour
+    c.Put({0x48, 0x8B, 0x4A, 0x48});                          // mov rcx,[rdx+48h]
+    c.Put({0x48, 0x89, 0x8B, 0xA4, 0x00, 0x00, 0x00});        // mov [rbx+0A4h],rcx
+    c.Put({0x8B, 0x4A, 0x50});                                // mov ecx,[rdx+50h]
+    c.Put({0x89, 0x8B, 0xC0, 0x00, 0x00, 0x00});              // mov [rbx+0C0h],ecx
     c.Bind(done);
     return c.Finish({&done, &game, &copy});
 }

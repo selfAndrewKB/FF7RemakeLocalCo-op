@@ -26,8 +26,8 @@ namespace {
 namespace code = shadow_code;
 
 code::State            g_state;  // read by the stubs on the render thread; switches written by the console
-platform::CodeRedirect g_gather, g_decide, g_hide, g_casters, g_area, g_sun;
-bool                   g_lamps = false, g_castersIn = false, g_areas = false, g_sunIn = false;  // installed
+platform::CodeRedirect g_gather, g_decide, g_hide, g_casters, g_area, g_sun, g_fog;
+bool                   g_lamps = false, g_castersIn = false, g_areas = false, g_sunIn = false, g_fogIn = false;  // installed
 
 std::uint64_t Counter(std::uint64_t& value) noexcept
 {
@@ -49,6 +49,18 @@ std::array<std::atomic<bool>, code::kRecords> g_differed{};
 std::uint64_t g_stubPasses = 0;   // the stubs' counters at the last push: a change means a frame was rendered since
 int           g_lastIndex  = -1;  // the last tagged push's view: a lower one starts the next frame
 bool          g_faultLogged = false;
+
+// Lever A-fog: the tag (the scene's fog setter, game thread) and the records (its render-thread half).
+using SetFogFn       = std::uint64_t (*)(void* scene, const void* data);
+using FogConstantsFn = void (*)(void* renderer);
+platform::CallRedirect g_fogRtTask, g_fogConstantsCall;
+FogConstantsFn         g_fogConstants = nullptr;
+platform::VTableEntry  g_setFog;
+SetBlendRtFn           g_fogRt = nullptr;
+std::atomic<std::uint64_t> g_fogTagged{0}, g_fogUntagged{0};
+std::array<std::atomic<bool>, code::kRecords> g_fogDiffered{};  // the records' thread, as g_differed
+bool g_fogFaultLogged = false;
+bool g_fogStaleLogged = false;
 
 /// The view's index in its family and its state, if it is one of the first views (a player's camera evaluation).
 area_chains::Tag TagOf(const void* view) noexcept
@@ -97,6 +109,105 @@ std::uint64_t SetBlend(void* scene, const void* data)
     }
     g_untagged.fetch_add(1, std::memory_order_relaxed);
     return original(scene, data);
+}
+
+/// FScene's fog setter: a noted view's push carries its index in the data's padding (the game's command copies it whole).
+std::uint64_t SetFog(void* scene, const void* data)
+{
+    const auto original = reinterpret_cast<SetFogFn>(g_setFog.Original());
+    std::uint8_t copy[area_chains::kFogBlendSize];
+    if (t_note.valid && platform::CopyGuarded(copy, data, sizeof(copy)))
+    {
+        area_chains::StampFog(copy, t_note);
+        g_fogTagged.fetch_add(1, std::memory_order_relaxed);
+        return original(scene, copy);
+    }
+    g_fogUntagged.fetch_add(1, std::memory_order_relaxed);
+    return original(scene, data);
+}
+
+/// The scene's first fog, or null when it has none.
+std::uint8_t* FirstFog(const std::uint8_t* scene) noexcept
+{
+    std::int32_t  count = 0;
+    std::uint8_t* fog   = nullptr;
+    return scene != nullptr && platform::Read(scene + code::kSceneFogCount, count) && count > 0 &&
+                   platform::Read(scene + code::kSceneFogs, fog)
+               ? fog
+               : nullptr;
+}
+
+/// The fields the fog setter writes, and the fog's component, from `fog` into `r` (or back).
+bool CopyFog(std::uint8_t* fog, code::FogRec& r, bool intoFog) noexcept
+{
+    bool done = intoFog || platform::Read(fog, r.component);
+    for (std::size_t i = 0; done && i < 4; ++i)
+    {
+        std::uint8_t* const field = fog + code::kFogFieldSpans[i][0];
+        done = intoFog ? platform::WriteGuarded(field, code::FogField(r, i), code::kFogFieldSpans[i][1])
+                       : platform::CopyGuarded(code::FogField(r, i), field, code::kFogFieldSpans[i][1]);
+    }
+    return done;
+}
+
+/// InitFogConstants: the fog stub gives the scene's first fog each view's values as the loop reaches that view; what it
+/// held before is the game's record for the stub's fallback, and is put back after, so everything later in the frame
+/// (volumetric fog) reads the game's.
+void FogConstants(void* renderer)  // the original returns a pointer no caller reads (0x1425D3789)
+{
+    std::uint8_t* scene = nullptr;
+    std::uint8_t* fog   = platform::Read(static_cast<const std::uint8_t*>(renderer) + 8, scene) ? FirstFog(scene) : nullptr;
+    code::FogRec  saved;
+    const bool    kept = fog != nullptr && CopyFog(fog, saved, false);
+    if (kept)
+    {
+        saved.valid = 1;
+        saved.fog   = fog;
+        saved.scene = scene;
+        if (area_chains::FogBeforeViews(g_state.fogGame, g_state.fogs, saved) && !g_fogStaleLogged)
+        {
+            g_fogStaleLogged = true;
+            platform::LogDebug(L"shadows: the scene's height fog was changed outside the fog pushes (logged once); the "
+                               L"views' fog records were dropped until their next push");
+        }
+    }
+    g_fogConstants(renderer);
+    if (kept && FirstFog(scene) == fog && !CopyFog(fog, saved, true) && !g_fogFaultLogged)
+    {
+        g_fogFaultLogged = true;
+        platform::LogWarning(L"shadows: putting the scene's height fog back failed once (volumetric fog may use the last "
+                             L"view's for a frame)");
+    }
+}
+
+/// The fog setter's render-thread half: the game's write, then what it left in the scene's first fog kept as the game's
+/// and as the pushing view's (every view's, for an untagged push).
+std::uint64_t SetFogRt(void* payload)
+{
+    const std::uint64_t result = g_fogRt(payload);
+    std::uint8_t*       scene  = nullptr;
+    std::uint8_t* const fog    = platform::Read(payload, scene) ? FirstFog(scene) : nullptr;
+    if (fog == nullptr)
+    {
+        return result;  // no fog: the game wrote nothing
+    }
+    code::FogRec now;
+    now.valid = 1;
+    now.fog   = fog;
+    now.scene = scene;
+    if (!CopyFog(fog, now, false))
+    {
+        if (!g_fogFaultLogged)
+        {
+            g_fogFaultLogged = true;
+            platform::LogWarning(L"shadows: reading the scene's height fog failed once (the views' fog may be the last "
+                                 L"camera's for a frame)");
+        }
+        return result;
+    }
+    area_chains::FogPush(g_state.fogGame, g_state.fogs, now,
+                         area_chains::ReadFogTag(static_cast<const std::uint8_t*>(payload) + sizeof(void*)), g_state.records);
+    return result;
 }
 
 /// The live scene for area_chains::Push: its 24 bytes, the sun's proxy fields, the game's setter on this push.
@@ -157,7 +268,8 @@ std::uint64_t SetBlendRt(void* payload)
     const area_chains::Tag tag = area_chains::ReadTag(static_cast<const std::uint8_t*>(payload) + sizeof(void*));
     // A frame's end: the stubs ran since the last push, or a view earlier in the family pushes again. The chains then
     // hold what that frame's views used: compared there, once a frame, the log names a change of state only.
-    const std::uint64_t passes = Counter(g_state.areaOwn) + Counter(g_state.areaGame) + Counter(g_state.sunOwn) + Counter(g_state.sunGame);
+    const std::uint64_t passes = Counter(g_state.areaOwn) + Counter(g_state.areaGame) + Counter(g_state.sunOwn) +
+                                 Counter(g_state.sunGame) + Counter(g_state.fogOwn) + Counter(g_state.fogShared);
     if (passes != g_stubPasses || (tag.valid && tag.index < g_lastIndex))
     {
         for (std::size_t k = 0; k < code::kRecords; ++k)
@@ -174,6 +286,17 @@ std::uint64_t SetBlendRt(void* payload)
                                    k + 1, differs ? L"differ from" : L"match",
                                    g_state.records[k].sceneFields[0x08] != 0 ? L"set by its area to" : L"default,", own,
                                    g_state.game.sceneFields[0x08] != 0 ? L"set to" : L"default,", shared);
+            }
+            const bool fogDiffers = area_chains::FogDiffers(g_state.fogs[k], g_state.fogGame);
+            if (fogDiffers != g_fogDiffered[k].load(std::memory_order_relaxed))
+            {
+                g_fogDiffered[k].store(fogDiffers, std::memory_order_relaxed);
+                float own = 0.0f, shared = 0.0f;  // fog +0x0C: the density as the setter stores it
+                std::memcpy(&own, g_state.fogs[k].heightToOpacity + 4, sizeof(own));
+                std::memcpy(&shared, g_state.fogGame.heightToOpacity + 4, sizeof(shared));
+                platform::LogDebug(L"shadows: view {}'s height fog now {} the one the last camera set for every view (its "
+                                   L"density {:.6f}; the last camera's {:.6f})",
+                                   k + 1, fogDiffers ? L"differs from" : L"matches", own, shared);
             }
         }
     }
@@ -206,6 +329,17 @@ std::wstring Reading()
     for (std::size_t k = 0; k < code::kRecords; ++k)
     {
         if (g_differed[k].load(std::memory_order_relaxed))
+        {
+            areas += std::format(L" {}", k + 1);
+        }
+    }
+    areas += std::format(L"; height fog: {}; fog sent by a player's view {}, by anything else {}; fog set-ups with the view's "
+                         L"own {}, the shared {}; views whose fog differs from the last camera's:",
+                         !g_fogIn ? L"not installed" : on(code::kFog) ? L"per view" : L"the game's (off)", g_fogTagged.load(),
+                         g_fogUntagged.load(), Counter(g_state.fogOwn), Counter(g_state.fogShared));
+    for (std::size_t k = 0; k < code::kRecords; ++k)
+    {
+        if (g_fogDiffered[k].load(std::memory_order_relaxed))
         {
             areas += std::format(L" {}", k + 1);
         }
@@ -245,13 +379,14 @@ bool Install(const platform::GameImage& image) noexcept
         platform::LogWarning(L"shadows: the mod could not keep itself loaded for the shadow code; shadows stay the game's");
         return false;
     }
-    std::vector<std::uint8_t> areaCode, sunCode, decideCode, gatherCode, hideCode, casterCode;
+    std::vector<std::uint8_t> areaCode, sunCode, fogCode, decideCode, gatherCode, hideCode, casterCode;
     try
     {
         g_state.on[code::kLamps]   = 1;
         g_state.on[code::kCasters] = 1;
         g_state.on[code::kAreas]   = 1;
         g_state.on[code::kSun]     = 1;
+        g_state.on[code::kFog]     = 1;
         // A: the chains (the setter's render-thread half, both callers), the tag (the scene's setter and the view's call),
         // then the two stubs that read the chains. Each step only if the ones before it are in.
         const auto startCall = image.Rebase(code::kStartFinalCall, 5);
@@ -267,6 +402,14 @@ bool Install(const platform::GameImage& image) noexcept
         const auto areaBack  = image.Rebase(code::kAreaResume);
         const auto sun       = image.Rebase(code::kSunSite, sizeof(code::kSunAdd));
         const auto sunBack   = image.Rebase(code::kSunResume);
+        const auto fogEntry  = image.Rebase(code::kSceneFogEntry, sizeof(void*));
+        const auto fogSetter = image.Rebase(code::kSceneFogSetter);
+        const auto fogRt     = image.Rebase(code::kSceneFogRt);
+        const auto fogRtTask = image.Rebase(code::kSceneFogRtTask, 5);
+        const auto fogCall   = image.Rebase(code::kFogConstantsCall, 5);
+        const auto fogInit   = image.Rebase(code::kFogConstants);
+        const auto fogSite   = image.Rebase(code::kFogSite, sizeof(code::kFogLoad));
+        const auto fogBack   = image.Rebase(code::kFogResume);
         const auto gather     = image.Rebase(code::kGatherSite, sizeof(code::kGatherBytes));
         const auto gatherBack = image.Rebase(code::kGatherResume);
         const auto decide     = image.Rebase(code::kDecideSite, sizeof(code::kDecideBytes));
@@ -279,6 +422,7 @@ bool Install(const platform::GameImage& image) noexcept
         // Every buffer before any install: a failed allocation leaves nothing half placed.
         areaCode   = code::AreaCode(g_state);
         sunCode    = code::SunCode(g_state);
+        fogCode    = code::FogCode(g_state);
         decideCode = code::DecideCode(g_state);
         gatherCode = code::GatherCode(g_state);
         hideCode   = notVisible ? code::HideCode(g_state, *notVisible) : std::vector<std::uint8_t>{};
@@ -303,6 +447,25 @@ bool Install(const platform::GameImage& image) noexcept
                 g_rtTask.Restore();
             }
             g_sunIn = g_areas && g_sun.Install(*sun, code::kSunAdd, sunCode, *sunBack);
+        }
+        // A-fog: the records (the setter's render-thread half), the tag, the put-back around the loop, then the stub; it
+        // names a view's fog by the state of that view's light chain, so only with A in.
+        if (g_areas && fogEntry && fogSetter && fogRt && fogRtTask && fogCall && fogInit && fogSite && fogBack &&
+            !fogCode.empty() && image.BytesMatch(code::kFogContextStart, code::kFogContext))
+        {
+            g_fogRt        = reinterpret_cast<SetBlendRtFn>(*fogRt);
+            g_fogConstants = reinterpret_cast<FogConstantsFn>(*fogInit);
+            g_fogIn = g_fogRtTask.Install(*fogRtTask, *fogRt, reinterpret_cast<std::uintptr_t>(&SetFogRt)) &&
+                      g_setFog.Replace(*fogEntry, *fogSetter, reinterpret_cast<std::uintptr_t>(&SetFog)) &&
+                      g_fogConstantsCall.Install(*fogCall, *fogInit, reinterpret_cast<std::uintptr_t>(&FogConstants)) &&
+                      g_fog.Install(*fogSite, code::kFogLoad, fogCode, *fogBack);
+            if (!g_fogIn)
+            {
+                g_fog.Restore();
+                g_fogConstantsCall.Restore();
+                g_setFog.Restore();
+                g_fogRtTask.Restore();
+            }
         }
         if (gather && gatherBack && decide && decideBack && hide && hideBack && notVisible && !decideCode.empty() &&
             !gatherCode.empty() && !hideCode.empty() && image.BytesMatch(code::kGatherSite, code::kGatherBytes) &&
@@ -340,6 +503,11 @@ bool Install(const platform::GameImage& image) noexcept
         platform::LogWarning(L"shadows: the sun's cascade setup could not be placed; the sun's shadow distances stay the last "
                              L"camera's");
     }
+    if (g_areas && !g_fogIn)
+    {
+        platform::LogWarning(L"shadows: the height fog's code could not be placed (not what the research read, or no room for "
+                             L"its code); every view keeps the last camera's fog");
+    }
     if (!g_lamps)
     {
         platform::LogWarning(L"shadows: the lamp shadows' code could not be placed; one far camera still removes a lamp's "
@@ -363,6 +531,13 @@ bool Install(const platform::GameImage& image) noexcept
                        L"each view's sun shadow distances (cascades, bias) from its own areas (render/shadows_per_view.h; on)",
                        code::kSun);
     }
+    if (g_fogIn)
+    {
+        RegisterSwitch(L"fog-areas",
+                       L"each view's height fog from the areas its own camera stands in, not the last camera's "
+                       L"(render/shadows_per_view.h; on)",
+                       code::kFog);
+    }
     if (g_lamps)
     {
         RegisterSwitch(L"shadows-lamps",
@@ -381,9 +556,9 @@ bool Install(const platform::GameImage& image) noexcept
                        .shape = control::Shape::Text,
                        .help  = L"(read only) the shadow decisions made per view and their counts since the start",
                        .get   = [] { return control::Value{Reading()}; }});
-    platform::Log(L"shadows: {}{}{}{}",
+    platform::Log(L"shadows: {}{}{}{}{}",
                   g_areas ? L"each view's area light settings its own" : L"area light settings left as the game decides",
-                  g_sunIn ? L" (the sun's too)" : L"",
+                  g_sunIn ? L" (the sun's too)" : L"", g_fogIn ? L"; each view's height fog its own" : L"",
                   g_lamps ? L"; lamp shadows decided per view" : L"; lamp shadows left as the game decides",
                   g_castersIn ? L"; characters' shadows judged from the nearest camera" : L"");
     return g_areas || g_lamps || g_castersIn;
@@ -391,6 +566,15 @@ bool Install(const platform::GameImage& image) noexcept
 
 void Remove() noexcept
 {
+    // Every switch off first: a stub whose restore fails then runs the game's own path, not frozen records.
+    for (std::uint8_t& on : g_state.on)
+    {
+        std::atomic_ref<std::uint8_t>(on).store(0, std::memory_order_relaxed);
+    }
+    g_fog.Restore();
+    g_fogConstantsCall.Restore();
+    g_setFog.Restore();
+    g_fogRtTask.Restore();
     g_sun.Restore();
     g_area.Restore();
     g_startCall.Restore();
@@ -406,7 +590,7 @@ void Remove() noexcept
     {
         g_decide.Restore();
     }
-    g_areas = g_sunIn = g_lamps = g_castersIn = false;
+    g_areas = g_sunIn = g_fogIn = g_lamps = g_castersIn = false;
 }
 
 }  // namespace lss::render::shadows_per_view
