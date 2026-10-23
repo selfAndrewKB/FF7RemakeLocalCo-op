@@ -28,9 +28,10 @@
 // Not covered (documented): the field operator's own return (flavor 6 seeded with the cut's end pose, the re-seat
 // behind the leader) runs for player 1's operator only; player 2's camera returns through the end blend to wherever
 // its operator stands. Sequencer camera shakes, rumble: player 1's.
-// The mirror player's manager (views/mirror_player, v0.42.0) takes the same copy for EVERY slot, the field camera's 24
-// included, every frame, so its view is player 1's: a blend seeded as player 1's was (player 1's slot at the switch-on),
-// the cut raised, the end reset run on it too. One source for both copies; the mirror needs no scene to run.
+// A mirror player's manager (views/mirror_player, v0.42.0; up to two mirrors since the seats plan's step 5) takes the
+// same copy for EVERY slot, the field camera's 24 included, every frame, so its view is player 1's: a blend seeded as
+// player 1's was (player 1's slot at the switch-on), the cut raised, the end reset run on it too. One source for
+// every copy; a mirror needs no scene to run. Each mirror has its own copy record, by the mirror module's slot.
 // Readings `scene.*`, `camera-slots.*`, `scene-camera-two.state`; the switch `scene-camera-two on|off` (on). Game thread.
 
 #include <cstdint>
@@ -56,16 +57,19 @@ void Tick(void* managerOne, void* managerTwo) noexcept;
 /// primary-scoped setters then reach player 2's manager).
 void BeforeUpdateCamera(void* managerOne, void* managerTwo) noexcept;
 
-/// The mirror player's camera manager (views/mirror_player): every slot of player 1's manager `managerOne` is set on
-/// `manager` right before its update, so its view is player 1's. All null: no mirror.
-void SetMirror(void* controller, void* manager, void* managerOne) noexcept;
-void* MirrorController() noexcept;
-void* MirrorManager() noexcept;
-/// Player 1's manager as the mirror's source (null without a mirror): its update notes the cut for the mirror.
+/// The mirror players' copies (views/mirror_player), one per mirror slot 0..kMirrorSlots-1.
+inline constexpr int kMirrorSlots = 2;
+/// Mirror `slot`'s camera manager: every slot of player 1's manager `managerOne` is set on `manager` right before its
+/// update, so its view is player 1's. All null: no mirror in that slot.
+void SetMirror(int slot, void* controller, void* manager, void* managerOne) noexcept;
+/// The mirror slot whose camera manager this is, or -1.
+int MirrorSlotOf(const void* manager) noexcept;
+void* MirrorController(int slot) noexcept;
+/// Player 1's manager as the mirrors' source (null without a mirror): its update notes the cut for the mirrors.
 void* MirrorSource() noexcept;
-/// Right before the mirror's manager's UpdateCamera; the caller holds the mirror's primary scope.
-void BeforeMirrorUpdate() noexcept;
-/// The mirror copy's state and counts, for the `mirror-player.state` reading.
+/// Right before mirror `slot`'s manager's UpdateCamera; the caller holds that mirror's primary scope.
+void BeforeMirrorUpdate(int slot) noexcept;
+/// The mirror copies' state and counts, for the `mirror-player.state` reading.
 std::wstring MirrorPlayerText();
 
 }  // namespace lss::views::scene_camera_two

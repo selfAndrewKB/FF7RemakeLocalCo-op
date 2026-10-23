@@ -95,8 +95,8 @@ struct MirrorPlayer
 };
 
 // Game thread.
-std::array<Slots, 3> g_slots;  // player 1's, player 2's, the mirror's
-MirrorPlayer         g_mirror;
+std::array<Slots, 3>                   g_slots;    // player 1's, player 2's, the first mirror's
+std::array<MirrorPlayer, kMirrorSlots> g_mirrors;  // one copy record per mirror slot (views/mirror_player)
 Scene                g_scene;
 bool                 g_logged = false;
 bool                 g_enabled = true;
@@ -377,44 +377,46 @@ void Mirror(void* managerOne, void* managerTwo) noexcept
 /// Every slot of player 1's manager onto the mirror player's (the caller holds the mirror's primary scope): a blend
 /// slot set once as it turns on for player 1 (its record, and player 1's slot as the seed: the same seed player 1's
 /// manager was given), a pose slot copied every frame while on for either, the field camera's slot 24 with them.
-void MirrorAll() noexcept
+/// Every slot of player 1's manager onto mirror `slot`'s, as above.
+void MirrorAll(int slot) noexcept
 {
-    const Slots one = ReadSlots(g_mirror.source);
-    if (!one.valid || g_mirror.manager == nullptr)
+    MirrorPlayer& mirror = g_mirrors[static_cast<std::size_t>(slot)];
+    const Slots   one    = ReadSlots(mirror.source);
+    if (!one.valid || mirror.manager == nullptr)
     {
         return;
     }
-    void* target = g_mirror.manager;
+    void* target = mirror.manager;
     for (std::uint32_t i = 0; i < kSlots; ++i)
     {
         const bool   activeOne = ((one.active >> i) & 1u) != 0;
-        const bool   mirrored  = ((g_mirror.mirrored >> i) & 1u) != 0;
+        const bool   mirrored  = ((mirror.mirrored >> i) & 1u) != 0;
         std::uint8_t pose[facts::kCameraSlotBytes]{};
         if (IsBlendSlot(i))
         {
             if (activeOne && !mirrored)
             {
                 std::uint8_t record[facts::kCameraSlotBlendBytes]{};
-                if (platform::CopyGuarded(record, RecordAt(g_mirror.source, i), sizeof(record)) &&
-                    platform::CopyGuarded(pose, SlotAt(g_mirror.source, i), sizeof(pose)))
+                if (platform::CopyGuarded(record, RecordAt(mirror.source, i), sizeof(record)) &&
+                    platform::CopyGuarded(pose, SlotAt(mirror.source, i), sizeof(pose)))
                 {
                     std::int64_t unused = 0;
                     platform::CallGuarded(g_setSlotBlend, unused, static_cast<std::uint8_t>(i), static_cast<const void*>(record));
                     pose[facts::kCameraSlotActive] = 1;
                     if (SetSlot(target, i, pose))
                     {
-                        g_mirror.mirrored |= 1u << i;
-                        ++g_mirror.edgesOn;
-                        platform::LogDebug(L"mirror camera: blend slot {} switched on for the mirror's manager (record kind {}, {} ms)", i,
-                                           record[0], *reinterpret_cast<const std::int32_t*>(record + 4));
+                        mirror.mirrored |= 1u << i;
+                        ++mirror.edgesOn;
+                        platform::LogDebug(L"mirror camera {}: blend slot {} switched on for the mirror's manager (record kind {}, {} ms)",
+                                           slot + 1, i, record[0], *reinterpret_cast<const std::int32_t*>(record + 4));
                     }
                 }
             }
             else if (!activeOne && mirrored)
             {
-                g_mirror.mirrored &= ~(1u << i);  // the mirror's manager ends its own blend
-                ++g_mirror.edgesOff;
-                platform::LogDebug(L"mirror camera: blend slot {} off for player 1; the mirror's ends by itself", i);
+                mirror.mirrored &= ~(1u << i);  // the mirror's manager ends its own blend
+                ++mirror.edgesOff;
+                platform::LogDebug(L"mirror camera {}: blend slot {} off for player 1; the mirror's ends by itself", slot + 1, i);
             }
             continue;
         }
@@ -422,23 +424,23 @@ void MirrorAll() noexcept
         {
             continue;
         }
-        if (!platform::CopyGuarded(pose, SlotAt(g_mirror.source, i), sizeof(pose)) || !SetSlot(target, i, pose))
+        if (!platform::CopyGuarded(pose, SlotAt(mirror.source, i), sizeof(pose)) || !SetSlot(target, i, pose))
         {
             continue;
         }
-        ++g_mirror.poses;
+        ++mirror.poses;
         if (activeOne && !mirrored)
         {
-            g_mirror.mirrored |= 1u << i;
-            ++g_mirror.edgesOn;
-            platform::LogDebug(L"mirror camera: pose slot {} copied to the mirror's manager (fov {:.1f})", i,
+            mirror.mirrored |= 1u << i;
+            ++mirror.edgesOn;
+            platform::LogDebug(L"mirror camera {}: pose slot {} copied to the mirror's manager (fov {:.1f})", slot + 1, i,
                                *reinterpret_cast<const float*>(pose + facts::kCameraSlotFov));
         }
         else if (!activeOne && mirrored)
         {
-            g_mirror.mirrored &= ~(1u << i);
-            ++g_mirror.edgesOff;
-            platform::LogDebug(L"mirror camera: pose slot {} off on both managers", i);
+            mirror.mirrored &= ~(1u << i);
+            ++mirror.edgesOff;
+            platform::LogDebug(L"mirror camera {}: pose slot {} off on both managers", slot + 1, i);
         }
     }
     // The cut: player 1's manager carried the bit at its update; the game's primary-scoped cut raises the mirror's.
@@ -447,8 +449,8 @@ void MirrorAll() noexcept
         std::int64_t unused = 0;
         if (platform::CallGuarded(g_primaryCut, unused))
         {
-            ++g_mirror.cuts;
-            platform::LogDebug(L"mirror camera: camera cut raised on the mirror's manager");
+            ++mirror.cuts;
+            platform::LogDebug(L"mirror camera {}: camera cut raised on the mirror's manager", slot + 1);
         }
     }
 }
@@ -466,12 +468,16 @@ std::int64_t ResetSlots(void* manager)
         ++g_counts.resets;
         platform::Log(L"scene camera: the cutscene's end reset ran on player 2's manager too (every slot off, the field camera on)");
     }
-    if (g_mirror.manager != nullptr && g_mirror.manager != manager)
+    for (int slot = 0; slot < kMirrorSlots; ++slot)
     {
-        original(g_mirror.manager);
-        g_mirror.mirrored = 0;  // set again from player 1's slots at the next update
-        ++g_mirror.resets;
-        platform::Log(L"mirror camera: the cutscene's end reset ran on the mirror's manager too");
+        MirrorPlayer& mirror = g_mirrors[static_cast<std::size_t>(slot)];
+        if (mirror.manager != nullptr && mirror.manager != manager)
+        {
+            original(mirror.manager);
+            mirror.mirrored = 0;  // set again from player 1's slots at the next update
+            ++mirror.resets;
+            platform::Log(L"mirror camera {}: the cutscene's end reset ran on the mirror's manager too", slot + 1);
+        }
     }
     return result;
 }
@@ -568,7 +574,7 @@ void Tick(void* managerOne, void* managerTwo) noexcept
     {
         platform::Log(L"scene camera: {}", SceneText(scene));
     }
-    const std::array<Slots, 3> slots{ReadSlots(managerOne), ReadSlots(managerTwo), ReadSlots(g_mirror.manager)};
+    const std::array<Slots, 3> slots{ReadSlots(managerOne), ReadSlots(managerTwo), ReadSlots(g_mirrors[0].manager)};
     for (int player = 0; player < 3; ++player)
     {
         const Slots&   now  = slots[static_cast<std::size_t>(player)];
@@ -632,39 +638,63 @@ void BeforeUpdateCamera(void* managerOne, void* managerTwo) noexcept
     Mirror(managerOne, managerTwo);
 }
 
-void SetMirror(void* controller, void* manager, void* managerOne) noexcept
+void SetMirror(int slot, void* controller, void* manager, void* managerOne) noexcept
 {
-    if (manager != g_mirror.manager)
+    if (slot < 0 || slot >= kMirrorSlots)
     {
-        g_mirror.mirrored = 0;  // a new manager starts from nothing; a gone one is not touched
+        return;
     }
-    g_mirror.controller = controller;
-    g_mirror.manager    = manager;
-    g_mirror.source     = managerOne;
+    MirrorPlayer& mirror = g_mirrors[static_cast<std::size_t>(slot)];
+    if (manager != mirror.manager)
+    {
+        mirror.mirrored = 0;  // a new manager starts from nothing; a gone one is not touched
+    }
+    mirror.controller = controller;
+    mirror.manager    = manager;
+    mirror.source     = managerOne;
 }
 
-void* MirrorController() noexcept
+int MirrorSlotOf(const void* manager) noexcept
 {
-    return g_mirror.controller;
+    for (int slot = 0; manager != nullptr && slot < kMirrorSlots; ++slot)
+    {
+        if (g_mirrors[static_cast<std::size_t>(slot)].manager == manager)
+        {
+            return slot;
+        }
+    }
+    return -1;
 }
 
-void* MirrorManager() noexcept
+void* MirrorController(int slot) noexcept
 {
-    return g_mirror.manager;
+    return slot >= 0 && slot < kMirrorSlots ? g_mirrors[static_cast<std::size_t>(slot)].controller : nullptr;
 }
 
 void* MirrorSource() noexcept
 {
-    return g_mirror.source;
+    for (const MirrorPlayer& mirror : g_mirrors)
+    {
+        if (mirror.manager != nullptr)
+        {
+            return mirror.source;
+        }
+    }
+    return nullptr;
 }
 
-void BeforeMirrorUpdate() noexcept
+void BeforeMirrorUpdate(int slot) noexcept
 {
-    if (!g_mirrorReady || g_mirror.manager == nullptr || g_mirror.source == nullptr)
+    if (!g_mirrorReady || slot < 0 || slot >= kMirrorSlots)
     {
         return;
     }
-    MirrorAll();
+    const MirrorPlayer& mirror = g_mirrors[static_cast<std::size_t>(slot)];
+    if (mirror.manager == nullptr || mirror.source == nullptr)
+    {
+        return;
+    }
+    MirrorAll(slot);
 }
 
 std::wstring MirrorPlayerText()
@@ -673,9 +703,19 @@ std::wstring MirrorPlayerText()
     {
         return L"stood aside (an engine check failed)";
     }
-    return std::format(L"{}; slots set now: {}; switched on {}, off {}, poses copied {}, cuts raised {}, resets {}",
-                       g_mirror.manager != nullptr ? L"copying player 1's slots" : L"no mirror manager", ActiveText(g_mirror.mirrored),
-                       g_mirror.edgesOn, g_mirror.edgesOff, g_mirror.poses, g_mirror.cuts, g_mirror.resets);
+    std::wstring text;
+    for (int slot = 0; slot < kMirrorSlots; ++slot)
+    {
+        const MirrorPlayer& mirror = g_mirrors[static_cast<std::size_t>(slot)];
+        if (mirror.manager == nullptr && mirror.edgesOn == 0)
+        {
+            continue;
+        }
+        text += std::format(L"{}mirror {} {}; slots set now: {}; switched on {}, off {}, poses copied {}, cuts raised {}, resets {}",
+                            text.empty() ? L"" : L" | ", slot + 1, mirror.manager != nullptr ? L"copying player 1's slots" : L"no manager",
+                            ActiveText(mirror.mirrored), mirror.edgesOn, mirror.edgesOff, mirror.poses, mirror.cuts, mirror.resets);
+    }
+    return text.empty() ? L"no mirror manager" : text;
 }
 
 }  // namespace lss::views::scene_camera_two

@@ -44,16 +44,28 @@ void OnJoin() noexcept
     platform::Log(L"split render: show flags 0x{:X} forced on for both halves {}", g_mask, wrote ? L"" : L"(the write FAILED)");
 }
 
-void OnLeave() noexcept
+void Tick(bool furtherViews) noexcept
 {
+    if (g_forceOn == nullptr)
+    {
+        return;
+    }
+    if (furtherViews)
+    {
+        if (g_written != g_mask)
+        {
+            OnJoin();  // a further view with the mask not yet written (a join whose first write failed, or a reinstall)
+        }
+        return;
+    }
     std::uint32_t now = 0;
-    if (g_forceOn == nullptr || g_written == 0 || !platform::CopyGuarded(&now, g_forceOn, sizeof(now)))
+    if (g_written == 0 || !platform::CopyGuarded(&now, g_forceOn, sizeof(now)))
     {
         return;
     }
     if (now == g_written && Write(0))
     {
-        platform::Log(L"split render: show-flag force mask back to 0");
+        platform::Log(L"split render: show-flag force mask back to 0 (no further view)");
     }
     else
     {

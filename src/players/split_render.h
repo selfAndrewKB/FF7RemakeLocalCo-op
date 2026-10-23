@@ -20,10 +20,13 @@ namespace lss::players::split_render {
 /// Resolves the mask. False (logged) if it is missing or not zero (something else uses it).
 bool Install(const platform::GameImage& image) noexcept;
 
-/// Player 2 joined: force the split-disabled effects back on (the configured mask). Game thread.
+/// A further local player joined (a seat, a mirror): force the split-disabled effects back on (the configured mask)
+/// before its first frame. Game thread.
 void OnJoin() noexcept;
-/// Player 2 left: put the mask back to zero, if it still holds what the mod wrote. Game thread.
-void OnLeave() noexcept;
+/// Each engine tick, after the session's and the mirrors': `furtherViews` whether any local player beyond player 1
+/// is in. Forces the mask while one is, puts it back to zero (if it still holds what the mod wrote) once none is;
+/// a count-free reconcile, so a seat leaving beside a mirror keeps the mirror's view whole. Game thread.
+void Tick(bool furtherViews) noexcept;
 
 /// The bits forced on while player 2 is in. Default 0x1008 (TAA and 0x1000); the mod raises it to 0x100A (bloom too)
 /// when render/bloom_origin installs, since bloom leaks player 1's rows into player 2's half without it. Applied at

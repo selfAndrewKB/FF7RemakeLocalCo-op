@@ -468,8 +468,7 @@ void Session::Forget(Seat& seat) noexcept
     EndMemberModules(seat);
     scopes::Unbind(seat.index);
     seat_objects::Forget(seat.index);
-    split_render::OnLeave();
-    pad_buttons::SetPlayers(1 + Count());
+    pad_buttons::SetPlayers(1 + Count());  // the split effects' mask follows the further views by the tick (split_render::Tick)
     if (cameraInstalled_)
     {
         player_two_camera::Take(seat.index);  // forgotten, not destroyed: it belonged to the old world
@@ -670,7 +669,6 @@ try
         return false;
     }
     seat.localPlayer = nullptr;
-    split_render::OnLeave();
     pad_buttons::SetPlayers(1 + Count());
     if (seatInstalled_)
     {

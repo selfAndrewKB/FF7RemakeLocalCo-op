@@ -86,7 +86,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.64.0-column-layout";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.65.0-mirrors-per-column";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
@@ -387,6 +387,7 @@ private:
             playersIn, lss::views::window_span::Held() ? lss::views::window_span::Columns() : 0, lss::views::column_layout::Override());
         lss::views::column_layout::Tick(viewColumns);
         lss::views::mirror_player::Tick(playersIn, viewColumns);
+        lss::players::split_render::Tick(session_.Count() + lss::views::mirror_player::Count() > 0);
         lss::views::scene_camera_two::Tick(CameraManagerOf(0), session_.In(kSeatOne) ? CameraManagerOf(1) : nullptr);  // seat 1 today
         for (int seat = 1; seat <= lss::players::kSeatsBuilt; ++seat)
         {

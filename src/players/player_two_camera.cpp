@@ -367,12 +367,12 @@ void OperatorTick(void* self, float deltaSeconds)
 /// controller's rotation; RE-lock-camera-ledger.md row X7).
 void UpdateCamera(void* self, float deltaSeconds)
 {
-    if (void* mirror = views::scene_camera_two::MirrorManager(); mirror != nullptr && self == mirror)
+    if (const int mirror = views::scene_camera_two::MirrorSlotOf(self); mirror >= 0)
     {
-        // The mirror player's manager (views/mirror_player): every slot of player 1's set on it, under the mirror's
+        // A mirror player's manager (views/mirror_player): every slot of player 1's set on it, under the mirror's
         // primary scope so the game's primary-scoped setters (the blend records, the cut) reach it.
-        const PrimaryScope primary(views::scene_camera_two::MirrorController());
-        views::scene_camera_two::BeforeMirrorUpdate();
+        const PrimaryScope primary(views::scene_camera_two::MirrorController(mirror));
+        views::scene_camera_two::BeforeMirrorUpdate(mirror);
         g_cameraUpdate(self, deltaSeconds);
         return;
     }
