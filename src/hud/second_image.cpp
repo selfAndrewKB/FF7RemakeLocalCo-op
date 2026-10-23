@@ -9,6 +9,7 @@
 #include "hud/minimap_two.h"
 #include "hud/overlay_layout.h"
 #include "hud/overlay_pass.h"
+#include "hud/outside_icons.h"
 #include "battle/command_menu_two.h"
 #include "battle/target_cursor_two.h"
 #include "hud/pass_hide.h"
@@ -49,6 +50,7 @@ RenderFn               g_render  = nullptr;
 SubmitFn               g_submit  = nullptr;
 std::uintptr_t         g_acquireSite = 0, g_acquireTarget = 0;
 double*                g_deltaTime = nullptr;  // FApp::DeltaTime
+std::uint32_t*         g_frameNumber = nullptr;  // GFrameNumber
 void**                 g_uiFilters = nullptr;  // &EndUISystem[37] (the UI filters: type 4 fades the whole overlay)
 float                  g_fadeTarget = -1.0f;   // the overlay fade's target last frame (an Info line when it changes)
 bool                   g_installed = false;
@@ -57,6 +59,8 @@ bool                   g_acquirePending = false;
 // Game thread only.
 DWORD                   g_gameThread = 0;
 bool                    g_on         = true;
+bool                    g_catchUp    = true;     // a further pass does not count as a frame's paint (hud-catch-up)
+std::uint32_t           g_catchUpPasses = 0;     // further passes rendered with the frame number taken back
 bool                    g_split      = false;
 bool                    g_refused    = false;
 void*                   g_renderer   = nullptr;  // from the frame's first acquire
@@ -156,10 +160,24 @@ bool RenderFurther(void* overlay, int column) noexcept
     battle::command_menu_two::BeginPass(column);
     battle::target_cursor_two::BeginPass(column);
     *g_deltaTime = 0.0;
+    // The frame number one back, as the engine does around an extra view family: the widgets this pass paints (at a
+    // step of 0) are not stamped as painted this frame, so player 1's pass, the last, advances the ones player 1 does
+    // not draw by the frame's step through the game's own catch-up (damage numbers off player 1's screen float and
+    // expire as in single player instead of freezing).
+    const bool rewind = g_catchUp && g_frameNumber != nullptr;
+    if (rewind)
+    {
+        --*g_frameNumber;
+        ++g_catchUpPasses;
+    }
     overlay_pass::Set(column);
     minimap_two::BeginPass(column);
     const bool ok = platform::CallGuarded(g_render, overlay);
     minimap_two::EndPass();
+    if (rewind)
+    {
+        ++*g_frameNumber;  // relative: any step taken during the render is kept
+    }
     *g_deltaTime = deltaTime;
     // The fade advances in every render (by the world's delta), so this pass's step is taken back. A new fade the game
     // asked for during this render (a widget's tick in the paint) is kept: putting the old one back would lose it.
@@ -212,6 +230,7 @@ void Driver(void* delegate)
                 replayed = true;
                 marker_replay::Replay(column, g_columns.localPlayer[column], g_columns.controller[column]);
                 field_icons::Replay(column, g_columns.controller[column], g_columns.member[column]);
+                outside_icons::RunForColumn(column, g_columns.controller[column]);
             }
             if (!RenderFurther(overlay, column))
             {
@@ -223,6 +242,7 @@ void Driver(void* delegate)
         {
             marker_replay::Replay(0, g_columns.localPlayer[0], g_columns.controller[0]);
             field_icons::Replay(0, g_columns.controller[0], nullptr);
+            outside_icons::RestorePlayerOne();
         }
     }
     const double middle = NowMs();
@@ -241,6 +261,7 @@ void Driver(void* delegate)
     {
         marker_replay::EndFrame();
         field_icons::EndFrame();
+        outside_icons::EndFrame();
     }
     const double end = NowMs();
     g_timing.furtherMs += middle - start;
@@ -303,12 +324,13 @@ bool Install(const platform::GameImage& image) noexcept
     const auto acquireFn = image.Rebase(c::kAcquireLayer);
     const auto submitFn  = image.Rebase(facts::kSubmitLayerSlot);
     const auto delta     = image.Rebase(facts::kAppDeltaTime, sizeof(double));
+    const auto frame     = image.Rebase(facts::kFrameNumber, sizeof(std::uint32_t));
     if (const auto filters = image.Rebase(facts::kUiFilterSlotGlobal, sizeof(void*)))
     {
         g_uiFilters = reinterpret_cast<void**>(*filters);
     }
     const auto thunk     = image.Rebase(facts::kOverlayDelegateThunk);
-    if (!render || !slot || !acquire || !acquireFn || !submitFn || !delta || !thunk || !minimap_two::PoolCodeInstalled())
+    if (!render || !slot || !acquire || !acquireFn || !submitFn || !delta || !frame || !thunk || !minimap_two::PoolCodeInstalled())
     {
         platform::Log(L"HUD image: the overlay render is not what the research read; the further players' images stay off");
         return false;
@@ -316,6 +338,7 @@ bool Install(const platform::GameImage& image) noexcept
     g_render        = reinterpret_cast<RenderFn>(*render);
     g_submit        = reinterpret_cast<SubmitFn>(*submitFn);
     g_deltaTime     = reinterpret_cast<double*>(*delta);
+    g_frameNumber   = reinterpret_cast<std::uint32_t*>(*frame);
     g_acquireSite   = *acquire;
     g_acquireTarget = *acquireFn;
     if (!g_driver.Replace(*slot, *thunk, reinterpret_cast<std::uintptr_t>(&Driver)))
@@ -339,6 +362,17 @@ bool Install(const platform::GameImage& image) noexcept
                   return Outcome{};
               },
               .get = [] { return Value{Enabled()}; }});
+    Register({.name  = L"hud-catch-up",
+              .shape = Shape::OnOff,
+              .help  = L"the further players' HUD passes do not count as the frame's paint, so the game animates and expires "
+                       L"what player 1 does not see (damage numbers off player 1's screen); off: they freeze as before (on)",
+              .set   = [](const Value& value) {
+                  g_catchUp = std::get<bool>(value);
+                  platform::Log(L"HUD image: the catch-up of widgets player 1 does not draw {} ({} passes so far)",
+                                g_catchUp ? L"on" : L"off", g_catchUpPasses);
+                  return Outcome{};
+              },
+              .get = [] { return Value{g_catchUp}; }});
     Register({.name  = L"hud.image-ms",
               .shape = Shape::Text,
               .help  = L"the overlay render's cost per frame (ms, the last 300 frames): the further columns' passes together, "

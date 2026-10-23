@@ -380,6 +380,28 @@ bool DisplayedTarget(int seat, void*& object, void*& controller) noexcept
     return object != nullptr;
 }
 
+bool HighlightName(int seat, std::uint64_t& name) noexcept
+{
+    name = 0;
+    if (!SeatBuilt(seat))
+    {
+        return false;
+    }
+    const Seat& s = g_seats[seat];
+    if (!s.copy.Defined() || s.copy.IsOpen() || System() != s.system)
+    {
+        return false;
+    }
+    constexpr std::size_t at   = facts::kOutsideIconHighlightName - facts::kOutsideIconTargetName;
+    const auto            text = s.copy.Value(2);
+    if (text.size() < at + sizeof(name))
+    {
+        return false;
+    }
+    std::memcpy(&name, text.data() + at, sizeof(name));
+    return true;
+}
+
 void BeginPass(int column) noexcept
 {
     g_hiddenCount = 0;

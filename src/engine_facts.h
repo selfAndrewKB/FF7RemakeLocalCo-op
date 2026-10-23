@@ -423,6 +423,12 @@ inline constexpr std::uintptr_t kOverlayDelegateSlot  = 0x144BF4DB0;  // the ren
 inline constexpr std::uintptr_t kOverlayDelegateThunk = 0x14151BAF0;  // what it holds: render [this+8] if any
 inline constexpr std::uintptr_t kOverlayAcquireCall   = 0x141509FCF;  // call AcquireLayerSlot (pool 2): crosses a block
 inline constexpr std::uintptr_t kAppDeltaTime         = 0x1453A49B0;  // FApp::DeltaTime (double): the paint's widget ticks
+/// GFrameNumber (u32; RE-damage-numbers-per-view.md; the name and the one increment a frame by its use [ASSUMPTION]),
+/// read by the HUD widgets
+/// that animate themselves (damage numbers, battle sub-texts, UEndUserWidget): a paint stamps it, and the post-paint
+/// catch-up advances by the frame's step every widget whose stamp is not this frame's (one the view did not draw). The
+/// engine itself takes it back by one around an extra view family it renders (0x1428D6122).
+inline constexpr std::uintptr_t kFrameNumber          = 0x1453A4A00;
 inline constexpr std::uintptr_t kDrawEntryBatchCall   = 0x1439FCFD8;  // DrawLayerEntry: call DrawEntryBatchToTarget
 inline constexpr std::uintptr_t kDrawEntryBatchToTarget = 0x1439FD100;  // 9 arguments, no result
 inline constexpr std::uintptr_t kGMallocGlobal        = 0x145825680;  // FMalloc* GMalloc (vt+0x10 Malloc(size, align))
@@ -1286,6 +1292,27 @@ inline constexpr std::uint32_t  kEnemyBarDisplayedTargetBytes = 0x10;
 inline constexpr std::uintptr_t kOutsideIconSlotGlobal        = 0x1459CAAA0;  // EndUISystem[38]
 inline constexpr std::uint32_t  kOutsideIconTargetName        = 0x88;
 inline constexpr std::uint32_t  kOutsideIconTargetNameBytes   = 0x18;
+inline constexpr std::uint32_t  kOutsideIconHighlightName     = 0x98;  // the FName the tick compares (8 bytes; +0x10 of the range)
+// --- The off-screen enemy arrows' tick (RE-outside-icons-per-view.md) ---------------------------------------------
+/// EndUISlot38_BattleEnemyOutsideIcons_Tick(manager): syncs the pooled arrows with the enemy targets, places each twice
+/// through the arrow widget's player's controller (two lookups; the first crosses a block) and picks its picture. Its
+/// only per-arrow state is the timer at +0x14; Place steps it by AEndGameMode::SystemDeltaTimeSeconds.
+inline constexpr std::array<std::uint8_t, 16> kOutsideIconTickEntry{
+    0x48, 0x89, 0x4C, 0x24, 0x08, 0x55, 0x41, 0x56, 0x48, 0x8D, 0x6C, 0x24, 0x88, 0x48, 0x81, 0xEC};
+inline constexpr platform::FunctionFact kOutsideIconTick{L"EndUISlot38_BattleEnemyOutsideIcons_Tick", 0x1413E4240,
+                                                         kOutsideIconTickEntry};
+inline constexpr std::array<std::uintptr_t, 2> kOutsideIconContextCalls{0x1413E471E, 0x1413E4742};  // the first crosses
+/// The manager: the gate byte, and its set of arrows (a sparse array: data, the inline allocation bits, the heap bits
+/// when present, the bit count; 0x30 per element: +0 the weak widget, +0x14 the timer, +0x18 the source at creation).
+inline constexpr std::uint32_t kOutsideIconGate         = 0x80;
+inline constexpr std::uint32_t kOutsideIconSetData      = 0x08;
+inline constexpr std::uint32_t kOutsideIconSetInlineBits = 0x18;
+inline constexpr std::uint32_t kOutsideIconSetHeapBits  = 0x28;
+inline constexpr std::uint32_t kOutsideIconSetNumBits   = 0x30;
+inline constexpr std::uint32_t kOutsideIconStride       = 0x30;
+inline constexpr std::uint32_t kOutsideIconTimer        = 0x14;
+inline constexpr std::uint32_t kOutsideIconSource       = 0x18;
+inline constexpr std::uint32_t kGameModeHudStep         = 0x778;  // AEndGameMode::SystemDeltaTimeSeconds (float)
 /// The cursor driver (creates, moves, styles, traces and releases the cursor from the leader's target; called by the
 /// battle tick after each targeting call), the line-of-sight step (once per frame from the field systems' tick;
 /// its call crosses a block) and the battle suspension that releases the cursor (entry: three instructions, 5 bytes).

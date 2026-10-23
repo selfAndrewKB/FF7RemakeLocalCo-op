@@ -33,6 +33,7 @@
 #include "hud/overlay_pass.h"
 #include "hud/root_placement.h"
 #include "hud/field_icons.h"
+#include "hud/outside_icons.h"
 #include "hud/image_entries.h"
 #include "hud/marker_replay.h"
 #include "hud/minimap_two.h"
@@ -89,7 +90,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.68.1-camera-distance-live";
+constexpr const wchar_t* kVersion = L"0.69.0-arrows-and-numbers";
 static_assert(lss::views::column_rules::kMaxColumns == lss::hud::overlay_pass::kMaxColumns, "the columns the views and the HUD count");  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
@@ -262,6 +263,7 @@ public:
         lss::hud::overlay_layout::Remove();
         lss::hud::marker_replay::Remove();
         lss::hud::field_icons::Remove();
+        lss::hud::outside_icons::Remove();
         lss::hud::second_image::Remove();
         lss::hud::minimap_two::Remove();
         lss::hud::image_entries::Remove();
@@ -364,6 +366,7 @@ public:
             {
                 lss::hud::marker_replay::Install(*image);
                 lss::hud::field_icons::Install(*image);
+                lss::hud::outside_icons::Install(*image);
             }
         }
         // The settings file: the one preset today, applied before the first tick.
@@ -580,6 +583,7 @@ private:
         }
         lss::hud::marker_replay::Tick();
         lss::hud::field_icons::Tick();
+        lss::hud::outside_icons::Tick();
         lss::hud::root_placement::Tick(views && lss::hud::overlay_layout::BandApplies());
     }
 

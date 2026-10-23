@@ -44,6 +44,7 @@ add_library(LocalSplitScreen SHARED
     src/hud/image_entries.cpp
     src/hud/marker_replay.cpp
     src/hud/minimap_two.cpp
+    src/hud/outside_icons.cpp
     src/hud/overlay_pass.cpp
     src/hud/pass_hide.cpp
     src/hud/second_image.cpp
@@ -331,3 +332,10 @@ add_executable(SeatStateTests
 target_include_directories(SeatStateTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_compile_features(SeatStateTests PRIVATE cxx_std_20)
 add_test(NAME seat_state COMMAND SeatStateTests)
+
+add_executable(ArrowTimersTests
+    tests/arrow_timers_test.cpp
+)
+target_include_directories(ArrowTimersTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(ArrowTimersTests PRIVATE cxx_std_20)
+add_test(NAME arrow_timers COMMAND ArrowTimersTests)

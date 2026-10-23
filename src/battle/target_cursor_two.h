@@ -23,6 +23,8 @@
 
 #include "hud/overlay_pass.h"
 
+#include <cstdint>
+
 namespace lss::platform {
 class GameImage;
 }
@@ -45,6 +47,9 @@ void End(int seat) noexcept;
 /// weak pair, both null when the seat has no target or no copy). For the HUD passes that classify the enemy bars
 /// per column (hud/marker_replay).
 bool DisplayedTarget(int seat, void*& object, void*& controller) noexcept;
+/// The seat's off-screen arrow highlight (the FName of its last target's owner, 0 before its first target) from its
+/// copy of the arrow manager's target name. False with no copy for this battle system. For hud/outside_icons.
+bool HighlightName(int seat, std::uint64_t& name) noexcept;
 
 /// Around each pass of the HUD render (the column whose pass runs, overlay_pass::kSingle for the game's one render):
 /// every other player's cursor transparent.
