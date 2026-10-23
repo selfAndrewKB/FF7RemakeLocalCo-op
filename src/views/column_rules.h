@@ -22,7 +22,8 @@ namespace lss::views::column_rules {
 inline constexpr int kMaxColumns = 3;
 
 /// The columns a frame shows. `playersIn`: player 1 and the seats in; `spanColumns`: the span's while held, else 0;
-/// `override`: the console's, 0 for none. Never fewer than the players, never more than kMaxColumns, at least one.
+/// `override`: the console's, 0 (or less) for none. Never fewer than the players and at least one, but never more
+/// than kMaxColumns: with more players than columns built, the most wins (the seats are wired within the columns).
 constexpr int Wanted(int playersIn, int spanColumns, int override) noexcept
 {
     const int wanted = override > 0 ? override : std::max(playersIn, spanColumns);

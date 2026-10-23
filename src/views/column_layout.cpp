@@ -28,7 +28,7 @@ using platform::Read;
 
 static_assert(sizeof(Record) == facts::kPerPlayerSplitBytes, "a record is the engine's FPerPlayerSplitscreenData");
 
-constexpr std::uint32_t  kCheckTicks           = 30;   // the entry re-read twice a second at 60 while anything is held
+constexpr std::uint32_t  kCheckTicks           = 30;   // the entry re-read twice a second at 60 while held, foreign, faulted or wanted
 constexpr std::uint32_t  kStatusTicks          = 300;
 constexpr std::uint8_t   kLayoutFavorTop       = 0;    // EThreePlayerSplitScreenType::FavorTop: the entry written
 constexpr const wchar_t* kGameMapsSettingsPath = L"/Script/EngineSettings.Default__GameMapsSettings";
@@ -38,14 +38,28 @@ std::uintptr_t g_engineGlobal = 0;
 bool           g_installed    = false;
 
 // Game thread.
-int            g_override      = 0;        // the console's columns, 0 for none
-int            g_columns       = 0;        // wanted at the last tick
-bool           g_written       = false;    // the entry holds the mod's columns
-std::uint8_t*  g_settingByte   = nullptr;  // the three-player layout setting, while held
-std::uint8_t   g_settingWas    = 0;
-bool           g_foreignLogged = false;
-const wchar_t* g_waiting       = nullptr;  // why the entry cannot be reached, logged once per reason
+int            g_override       = 0;        // the console's columns, 0 for none
+int            g_columns        = 0;        // wanted at the last tick
+int            g_localPlayers   = 0;        // the engine's local players at the last tick (the mod's count)
+bool           g_written        = false;    // the entry holds the mod's columns
+bool           g_reached        = false;    // the entry was read once (the first reconcile is done)
+bool           g_foreign        = false;    // the entry holds neither the stock records nor the mod's (logged once)
+std::uint8_t*  g_settingByte    = nullptr;  // the three-player layout setting, while held
+std::uint8_t   g_settingWas     = 0;
+bool           g_settingRefused = false;    // the setting could not be held (logged once, until the columns leave)
+const wchar_t* g_waiting        = nullptr;  // why the entry cannot be reached, logged once per reason
+const wchar_t* g_fault          = nullptr;  // a read or write that failed, logged once until it succeeds
 std::uint32_t  g_ticks = 0, g_writes = 0, g_restores = 0;
+
+/// A failed read or write, logged once per reason (state-change logging: the retry is the cadence's).
+void Fault(const wchar_t* why) noexcept
+{
+    if (g_fault != why)
+    {
+        g_fault = why;
+        platform::LogWarning(L"column layout: {}", why);
+    }
+}
 
 /// The three-player entry's records in the live viewport client, or null with the reason. The table is the
 /// constructor's: six entries, the three-player ones of three records each.
@@ -96,7 +110,7 @@ void HoldSetting(bool hold) noexcept
 {
     if (hold)
     {
-        if (g_settingByte != nullptr)
+        if (g_settingByte != nullptr || g_settingRefused)
         {
             return;
         }
@@ -105,13 +119,22 @@ void HoldSetting(bool hold) noexcept
         std::uint8_t was = 0;
         if (byte == nullptr || !Read(byte, was))
         {
+            g_settingRefused = true;
             platform::LogWarning(L"column layout: the game's layout settings were not found; the three-player setting is left as it is");
+            return;
+        }
+        if (was > 1)
+        {
+            // The setting is a two-value enum (FavorTop, FavorBottom); anything else is not the byte the research read.
+            g_settingRefused = true;
+            platform::LogWarning(L"column layout: the three-player layout setting reads {}, not one of its two values; left alone", was);
             return;
         }
         if (was != kLayoutFavorTop && !platform::WriteGuarded(byte, &kLayoutFavorTop, 1))
         {
+            g_settingRefused = true;
             platform::LogWarning(L"column layout: the three-player layout setting could not be written (it is {}); the columns need "
-                                 L"FavorTop",
+                                 L"player 1 on top's entry",
                                  was);
             return;
         }
@@ -119,16 +142,34 @@ void HoldSetting(bool hold) noexcept
         g_settingWas  = was;
         if (was != kLayoutFavorTop)
         {
-            platform::Log(L"column layout: the engine's three-player layout setting set to FavorTop (was {})", was);
+            platform::Log(L"column layout: the engine's three-player layout setting set to player 1 on top (was {})", was);
         }
     }
-    else if (g_settingByte != nullptr)
+    else
     {
-        std::uint8_t now = 0;
-        if (g_settingWas != kLayoutFavorTop && Read(g_settingByte, now) && now == kLayoutFavorTop)
+        g_settingRefused = false;
+        if (g_settingByte == nullptr)
         {
-            platform::WriteGuarded(g_settingByte, &g_settingWas, 1);
-            platform::Log(L"column layout: the engine's three-player layout setting put back ({})", g_settingWas);
+            return;
+        }
+        std::uint8_t now = 0;
+        if (g_settingWas != kLayoutFavorTop)
+        {
+            if (Read(g_settingByte, now) && now == kLayoutFavorTop)
+            {
+                if (!platform::WriteGuarded(g_settingByte, &g_settingWas, 1))
+                {
+                    platform::LogWarning(L"column layout: the three-player layout setting could not be put back to {}; tried again at "
+                                         L"the next leave",
+                                         g_settingWas);
+                    return;  // kept for the next release
+                }
+                platform::Log(L"column layout: the engine's three-player layout setting put back ({})", g_settingWas);
+            }
+            else
+            {
+                platform::Log(L"column layout: the three-player layout setting is {} now, not the mod's value; left as set", now);
+            }
         }
         g_settingByte = nullptr;
     }
@@ -149,58 +190,72 @@ void Apply(bool threeWanted) noexcept
         return;
     }
     g_waiting = nullptr;
+    g_reached = true;
     Record entry[kThreePlayerRecords]{};
     if (!platform::CopyGuarded(entry, records, sizeof(entry)))
     {
+        Fault(L"the engine's three-player layout could not be read; tried again twice a second");
         return;
     }
-    switch (column_rules::Decide(entry, threeWanted))
+    const Action action = column_rules::Decide(entry, threeWanted);
+    if (action != Action::Foreign && g_foreign)
+    {
+        g_foreign = false;
+        platform::Log(L"column layout: the engine's three-player layout is {} again", action == Action::Restore || (action == Action::Nothing && threeWanted) ? L"the mod's three columns" : L"the stock one");
+    }
+    switch (action)
     {
         case Action::Write:
             if (platform::WriteGuarded(records, kThreeColumns, sizeof(kThreeColumns)))
             {
                 g_written = true;
+                g_fault   = nullptr;
                 ++g_writes;
                 HoldSetting(true);
-                platform::Log(L"column layout: the engine's three-player layout entry written to three equal columns (was the "
-                              L"stock one: player 1 on top, two quadrants below); the layout code lays three local players out "
-                              L"from it on the next redraw (write {})",
+                platform::Log(L"column layout: the engine's three-player layout now shows three equal columns side by side (was "
+                              L"player 1 on top, two below); the engine lays three local players out from it on the next redraw "
+                              L"(write {})",
                               g_writes);
             }
             else
             {
-                platform::LogWarning(L"column layout: the three-player entry could not be written; three local players would "
-                                     L"take the stock quadrants");
+                Fault(L"the engine's three-player layout could not be written; three local players would take player 1 on top, two "
+                      L"below; tried again twice a second");
             }
             break;
         case Action::Restore:
             if (platform::WriteGuarded(records, kStockFavorTop, sizeof(kStockFavorTop)))
             {
                 g_written = false;
+                g_fault   = nullptr;
                 ++g_restores;
                 HoldSetting(false);
-                platform::Log(L"column layout: the stock three-player records put back (restore {})", g_restores);
+                platform::Log(L"column layout: the engine's three-player layout put back to player 1 on top, two below (restore {})",
+                              g_restores);
             }
             else
             {
-                platform::LogWarning(L"column layout: the three-player entry could not be put back; it keeps the mod's columns");
+                Fault(L"the engine's three-player layout could not be put back; it keeps the three columns; tried again twice a second");
             }
             break;
         case Action::Foreign:
-            if (!g_foreignLogged)
+            if (!g_foreign)
             {
-                g_foreignLogged = true;
-                platform::LogWarning(L"column layout: the three-player entry holds neither the stock records nor the mod's columns "
-                                     L"({}); left alone",
-                                     RecordsText(entry));
+                g_foreign = true;
+                platform::LogWarning(L"column layout: the engine's three-player layout holds neither its stock values nor the mod's "
+                                     L"three columns ({}); left alone{}",
+                                     RecordsText(entry), g_written ? L"; the mod's columns were replaced, the setting released" : L"");
+                if (g_written)
+                {
+                    g_written = false;
+                    HoldSetting(false);
+                }
             }
             break;
         case Action::Nothing:
             g_written = threeWanted;  // ours already, or the stock one with fewer wanted
-            if (threeWanted)
-            {
-                HoldSetting(true);
-            }
+            g_fault   = nullptr;
+            HoldSetting(threeWanted);
             break;
     }
 }
@@ -227,8 +282,9 @@ bool Install(const platform::GameImage& image) noexcept
               .help  = L"the columns the window shows (full-height views side by side; 0: as the span and the players decide; "
                        L"never fewer than the players in): the mirror player fills the ones no player has",
               .set   = [](const Value& v) {
-                  g_override = static_cast<int>(std::get<std::int64_t>(v));
-                  platform::Log(L"view columns: {}", g_override == 0 ? L"as the span and the players decide" : std::format(L"{} asked for", g_override).c_str());
+                  g_override             = static_cast<int>(std::get<std::int64_t>(v));
+                  const std::wstring what = g_override == 0 ? L"as the span and the players decide" : std::format(L"{} asked for", g_override);
+                  platform::Log(L"view columns: {}", what);
                   return control::Outcome{};
               },
               .get = [] { return Value{static_cast<std::int64_t>(g_override)}; }});
@@ -240,16 +296,21 @@ bool Install(const platform::GameImage& image) noexcept
     return true;
 }
 
-void Tick(int columns) noexcept
+void Tick(int columns, int localPlayers) noexcept
 {
     if (!g_installed)
     {
         return;
     }
     ++g_ticks;
-    g_columns              = columns;
-    const bool threeWanted = columns >= 3;
-    if (threeWanted != g_written || (g_written && g_ticks % kCheckTicks == 0))
+    g_columns      = columns;
+    g_localPlayers = localPlayers;
+    // The columns stay while the engine still lists three local players (a mirror the engine kept a tick longer
+    // would otherwise be laid out in the stock quadrants).
+    const bool threeWanted = columns >= 3 || localPlayers >= 3;
+    const bool change      = threeWanted != g_written && !g_foreign && g_fault == nullptr;
+    const bool cadence     = g_ticks % kCheckTicks == 0 && (g_written || g_foreign || g_fault != nullptr || threeWanted);
+    if (change || cadence || !g_reached)
     {
         Apply(threeWanted);
     }
@@ -266,9 +327,9 @@ int Override() noexcept
 
 void Remove() noexcept
 {
-    if (g_written)
+    if (g_installed)
     {
-        Apply(false);
+        Apply(false);  // whatever the record says: the restore needs the exact mod's columns in the entry
     }
     HoldSetting(false);
 }
@@ -285,10 +346,11 @@ std::wstring Reading()
                 : column_rules::Same(entry, kStockFavorTop) ? L"stock (player 1 on top, two quadrants)"
                                                             : std::format(L"other: {}", RecordsText(entry));
     }
-    return std::format(L"{} column(s) wanted{}; the three-player entry: {}{}; setting held at FavorTop: {}; writes {}, restores {}{}",
-                       g_columns, g_override != 0 ? std::format(L" (view-columns {})", g_override) : L"", table,
+    return std::format(L"{} column(s) wanted{}, {} local player(s); the engine's three-player layout: {}{}; its setting held at player 1 "
+                       L"on top: {}; writes {}, restores {}{}",
+                       g_columns, g_override != 0 ? std::format(L" (view-columns {})", g_override) : L"", g_localPlayers, table,
                        records == nullptr && g_installed ? std::format(L" ({})", why) : L"", g_settingByte != nullptr ? L"yes" : L"no",
-                       g_writes, g_restores, g_waiting != nullptr ? std::format(L"; waiting: {}", g_waiting) : L"");
+                       g_writes, g_restores, g_fault != nullptr ? std::format(L"; fault: {}", g_fault) : L"");
 }
 
 }  // namespace lss::views::column_layout

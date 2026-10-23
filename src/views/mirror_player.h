@@ -45,8 +45,10 @@ bool Install(const platform::GameImage& image) noexcept;
 
 /// Each engine tick after the session's and the span's: adds a mirror for an empty column once the field is steady
 /// (one per tick), removes the mirrors beyond the columns, all of them when the switch is off. `playersIn` counts
-/// the real players (player 1 and the seats in); `columns` the columns the frame shows (at least the players).
-void Tick(std::int32_t playersIn, std::int32_t columns) noexcept;
+/// the real players (player 1 and the seats in); `columns` the columns the frame shows (at least the players);
+/// `columnsAlone` the columns with player 1 alone (the span's, or the console's: what a leave for a world change
+/// fills; in a plain split that is one, so nothing is filled).
+void Tick(std::int32_t playersIn, std::int32_t columns, std::int32_t columnsAlone) noexcept;
 
 /// Inside player 2's leave for a world change (players/session), with player 2 already out of the engine's list:
 /// fills the empty columns now, before the loading screen, where the steady-field add would come too late.

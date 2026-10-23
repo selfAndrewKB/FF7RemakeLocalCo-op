@@ -52,6 +52,7 @@ UObject*                          g_gameInstance = nullptr;  // the instance the
 UObject*                          g_managerOne   = nullptr;  // player 1's camera manager, every mirror's source
 std::int32_t                      g_wanted       = 0;
 std::int32_t                      g_columns      = 0;  // the columns shown at the last tick
+std::int32_t                      g_columnsAlone = 0;  // the columns with player 1 alone (what a leave fills)
 std::uint32_t                     g_leaveFills   = 0;  // adds made the tick player 2 left for a world change
 std::uint32_t                     g_ticks        = 0;
 std::uint32_t                     g_adds         = 0;
@@ -329,7 +330,7 @@ bool Install(const platform::GameImage& image) noexcept
     return true;
 }
 
-void Tick(std::int32_t playersIn, std::int32_t columns) noexcept
+void Tick(std::int32_t playersIn, std::int32_t columns, std::int32_t columnsAlone) noexcept
 {
     if (g_removeLocalPlayer == 0)
     {
@@ -337,7 +338,8 @@ void Tick(std::int32_t playersIn, std::int32_t columns) noexcept
     }
     ++g_ticks;
     FollowList();
-    g_columns = columns;
+    g_columns      = columns;
+    g_columnsAlone = columnsAlone;
     g_wanted  = g_enabled ? std::clamp(columns - playersIn, 0, kMirrorsBuilt) : 0;
     while (g_count > g_wanted)
     {
@@ -371,7 +373,8 @@ void FillAtLeave(const wchar_t* why) noexcept
         return;
     }
     FollowList();
-    const std::int32_t wanted = std::clamp(g_columns - playersIn, 0, kMirrorsBuilt);
+    // The columns with player 1 alone: a plain split (no span, no view-columns) fills nothing at a leave.
+    const std::int32_t wanted = std::clamp(g_columnsAlone - playersIn, 0, kMirrorsBuilt);
     const std::int32_t before = g_count;
     if (g_count >= wanted)
     {

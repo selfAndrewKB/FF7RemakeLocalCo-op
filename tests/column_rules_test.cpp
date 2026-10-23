@@ -3,6 +3,7 @@
 #include "views/column_rules.h"
 
 #include <cstdio>
+#include <limits>
 
 namespace {
 
@@ -35,7 +36,10 @@ void WantedColumns()
     EXPECT(Wanted(2, 3, 2) == 2);  // the override may ask for fewer than the span, never fewer than the players
     EXPECT(Wanted(3, 0, 1) == 3);
     EXPECT(Wanted(1, 7, 0) == kMaxColumns);  // never beyond the columns built
+    EXPECT(Wanted(4, 0, 0) == kMaxColumns);  // more players than columns built: the most wins
     EXPECT(Wanted(0, 0, 0) == 1);            // bad input: at least one
+    EXPECT(Wanted(-1, -2, -3) == 1);
+    EXPECT(Wanted(2, 2, -1) == 2);           // a negative override counts as none
     static_assert(Wanted(2, 3, 0) == 3, "constexpr");
 }
 
@@ -67,6 +71,19 @@ void Decisions()
     EXPECT(Decide(foreign, false) == Action::Foreign);
     Record zero[kThreePlayerRecords] = {};
     EXPECT(Decide(zero, true) == Action::Foreign);
+    // Partly the mod's (two records written, the third stock): foreign, never "restored" over.
+    Record partly[kThreePlayerRecords] = {kThreeColumns[0], kThreeColumns[1], kStockFavorTop[2]};
+    EXPECT(Decide(partly, false) == Action::Foreign);
+    EXPECT(Decide(partly, true) == Action::Foreign);
+    // The FavorBottom entry's records in the FavorTop slot: foreign.
+    Record favorBottom[kThreePlayerRecords] = {{0.5f, 0.5f, 0.0f, 0.0f}, {0.5f, 0.5f, 0.5f, 0.0f}, {1.0f, 0.5f, 0.0f, 0.5f}};
+    EXPECT(Decide(favorBottom, true) == Action::Foreign);
+    // A NaN never equals anything: foreign, left alone.
+    Record nan[kThreePlayerRecords] = {kStockFavorTop[0], kStockFavorTop[1], {0.5f, 0.5f, 0.5f, std::numeric_limits<float>::quiet_NaN()}};
+    EXPECT(Decide(nan, true) == Action::Foreign);
+    // Negative zero equals zero: still the stock entry.
+    Record negativeZero[kThreePlayerRecords] = {{1.0f, 0.5f, -0.0f, -0.0f}, kStockFavorTop[1], kStockFavorTop[2]};
+    EXPECT(Decide(negativeZero, true) == Action::Write);
 }
 
 }  // namespace

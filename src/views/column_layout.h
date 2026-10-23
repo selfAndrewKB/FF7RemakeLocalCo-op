@@ -10,10 +10,12 @@
 // module writes that entry's three records to three equal full-height columns, in place, and puts the stock records
 // back when fewer are wanted and at the mod's end. The layout code itself stays the engine's: it reads the table on
 // every redraw (nothing is cached), so the write takes effect on the next frame and the restore likewise. The entry
-// is written only when it holds the stock records (any other content is logged once and left alone), and restored
-// only while it still holds the mod's. The three-player layout setting is held at FavorTop (the entry written)
-// while the columns are in, as the span holds the two-player one at side by side. [A data write into the engine's
-// layout table, not a recreation of the layout: the research's one documented lever for three columns.]
+// is written only when it holds the stock records (any other content is logged once and left alone, the hold
+// released), and restored only while it still holds the mod's; a failed read or write is logged once and retried
+// twice a second. The three-player layout setting is held at FavorTop (the entry written) while the columns are in,
+// as the span holds the two-player one at side by side; the hold is by hand here as there (Rebirth's generic
+// held setting, read 2026-10-22, was not ported: two bytes held in two modules do not need it). [A data write into
+// the engine's layout table, not a recreation of the layout: the research's one documented lever for three columns.]
 //
 // The columns a frame shows are one number for the mod (views/column_rules.h): the players in, the span's columns
 // while held, or the console's override `view-columns 0..3` (0: as the span and the players decide). mod.cpp passes
@@ -32,8 +34,10 @@ namespace lss::views::column_layout {
 /// Finds GEngine and registers the commands. False (logged) if the engine global is outside the image.
 bool Install(const platform::GameImage& image) noexcept;
 
-/// Each engine tick, after the span's: `columns` the columns wanted this frame (views/column_rules::Wanted).
-void Tick(int columns) noexcept;
+/// Each engine tick, after the span's: `columns` the columns wanted this frame (views/column_rules::Wanted);
+/// `localPlayers` the local players the engine lists (player 1, the seats in, the mirrors): the columns are kept
+/// while three are listed, whatever is wanted, so no frame lays three players out in the stock quadrants.
+void Tick(int columns, int localPlayers) noexcept;
 
 /// The console's override (`view-columns`): 0 for none.
 int Override() noexcept;

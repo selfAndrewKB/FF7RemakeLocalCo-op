@@ -86,7 +86,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.65.0-mirrors-per-column";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.65.1-column-layout-review";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
@@ -383,10 +383,11 @@ private:
         lss::views::letterbox_patch::Tick(playersIn > 1 || lss::views::window_span::Held());
         lss::views::window_span::Tick(playersIn > 1);
         // The columns this frame shows (views/column_rules.h): the players, the span's while held, or the console's.
-        const int viewColumns = lss::views::column_rules::Wanted(
-            playersIn, lss::views::window_span::Held() ? lss::views::window_span::Columns() : 0, lss::views::column_layout::Override());
-        lss::views::column_layout::Tick(viewColumns);
-        lss::views::mirror_player::Tick(playersIn, viewColumns);
+        const int spanColumns = lss::views::window_span::Held() ? lss::views::window_span::Columns() : 0;
+        const int viewColumns = lss::views::column_rules::Wanted(playersIn, spanColumns, lss::views::column_layout::Override());
+        const int aloneColumns = lss::views::column_rules::Wanted(1, spanColumns, lss::views::column_layout::Override());
+        lss::views::column_layout::Tick(viewColumns, playersIn + lss::views::mirror_player::Count());
+        lss::views::mirror_player::Tick(playersIn, viewColumns, aloneColumns);
         lss::players::split_render::Tick(session_.Count() + lss::views::mirror_player::Count() > 0);
         lss::views::scene_camera_two::Tick(CameraManagerOf(0), session_.In(kSeatOne) ? CameraManagerOf(1) : nullptr);  // seat 1 today
         for (int seat = 1; seat <= lss::players::kSeatsBuilt; ++seat)
