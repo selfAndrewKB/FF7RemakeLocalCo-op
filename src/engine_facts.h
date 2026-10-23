@@ -321,6 +321,18 @@ inline constexpr std::array<std::uint8_t, 23> kBloomL0CodeTrailer{
     0x70, 0x05, 0x00, 0x00, 0x00, 0x01, 0x01, 0x01, 0x01, 0x00, 0x75, 0x04,
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x17, 0x00, 0x00, 0x00};
 
+// --- Square Enix's screen-space reflections (RE-third-view-ghost.md) ----------------------------------------------
+// SE_RCPassSSR__Process 0x142549750 draws every view over the whole buffer; its pixel shaders add the view's corner to
+// the already absolute pixel (render/dxbc_fix.h). The pipeline-state call in each of its two binders, SE_SSR__BindPS0
+// 0x14255B900 and SE_SSR__BindPS1 0x14255BC90 (called by that pass only); each call inside one 16-byte block.
+inline constexpr std::uintptr_t kSsrPs0PipelineCall = 0x14255BBB9;
+inline constexpr std::uintptr_t kSsrPs1PipelineCall = 0x14255BF49;
+// FD3D12PixelShader keeps its own copy of the code it was made from (RE-impl-facts-bloom-swap.md §1, [CONFIRMED]):
+// the TArray<uint8> in the engine's framing, and the DXBC's place and length inside that copy. D3D11 keeps none.
+inline constexpr std::uint32_t kD3D12PsBytecode       = 0x48;  // const uint8* (inside the code copy)
+inline constexpr std::uint32_t kD3D12PsBytecodeLength = 0x50;  // SIZE_T
+inline constexpr std::uint32_t kD3D12PsCode           = 0x58;  // TArray<uint8> {Data, Num, Max}
+
 // --- The game's own input tick (RE-input-p2.md §1) ------------------------------------------------
 // AEndPlayerController's constructor turns off the stock per-controller input tick in PlayerTick for gameplay;
 // the game ticks only PartyManager+0's input, from its world-tick phase hook (phase 1, start), through a global

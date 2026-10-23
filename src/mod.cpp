@@ -62,6 +62,7 @@
 #include "render/shadows_per_view.h"
 #include "render/distortion_apply.h"
 #include "render/movie_frame.h"
+#include "render/ssr_origin.h"
 #include "views/column_layout.h"
 #include "views/column_rules.h"
 #include "views/letterbox_patch.h"
@@ -91,7 +92,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.70.1-runner-queries";
+constexpr const wchar_t* kVersion = L"0.71.0-ssr-origin";
 static_assert(lss::views::column_rules::kMaxColumns == lss::hud::overlay_pass::kMaxColumns, "the columns the views and the HUD count");  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
@@ -271,6 +272,7 @@ public:
         lss::hud::ui_targets::Remove();
         lss::render::movie_frame::Remove();
         lss::render::shadows_per_view::Remove();
+        lss::render::ssr_origin::Remove();
         lss::players::pad_buttons::Remove();
         lss::battle::sequence_camera_two::Remove();
         lss::battle::target_cursor_two::Remove();
@@ -317,6 +319,7 @@ public:
         // Optional: without it a distortion crossing the split line streaks over the other half.
         lss::render::distortion_apply::Install(*image);
         lss::render::shadows_per_view::Install(*image);  // optional: without it one camera decides some shadows for every view
+        lss::render::ssr_origin::Install(*image);  // optional: without it a view's reflections read the next column's surfaces
         // Optional: without it player 2's bloom would be built from player 1's rows, so bloom stays off in split.
         if (lss::render::bloom_origin::Install(*image))
         {

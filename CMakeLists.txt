@@ -92,6 +92,7 @@ add_library(LocalSplitScreen SHARED
     src/render/bloom_origin.cpp
     src/render/distortion_apply.cpp
     src/render/movie_frame.cpp
+    src/render/ssr_origin.cpp
     src/views/letterbox_patch.cpp
     src/views/column_layout.cpp
     src/views/display_align.cpp
@@ -356,3 +357,11 @@ add_executable(AreaChainsTests
 target_include_directories(AreaChainsTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_compile_features(AreaChainsTests PRIVATE cxx_std_20)
 add_test(NAME area_chains COMMAND AreaChainsTests)
+
+add_executable(DxbcFixTests
+    tests/dxbc_fix_test.cpp
+)
+target_include_directories(DxbcFixTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(DxbcFixTests PRIVATE cxx_std_20)
+target_compile_definitions(DxbcFixTests PRIVATE LSS_TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/data")
+add_test(NAME dxbc_fix COMMAND DxbcFixTests)
