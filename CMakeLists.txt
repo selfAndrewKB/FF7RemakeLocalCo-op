@@ -311,6 +311,13 @@ target_include_directories(MinimapRulesTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR
 target_compile_features(MinimapRulesTests PRIVATE cxx_std_20)
 add_test(NAME minimap_rules COMMAND MinimapRulesTests)
 
+add_executable(TargetRotationTests
+    tests/target_rotation_test.cpp
+)
+target_include_directories(TargetRotationTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(TargetRotationTests PRIVATE cxx_std_20)
+add_test(NAME target_rotation COMMAND TargetRotationTests)
+
 add_executable(ColumnRulesTests
     tests/column_rules_test.cpp
 )

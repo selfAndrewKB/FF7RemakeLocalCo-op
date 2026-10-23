@@ -4,6 +4,7 @@
 #include "engine_facts.h"
 #include "hud/image_entries.h"
 #include "hud/overlay_pass.h"
+#include "hud/target_rotation.h"
 #include "platform/call_redirect.h"
 #include "platform/guarded.h"
 #include "platform/image.h"
@@ -33,17 +34,17 @@ bool                   g_installed = false;
 std::atomic<bool>     g_enabled{false};
 std::atomic<int>      g_logFrames{0};
 std::atomic<bool>     g_secondSeen{false};
+std::atomic<int>      g_playerColumns{overlay_pass::kMaxColumns};  // the columns with a HUD image of their own (game thread writes)
 
 constexpr int kMaxColumns = overlay_pass::kMaxColumns;
 
 // Render thread only.
 struct RenderState
 {
-    void* views[kMaxColumns]   = {};       // the views whose UI passes ran this Render (by column)
-    void* targets[kMaxColumns] = {};       // column c's target; the mod holds column 0's while column 1's is in the member
-    int   count                = 0;        // views listed this Render (the highest column + 1)
-    void* held                 = nullptr;  // the reference the mod owns (moved out of the member)
-    int   composited           = 0;        // views post-processed since the last UI pass of column 0
+    void*                     views[kMaxColumns] = {};  // the views whose UI passes ran this Render (by column)
+    int                       count              = 0;   // views listed this Render (the highest column + 1)
+    target_rotation::Rotation rotation;                 // each column's target and which the mod holds (pure rule)
+    int                       composited         = 0;   // views post-processed since the last UI pass of column 0
 };
 RenderState g_render;
 
@@ -83,11 +84,9 @@ int ColumnOf(const void* view, std::int32_t (&rect)[4]) noexcept
     return std::clamp(g_render.count, 1, kMaxColumns - 1);
 }
 
-/// Releases the reference the mod holds (IPooledRenderTarget::Release, vt+0x30), if any.
-void ReleaseHeld() noexcept
+/// Releases one reference the mod holds (IPooledRenderTarget::Release, vt+0x30).
+void ReleaseTarget(void* pooled) noexcept
 {
-    void* pooled = g_render.held;
-    g_render.held = nullptr;
     if (pooled == nullptr)
     {
         return;
@@ -107,6 +106,17 @@ void ReleaseHeld() noexcept
     }
 }
 
+/// Releases every reference the mod still holds and empties the Render's record.
+void ReleaseHeld() noexcept
+{
+    void*     held[kMaxColumns] = {};
+    const int n                 = g_render.rotation.TakeHeld(held);
+    for (int i = 0; i < n; ++i)
+    {
+        ReleaseTarget(held[i]);
+    }
+}
+
 bool Logging() noexcept
 {
     return g_logFrames.load(std::memory_order_relaxed) > 0;
@@ -118,9 +128,10 @@ std::uint64_t UiPass(void* sceneTargets, void* commandList, void* view, platform
     std::int32_t rect[4];
     const int    column = ColumnOf(view, rect);
     void* const  before = Member();
+    bool         moved  = false;
     if (column == 0)
     {
-        ReleaseHeld();  // a Render whose post-process loop did not run leaves one behind
+        ReleaseHeld();  // a Render whose post-process loop did not run leaves its held targets behind
         g_render = {};
         g_render.views[0] = view;
         g_render.count    = 1;
@@ -129,31 +140,26 @@ std::uint64_t UiPass(void* sceneTargets, void* commandList, void* view, platform
     {
         g_render.views[column] = view;
         g_render.count         = std::max(g_render.count, column + 1);
-        // One target is moved out, for column 1's view (a third view keeps sampling the member: step 5).
-        if (column == 1 && g_enabled.load(std::memory_order_relaxed) && g_render.views[0] != nullptr &&
-            g_render.held == nullptr && before != nullptr)
+        // The member's target (the previous column's) is moved out for a further column's view, the mod holding its
+        // reference, so the game's allocator gives this view a target of its own (hud/target_rotation.h).
+        moved = g_render.rotation.BeforeUiPass(column, before, g_enabled.load(std::memory_order_relaxed));
+        if (moved)
         {
-            g_render.targets[0] = before;
-            g_render.held       = before;  // the reference moves with the pointer
-            SetMember(nullptr);            // the game's allocator now gives this view a target of its own
+            SetMember(nullptr);
         }
     }
     image_entries::BeginUiPass(g_enabled.load(std::memory_order_relaxed) ? column : -1);
     const std::uint64_t bound = reinterpret_cast<AllocBindFn>(call.Original())(sceneTargets, commandList);
     void* const after = Member();
-    if (column == 0)
+    g_render.rotation.AfterUiPass(column, after);
+    if (column == 1 && moved)
     {
-        g_render.targets[0] = after;
-    }
-    else if (column == 1 && g_render.held != nullptr)
-    {
-        g_render.targets[1] = after;
         g_secondSeen.store(true, std::memory_order_relaxed);
     }
     if (Logging())
     {
         platform::Log(L"HUD targets: UI pass view {} (column {}, rect {},{}-{},{}) target {} -> {}{}", view, column, rect[0],
-                      rect[1], rect[2], rect[3], before, after, column == 1 && g_render.held != nullptr ? L" (moved)" : L"");
+                      rect[1], rect[2], rect[3], before, after, moved ? L" (moved)" : L"");
     }
     return bound;
 }
@@ -177,12 +183,12 @@ void PostProcess(void* postProcessing, void* commandList, void* view, void* velo
     {
         column = view == g_render.views[i] ? i : column;
     }
-    void* member = Member();
-    if (column >= 0 && g_render.held != nullptr && g_render.targets[column] != nullptr && member != g_render.targets[column] &&
-        g_render.held == g_render.targets[column])
+    // The member names the target this view samples: its own column's, or column 0's for a mirror's column; the
+    // one it named goes back to the held set (hud/target_rotation.h).
+    if (void* wanted = g_render.rotation.BeforePostProcess(column, Member(), g_playerColumns.load(std::memory_order_relaxed));
+        wanted != nullptr)
     {
-        g_render.held = member;  // the other view's target, still referenced
-        SetMember(g_render.targets[column]);
+        SetMember(wanted);
     }
     if (Logging())
     {
@@ -285,6 +291,11 @@ bool Enabled() noexcept
 bool TakeSecondTargetSeen() noexcept
 {
     return g_secondSeen.exchange(false, std::memory_order_relaxed);
+}
+
+void SetPlayerColumns(int columns) noexcept
+{
+    g_playerColumns.store(std::clamp(columns, 1, kMaxColumns), std::memory_order_relaxed);
 }
 
 }  // namespace lss::hud::ui_targets

@@ -86,7 +86,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.65.1-column-layout-review";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.66.0-hud-targets-per-column";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
@@ -484,6 +484,7 @@ private:
         }
         const bool views = read >= 2;  // a split, or the mirror beside player 1
         const bool split = views && columns.count > 1 && read >= columns.count;
+        lss::hud::ui_targets::SetPlayerColumns(columns.count);  // a mirror's column samples player 1's HUD image
         lss::hud::overlay_layout::Tick(views, shares, read);
         if (mirror && lss::hud::ui_targets::Enabled())
         {

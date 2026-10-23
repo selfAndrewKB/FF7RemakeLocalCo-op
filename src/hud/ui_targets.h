@@ -9,15 +9,16 @@
 // set. With two views the loop draws both images before either is post-processed, so the last one wins in both halves.
 //
 // Two calls in Render are redirected (platform/call_redirect.h), both with the view in r8:
-//   H1  AllocBind (0x1421E82E9; the clear-only path 0x1421E826B): for column 1's view the member is moved out first
-//       (the reference moves with it), so the game's own allocator hands that UI pass a second target from its own
-//       pool, with its own descriptor;
-//   H4  FPostProcessing::Process (0x1421E8400): the member names the view's own target while that view's final pass
-//       sets its parameters; the other one stays held. After the last view the mod releases what it holds, so it owns
-//       no reference across Renders (the game's own lifetime: one Render).
+//   H1  AllocBind (0x1421E82E9; the clear-only path 0x1421E826B): for a further column's view the member is moved
+//       out first (the reference moves with it), so the game's own allocator hands that UI pass a target of its own
+//       from its own pool, with its own descriptor;
+//   H4  FPostProcessing::Process (0x1421E8400): the member names the target the view samples while that view's final
+//       pass sets its parameters (its own column's; column 0's for a mirror's column, which has no HUD image of its
+//       own); the others stay held. After the last view the mod releases what it holds, so it owns no reference
+//       across Renders (the game's own lifetime: one Render).
 // The views are numbered by column (hud/overlay_pass.h): the view whose ViewRect.Min is (0, 0) is column 0's (both
-// split shapes), the next ones are counted in the order the UI loop runs them. With one view nothing moves. One held
-// target serves one further column; a third view needs a second (plan/seats.md step 5).
+// split shapes), the next ones are counted in the order the UI loop runs them. With one view nothing moves. The
+// bookkeeping is a pure rule, hud/target_rotation.h, host-tested for one to three columns (plan/seats.md step 5).
 // The switch `hud-targets` (off at start until the image content follows) turns the moves on; the logging runs either
 // way (`hud-targets-log <frames>` logs each call for that many frames).
 
@@ -37,5 +38,9 @@ bool Enabled() noexcept;
 
 /// True once the render thread has given column 1's view its own target in a Render since the last call (game thread).
 bool TakeSecondTargetSeen() noexcept;
+
+/// Game thread, each tick: the columns with a HUD image of their own (player 1's and the seats', 1..kMaxColumns);
+/// the columns beyond are the mirrors', whose views sample column 0's image.
+void SetPlayerColumns(int columns) noexcept;
 
 }  // namespace lss::hud::ui_targets
