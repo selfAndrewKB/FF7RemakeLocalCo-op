@@ -3,10 +3,12 @@
 #include "control/registry.h"
 #include "engine_facts.h"
 #include "platform/guarded.h"
+#include "platform/verified_code.h"
 #include "platform/log.h"
 
 #include <Unreal/NameTypes.hpp>
 
+#include <array>
 #include <cstdint>
 #include <string>
 
@@ -16,6 +18,7 @@ namespace {
 
 const std::uint8_t* const* g_gameMode = nullptr;  // AEndGameMode**
 const std::uint8_t* const* g_root     = nullptr;  // the field root**
+void (*g_pauseMenuClosed)(void* context, void* frame, std::uint8_t* result) = nullptr;  // the game's own test
 Snapshot                   g_last;
 bool                       g_logged = false;
 
@@ -106,6 +109,15 @@ bool Install(const platform::GameImage& image) noexcept
     }
     g_gameMode = reinterpret_cast<const std::uint8_t* const*>(*gameMode);
     g_root     = reinterpret_cast<const std::uint8_t* const*>(*root);
+    if (const auto closed = platform::FindFunction(image, facts::kIsPauseMenuClosed))
+    {
+        g_pauseMenuClosed = reinterpret_cast<decltype(g_pauseMenuClosed)>(*closed);
+    }
+    else
+    {
+        platform::LogWarning(L"game state: the pause menu test failed its check; a menu owns input only in the "
+                             L"menu states");
+    }
 
     using control::Register;
     using control::Shape;
@@ -116,6 +128,10 @@ bool Install(const platform::GameImage& image) noexcept
                         L"other", L"unknown"},
               .help  = L"the game's EGameState (AEndGameState); unknown while it cannot be read",
               .get   = [] { return Value{std::wstring(g_last.valid ? StateName(g_last.state) : L"unknown")}; }});
+    Register({.name = L"game.menu-owns-input", .shape = Shape::OnOff,
+              .help = L"a menu owns the game's input (the pause or menu states, or the game's IsPauseMenuClosed "
+                      L"is false)",
+              .get  = [] { return Value{MenuOwnsInput()}; }});
     Register({.name = L"game.paused", .shape = Shape::OnOff, .help = L"the game's own pause flag (IsGamePause)",
               .get = [] { return Value{g_last.valid && g_last.paused}; }});
     Register({.name = L"game.menu-kind", .shape = Shape::Integer, .min = -1, .max = 255,
@@ -175,6 +191,28 @@ void* World() noexcept
         return nullptr;
     }
     return world;
+}
+
+bool MenuOwnsInput() noexcept
+{
+    const std::uint8_t* gameMode  = nullptr;
+    const std::uint8_t* gameState = nullptr;
+    std::uint8_t        state     = 0;
+    if (g_gameMode != nullptr && platform::CopyGuarded(&gameMode, g_gameMode, sizeof(gameMode)) &&
+        ReadAt(gameMode, facts::kGameModeGameState, gameState) && ReadAt(gameState, facts::kGameStateState, state) &&
+        (state == 7 || state == 8 || state == 10))
+    {
+        return true;
+    }
+    if (g_pauseMenuClosed == nullptr)
+    {
+        return false;
+    }
+    std::array<std::uint8_t, facts::kScriptFrameBytes> frame{};
+    std::uint8_t closed = 1;
+    return platform::CallGuarded(g_pauseMenuClosed, static_cast<void*>(nullptr), static_cast<void*>(frame.data()),
+                                 &closed) &&
+           closed == 0;
 }
 
 }  // namespace lss::players::game_state

@@ -197,6 +197,13 @@ target_include_directories(ActionTablesTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR
 target_compile_features(ActionTablesTests PRIVATE cxx_std_20)
 add_test(NAME action_tables COMMAND ActionTablesTests)
 
+add_executable(MenuPadsTests
+    tests/menu_pads_test.cpp
+)
+target_include_directories(MenuPadsTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(MenuPadsTests PRIVATE cxx_std_20)
+add_test(NAME menu_pads COMMAND MenuPadsTests)
+
 add_executable(InstructionPatchTests
     tests/instruction_patch_test.cpp
     src/platform/instruction_patch.cpp

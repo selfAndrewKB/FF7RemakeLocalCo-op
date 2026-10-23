@@ -10,6 +10,8 @@
 #include "platform/verified_code.h"
 #include "platform/vtable_entry.h"
 #include "players/action_tables.h"
+#include "players/game_state.h"
+#include "players/menu_pads.h"
 
 #include <array>
 #include <cstdint>
@@ -17,6 +19,9 @@
 #include <format>
 #include <span>
 #include <string>
+#include <vector>
+
+#include <Unreal/NameTypes.hpp>
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -56,6 +61,17 @@ std::uint32_t                                 g_events[kMaxPads]{};
 DWORD                                         g_thread = 0;
 bool                                          g_offThreadLogged = false;
 bool                                          g_buildFailedLogged = false;
+// The menus' share of the pads (players/menu_pads.h). Game thread only.
+bool                                          g_menus       = true;   // the switch `pad-menus`
+bool                                          g_menuTime    = false;  // as the last input tick saw it (for the log)
+std::array<std::uintptr_t, 3>                 g_openerAt{};           // the PauseMenu, MapMenu, EnemyIntel FKey globals
+std::array<std::uint64_t, 3>                  g_openers{};            // their FNames (all 0 until all three read)
+std::array<menu_pads::Keys, kMaxPads>         g_keys;                 // each further pad's keys down, by route
+std::vector<action_tables::State>             g_before;               // the copy's raw states before a new press
+std::vector<std::uint64_t>                    g_pressed;              // what that press pressed in the copy
+std::uint32_t                                 g_toGame[kMaxPads]{};   // key events handled as the game's own pad's
+std::uint32_t                                 g_opens       = 0;      // opening presses also given to the game
+bool                                          g_mixedLogged = false;
 
 std::uint8_t* Owner() noexcept
 {
@@ -130,20 +146,90 @@ void SwapBack(unsigned user) noexcept
     g_inScope = false;
 }
 
-/// One pad's key event handled in its own state and, when its player has one, its own UI context.
-template <class Fn, class... Args>
-std::int64_t HandleEvent(Fn original, void* self, void* app, const std::uint8_t* event, Args... args) noexcept
+void NameText(std::int64_t bits, std::wstring* out) noexcept
+try
 {
-    std::uint32_t user = 0;
-    std::memcpy(&user, event + facts::kKeyEventUserIndex, sizeof(user));
-    if (!OwnPad(user) || !OnGameThread() || !Swap(user))
+    *out = RC::Unreal::FName(bits).ToString();
+}
+catch (...)
+{
+    out->clear();
+}
+
+std::wstring Names(std::span<const std::uint64_t> names) noexcept
+try
+{
+    std::wstring text;
+    for (const std::uint64_t name : names)
     {
-        return original(self, app, event, args...);
+        std::wstring one;
+        platform::CallGuarded(&NameText, static_cast<std::int64_t>(name), &one);
+        text += std::format(L"{}{}", text.empty() ? L"" : L", ", one.empty() ? std::format(L"{:#x}", name) : one);
     }
+    return text;
+}
+catch (...)
+{
+    return {};
+}
+
+/// The openers' names from the game's FKey globals; all three or none (a partial read could replay a press that
+/// pressed an unread opener's neighbour). True once read.
+bool ReadOpeners() noexcept
+{
+    std::array<std::uint64_t, 3> names{};
+    for (std::size_t i = 0; i < names.size(); ++i)
+    {
+        if (g_openerAt[i] == 0 ||
+            !platform::CopyGuarded(&names[i], reinterpret_cast<const void*>(g_openerAt[i]), sizeof(names[i])) ||
+            names[i] == 0)
+        {
+            return false;
+        }
+    }
+    g_openers = names;
+    return true;
+}
+
+bool MenuTime() noexcept
+{
+    return g_menus && game_state::MenuOwnsInput();
+}
+
+struct Handled
+{
+    std::int64_t result = 0;
+    bool         inCopy = false;  // false: the copy could not be exchanged in and the game's own state took it
+};
+
+/// One pad's key event handled in its own copy and, when `ui` and its player has one, its own UI context. With
+/// `snapshot`, the copy's raw states before the event are kept in g_before.
+Handled InCopy(KeyEventFn original, void* self, void* app, const std::uint8_t* event, unsigned user, bool ui,
+               bool snapshot) noexcept
+{
+    std::uint8_t*        owner = Owner();
+    action_tables::View* view  = owner != nullptr && !g_inScope ? ViewFor(user, owner) : nullptr;
+    if (view == nullptr)
+    {
+        return {original(self, app, event), false};
+    }
+    if (snapshot)
+    {
+        try
+        {
+            g_before.assign(view->raw.begin(), view->raw.end());
+        }
+        catch (...)
+        {
+            g_before.clear();  // no snapshot: Pressed finds nothing, the press stays the player's own
+        }
+    }
+    action_tables::Exchange(owner, kLayout, *view);
+    g_inScope = true;
     ++g_events[user];
     g_eventUser   = user;
-    g_eventRouted = g_ui.enter != nullptr && g_ui.enter(user);
-    const std::int64_t result = original(self, app, event, args...);
+    g_eventRouted = ui && g_ui.enter != nullptr && g_ui.enter(user);
+    const std::int64_t result = original(self, app, event);
     if (g_eventRouted && g_ui.leave != nullptr)
     {
         g_ui.leave(user);
@@ -151,17 +237,133 @@ std::int64_t HandleEvent(Fn original, void* self, void* app, const std::uint8_t*
     g_eventRouted = false;
     g_eventUser   = 0;
     SwapBack(user);
+    return {result, true};
+}
+
+/// One pad's key event as the game's own pad event: its tables, its dispatcher's own argument, its UI route.
+std::int64_t ToGame(KeyEventFn original, void* self, void* app, const std::uint8_t* event, unsigned user) noexcept
+{
+    ++g_toGame[user];
+    return original(self, app, event);
+}
+
+/// A further pad's key-down: a key already down repeats where its press went; a new press goes to the game while a
+/// menu owns input, otherwise to the pad's copy, and also to the game when it pressed only menu openers there.
+std::int64_t KeyDown(void* self, void* app, const std::uint8_t* event)
+{
+    std::uint32_t user = 0;
+    std::uint64_t key  = 0;
+    std::memcpy(&user, event + facts::kKeyEventUserIndex, sizeof(user));
+    std::memcpy(&key, event + facts::kKeyEventKey, sizeof(key));
+    if (!OwnPad(user) || !OnGameThread())
+    {
+        return g_keyDown(self, app, event);
+    }
+    menu_pads::Keys&   keys     = g_keys[user];
+    const bool         menuTime = MenuTime();
+    const bool         newPress = menu_pads::Where(keys, key) == 0;
+    std::uint8_t       route    = menu_pads::Route(keys, key, menuTime);
+    std::int64_t       result   = 0;
+    if ((route & menu_pads::kToCopy) != 0)
+    {
+        const bool check = g_menus && newPress && !menuTime && g_openers[0] != 0;
+        const Handled handled = InCopy(g_keyDown, self, app, event, user, !menuTime, check);
+        if (!handled.inCopy)
+        {
+            if (newPress)
+            {
+                menu_pads::Mark(keys, key, menu_pads::kToGame);  // the game's tables took it: release it there
+            }
+            return handled.result;
+        }
+        result = handled.result;
+        if (newPress)
+        {
+            menu_pads::Mark(keys, key, menu_pads::kToCopy);
+        }
+        if (check)
+        {
+            try
+            {
+                menu_pads::Pressed(g_views[user].rawShape, g_before, g_views[user].raw, g_pressed);
+            }
+            catch (...)
+            {
+                g_pressed.clear();
+            }
+            if (menu_pads::OpensMenu(g_pressed, g_openers, key))
+            {
+                route |= menu_pads::kToGame;
+                ++g_opens;
+                if (platform::Enabled(platform::Level::Debug))
+                {
+                    platform::LogDebug(L"pad buttons: pad {}'s press of {} opens the game's menu too", user + 1,
+                                       Names(g_pressed));
+                }
+            }
+            else if (!g_mixedLogged && menu_pads::AnyOpener(g_pressed, g_openers))
+            {
+                g_mixedLogged = true;
+                platform::Log(L"pad buttons: pad {}'s press pressed a menu opener with other actions ({}); kept as its "
+                              L"player's own, the menu not opened", user + 1, Names(g_pressed));
+            }
+        }
+    }
+    if ((route & menu_pads::kToGame) != 0)
+    {
+        const std::int64_t game = ToGame(g_keyDown, self, app, event, user);
+        if ((route & menu_pads::kToCopy) == 0)
+        {
+            result = game;
+        }
+        if (newPress)
+        {
+            menu_pads::Mark(keys, key, menu_pads::kToGame);
+        }
+    }
     return result;
 }
 
-std::int64_t KeyDown(void* self, void* app, const std::uint8_t* event)
-{
-    return HandleEvent(g_keyDown, self, app, event);
-}
-
+/// A further pad's key-up: released where its press went (a key never recorded: the game's while a menu owns input,
+/// otherwise the pad's copy).
 std::int64_t KeyUp(void* self, void* app, const std::uint8_t* event)
 {
-    return HandleEvent(g_keyUp, self, app, event);
+    std::uint32_t user = 0;
+    std::uint64_t key  = 0;
+    std::memcpy(&user, event + facts::kKeyEventUserIndex, sizeof(user));
+    std::memcpy(&key, event + facts::kKeyEventKey, sizeof(key));
+    if (!OwnPad(user) || !OnGameThread())
+    {
+        if (user >= 1 && user < kMaxPads && GetCurrentThreadId() == g_thread)  // no off-thread warning for pad 1
+        {
+            menu_pads::Forget(g_keys[user], key);
+        }
+        return g_keyUp(self, app, event);
+    }
+    menu_pads::Keys&   keys     = g_keys[user];
+    const bool         menuTime = MenuTime();
+    const std::uint8_t route    = menu_pads::Route(keys, key, menuTime);
+    menu_pads::Forget(keys, key);
+    std::int64_t result = 0;
+    if ((route & menu_pads::kToCopy) != 0)
+    {
+        // The release keeps the player's UI context even in menu time: its press may have been captured there.
+        const Handled handled = InCopy(g_keyUp, self, app, event, user, true, false);
+        if (!handled.inCopy)
+        {
+            return handled.result;  // the game's own state took the release
+        }
+        result = handled.result;
+    }
+    if ((route & menu_pads::kToGame) != 0)
+    {
+        const std::int64_t game = ToGame(g_keyUp, self, app, event, user);
+        if ((route & menu_pads::kToCopy) == 0)
+        {
+            result = game;
+        }
+    }
+    return result;
 }
 
 /// The dispatcher: a further pad's press outside its player's UI context is "already handled", the game's own
@@ -186,7 +388,8 @@ std::int64_t RouteUp(void* owner, void* actionEvent)
     return reinterpret_cast<RouteUpFn>(g_routeUp.Original())(owner, actionEvent);
 }
 
-/// The input tick: the stick aggregation sees pad 1's record alone, then each pad's copy gets the game's advance.
+/// The input tick: the stick aggregation sees pad 1's record alone (every pad's while a menu owns input: the game's
+/// own aggregate, the furthest-pushed stick wins), then each pad's copy gets the game's advance.
 void Tick(void* self, float deltaTime, void* slateApp, void* cursor)
 {
     std::uint8_t* owner = static_cast<std::uint8_t*>(self);
@@ -195,10 +398,26 @@ void Tick(void* self, float deltaTime, void* slateApp, void* cursor)
         g_tick(self, deltaTime, slateApp, cursor);
         return;
     }
+    if (g_openers[0] == 0 && ReadOpeners())
+    {
+        platform::Log(L"pad buttons: the menu openers' names read; every pad opens the game's menus");
+    }
+    const bool menuTime = MenuTime();
+    if (menuTime != g_menuTime)
+    {
+        g_menuTime = menuTime;
+        platform::Log(L"pad buttons: {}", menuTime ? L"a menu owns input; every pad drives it"
+                                                   : L"no menu owns input; each further pad's buttons are its "
+                                                     L"own player's again");
+    }
     std::uint8_t* bank  = owner + facts::kStickBanks + 16 * facts::kXInputBank + facts::kStickBankCount;
     std::int32_t  count = 0;
     std::memcpy(&count, bank, sizeof(count));
     const std::int32_t one = 1;
+    if (menuTime)
+    {
+        count = 0;  // the game's own aggregate: nothing clamped, nothing to put back
+    }
     if (count > 1)
     {
         std::memcpy(bank, &one, sizeof(one));
@@ -235,6 +454,22 @@ bool Install(const platform::GameImage& image) noexcept
         return false;
     }
     g_owner = reinterpret_cast<std::uint8_t**>(*owner);
+    // The menu openers' names, from the game's FKey globals (filled by its static initialisers); read again on the
+    // input tick while unread. Menu time works without them.
+    const std::uintptr_t openerGlobals[] = {facts::kPauseMenuKeyGlobal, facts::kMapMenuKeyGlobal,
+                                            facts::kEnemyIntelKeyGlobal};
+    for (std::size_t i = 0; i < g_openerAt.size(); ++i)
+    {
+        const auto at  = image.Rebase(openerGlobals[i], sizeof(std::uint64_t));
+        g_openerAt[i] = at ? *at : 0;
+    }
+    if (!ReadOpeners())
+    {
+        platform::LogWarning(L"pad buttons: the menu openers' names are not readable yet; only player 1's pad "
+                             L"opens menus until they are");
+    }
+    g_before.reserve(1024);
+    g_pressed.reserve(64);
 
     // All or none: a pad's copy without the dispatcher's flag would still open player 1's menus.
     const std::span<const std::uint8_t> pushes(facts::kActionDispatchEntry.data(), facts::kActionDispatchPushes);
@@ -264,13 +499,33 @@ bool Install(const platform::GameImage& image) noexcept
                            return control::Outcome{};
                        },
                        .get = [] { return control::Value{g_enabled}; }});
+    control::Register({.name  = L"pad-menus",
+                       .shape = control::Shape::OnOff,
+                       .help  = L"every pad opens the game's menus and drives an open one (players/menu_pads.h; on)",
+                       .set   = [](const control::Value& value) {
+                           g_menus = std::get<bool>(value);
+                           platform::Log(L"pad menus {}", g_menus ? L"on" : L"off");
+                           return control::Outcome{};
+                       },
+                       .get = [] { return control::Value{g_menus}; }});
+    control::Register({.name = L"pad.to-game", .shape = control::Shape::Integer, .max = INT32_MAX,
+                       .help = L"pad 2's key events the game handled as its own pad's (menus)",
+                       .get  = [] { return control::Value{static_cast<std::int64_t>(g_toGame[1])}; }});
+    control::Register({.name = L"pad.to-game-3", .shape = control::Shape::Integer, .max = INT32_MAX,
+                       .help = L"pad 3's key events the game handled as its own pad's (menus)",
+                       .get  = [] { return control::Value{static_cast<std::int64_t>(g_toGame[2])}; }});
+    control::Register({.name = L"pad.menu-opens", .shape = control::Shape::Integer, .max = INT32_MAX,
+                       .help = L"further pads' presses of Start, the map or the enemy intel button given to the game",
+                       .get  = [] { return control::Value{static_cast<std::int64_t>(g_opens)}; }});
     control::Register({.name = L"pad.events", .shape = control::Shape::Integer, .max = INT32_MAX,
                        .help = L"key events handled in pad 2's own state so far",
                        .get  = [] { return control::Value{static_cast<std::int64_t>(g_events[1])}; }});
     control::Register({.name = L"pad.events-3", .shape = control::Shape::Integer, .max = INT32_MAX,
                        .help = L"key events handled in pad 3's own state so far",
                        .get  = [] { return control::Value{static_cast<std::int64_t>(g_events[2])}; }});
-    platform::Log(L"pad buttons: installed; each further pad's buttons are its own player's");
+    platform::Log(L"pad buttons: installed; each further pad's buttons are its own player's{}",
+                  g_openers[0] != 0 ? L"; every pad opens the game's menus and drives an open one (pad-menus)"
+                                     : L"; every pad drives an open menu (pad-menus)");
     return true;
 }
 
@@ -291,6 +546,7 @@ void SetPads(std::uint32_t pads) noexcept
         return;
     }
     const std::uint32_t added = pads & ~g_pads;
+    const std::uint32_t left  = g_pads & ~pads;
     g_pads   = pads;
     g_thread = GetCurrentThreadId();  // the game thread: joins and leaves run on it, as the input object does
     for (unsigned user = 1; user < kMaxPads; ++user)
@@ -298,6 +554,11 @@ void SetPads(std::uint32_t pads) noexcept
         if (((added >> user) & 1u) != 0)
         {
             g_views[user] = action_tables::View{};  // a pad newly in starts from nothing held
+            g_keys[user]  = menu_pads::Keys{};
+        }
+        if (((left >> user) & 1u) != 0)
+        {
+            g_keys[user] = menu_pads::Keys{};  // its releases now pass straight to the game, as every pad's did
         }
     }
     std::wstring own;

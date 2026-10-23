@@ -38,6 +38,12 @@ Snapshot Current() noexcept;
 /// The world the game mode names (AEndGameMode::GetWorld), or null. Game thread.
 void* World() noexcept;
 
+/// Whether a menu owns the game's input now (RE-pause-menu-any-pad.md §3.4): the game state is the cinema pause,
+/// a menu or the chapter-start pause (7, 8, 10), or the game's own IsPauseMenuClosed says a pause-family menu is up
+/// (it also catches a Blueprint-opened pause menu and Libra opened from the main menu). Read live, not from the
+/// tick's values. False while neither can be read. Game thread.
+bool MenuOwnsInput() noexcept;
+
 /// The state's console word: none, boot, title, loading, play, pause, menu, leaving, chapter-start, other.
 const wchar_t* StateName(std::uint8_t state) noexcept;
 

@@ -18,7 +18,14 @@
 // Where a further pad's press would reach the UI: the game's dispatcher is told the press was already handled
 // (its own argument, which skips the route, the menu-core delegate and the UI table), and the release's route
 // is skipped, unless a UI context for that pad's player is open (players/focus_context.h, registered here):
-// then the press is dispatched inside it, into that player's own widgets. Game thread only.
+// then the press is dispatched inside it, into that player's own widgets.
+//
+// The game's menus are shared, so there the game's own rule for a second pad comes back (players/menu_pads.h,
+// RE-pause-menu-any-pad.md, switch `pad-menus`): while a menu owns input (game_state::MenuOwnsInput), a further
+// pad's new presses are the game's own pad events and the stick aggregate takes every pad, so every pad drives the
+// menu; outside it, a press that pressed only menu openers in the pad's copy (Start's PauseMenu, MapMenu,
+// EnemyIntel) is given to the game as well, so the game's own poll opens the menu. Each key's repeats and release
+// go where its press went. Game thread only.
 
 #include <cstdint>
 

@@ -84,6 +84,19 @@ inline constexpr std::size_t    kFieldRootStep        = 0x70;   // dword: the fi
 inline constexpr std::size_t    kFieldRootRunning     = 0x74;   // byte: the step machine runs
 inline constexpr std::size_t    kFieldRootLocation    = 0x78;   // FName: the current location
 inline constexpr std::uint32_t  kGameModeGetWorldSlot = 0x140;
+/// UEndMenuAPI::execIsPauseMenuClosed(ctx, FFrame&, bool* result) (RE-pause-menu-any-pad.md §3.4): the Blueprint
+/// thunk with the test inlined (the pause, main and map menus' weak slots, Libra, game over, the named widgets).
+/// It only reads and bumps the frame's code pointer (+0x20), which stays 0 in a zeroed frame.
+inline constexpr std::array<std::uint8_t, 16> kIsPauseMenuClosedEntry{
+    0x40, 0x53, 0x48, 0x83, 0xEC, 0x20, 0x48, 0x8B, 0x42, 0x20, 0x33, 0xC9, 0x48, 0x85, 0xC0, 0x49};
+inline constexpr platform::FunctionFact kIsPauseMenuClosed{L"UEndMenuAPI::execIsPauseMenuClosed", 0x141B25ED0,
+                                                           kIsPauseMenuClosedEntry};
+inline constexpr std::size_t kScriptFrameBytes = 0x80;  // a zeroed FFrame for the thunk
+/// The FKey globals of the three menu-opening actions (their first 8 bytes are the FName), filled by the game's
+/// static initialisers (RE-pause-menu-any-pad.md §1.1, §2.2).
+inline constexpr std::uintptr_t kPauseMenuKeyGlobal  = 0x145903B00;
+inline constexpr std::uintptr_t kMapMenuKeyGlobal    = 0x145903BD8;
+inline constexpr std::uintptr_t kEnemyIntelKeyGlobal = 0x145903BF0;
 
 // --- The field exit (RE-lifecycle-world.md §3.1, §8) ----------------------------------------------
 inline constexpr std::array<std::uint8_t, 10> kRequestFieldExitEntry{0x40, 0x53, 0x48, 0x83, 0xEC, 0x40, 0x80, 0x79, 0x74, 0x00};
