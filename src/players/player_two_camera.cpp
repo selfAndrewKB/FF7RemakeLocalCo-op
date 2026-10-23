@@ -408,7 +408,7 @@ void OperatorTick(void* self, float deltaSeconds)
         g_operatorTick(self, deltaSeconds);
         if (seatsIn && self == PlayerOneOperator())
         {
-            battle::sequence_camera_two::AfterOperatorTick(1);
+            battle::sequence_camera_two::AfterOperatorTick(0);  // player 1's operator
         }
         return;
     }
@@ -430,7 +430,7 @@ void OperatorTick(void* self, float deltaSeconds)
     g_operatorTick(self, deltaSeconds);
     battle::lock_camera_two::AfterOperatorTick(seat, self);
     g_tickingSeat = 0;
-    battle::sequence_camera_two::AfterOperatorTick(seat + 1);
+    battle::sequence_camera_two::AfterOperatorTick(seat);
     // The owner's camera-override route follows the owner (the tick may have changed it: the LeaderChange flavor).
     void* owner = nullptr;
     camera_override_two::Route(seat, Read(static_cast<std::uint8_t*>(self) + facts::kOperatorOwnerChara, owner) ? owner : nullptr);

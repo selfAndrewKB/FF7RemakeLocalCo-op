@@ -9,17 +9,21 @@
 #include "platform/verified_code.h"
 #include "players/player_two_camera.h"
 #include "players/scopes.h"
+#include "players/seats.h"
 
 #include <array>
 #include <cstdint>
 #include <cstring>
 #include <format>
+#include <string>
 
 namespace lss::battle::sequence_camera_two {
 
 namespace {
 
 using platform::Read;
+using players::kSeatsBuilt;
+using players::SeatName;
 
 using ApplyFn     = std::int64_t (*)(void* requests, void* outPose, void* aimLeap, void* eyeLeap, std::uint32_t dt, void* owner, void* view);
 using EvalFn      = char (*)(void* a1, void* outPose, void* a3, void* a4, void* a5, void* a6, std::uint32_t dt, void* view, std::uint32_t a9, void* entry);
@@ -27,27 +31,27 @@ using CutChangeFn = std::int64_t (*)(void* sequence, float time, void* params, v
 using JumpToCutFn = char (*)(void* sequence, std::uint8_t kind, void* a3, void* a4);
 using CutFn       = std::int64_t (*)();
 
-constexpr int kPlayer = 1;
+constexpr int kMaxPlayers = players::scopes::kMaxPlayers;
 
-/// Player 2's copy of one sequence's per-view state.
+/// A seat's copy of one sequence's per-view state.
 struct View
 {
     void*         sequence = nullptr;
     std::uint8_t  camera[facts::kSeqCameraHistoryBytes]{};  // the camera actor's history block
-    std::uint8_t  blend[facts::kSeqBlendPoseBytes]{};       // the blend pose: player 2's camera manager's view
+    std::uint8_t  blend[facts::kSeqBlendPoseBytes]{};       // the blend pose: the seat's camera manager's view
     std::uint8_t  cut = 0;                                  // the cut one-shot
     std::uint8_t  delta[facts::kSeqBlendOutDeltaBytes]{};   // the blend-out delta latch and delta
-    bool          stopCaptured = false;                     // the blend pose taken at player 2's first evaluation after a stop
+    bool          stopCaptured = false;                     // the blend pose taken at the seat's first evaluation after a stop
     std::uint32_t lastFrame    = 0;
 };
 
-/// One entry's active byte as each operator's tick left it this frame.
+/// One entry's active byte as each operator's tick left it this frame (index = seat, 0 player 1's).
 struct Active
 {
     const void*   entry = nullptr;
     std::uint32_t frame = 0;
-    std::uint8_t  bytes[2]{};
-    bool          seen[2]{};
+    std::uint8_t  bytes[kMaxPlayers]{};
+    bool          seen[kMaxPlayers]{};
 };
 
 // Set at install, then only read.
@@ -66,19 +70,33 @@ platform::CallRedirect g_jumpToCutCall;
 platform::CallRedirect g_cutCall;
 bool                   g_cutPlaced = false;
 
-// Game thread.
-std::uint32_t         g_frame   = 1;
-int                   g_firstOp = 0;        // the operator that evaluated first this frame (1 or 2), 0 before
-std::uint8_t          g_firstActive[12]{};  // its out pose's active camera weak (index, serial) and valid byte
-std::array<View, 8>   g_views;
-std::array<Active, 8> g_actives;
-std::uint32_t g_swaps = 0, g_seeds = 0, g_cutsTwo = 0, g_captures = 0, g_unions = 0;
-bool          g_loggedSwap = false, g_loggedCut = false;
-
-bool Copy(void* to, const void* from, std::size_t bytes) noexcept
+// Game thread. Index = seat ([0] unused): each seat's copies and counts.
+struct Seat
 {
-    std::uint8_t temp[0x100];
-    return bytes <= sizeof(temp) && platform::CopyGuarded(temp, from, bytes) && platform::WriteGuarded(to, temp, bytes);
+    std::array<View, 8> views;
+    std::uint32_t       swaps = 0, cuts = 0, captures = 0;
+    bool                loggedSwap = false, loggedCut = false;
+};
+std::array<Seat, kMaxPlayers> g_seats;
+std::uint32_t         g_frame     = 1;
+int                   g_firstSeat = -1;        // the operator that evaluated first this frame (0 player 1's, else the seat), -1 before
+std::uint8_t          g_firstActive[12]{};     // its out pose's active camera weak (index, serial) and valid byte
+std::array<Active, 8> g_actives;
+std::uint32_t         g_seeds = 0, g_unions = 0;
+
+/// The operators that must tick in a frame, as bits: player 1's (bit 0) and every seat's whose player holds a
+/// member. Bit 0 alone: the game alone, nothing of this module runs.
+unsigned RequiredMask() noexcept
+{
+    unsigned mask = 1u;
+    for (int seat = 1; seat <= kSeatsBuilt; ++seat)
+    {
+        if (players::scopes::Member(seat) != nullptr)
+        {
+            mask |= 1u << seat;
+        }
+    }
+    return mask;
 }
 
 void* Sequence(const void* entry) noexcept
@@ -94,11 +112,11 @@ void* CameraActor(const void* sequence) noexcept
     return Read(static_cast<const std::uint8_t*>(sequence) + facts::kSeqCameraActor, camera) ? camera : nullptr;
 }
 
-/// Player 2's camera manager's cached view (the game's own read of the primary's: the cache pointer, else the inline
-/// cache, then the POV block). False if player 2 has no controller.
-bool PlayerTwoView(std::uint8_t (&out)[facts::kSeqBlendPoseBytes]) noexcept
+/// The seat's camera manager's cached view (the game's own read of the primary's: the cache pointer, else the inline
+/// cache, then the POV block). False if the seat has no controller.
+bool SeatView(int seat, std::uint8_t (&out)[facts::kSeqBlendPoseBytes]) noexcept
 {
-    void*         controller = players::scopes::Controller(kPlayer);
+    void*         controller = players::scopes::Controller(seat);
     std::uint8_t* manager    = nullptr;
     std::uint8_t* cache      = nullptr;
     if (controller == nullptr || !Read(static_cast<std::uint8_t*>(controller) + facts::kControllerCameraManager, manager) ||
@@ -113,11 +131,12 @@ bool PlayerTwoView(std::uint8_t (&out)[facts::kSeqBlendPoseBytes]) noexcept
     return platform::CopyGuarded(out, cache + facts::kCameraCachePov, sizeof(out));
 }
 
-/// Player 2's copy for `sequence`, made fresh (zero latches, the live blend pose) when new.
-View& ViewFor(void* sequence) noexcept
+/// The seat's copy for `sequence`, made fresh (zero latches, the live blend pose) when new.
+View& ViewFor(int seat, void* sequence) noexcept
 {
-    View* oldest = &g_views[0];
-    for (View& view : g_views)
+    auto& views  = g_seats[seat].views;
+    View* oldest = &views[0];
+    for (View& view : views)
     {
         if (view.sequence == sequence)
         {
@@ -129,42 +148,50 @@ View& ViewFor(void* sequence) noexcept
             oldest = &view;
         }
     }
-    *oldest          = View{};
-    oldest->sequence = sequence;
+    *oldest           = View{};
+    oldest->sequence  = sequence;
     oldest->lastFrame = g_frame;
     platform::CopyGuarded(oldest->blend, static_cast<const std::uint8_t*>(sequence) + facts::kSeqBlendPose, sizeof(oldest->blend));
     return *oldest;
 }
 
-/// The game captured a pose into `sequence` (a cut, a jump): player 2's copy takes player 2's view, its latches start
-/// again, its cut one-shot is the game's.
+/// The game captured a pose into `sequence` (a cut, a jump): each seat's copy takes the seat's view, its latches
+/// start again, its cut one-shot is the game's.
 void Captured(void* sequence, const wchar_t* why) noexcept
 {
-    if (sequence == nullptr || players::scopes::Member(kPlayer) == nullptr)
+    if (sequence == nullptr)
     {
         return;
     }
-    View& view = ViewFor(sequence);
-    if (!PlayerTwoView(view.blend))
+    for (int seat = 1; seat <= kSeatsBuilt; ++seat)
     {
-        platform::CopyGuarded(view.blend, static_cast<const std::uint8_t*>(sequence) + facts::kSeqBlendPose, sizeof(view.blend));
+        if (players::scopes::Member(seat) == nullptr)
+        {
+            continue;
+        }
+        View& view = ViewFor(seat, sequence);
+        if (!SeatView(seat, view.blend))
+        {
+            platform::CopyGuarded(view.blend, static_cast<const std::uint8_t*>(sequence) + facts::kSeqBlendPose, sizeof(view.blend));
+        }
+        Read(static_cast<const std::uint8_t*>(sequence) + facts::kSeqCutOneShot, view.cut);
+        std::memset(view.camera, 0, facts::kSeqCameraLatchBytes);
+        std::memset(view.delta, 0, sizeof(view.delta));
+        view.stopCaptured = false;
+        ++g_seats[seat].captures;
+        platform::LogTrace(L"sequence camera 2: {}'s copy refreshed at {} (cut one-shot {})", SeatName(seat), why, view.cut);
     }
-    Read(static_cast<const std::uint8_t*>(sequence) + facts::kSeqCutOneShot, view.cut);
-    std::memset(view.camera, 0, facts::kSeqCameraLatchBytes);
-    std::memset(view.delta, 0, sizeof(view.delta));
-    view.stopCaptured = false;
-    ++g_captures;
-    platform::LogTrace(L"sequence camera 2: player 2's copy refreshed at {} (cut one-shot {})", why, view.cut);
 }
 
-/// BattleCamRequests_ApplySequenceOverride at the operator tick: the second operator of a frame is seeded with the
-/// first's active camera, so the game's tail applies the union of both views' world state.
+/// BattleCamRequests_ApplySequenceOverride at the operator tick: every operator after the frame's first is seeded
+/// with the first's active camera, so the game's tail applies the first's and its own world state (two players: the
+/// union; three: the first's and each later one's, revisited when seat 2 is wired, plan/seats.md step 6).
 std::int64_t Apply(void* requests, void* outPose, void* aimLeap, void* eyeLeap, std::uint32_t dt, void* owner, void* view)
 {
-    const int  op       = 1 + players::player_two_camera::TickingSeat();  // the player number: 1, or the seat's
-    auto* const active  = static_cast<std::uint8_t*>(outPose) + facts::kSeqOutPoseActiveWeak;
-    const bool  twoIn   = players::scopes::Member(kPlayer) != nullptr;
-    if (twoIn && g_firstOp != 0 && g_firstOp != op && g_firstActive[8] != 0)
+    const int   seat   = players::player_two_camera::TickingSeat();  // 0: player 1's operator
+    auto* const active = static_cast<std::uint8_t*>(outPose) + facts::kSeqOutPoseActiveWeak;
+    const bool  anyIn  = RequiredMask() != 1u;
+    if (anyIn && g_firstSeat != -1 && g_firstSeat != seat && g_firstActive[8] != 0)
     {
         if (platform::WriteGuarded(active, g_firstActive, sizeof(g_firstActive)))
         {
@@ -172,9 +199,9 @@ std::int64_t Apply(void* requests, void* outPose, void* aimLeap, void* eyeLeap, 
         }
     }
     const std::int64_t result = reinterpret_cast<ApplyFn>(g_apply)(requests, outPose, aimLeap, eyeLeap, dt, owner, view);
-    if (twoIn && g_firstOp == 0)
+    if (anyIn && g_firstSeat == -1)
     {
-        g_firstOp = op;
+        g_firstSeat = seat;
         if (!platform::CopyGuarded(g_firstActive, active, sizeof(g_firstActive)))
         {
             std::memset(g_firstActive, 0, sizeof(g_firstActive));
@@ -183,11 +210,12 @@ std::int64_t Apply(void* requests, void* outPose, void* aimLeap, void* eyeLeap, 
     return result;
 }
 
-/// BattleCamRequest_EvalSequenceOverride for one entry: in player 2's operator's tick, with player 2's copy of the
+/// BattleCamRequest_EvalSequenceOverride for one entry: in a seat's operator's tick, with the seat's copy of the
 /// camera actor's history and the sequence's blend, cut and delta fields in.
 char Eval(void* a1, void* outPose, void* a3, void* a4, void* a5, void* a6, std::uint32_t dt, void* view, std::uint32_t a9, void* entry)
 {
-    if (players::player_two_camera::TickingSeat() == 0)
+    const int seat = players::player_two_camera::TickingSeat();
+    if (!players::SeatBuilt(seat))
     {
         return reinterpret_cast<EvalFn>(g_eval)(a1, outPose, a3, a4, a5, a6, dt, view, a9, entry);
     }
@@ -197,18 +225,19 @@ char Eval(void* a1, void* outPose, void* a3, void* a4, void* a5, void* a6, std::
     {
         return reinterpret_cast<EvalFn>(g_eval)(a1, outPose, a3, a4, a5, a6, dt, view, a9, entry);
     }
-    auto* const seq = static_cast<std::uint8_t*>(sequence);
-    auto* const cam = static_cast<std::uint8_t*>(camera);
-    View&       mine = ViewFor(sequence);
+    Seat&       s    = g_seats[seat];
+    auto* const seq  = static_cast<std::uint8_t*>(sequence);
+    auto* const cam  = static_cast<std::uint8_t*>(camera);
+    View&       mine = ViewFor(seat, sequence);
     std::uint8_t state = 0;
     if (Read(seq + facts::kSeqPlayState, state) && state == facts::kSeqPlayStateStopped)
     {
         if (!mine.stopCaptured)
         {
-            mine.stopCaptured = true;  // the game took player 1's view at the stop; player 2's copy takes its own now
-            if (PlayerTwoView(mine.blend))
+            mine.stopCaptured = true;  // the game took player 1's view at the stop; the seat's copy takes its own now
+            if (SeatView(seat, mine.blend))
             {
-                ++g_captures;
+                ++s.captures;
             }
         }
     }
@@ -216,7 +245,7 @@ char Eval(void* a1, void* outPose, void* a3, void* a4, void* a5, void* a6, std::
     {
         mine.stopCaptured = false;
     }
-    // Player 1's bytes out, player 2's in; after the call player 2's back out, player 1's in.
+    // The live bytes out, the seat's in; after the call the seat's back out, the live ones in.
     View live{};
     const bool held = platform::CopyGuarded(live.camera, cam + facts::kSeqCameraHistory, sizeof(live.camera)) &&
                       platform::CopyGuarded(live.blend, seq + facts::kSeqBlendPose, sizeof(live.blend)) &&
@@ -228,14 +257,14 @@ char Eval(void* a1, void* outPose, void* a3, void* a4, void* a5, void* a6, std::
                       platform::WriteGuarded(seq + facts::kSeqBlendOutDelta, mine.delta, sizeof(mine.delta));
     if (!held)
     {
-        platform::Log(L"sequence camera 2: player 2's copy could not go in; this evaluation runs on player 1's state");
+        platform::Log(L"sequence camera 2: {}'s copy could not go in; this evaluation runs on player 1's state", SeatName(seat));
         return reinterpret_cast<EvalFn>(g_eval)(a1, outPose, a3, a4, a5, a6, dt, view, a9, entry);
     }
-    ++g_swaps;
-    if (!g_loggedSwap)
+    ++s.swaps;
+    if (!s.loggedSwap)
     {
-        g_loggedSwap = true;
-        platform::LogDebug(L"sequence camera 2: player 2's operator evaluates sequence cameras on its own copy of their state");
+        s.loggedSwap = true;
+        platform::LogDebug(L"sequence camera 2: {}'s operator evaluates sequence cameras on its own copy of their state", SeatName(seat));
     }
     const char result = reinterpret_cast<EvalFn>(g_eval)(a1, outPose, a3, a4, a5, a6, dt, view, a9, entry);
     platform::CopyGuarded(mine.camera, cam + facts::kSeqCameraHistory, sizeof(mine.camera));
@@ -249,7 +278,7 @@ char Eval(void* a1, void* outPose, void* a3, void* a4, void* a5, void* a6, std::
     return result;
 }
 
-/// AEndBattleLevelSequenceActor::ApplyCutChange (a cut starts: the game captures player 1's view): player 2's copy too.
+/// AEndBattleLevelSequenceActor::ApplyCutChange (a cut starts: the game captures player 1's view): each seat's copy too.
 std::int64_t CutChange(void* sequence, float time, void* params, void* pose)
 {
     const std::int64_t result = reinterpret_cast<CutChangeFn>(g_cutChange)(sequence, time, params, pose);
@@ -265,19 +294,21 @@ char JumpToCut(void* sequence, std::uint8_t kind, void* a3, void* a4)
     return result;
 }
 
-/// The cut raised by the evaluation: in player 2's operator's tick, the game's primary-scoped cut (player 2's camera
+/// The cut raised by the evaluation: in a seat's operator's tick, the game's primary-scoped cut (the seat's camera
 /// manager, the primary there) instead of the first player's.
 std::int64_t Cut()
 {
-    if (players::player_two_camera::TickingSeat() == 0)
+    const int seat = players::player_two_camera::TickingSeat();
+    if (!players::SeatBuilt(seat))
     {
         return reinterpret_cast<CutFn>(g_cut)();
     }
-    ++g_cutsTwo;
-    if (!g_loggedCut)
+    Seat& s = g_seats[seat];
+    ++s.cuts;
+    if (!s.loggedCut)
     {
-        g_loggedCut = true;
-        platform::LogDebug(L"sequence camera 2: a sequence cut in player 2's tick went to player 2's camera manager");
+        s.loggedCut = true;
+        platform::LogDebug(L"sequence camera 2: a sequence cut during {}'s camera update went to their own camera", SeatName(seat));
     }
     return reinterpret_cast<CutFn>(g_primaryCut)();
 }
@@ -308,6 +339,18 @@ void ForEachEntry(Fn&& fn) noexcept
     }
 }
 
+/// Each seat's swaps, cuts and captures; the frame seeds and the active-byte unions.
+std::wstring Reading()
+{
+    std::wstring text;
+    for (int seat = 1; seat <= kSeatsBuilt; ++seat)
+    {
+        const Seat& s = g_seats[seat];
+        text += std::format(L"{}: swaps {}, cuts to its own view {}, captures {}; ", SeatName(seat), s.swaps, s.cuts, s.captures);
+    }
+    return text + std::format(L"seeds {}, unions {}", g_seeds, g_unions);
+}
+
 }  // namespace
 
 bool Install(const platform::GameImage& image) noexcept
@@ -326,7 +369,7 @@ bool Install(const platform::GameImage& image) noexcept
     const auto primaryCut = platform::FindFunction(image, facts::kSeqCutPrimary);
     if (!system || !apply || !applySite || !eval || !evalSite || !cutChange || !cutSite || !jump || !jumpSite || !cut || !cutRaise || !primaryCut)
     {
-        platform::Log(L"sequence camera 2: an engine check failed; sequence cameras keep one state for both views");
+        platform::Log(L"sequence camera 2: an engine check failed; sequence cameras keep one state for every view");
         return false;
     }
     g_system     = reinterpret_cast<void**>(*system);
@@ -344,16 +387,14 @@ bool Install(const platform::GameImage& image) noexcept
     if (!installed)
     {
         Remove();
-        platform::Log(L"sequence camera 2: a call could not be redirected; sequence cameras keep one state for both views");
+        platform::Log(L"sequence camera 2: a call could not be redirected; sequence cameras keep one state for every view");
         return false;
     }
     control::Register({.name = L"sequence-camera-two", .shape = control::Shape::Text,
-                       .help = L"sequence cameras on player 2's own state: evaluations swapped, world-state seeds, cuts to player 2, captures, active-byte unions",
-                       .get  = [] {
-                           return control::Value{std::format(L"swaps {}, seeds {}, cuts to player 2 {}, captures {}, unions {}", g_swaps, g_seeds,
-                                                             g_cutsTwo, g_captures, g_unions)};
-                       }});
-    platform::Log(L"sequence camera 2: installed; player 2's operator evaluates sequence cameras on its own copy of their state");
+                       .help = L"sequence cameras on each seat's own state: evaluations swapped, cuts to the seat's own view, captures; the "
+                               L"world-state seeds and active-byte unions",
+                       .get  = [] { return control::Value{Reading()}; }});
+    platform::Log(L"sequence camera 2: installed; each seat's operator evaluates sequence cameras on its own copy of their state");
     return true;
 }
 
@@ -369,28 +410,31 @@ void Remove() noexcept
 void Tick() noexcept
 {
     ++g_frame;
-    g_firstOp = 0;
+    g_firstSeat = -1;
     if (!g_cutPlaced && g_cutSite != 0)
     {
         g_cutPlaced = true;
         if (!g_cutCall.InstallFromOwnThread(g_cutSite, g_cut, reinterpret_cast<std::uintptr_t>(&Cut)))
         {
-            platform::Log(L"sequence camera 2: the cut call could not be redirected; a cut in player 2's tick cuts player 1's view");
+            platform::Log(L"sequence camera 2: the cut call could not be redirected; a cut in a seat's tick cuts player 1's view");
         }
     }
 }
 
-void AfterOperatorTick(int player) noexcept
+void AfterOperatorTick(int seat) noexcept
 {
-    if (player != 1 && player != 2)
+    if (seat < 0 || seat >= kMaxPlayers)
     {
         return;
     }
-    if (players::scopes::Member(kPlayer) == nullptr)
+    const unsigned required = RequiredMask();
+    if (required == 1u)
     {
         return;
     }
-    ForEachEntry([player](std::uint8_t* entry) {
+    // Eight records serve a frame; a frame with more entries than that (up to 128 exist) overwrites the oldest, and
+    // the OR is then not written for the entries whose record went: the last operator's byte stands, as the game's.
+    ForEachEntry([seat, required](std::uint8_t* entry) {
         std::uint8_t active = 0;
         if (!Read(entry + facts::kSeqEntryActive, active))
         {
@@ -417,15 +461,21 @@ void AfterOperatorTick(int player) noexcept
             slot->entry = entry;
             slot->frame = g_frame;
         }
-        slot->bytes[player - 1] = active;
-        slot->seen[player - 1]  = true;
-        if (slot->seen[0] && slot->seen[1])
+        slot->bytes[seat] = active;
+        slot->seen[seat]  = true;
+        unsigned     seen   = 0;
+        std::uint8_t either = 0;
+        for (int s = 0; s < kMaxPlayers; ++s)
         {
-            const std::uint8_t either = slot->bytes[0] | slot->bytes[1];
-            if (either != active && platform::WriteGuarded(entry + facts::kSeqEntryActive, &either, sizeof(either)))
+            if (slot->seen[s])
             {
-                ++g_unions;
+                seen |= 1u << s;
+                either |= slot->bytes[s];
             }
+        }
+        if ((seen & required) == required && either != active && platform::WriteGuarded(entry + facts::kSeqEntryActive, &either, sizeof(either)))
+        {
+            ++g_unions;
         }
     });
 }
