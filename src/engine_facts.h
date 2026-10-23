@@ -46,9 +46,17 @@ inline constexpr platform::SlotFact kCameraManagerBeginPlay{
 /// reader is the `lea rcx` at 0x141686EFB inside BeginPlay.
 inline constexpr std::uintptr_t kEndCameraActorName = 0x14440A2A0;
 inline constexpr std::array<char, 14> kEndCameraActorText{'E', 'n', 'd', 'C', 'a', 'm', 'e', 'r', 'a', 'A', 'c', 't', 'o', 'r'};
-/// Player 2's actor gets a name of the same length, so the spawn's duplicate-name replacement of player 1's
-/// actor (UE 4.18 StaticAllocateObject reuses an existing object of that name) cannot happen.
-inline constexpr std::array<char, 14> kPlayerTwoCameraActorText{'E', 'n', 'd', 'C', 'a', 'm', 'e', 'r', 'a', 'A', 'c', 't', 'r', '2'};
+/// A further local player's actor gets a name of the same length ending in its player number (controller id + 1:
+/// "EndCameraActr2" for id 1, "EndCameraActr3" for id 2), so the spawn's duplicate-name replacement (UE 4.18
+/// StaticAllocateObject reuses an existing object of that name) can hit neither player 1's actor nor another
+/// further player's: with one name for every further player, player 3's join took over player 2's camera actor
+/// (seen live 2026-10-23, v0.67.0).
+constexpr std::array<char, 14> FurtherCameraActorText(int controllerId) noexcept
+{
+    std::array<char, 14> text{'E', 'n', 'd', 'C', 'a', 'm', 'e', 'r', 'a', 'A', 'c', 't', 'r', '?'};
+    text[13] = controllerId >= 1 && controllerId <= 8 ? static_cast<char>('1' + controllerId) : '9';
+    return text;
+}
 
 // --- Local players (RE-00-triage.md) -------------------------------------------------------------
 inline constexpr std::array<std::uint8_t, 20> kRemoveLocalPlayerEntry{

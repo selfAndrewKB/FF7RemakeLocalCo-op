@@ -3,7 +3,8 @@
 namespace lss::hud::overlay_pass {
 
 namespace {
-int g_column = kSingle;  // game thread only
+int   g_column = kSingle;  // game thread only
+Seats g_seats;             // game thread only
 }
 
 int Column() noexcept
@@ -24,6 +25,21 @@ bool Split() noexcept
 bool Further() noexcept
 {
     return g_column >= 1;
+}
+
+void SetSeats(const Seats& seats) noexcept
+{
+    g_seats = seats;
+}
+
+int SeatOf(int column) noexcept
+{
+    return g_seats.SeatOf(column);
+}
+
+int ColumnOf(int seat) noexcept
+{
+    return g_seats.ColumnOf(seat);
 }
 
 }  // namespace lss::hud::overlay_pass

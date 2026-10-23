@@ -85,14 +85,16 @@ struct BuffersStandIn
 
 void TestBuffers()
 {
-    std::puts("per-entry buffers: player 2's entries get player 2's pair, every other entry the pool's");
-    BuffersStandIn              s;
-    alignas(16) code::EntryTable table;
-    lss::platform::CodeRedirect redirect;
-    EXPECT(redirect.Install(reinterpret_cast<std::uintptr_t>(s.page + s.site), code::kBuffersLoad, code::BuffersCode(table),
+    std::puts("per-entry buffers: each further column's entries get its own pair, every other entry the pool's");
+    BuffersStandIn                s;
+    alignas(16) code::EntryTables tables;
+    lss::platform::CodeRedirect   redirect;
+    EXPECT(redirect.Install(reinterpret_cast<std::uintptr_t>(s.page + s.site), code::kBuffersLoad, code::BuffersCode(tables),
                             reinterpret_cast<std::uintptr_t>(s.page + s.site + sizeof(code::kBuffersLoad))));
-    table.vertexBuffer = 0xB2B2;
-    table.indexBuffer  = 0xC2C2;
+    tables[0].vertexBuffer = 0xB2B2;
+    tables[0].indexBuffer  = 0xC2C2;
+    tables[1].vertexBuffer = 0xB3B3;
+    tables[1].indexBuffer  = 0xC3C3;
     std::uint64_t io[64] = {};
     io[42]               = 0xB1B1;  // the pool's VB at [rbp+150h]
     const auto run       = [&](std::uint64_t entry) {
@@ -101,14 +103,21 @@ void TestBuffers()
         io[2] = 0;
         return s.fn(io);
     };
-    EXPECT(run(0x1000) == 0xB1B1 && io[2] == 0xC1C1);  // no player 2 entry yet
-    table.entries[0] = 0x2000;
-    table.entries[3] = 0x2300;
+    EXPECT(run(0x1000) == 0xB1B1 && io[2] == 0xC1C1);  // no further column's entry yet
+    tables[0].entries[0] = 0x2000;
+    tables[0].entries[3] = 0x2300;
     EXPECT(run(0x1000) == 0xB1B1 && io[2] == 0xC1C1);  // player 1's entry
-    EXPECT(run(0x2000) == 0xB2B2 && io[2] == 0xC2C2);  // player 2's, first slot
-    EXPECT(run(0x2300) == 0xB2B2 && io[2] == 0xC2C2);  // player 2's, last slot
-    table.entries[0] = 0;                              // a slot cleared (player 2's image off)
+    EXPECT(run(0x2000) == 0xB2B2 && io[2] == 0xC2C2);  // column 1's, first slot
+    EXPECT(run(0x2300) == 0xB2B2 && io[2] == 0xC2C2);  // column 1's, last slot
+    EXPECT(run(0x3100) == 0xB1B1 && io[2] == 0xC1C1);  // column 2's, not recorded yet: the pool's
+    tables[1].entries[1] = 0x3100;
+    tables[1].entries[2] = 0x3200;
+    EXPECT(run(0x3100) == 0xB3B3 && io[2] == 0xC3C3);  // column 2's, second slot
+    EXPECT(run(0x3200) == 0xB3B3 && io[2] == 0xC3C3);  // column 2's, third slot
+    EXPECT(run(0x2300) == 0xB2B2 && io[2] == 0xC2C2);  // column 1's unchanged beside them
+    tables[0].entries[0] = 0;                          // a slot cleared (column 1's image off)
     EXPECT(run(0x2000) == 0xB1B1 && io[2] == 0xC1C1);  // that entry is drawn with the pool's pair again
+    EXPECT(run(0x3200) == 0xB3B3 && io[2] == 0xC3C3);  // column 2's still its own
     EXPECT(redirect.Restore());
 }
 
@@ -181,6 +190,17 @@ void TestNavi()
     state.skip = 0;
     state.seen = 0;
     EXPECT(s.fn(io) == 1 && state.seen == octagon && state.skips == 1);  // the emulated call left the stack as it was
+    state.skipMore[0] = octagon;  // named in the second slot (three players: every other player's octagon)
+    io[0] = io[1] = 0.0f;
+    EXPECT(s.fn(io) == 2 && io[1] == 1.0f && state.skips == 2);
+    state.skipMore[0] = 0x6000;
+    state.skipMore[1] = octagon;  // named in the third slot
+    io[0] = io[1] = 0.0f;
+    EXPECT(s.fn(io) == 2 && io[1] == 1.0f && state.skips == 3);
+    state.skip        = 0x7000;
+    state.skipMore[1] = 0x8000;  // every slot names another octagon: this one makes the call
+    io[0] = io[1] = 0.0f;
+    EXPECT(s.fn(io) == 1 && io[1] == 0.0f && state.skips == 3);
     EXPECT(redirect.Restore());
 }
 

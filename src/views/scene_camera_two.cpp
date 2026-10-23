@@ -94,23 +94,38 @@ struct MirrorPlayer
     std::uint32_t edgesOn = 0, edgesOff = 0, poses = 0, cuts = 0, resets = 0;
 };
 
+/// One seat's copy of the scene: its manager and the slots set on it while the scene holds the players.
+struct SeatCopy
+{
+    void*         manager   = nullptr;  // the manager the copy last wrote, for the reset redirect
+    std::uint32_t mirrored  = 0;        // bit i = slot i of the seat's manager set by the copy
+    bool          engaged   = false;
+    bool          cutBitStuck = false;  // the seat's manager still carried the bit at its next update (logged once)
+    std::uint32_t edgesOn = 0, edgesOff = 0, poses = 0, cuts = 0, resets = 0, releases = 0;
+};
+
 // Game thread.
-constexpr int                          kReadSlots = 2 + kMirrorSlots;  // the managers read for the readings
-std::array<Slots, kReadSlots>          g_slots;    // player 1's, player 2's, the mirrors'
+constexpr int kSeats     = players::scopes::kMaxPlayers;              // by seat; [0] unused (player 1's is the source)
+constexpr int kReadSlots = 1 + players::kSeatsBuilt + kMirrorSlots;  // the managers read for the readings
+std::array<Slots, kReadSlots>          g_slots;    // player 1's, the seats' in order, the mirrors'
 std::array<MirrorPlayer, kMirrorSlots> g_mirrors;  // one copy record per mirror slot (views/mirror_player)
+std::array<SeatCopy, kSeats>           g_seats;
 static_assert(kMirrorSlots == 2, "the readings name two mirrors");
+static_assert(players::kSeatsBuilt == 2, "the readings name players 2 and 3 at slots 1 and 2");
 Scene                g_scene;
 bool                 g_logged = false;
 bool                 g_enabled = true;
-std::uint32_t        g_mirrored   = 0;      // bit i = slot i of player 2's manager set by the mirror
 bool                 g_cutNoted   = false;  // player 1's manager carried the cut bit at its update this frame
-bool                 g_engaged    = false;
-void*                g_managerTwo = nullptr;  // the manager the mirror last wrote, for the reset redirect
-struct Counts
+
+const wchar_t* ReadName(int index) noexcept
 {
-    std::uint32_t edgesOn = 0, edgesOff = 0, poses = 0, cuts = 0, resets = 0, releases = 0;
-} g_counts;
-bool g_cutBitStuck = false;  // player 2's manager still carried the bit at its next update (logged once)
+    if (index <= players::kSeatsBuilt)
+    {
+        constexpr const wchar_t* kNames[] = {L"player 1's", L"player 2's", L"player 3's", L"player 4's"};
+        return kNames[index];
+    }
+    return index == players::kSeatsBuilt + 1 ? L"the first mirror's" : L"the second mirror's";
+}
 
 const std::uint8_t* Bytes(const void* object) noexcept
 {
@@ -237,105 +252,123 @@ std::wstring SceneText(const Scene& scene)
 
 std::wstring MirrorText()
 {
-    return std::format(L"{}{}; slots mirrored now: {}; switched on {}, off {}, poses copied {}, cuts raised {}, resets {}, releases {}",
-                       g_enabled ? L"on" : L"off", !g_mirrorReady ? L" (stood aside: an engine check failed)" : g_engaged ? L", engaged" : L", idle",
-                       ActiveText(g_mirrored), g_counts.edgesOn, g_counts.edgesOff, g_counts.poses, g_counts.cuts, g_counts.resets,
-                       g_counts.releases);
+    std::wstring text = std::format(L"{}{}", g_enabled ? L"on" : L"off", !g_mirrorReady ? L" (stood aside: an engine check failed)" : L"");
+    for (int seat = 1; seat <= players::kSeatsBuilt; ++seat)
+    {
+        const SeatCopy& s = g_seats[static_cast<std::size_t>(seat)];
+        text += std::format(L"; {} {}: slots mirrored now: {}; switched on {}, off {}, poses copied {}, cuts raised {}, resets {}, "
+                            L"releases {}",
+                            players::SeatName(seat), s.engaged ? L"engaged" : L"idle", ActiveText(s.mirrored), s.edgesOn, s.edgesOff,
+                            s.poses, s.cuts, s.resets, s.releases);
+    }
+    return text;
 }
 
-/// One slot of player 2's manager set from a 48-byte pose through the game's setter.
+/// One slot of a seat's manager set from a 48-byte pose through the game's setter.
 bool SetSlot(void* manager, std::uint32_t slot, const std::uint8_t (&pose)[facts::kCameraSlotBytes]) noexcept
 {
     return platform::CallGuarded(g_setSlot, manager, static_cast<std::uint8_t>(slot), static_cast<const void*>(pose));
 }
 
-/// Player 2's copied pose slots switched off (a scene's release, the mod's switch, a leave).
-void Release(void* managerTwo) noexcept
+/// The seat's copied pose slots switched off on `manager` (a scene's release, the mod's switch, a leave).
+void Release(SeatCopy& s, void* manager) noexcept
 {
-    if (managerTwo != nullptr && g_mirrored != 0)
+    if (manager != nullptr && s.mirrored != 0)
     {
         for (std::uint32_t i = 0; i < kSlots; ++i)
         {
-            if (((g_mirrored >> i) & 1u) == 0 || IsBlendSlot(i))
+            if (((s.mirrored >> i) & 1u) == 0 || IsBlendSlot(i))
             {
-                continue;  // a blend still running on player 2's manager ends by itself
+                continue;  // a blend still running on the seat's manager ends by itself
             }
             std::uint8_t pose[facts::kCameraSlotBytes]{};
-            if (platform::CopyGuarded(pose, SlotAt(managerTwo, i), sizeof(pose)))
+            if (platform::CopyGuarded(pose, SlotAt(manager, i), sizeof(pose)))
             {
                 pose[facts::kCameraSlotActive] = 0;
-                SetSlot(managerTwo, i, pose);
+                SetSlot(manager, i, pose);
             }
         }
-        ++g_counts.releases;
+        ++s.releases;
     }
-    g_mirrored = 0;
-    g_engaged  = false;
+    s.mirrored = 0;
+    s.engaged  = false;
 }
 
-/// The scene slots of player 1's manager onto player 2's (the caller holds player 2's primary scope).
-void Mirror(void* managerOne, void* managerTwo) noexcept
+void ReleaseAll() noexcept
 {
-    const Slots one = ReadSlots(managerOne);
+    for (int seat = 1; seat <= players::kSeatsBuilt; ++seat)
+    {
+        SeatCopy& s = g_seats[static_cast<std::size_t>(seat)];
+        Release(s, s.manager);
+    }
+}
+
+/// The scene slots of player 1's manager onto the seat's (the caller holds the seat's primary scope).
+void Mirror(void* managerOne, int seat, void* manager) noexcept
+{
+    SeatCopy&      s    = g_seats[static_cast<std::size_t>(seat)];
+    const wchar_t* who  = players::SeatName(seat);
+    const Slots    one  = ReadSlots(managerOne);
     if (!one.valid)
     {
         return;
     }
     const bool holds = g_scene.Holds();
-    if (!g_engaged && holds)
+    if (!s.engaged && holds)
     {
-        g_engaged = true;
-        platform::Log(L"scene camera: the scene holds the players; player 2's view takes the scene camera (player 1's manager {})",
+        s.engaged = true;
+        platform::Log(L"scene camera: the scene holds the players; {}'s view takes the scene camera (player 1's manager {})", who,
                       SlotsText(one));
     }
-    if (g_engaged && !holds)
+    if (s.engaged && !holds)
     {
-        platform::Log(L"scene camera: the scene released the players; player 2's view back to its own camera (mirrored slots {}: the pose slots switched off, a blend finishes by itself)",
-                      ActiveText(g_mirrored));
-        Release(managerTwo);
+        platform::Log(L"scene camera: the scene released the players; {}'s view back to its own camera (mirrored slots {}: the pose "
+                      L"slots switched off, a blend finishes by itself)",
+                      who, ActiveText(s.mirrored));
+        Release(s, manager);
         return;
     }
-    if (!g_engaged)
+    if (!s.engaged)
     {
         return;
     }
-    g_managerTwo = managerTwo;
+    s.manager = manager;
     for (std::uint32_t i = 0; i < kSlots; ++i)
     {
         if (i == 24)
         {
-            continue;  // player 2's own field camera
+            continue;  // the seat's own field camera
         }
         const bool activeOne = ((one.active >> i) & 1u) != 0;
-        const bool mirrored  = ((g_mirrored >> i) & 1u) != 0;
+        const bool mirrored  = ((s.mirrored >> i) & 1u) != 0;
         std::uint8_t pose[facts::kCameraSlotBytes]{};
         if (IsBlendSlot(i))
         {
             if (activeOne && !mirrored)
             {
-                // The on switch: the record, then the seed (player 2's own field camera for a blend from the field).
+                // The on switch: the record, then the seed (the seat's own field camera for a blend from the field).
                 std::uint8_t record[facts::kCameraSlotBlendBytes]{};
-                const std::uint8_t* seed = SeededFromField(i) ? SlotAt(managerTwo, 24) : SlotAt(managerOne, i);
+                const std::uint8_t* seed = SeededFromField(i) ? SlotAt(manager, 24) : SlotAt(managerOne, i);
                 if (platform::CopyGuarded(record, RecordAt(managerOne, i), sizeof(record)) && platform::CopyGuarded(pose, seed, sizeof(pose)))
                 {
                     std::int64_t unused = 0;
                     platform::CallGuarded(g_setSlotBlend, unused, static_cast<std::uint8_t>(i), static_cast<const void*>(record));
                     pose[facts::kCameraSlotActive] = 1;
-                    if (SetSlot(managerTwo, i, pose))
+                    if (SetSlot(manager, i, pose))
                     {
-                        g_mirrored |= 1u << i;
-                        ++g_counts.edgesOn;
-                        platform::LogDebug(L"scene camera: blend slot {} switched on for player 2's manager (seed {}; record kind {}, {} ms)", i,
-                                           SeededFromField(i) ? L"player 2's own field camera" : L"player 1's slot", record[0],
+                        s.mirrored |= 1u << i;
+                        ++s.edgesOn;
+                        platform::LogDebug(L"scene camera: blend slot {} switched on for {}'s manager (seed {}; record kind {}, {} ms)", i,
+                                           who, SeededFromField(i) ? L"its own field camera" : L"player 1's slot", record[0],
                                            *reinterpret_cast<const std::int32_t*>(record + 4));
                     }
                 }
             }
             else if (!activeOne && mirrored)
             {
-                g_mirrored &= ~(1u << i);  // player 2's manager ends its own blend
-                ++g_counts.edgesOff;
-                platform::LogDebug(L"scene camera: blend slot {} off for player 1; player 2's ends by itself", i);
+                s.mirrored &= ~(1u << i);  // the seat's manager ends its own blend
+                ++s.edgesOff;
+                platform::LogDebug(L"scene camera: blend slot {} off for player 1; {}'s ends by itself", i, who);
             }
             continue;
         }
@@ -344,36 +377,36 @@ void Mirror(void* managerOne, void* managerTwo) noexcept
         {
             continue;
         }
-        if (!platform::CopyGuarded(pose, SlotAt(managerOne, i), sizeof(pose)) || !SetSlot(managerTwo, i, pose))
+        if (!platform::CopyGuarded(pose, SlotAt(managerOne, i), sizeof(pose)) || !SetSlot(manager, i, pose))
         {
             continue;
         }
-        ++g_counts.poses;
+        ++s.poses;
         if (activeOne && !mirrored)
         {
-            g_mirrored |= 1u << i;
-            ++g_counts.edgesOn;
-            platform::LogDebug(L"scene camera: pose slot {} copied to player 2's manager (fov {:.1f})", i,
+            s.mirrored |= 1u << i;
+            ++s.edgesOn;
+            platform::LogDebug(L"scene camera: pose slot {} copied to {}'s manager (fov {:.1f})", i, who,
                                *reinterpret_cast<const float*>(pose + facts::kCameraSlotFov));
         }
         else if (!activeOne && mirrored)
         {
-            g_mirrored &= ~(1u << i);
-            ++g_counts.edgesOff;
-            platform::LogDebug(L"scene camera: pose slot {} off on both managers", i);
+            s.mirrored &= ~(1u << i);
+            ++s.edgesOff;
+            platform::LogDebug(L"scene camera: pose slot {} off on player 1's and {}'s managers", i, who);
         }
     }
-    // The cut: player 1's manager carried the bit at its update; the game's primary-scoped cut raises player 2's.
-    if (g_cutNoted && g_mirrored != 0 && g_primaryCut != nullptr)
+    // The cut: player 1's manager carried the bit at its update; the game's primary-scoped cut raises the seat's.
+    if (g_cutNoted && s.mirrored != 0 && g_primaryCut != nullptr)
     {
         std::int64_t unused = 0;
         if (platform::CallGuarded(g_primaryCut, unused))
         {
-            ++g_counts.cuts;
-            platform::LogDebug(L"scene camera: camera cut raised on player 2's manager");
+            ++s.cuts;
+            platform::LogDebug(L"scene camera: camera cut raised on {}'s manager", who);
         }
     }
-    // The note is player 1's update's, rewritten every frame; the mirrors' updates after this one read it too.
+    // The note is player 1's update's, rewritten every frame; every later update this frame reads it too.
 }
 
 /// Every slot of player 1's manager onto the mirror player's (the caller holds the mirror's primary scope): a blend
@@ -457,18 +490,23 @@ void MirrorAll(int slot) noexcept
     }
 }
 
-/// The cutscene end's reset, redirected: the game's call for the primary manager, then the same on player 2's and
-/// on the mirror player's.
+/// The cutscene end's reset, redirected: the game's call for the primary manager, then the same on every seat's and
+/// on the mirror players'.
 std::int64_t ResetSlots(void* manager)
 {
     const auto original = reinterpret_cast<ResetSlotsFn>(g_resetCall.Original());
     const std::int64_t result = original(manager);
-    if (g_enabled && g_managerTwo != nullptr && g_managerTwo != manager && g_mirrored != 0)
+    for (int seat = 1; seat <= players::kSeatsBuilt; ++seat)
     {
-        original(g_managerTwo);
-        g_mirrored = 0;
-        ++g_counts.resets;
-        platform::Log(L"scene camera: the cutscene's end reset ran on player 2's manager too (every slot off, the field camera on)");
+        SeatCopy& s = g_seats[static_cast<std::size_t>(seat)];
+        if (g_enabled && s.manager != nullptr && s.manager != manager && s.mirrored != 0)
+        {
+            original(s.manager);
+            s.mirrored = 0;
+            ++s.resets;
+            platform::Log(L"scene camera: the cutscene's end reset ran on {}'s manager too (every slot off, the field camera on)",
+                          players::SeatName(seat));
+        }
     }
     for (int slot = 0; slot < kMirrorSlots; ++slot)
     {
@@ -536,38 +574,41 @@ bool Install(const platform::GameImage& image) noexcept
               .get = [] { return Value{SlotsText(g_slots[0])}; }});
     Register({.name = L"camera-slots.two", .shape = Shape::Text, .help = L"player 2's camera manager, the same",
               .get = [] { return Value{SlotsText(g_slots[1])}; }});
-    Register({.name = L"camera-slots.mirror", .shape = Shape::Text, .help = L"the first mirror player's camera manager, the same",
+    Register({.name = L"camera-slots.three", .shape = Shape::Text, .help = L"player 3's camera manager, the same",
               .get = [] { return Value{SlotsText(g_slots[2])}; }});
+    Register({.name = L"camera-slots.mirror", .shape = Shape::Text, .help = L"the first mirror player's camera manager, the same",
+              .get = [] { return Value{SlotsText(g_slots[1 + players::kSeatsBuilt])}; }});
     Register({.name = L"camera-slots.mirror-2", .shape = Shape::Text, .help = L"the second mirror player's camera manager, the same",
-              .get = [] { return Value{SlotsText(g_slots[3])}; }});
+              .get = [] { return Value{SlotsText(g_slots[2 + players::kSeatsBuilt])}; }});
     Register({.name = L"scene-camera-two", .shape = Shape::OnOff,
-              .help = L"the scene camera (a cutscene, a talk or event camera) on player 2's view too, while the scene holds the players",
+              .help = L"the scene camera (a cutscene, a talk or event camera) on every further player's view too, while the scene "
+                      L"holds the players",
               .set  = [](const Value& v) {
                   g_enabled = std::get<bool>(v);
                   if (!g_enabled)
                   {
-                      Release(g_managerTwo);
+                      ReleaseAll();
                   }
-                  platform::Log(L"scene camera: player 2's view {} the scene camera", g_enabled ? L"takes" : L"keeps its own camera through");
+                  platform::Log(L"scene camera: the further players' views {} the scene camera", g_enabled ? L"take" : L"keep their own camera through");
                   return control::Outcome{};
               },
               .get = [] { return Value{g_enabled}; }});
     Register({.name = L"scene-camera-two.state", .shape = Shape::Text, .help = L"the mirror: engaged, the slots mirrored now, its counts",
               .get = [] { return Value{MirrorText()}; }});
-    platform::Log(L"scene camera: readings installed (scene.playing, scene.skip, scene.state, camera-slots.one, camera-slots.two); "
-                  L"the scene camera on player 2's view {}",
+    platform::Log(L"scene camera: readings installed (scene.playing, scene.skip, scene.state, camera-slots.one, .two, .three); "
+                  L"the scene camera on the further players' views {}",
                   g_mirrorReady ? L"ready (switch scene-camera-two)" : L"stood aside");
     return g_mirrorReady;
 }
 
 void Remove() noexcept
 {
-    Release(g_managerTwo);
+    ReleaseAll();
     g_resetCall.Restore();
     g_mirrorReady = false;
 }
 
-void Tick(void* managerOne, void* managerTwo) noexcept
+void Tick(void* managerOne, const SeatManagers& seatManagers) noexcept
 {
     if (g_cutsceneManager == nullptr)
     {
@@ -578,13 +619,21 @@ void Tick(void* managerOne, void* managerTwo) noexcept
     {
         platform::Log(L"scene camera: {}", SceneText(scene));
     }
-    const std::array<Slots, kReadSlots> slots{ReadSlots(managerOne), ReadSlots(managerTwo), ReadSlots(g_mirrors[0].manager),
-                                              ReadSlots(g_mirrors[1].manager)};
+    std::array<Slots, kReadSlots> slots{};
+    slots[0] = ReadSlots(managerOne);
+    for (int seat = 1; seat <= players::kSeatsBuilt; ++seat)
+    {
+        slots[static_cast<std::size_t>(seat)] = ReadSlots(seatManagers[static_cast<std::size_t>(seat)]);
+    }
+    for (int slot = 0; slot < kMirrorSlots; ++slot)
+    {
+        slots[static_cast<std::size_t>(1 + players::kSeatsBuilt + slot)] = ReadSlots(g_mirrors[static_cast<std::size_t>(slot)].manager);
+    }
     for (int player = 0; player < kReadSlots; ++player)
     {
         const Slots&   now  = slots[static_cast<std::size_t>(player)];
         const Slots&   was  = g_slots[static_cast<std::size_t>(player)];
-        const wchar_t* name = player == 0 ? L"player 1's" : player == 1 ? L"player 2's" : player == 2 ? L"the first mirror's" : L"the second mirror's";
+        const wchar_t* name = ReadName(player);
         if (!now.valid && !was.valid)
         {
             continue;
@@ -605,42 +654,50 @@ void Tick(void* managerOne, void* managerTwo) noexcept
             platform::LogTrace(L"scene camera: {} camera manager {}", name, SlotsText(now));
         }
     }
-    if (managerTwo == nullptr && (g_mirrored != 0 || g_engaged))
+    for (int seat = 1; seat <= players::kSeatsBuilt; ++seat)
     {
-        g_mirrored = 0;  // player 2 left: its manager is gone with it
-        g_engaged  = false;
-        g_managerTwo = nullptr;
+        SeatCopy& s = g_seats[static_cast<std::size_t>(seat)];
+        void*     manager = seatManagers[static_cast<std::size_t>(seat)];
+        if (manager == nullptr || (s.manager != nullptr && manager != s.manager))
+        {
+            // The seat is out (its manager is gone with it), or came back with another: its copy starts from nothing.
+            s.mirrored = 0;
+            s.engaged  = false;
+            s.manager  = nullptr;
+        }
     }
     g_slots  = slots;
     g_scene  = scene;
     g_logged = true;
 }
 
-void BeforeUpdateCamera(void* managerOne, void* managerTwo) noexcept
+void BeforeUpdateCamera(void* managerOne, int seat, void* manager) noexcept
 {
     if (!g_mirrorReady || managerOne == nullptr)
     {
         return;
     }
     std::uint32_t flags = 0;
-    if (managerTwo == nullptr)
+    if (seat == 0)
     {
         // Player 1's update: the cut bit as the cut instance left it this frame (the game clears it in the update).
         // Noted whatever the switch, for the mirror player's copy too.
         g_cutNoted = Read(Bytes(managerOne) + facts::kCameraManagerCutFlags, flags) && (flags & facts::kCameraManagerCutBit) != 0;
         return;
     }
-    if (!g_enabled)
+    if (!g_enabled || seat < 1 || seat > players::kSeatsBuilt || manager == nullptr)
     {
         return;
     }
-    if (!g_cutBitStuck && g_mirrored != 0 && Read(Bytes(managerTwo) + facts::kCameraManagerCutFlags, flags) &&
+    SeatCopy& s = g_seats[static_cast<std::size_t>(seat)];
+    if (!s.cutBitStuck && s.mirrored != 0 && Read(Bytes(manager) + facts::kCameraManagerCutFlags, flags) &&
         (flags & facts::kCameraManagerCutBit) != 0 && !g_cutNoted)
     {
-        g_cutBitStuck = true;
-        platform::Log(L"scene camera: player 2's manager still carries the cut bit at its next update (the game did not clear it there)");
+        s.cutBitStuck = true;
+        platform::Log(L"scene camera: {}'s manager still carries the cut bit at its next update (the game did not clear it there)",
+                      players::SeatName(seat));
     }
-    Mirror(managerOne, managerTwo);
+    Mirror(managerOne, seat, manager);
 }
 
 void SetMirror(int slot, void* controller, void* manager, void* managerOne) noexcept

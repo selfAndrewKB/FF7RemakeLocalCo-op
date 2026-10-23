@@ -33,8 +33,10 @@ namespace lss::players::pad_buttons {
 bool Install(const platform::GameImage& image) noexcept;
 void Remove() noexcept;
 
-/// How many players share the pads (1: the game's own state everywhere). Pads 1..players-1 get their own copy.
-void SetPlayers(int players) noexcept;
+/// The pads with a player of their own beyond player 1: bit u = XInput user u (a seat's controller id) has its own
+/// copy (0: the game's own state everywhere). Bit 0 is ignored. A pad newly in starts from nothing held; a pad that
+/// stays keeps its copy.
+void SetPads(std::uint32_t pads) noexcept;
 
 /// Each further pad's copy for the length of one engine call of its player. Game thread; does not nest.
 class ButtonScope

@@ -36,6 +36,7 @@ bool Listed(RC::Unreal::UObject* gameInstance, RC::Unreal::UObject* localPlayer)
 /// What an add did. `localPlayer` is set when the engine's list grew by one, whatever the call reported.
 struct Added
 {
+    std::int32_t         controllerId  = 0;        // the id asked for (its camera actor's name: own_controller.h)
     bool                 called        = false;    // CreatePlayer returned (false: it raised, or was not found)
     bool                 managerSeen   = false;    // the camera manager's BeginPlay ran under the join scope
     bool                 ownerFilled   = false;    // its PCOwner was null and was set from Owner

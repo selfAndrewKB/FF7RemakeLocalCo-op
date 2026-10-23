@@ -152,7 +152,7 @@ std::wstring Added::Text(const wchar_t* whose) const
     return std::format(L"CreatePlayer {}; {} camera manager {}: owner {}, camera actor {}", called ? L"returned" : L"RAISED AN EXCEPTION",
                        whose, managerSeen ? L"seen" : L"NOT SEEN",
                        ownerFilled ? L"filled from Owner" : ownerRefused ? L"REFUSED" : L"already set",
-                       renamed ? L"named EndCameraActr2" : L"NOT RENAMED");
+                       renamed ? std::format(L"named EndCameraActr{}", controllerId + 1) : std::wstring(L"NOT RENAMED"));
 }
 
 Added Add(UObject* playerOneController, std::int32_t controllerId) noexcept
@@ -164,6 +164,7 @@ Added Add(UObject* gameInstance, UObject* playerOneController, std::int32_t cont
 try
 {
     Added added;
+    added.controllerId = controllerId;
     auto* players = List(gameInstance);
     auto* function = UObjectGlobals::StaticFindObject<UFunction*>(nullptr, nullptr, STR("/Script/Engine.GameplayStatics:CreatePlayer"));
     auto* statics  = UObjectGlobals::StaticFindObject<UClass*>(nullptr, nullptr, STR("/Script/Engine.GameplayStatics"));
@@ -179,7 +180,7 @@ try
     params.bSpawnPlayerController = true;
     own_controller::Report report;
     {
-        own_controller::JoinScope scope(playerOneController);
+        own_controller::JoinScope scope(playerOneController, controllerId);
         added.called = GuardedProcessEvent(static_cast<UObject*>(statics->GetClassDefaultObject()), function, &params);
         report       = scope.Result();
     }

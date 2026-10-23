@@ -2,6 +2,7 @@
 
 #include "control/registry.h"
 #include "engine_facts.h"
+#include "hud/overlay_pass.h"
 #include "platform/call_redirect.h"
 #include "platform/entry_redirect.h"
 #include "platform/guarded.h"
@@ -83,6 +84,7 @@ struct Seat
 std::array<Seat, players::scopes::kMaxPlayers> g_seats;
 bool          g_enabled       = true;
 int           g_column        = hud::overlay_pass::kSingle;  // the column whose pass runs (hud/overlay_pass.h)
+int           g_passSeat      = 0;                           // that column's seat (0: player 1's pass, or none)
 bool          g_skippedLogged = false;
 std::uint32_t g_skipped       = 0;  // command menu NativeTicks skipped in the further columns' passes
 
@@ -650,9 +652,10 @@ bool Ready(int seat) noexcept
 void BeginPass(int column) noexcept
 {
     g_column = column;
-    // A further column is its seat's (hud/overlay_pass.h): that seat's menu shows in it, the other seats' stay
-    // transparent (nothing gives them a colour outside their own pass).
-    const int seat = column;
+    // A further column is its seat's (hud/overlay_pass.h's map): that seat's menu shows in it, the other seats' stay
+    // transparent (nothing gives them a colour outside their own pass). A mirror's column has no pass.
+    const int seat = column >= 1 ? hud::overlay_pass::SeatOf(column) : 0;
+    g_passSeat     = seat;
     if (column < 1 || !Ready(seat) || !g_enabled)
     {
         return;
@@ -682,9 +685,9 @@ void BeginPass(int column) noexcept
 
 void EndPass() noexcept
 {
-    if (SeatBuilt(g_column))
+    if (SeatBuilt(g_passSeat))
     {
-        Seat& s = g_seats[g_column];
+        Seat& s = g_seats[g_passSeat];
         for (std::size_t i = 0; i < kRoots.size(); ++i)
         {
             if (s.swapped[i])
@@ -695,7 +698,8 @@ void EndPass() noexcept
             }
         }
     }
-    g_column = hud::overlay_pass::kSingle;
+    g_column   = hud::overlay_pass::kSingle;
+    g_passSeat = 0;
 }
 
 }  // namespace lss::battle::command_menu_two

@@ -150,7 +150,7 @@ void TestHold()
     const auto registry = FakeRegistry();
     EXPECT(RoundTrip(registry, L"hold 2 stick 0 1 0 0 120") == L"hold 2 stick 0 1 0 0 120");
     EXPECT(RoundTrip(registry, L"hold 1 stick -1 0.5 0 -0.25 1") == L"hold 1 stick -1 0.5 0 -0.25 1");
-    EXPECT(Rejected(registry, L"hold 3 stick 0 0 0 0 1"));
+    EXPECT(Rejected(registry, L"hold 4 stick 0 0 0 0 1"));
     EXPECT(Rejected(registry, L"hold 2 button 0 0 0 0 1"));
     EXPECT(Rejected(registry, L"hold 2 stick 0 2 0 0 1"));
     EXPECT(Rejected(registry, L"hold 2 stick 0 0 0 0 0"));

@@ -4,9 +4,10 @@
 // paths, on the game thread. Seat 1 is player 2; the seats are built one at a time (players/seats.h, plan/seats.md).
 //
 // Join: UGameplayStatics::CreatePlayer(ControllerId = the seat, spawn a controller) inside own_controller's join
-// scope, so the player gets a real End player controller and camera manager of its own; the player takes the
-// engine list's index `seat`, so the seats before it are filled first. The engine then lays out the split screen by
-// itself. Each view is filled (the game's main cameras ask for 16:9) with the stock setter
+// scope, so the player gets a real End player controller and camera manager of its own; the engine appends the
+// player to its list after the players already in (the mirrors leave first), so its column is the next free one:
+// player 3 joining with player 2 out takes column 1, and keeps it when player 2 joins after. The engine then lays
+// out the split screen by itself. Each view is filled (the game's main cameras ask for 16:9) with the stock setter
 // UCameraComponent::SetConstraintAspectRatio.
 // A further player exists only with a member to play (the user, 2026-10-21, as in Rebirth): a join first asks the
 // member test, and with the row's member not free nothing is created; the player waits outside the game and joins,
@@ -28,8 +29,9 @@
 // engine never destroys, are destroyed, then UGameInstance::RemoveLocalPlayer. The engine's own list is the
 // evidence of both.
 // World changes: a retry, load, jump or return to the title takes every seat out first, the last seat first
-// (players/field_exit.h, with a field-step check in Tick as the fallback), and each joins again in seat order,
-// taking its member again, once the field has been steady for a moment with player 1 on a character.
+// (players/field_exit.h, with a field-step check in Tick as the fallback), and each joins again in seat order (a
+// seat waits while a lower seat's rejoin is pending, so each takes back its column), taking its member again, once
+// the field has been steady for a moment with player 1 on a character.
 //
 // State ownership: the session owns each seat's record (its local player, the rejoin, the wait, the hand and hold,
 // the member's weak pair, the log keys) and resets it on the leave, the release and the forget; the seat's game
@@ -89,6 +91,8 @@ public:
     /// The game instance's local player `index` (a column: 0 is player 1), or null (the instance is found within a
     /// second of the first tick). Game thread.
     RC::Unreal::UObject* LocalPlayer(int index) const noexcept;
+    /// The seat's own local player while it is in (whatever its column), or null.
+    RC::Unreal::UObject* SeatPlayer(int seat) const noexcept { return SeatBuilt(seat) ? seats_[seat].localPlayer : nullptr; }
     /// The seat's player holds its member.
     bool Seated(int seat) const noexcept;
     /// The seat's member is with its AI while the game's leader is (a scene, a field action, the field control
@@ -136,8 +140,11 @@ private:
         int                                   failures = 0;      // joins that did not add the player
     };
 
+    static constexpr int kNoColumn = 1000;  // a seat that held no column: rejoins after every seat that did
+
     /// One further player: everything the session keeps per seat. `index` is the seat (the scopes' numbering,
-    /// players/seats.h: 1 = player 2), the engine list's index and the controller id; 0 = not numbered.
+    /// players/seats.h: 1 = player 2) and the controller id; 0 = not numbered. Its place in the engine's list (its
+    /// column) is wherever the join appended it.
     struct Seat
     {
         int                  index          = 0;
@@ -153,10 +160,11 @@ private:
         std::uint32_t        seatRetryAt    = 0;        // the tick a refused seat is tried again
         std::uint32_t        awaitSince     = 0;        // the tick the wait for a member began (0 none): the wait's length in the join line
         std::uint32_t        formationLogged = 0;       // the formation last logged under the wait (party_member::Choice::formation), 0 none
+        int                  lastColumn     = kNoColumn;  // the column held when a world change took it out (the rejoin's order)
 
         /// "player 2" for seat 1: the name every line of the seat's uses.
         const wchar_t* Name() const noexcept { return SeatName(index); }
-        /// The seat's controller id, and the engine list index its player takes.
+        /// The seat's controller id (the engine routes pad `index` to it).
         std::int32_t ControllerId() const noexcept { return index; }
         /// The member's records cleared: the weak pair, the hand and the hold (the member was given back, forgotten
         /// or destroyed).

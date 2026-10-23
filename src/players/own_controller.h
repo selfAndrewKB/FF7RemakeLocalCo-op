@@ -15,7 +15,8 @@
 //   - fills PCOwner from the actor's Owner, the controller that spawned it, which is what the engine
 //     itself writes there right after the spawn;
 //   - gives the camera actor a name of its own for the length of the call, by changing the name's text
-//     (its only reader is this function).
+//     (its only reader is this function): "EndCameraActr" and the player's number (controller id + 1), so two
+//     further players (player 3, or two mirrors) never reuse each other's actor either.
 // Player 1's camera manager, and every camera manager outside a join, take the engine's path.
 
 namespace lss::platform {
@@ -47,11 +48,12 @@ struct Report
     bool  renamed       = false;  // the camera actor got player 2's name
 };
 
-/// Marks a join as under way for its lifetime: only then does the replacement act.
+/// Marks a join as under way for its lifetime: only then does the replacement act. `controllerId` is the joining
+/// player's (its camera actor's name).
 class JoinScope
 {
 public:
-    explicit JoinScope(void* playerOneController) noexcept;
+    JoinScope(void* playerOneController, int controllerId) noexcept;
     ~JoinScope();
     JoinScope(const JoinScope&)            = delete;
     JoinScope& operator=(const JoinScope&) = delete;

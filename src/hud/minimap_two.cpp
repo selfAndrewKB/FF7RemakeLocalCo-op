@@ -11,6 +11,7 @@
 #include "hud/image_code.h"
 #include "hud/minimap_rules.h"
 #include "hud/overlay_layout.h"
+#include "hud/overlay_pass.h"
 #include "platform/call_redirect.h"
 #include "platform/code_redirect.h"
 #include "platform/guarded.h"
@@ -182,17 +183,54 @@ void* One() noexcept
     return IsSeatManager(manager) ? nullptr : manager;  // never a seat's (it is in the slot during that seat's tick)
 }
 
-/// The column whose map an octagon is, by its paint interface: 0 player 1's, a seat's its index, -1 another painter.
+/// The column whose map an octagon is, by its paint interface: 0 player 1's, a seat's its column (hud/overlay_pass.h's
+/// map), -1 another painter or a seat with no column.
 int OwnerOf(std::uintptr_t paint) noexcept
 {
     for (int seat = 0; paint != 0 && seat <= kSeatsBuilt; ++seat)
     {
         if (g_seats[seat].paint == paint)
         {
-            return seat;
+            return seat == 0 ? 0 : overlay_pass::ColumnOf(seat);
         }
     }
     return -1;
+}
+
+/// Names the octagon's span as skipped in this pass (the pool-0 code's slots, hud/image_code.h).
+void SkipSpan(std::uintptr_t paint) noexcept
+{
+    if (paint == 0)
+    {
+        return;
+    }
+    std::uintptr_t* slots[image_code::kNaviSkips] = {&g_navi.skip, &g_navi.skipMore[0], &g_navi.skipMore[1]};
+    for (std::uintptr_t* slot : slots)
+    {
+        if (*slot == paint)
+        {
+            return;
+        }
+        if (*slot == 0)
+        {
+            *slot = paint;
+            return;
+        }
+    }
+    static bool told = false;
+    if (!told)
+    {
+        told = true;
+        platform::LogWarning(L"HUD minimap: more octagons to skip in a pass than the pool-0 code holds ({}); one renders twice a frame",
+                             image_code::kNaviSkips);
+    }
+}
+
+void ClearSkips() noexcept
+{
+    g_navi.skip        = 0;
+    g_navi.skipMore[0] = 0;
+    g_navi.skipMore[1] = 0;
 }
 
 /// A weak pointer's object, if it is still that object and alive.
@@ -273,7 +311,8 @@ public:
                 contexts_.reset();
                 return;
             }
-            overlay_layout::WriteHostSet(seat);  // the seat's column
+            const int column = overlay_pass::ColumnOf(seat);  // the seat's column
+            hostSet_ = column >= 1 && overlay_layout::WriteHostSet(column);
         }
         platform::WriteGuarded(g.slot29, &s.manager, sizeof(void*));
         g_forSeat = seat;
@@ -286,7 +325,7 @@ public:
             return;
         }
         platform::WriteGuarded(g.slot29, &slot_, sizeof(void*));
-        if (withPlayer_)
+        if (hostSet_)
         {
             overlay_layout::WriteHostSet(0);
         }
@@ -301,6 +340,7 @@ public:
 private:
     void*                                 slot_       = nullptr;
     bool                                  withPlayer_ = false;
+    bool                                  hostSet_    = false;  // the seat's column's host set written (put back after)
     bool                                  held_       = false;
     std::optional<players::scopes::Scope> contexts_;
 };
@@ -868,8 +908,8 @@ void Remove() noexcept
     {
         return;
     }
-    g_on        = false;
-    g_navi.skip = 0;
+    g_on = false;
+    ClearSkips();
     for (auto* r : {&g_tickCall, &g_firstPcCall, &g_textureCall, &g_setupCalls[0], &g_setupCalls[1], &g_startCall, &g_endCall,
                     &g_resetCall, &g_addCalls[0], &g_addCalls[1], &g_addCalls[2], &g_addCalls[3], &g_removeCalls[0],
                     &g_removeCalls[1], &g_removeCalls[2], &g_removeCalls[3], &g_entryCall, &g_submitCall})
@@ -974,7 +1014,7 @@ void BeginPass(int column) noexcept
 {
     g_column = column;
     g_faded.clear();
-    g_navi.skip = 0;
+    ClearSkips();
     if (!g_installed)
     {
         return;
@@ -987,14 +1027,16 @@ void BeginPass(int column) noexcept
     }
     if (column >= 1)
     {
-        // The column's seat's map alone in its image: player 1's minimap and compass out of it, its octagon rendering in
-        // player 1's pass only (the one span skipped per pass); every other seat's roots out of it too.
-        g_navi.skip = g_seats[0].paint;
+        // The column's seat's map alone in its image: player 1's minimap and compass out of it, every other seat's
+        // too; each octagon renders in its own player's pass only (every other octagon's span skipped in this one).
+        const int own = overlay_pass::SeatOf(column);
+        SkipSpan(g_seats[0].paint);
         HideRoots(one);
         for (int seat = 1; seat <= kSeatsBuilt; ++seat)
         {
-            if (seat != column && g_seats[seat].manager != nullptr)
+            if (seat != own && g_seats[seat].manager != nullptr)
             {
+                SkipSpan(g_seats[seat].paint);
                 HideRoots(g_seats[seat].manager);
             }
         }
@@ -1002,17 +1044,14 @@ void BeginPass(int column) noexcept
     else
     {
         // Player 1's pass, or the single render while a seat's map still shows after a leave: every seat's map out of
-        // the image. Painted at alpha 0: the only pass with a real DeltaTime, so its animations (In, Out) advance; the
-        // first seat's octagon does not render (the one span skipped per pass).
+        // the image. Painted at alpha 0: the only pass with a real DeltaTime, so its animations (In, Out) advance; no
+        // seat's octagon renders here (its span skipped).
         for (int seat = 1; seat <= kSeatsBuilt; ++seat)
         {
             const Seat& s = g_seats[seat];
             if (s.manager != nullptr && (column == 0 || RootShown(s.manager)))
             {
-                if (g_navi.skip == 0)
-                {
-                    g_navi.skip = s.paint;
-                }
+                SkipSpan(s.paint);
                 HideRoots(s.manager);
             }
         }
@@ -1034,8 +1073,8 @@ void EndPass() noexcept
 
 void EndFrame() noexcept
 {
-    g_column    = overlay_pass::kSingle;
-    g_navi.skip = 0;
+    g_column = overlay_pass::kSingle;
+    ClearSkips();
     ++g_counts.frames;
     if (g_pool.EndFrame())
     {

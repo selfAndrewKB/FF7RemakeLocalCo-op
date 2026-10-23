@@ -17,7 +17,6 @@ namespace {
 
 using GetPlayerActorFn = void* (*)(void* partyManager, std::uint8_t variant, std::uint8_t type, bool alternate);
 
-constexpr int          kPlayer   = 1;
 constexpr std::uint8_t kTypeNone = facts::kPlayerTypeNone;
 
 std::uintptr_t         g_target        = 0;
@@ -30,26 +29,39 @@ bool                   g_placed = false;
 std::uint8_t g_lastRefused = kTypeNone;
 int          g_lastSeat    = -1;
 
-/// The member type the switch running now must pass over: inside a seat's tick, player 1's leader; outside it,
-/// the member seat 1 plays (every seat's member once seat 2 is wired, plan/seats.md step 6). NONE when there is
-/// nothing to exclude.
-std::uint8_t Excluded() noexcept
+/// Whether the switch running now must pass over member `type`, another human's: inside a seat's tick, player 1's
+/// leader and every other seat's member; outside it (player 1's switch, the game's KO auto-switch), every seat's
+/// member.
+bool Excluded(std::uint8_t type, int ticking) noexcept
 {
-    const int seat = command_menu_tick::TickingSeat();
-    return seat >= 1 ? players::scopes::OtherLeaderType(seat) : players::scopes::MemberType(kPlayer);
+    if (type == kTypeNone)
+    {
+        return false;
+    }
+    if (ticking >= 1 && type == players::scopes::OtherLeaderType(ticking))
+    {
+        return true;
+    }
+    for (int seat = 1; seat <= players::kSeatsBuilt; ++seat)
+    {
+        if (seat != ticking && players::scopes::MemberType(seat) == type)
+        {
+            return true;
+        }
+    }
+    return false;
 }
 
 void* Candidate(void* partyManager, std::uint8_t variant, std::uint8_t type, bool alternate)
 {
-    const std::uint8_t excluded = Excluded();
-    if (excluded != kTypeNone && type == excluded)
+    const int seat = command_menu_tick::TickingSeat();  // 0: player 1's switch
+    if (Excluded(type, seat))
     {
-        const int seat = command_menu_tick::TickingSeat();  // 0: player 1's switch
         if (g_lastRefused != type || g_lastSeat != seat)
         {
             g_lastRefused = type;
             g_lastSeat    = seat;
-            platform::LogDebug(L"party switch: {}'s switch passes over member type {} (the other player's)", players::SeatName(seat), type);
+            platform::LogDebug(L"party switch: {}'s switch passes over member type {} (another player's)", players::SeatName(seat), type);
         }
         return nullptr;
     }

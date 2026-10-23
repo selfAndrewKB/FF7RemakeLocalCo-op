@@ -384,7 +384,7 @@ void UpdateCamera(void* self, float deltaSeconds)
         if ((seatsIn && self == platform::ReadPointer(one, facts::kControllerCameraManager)) ||
             (self != nullptr && self == views::scene_camera_two::MirrorSource()))
         {
-            views::scene_camera_two::BeforeUpdateCamera(self, nullptr);  // player 1's: its camera cut noted for this frame
+            views::scene_camera_two::BeforeUpdateCamera(self, 0, nullptr);  // player 1's: its camera cut noted for this frame
         }
         g_cameraUpdate(self, deltaSeconds);
         return;
@@ -394,7 +394,7 @@ void UpdateCamera(void* self, float deltaSeconds)
     const scopes::Scope leader(seat, scopes::Leader);
     // A scene's camera (slots player 1's manager was given this frame) onto the seat's, with the game's own setters,
     // inside the scope so the primary-scoped ones reach the seat's manager.
-    views::scene_camera_two::BeforeUpdateCamera(platform::ReadPointer(one, facts::kControllerCameraManager), self);  // one instance
+    views::scene_camera_two::BeforeUpdateCamera(platform::ReadPointer(one, facts::kControllerCameraManager), seat, self);
     g_cameraUpdate(self, deltaSeconds);
 }
 

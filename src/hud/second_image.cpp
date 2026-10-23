@@ -20,6 +20,7 @@
 #include "platform/log.h"
 #include "platform/verified_code.h"
 #include "platform/vtable_entry.h"
+#include "players/seats.h"
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -85,7 +86,7 @@ double NowMs() noexcept
 void Refuse(const wchar_t* why)
 {
     g_refused = true;
-    platform::Log(L"HUD image: {}; player 2's image stays off", why);
+    platform::Log(L"HUD image: {}; the further players' images stay off", why);
 }
 
 bool Ready() noexcept
@@ -166,8 +167,8 @@ bool RenderFurther(void* overlay, int column) noexcept
     platform::CopyGuarded(&after, static_cast<const std::uint8_t*>(overlay) + facts::kOverlayFade, sizeof(after));
     if (after.to != fade.to || after.duration != fade.duration || after.from != fade.from)
     {
-        platform::Log(L"HUD image: the game asked for a HUD fade to {:.2f} during player {}'s render; kept (UI filters: {})",
-                      after.to, column + 1, Filters());
+        platform::Log(L"HUD image: the game asked for a HUD fade to {:.2f} during {}'s render; kept (UI filters: {})",
+                      after.to, players::SeatName(overlay_pass::SeatOf(column)), Filters());
     }
     else
     {
@@ -196,7 +197,7 @@ void Driver(void* delegate)
     if (further != g_running)
     {
         g_running = further;
-        platform::Log(L"HUD image: player 2's image {}", further ? L"rendered each frame" : L"stopped");
+        platform::Log(L"HUD image: the further players' images {}", further ? L"rendered each frame" : L"stopped");
     }
     const double start = NowMs();
     if (further)
@@ -309,7 +310,7 @@ bool Install(const platform::GameImage& image) noexcept
     const auto thunk     = image.Rebase(facts::kOverlayDelegateThunk);
     if (!render || !slot || !acquire || !acquireFn || !submitFn || !delta || !thunk || !minimap_two::PoolCodeInstalled())
     {
-        platform::Log(L"HUD image: the overlay render is not what the research read; player 2's image stays off");
+        platform::Log(L"HUD image: the overlay render is not what the research read; the further players' images stay off");
         return false;
     }
     g_render        = reinterpret_cast<RenderFn>(*render);
@@ -319,7 +320,7 @@ bool Install(const platform::GameImage& image) noexcept
     g_acquireTarget = *acquireFn;
     if (!g_driver.Replace(*slot, *thunk, reinterpret_cast<std::uintptr_t>(&Driver)))
     {
-        platform::Log(L"HUD image: the overlay's render delegate is not the game's thunk; player 2's image stays off");
+        platform::Log(L"HUD image: the overlay's render delegate is not the game's thunk; the further players' images stay off");
         return false;
     }
     g_acquirePending = true;
@@ -331,7 +332,7 @@ bool Install(const platform::GameImage& image) noexcept
     using control::Value;
     Register({.name  = L"hud-image",
               .shape = Shape::OnOff,
-              .help  = L"player 2's own HUD image: the overlay rendered first for each further column (on at start; turns "
+              .help  = L"each further player's own HUD image: the overlay rendered first for each further column (on at start; turns "
                        L"hud-targets on)",
               .set   = [](const Value& value) {
                   SetEnabled(std::get<bool>(value));
@@ -381,7 +382,7 @@ void Tick(bool splitShown, const Columns& columns) noexcept
         const bool ok = g_acquireCall.InstallFromOwnThread(g_acquireSite, g_acquireTarget,
                                                            reinterpret_cast<std::uintptr_t>(&Acquire));
         platform::Log(L"HUD image: the overlay's acquire call {}",
-                      ok ? L"installed from the game thread" : L"could not be redirected (player 2's image stays off)");
+                      ok ? L"installed from the game thread" : L"could not be redirected (the further players' images stay off)");
     }
     g_split = splitShown;
     if (g_on && splitShown && !ui_targets::Enabled())

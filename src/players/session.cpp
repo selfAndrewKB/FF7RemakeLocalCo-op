@@ -231,7 +231,18 @@ void Session::OnFieldExit(void* self, const wchar_t* caller) noexcept
 
 void Session::LeaveForWorldChange(const wchar_t* why) noexcept
 {
-    // The last seat first: the engine list's order, each seat at its own index.
+    // Each seat's column first, before any leaves (the list closes up behind a leave): the rejoin restores that order.
+    auto* players = LocalPlayers(gameInstance_);
+    for (int index = 1; index <= kSeatsBuilt; ++index)
+    {
+        Seat& seat     = seats_[index];
+        seat.lastColumn = kNoColumn;
+        for (std::int32_t i = 1; players != nullptr && seat.localPlayer != nullptr && i < players->Num(); ++i)
+        {
+            seat.lastColumn = (*players)[i] == seat.localPlayer ? i : seat.lastColumn;
+        }
+    }
+    // The highest seat first (any order works: RemoveLocalPlayer takes a player from anywhere in the list).
     for (int index = kSeatsBuilt; index >= 1; --index)
     {
         Seat& seat = seats_[index];
@@ -252,7 +263,7 @@ void Session::LeaveForWorldChange(const wchar_t* why) noexcept
             // The column held through the loading screen (the seat's column, once per seat that leaves).
             mirror_.fillAtLeave(std::format(L"{} left for a world change", seat.Name()).c_str(), 1 + Count(), SeatIds());
         }
-        platform::Log(L"world change: {} joins again once the field is back (Ctrl+F8 cancels)", seat.Name());
+        platform::Log(L"world change: {} joins again once the field is back ({} cancels)", seat.Name(), LeaveKey(seat.index));
     }
 }
 
@@ -339,9 +350,19 @@ try
     const game_state::Snapshot game = game_state::Current();
     auto*                      players = LocalPlayers(gameInstance_);
     // Player 1 on a character also keeps the title screen out (a field in the play state too, with no character).
-    // The list holds the seats before this one (and the mirrors, which hold the empty columns).
+    // The list holds player 1, the seats in and the mirrors (which hold the empty columns). After a world change the
+    // seats join again in the order of the columns they held, so each takes back its own monitor: a seat waits while
+    // another seat still to rejoin held an earlier column (a seat that held none, after every seat that did; ties by
+    // seat).
+    bool lowerPending = false;
+    for (int other = 1; seat.rejoin.pending && other <= kSeatsBuilt; ++other)
+    {
+        const Seat& o = seats_[other];
+        const bool  earlier = o.lastColumn < seat.lastColumn || (o.lastColumn == seat.lastColumn && other < seat.index);
+        lowerPending = lowerPending || (other != seat.index && o.rejoin.pending && o.localPlayer == nullptr && earlier);
+    }
     const bool ready = game.valid && game.state == kStatePlay && game.hasRoot && game.running && game.step == kStepSteady &&
-                       players != nullptr && players->Num() == seat.index + Mirrors() &&
+                       players != nullptr && players->Num() == 1 + Count() + Mirrors() && !lowerPending &&
                        Field(Field((*players)[0], facts::kLocalPlayerController), facts::kControllerPawn) != nullptr;
     const auto now = std::chrono::steady_clock::now();
     if (!ready)
@@ -403,8 +424,8 @@ try
         {
             seat.rejoin   = Rejoin{};
             seat.awaiting = false;
-            platform::Log(L"{}: {} did not join in {} tries (see above); press Ctrl+F7 to join",
-                          afterWorldChange ? L"rejoin" : L"the wait for a member", seat.Name(), kRejoinFailures);
+            platform::Log(L"{}: {} did not join in {} tries (see above); press {} to join",
+                          afterWorldChange ? L"rejoin" : L"the wait for a member", seat.Name(), kRejoinFailures, JoinKey(seat.index));
         }
         return;
     }
@@ -421,7 +442,7 @@ catch (...)
 
 void Session::LeaveToAwait(Seat& seat, const wchar_t* why) noexcept
 {
-    platform::Log(L"{} leaves: {}; it joins again once its member is free (Ctrl+F8 stops the wait)", seat.Name(), why);
+    platform::Log(L"{} leaves: {}; it joins again once its member is free ({} stops the wait)", seat.Name(), why, LeaveKey(seat.index));
     if (!TakeOut(seat, false))
     {
         platform::Log(L"{} could not leave (see above); it stays in without a member", seat.Name());
@@ -478,7 +499,7 @@ void Session::Forget(Seat& seat) noexcept
     EndMemberModules(seat);
     scopes::Unbind(seat.index);
     seat_objects::Forget(seat.index);
-    pad_buttons::SetPlayers(1 + Count());  // the split effects' mask follows the further views by the tick (split_render::Tick)
+    pad_buttons::SetPads(SeatIds());  // the split effects' mask follows the further views by the tick (split_render::Tick)
     if (cameraInstalled_)
     {
         player_two_camera::Take(seat.index);  // forgotten, not destroyed: it belonged to the old world
@@ -508,7 +529,7 @@ try
     }
     if (seat.awaiting)
     {
-        platform::Log(L"{} already waits for its member to be free (see above; Ctrl+F8 stops the wait)", seat.Name());
+        platform::Log(L"{} already waits for its member to be free (see above; {} stops the wait)", seat.Name(), LeaveKey(seat.index));
         return;
     }
     if (!own_controller::CanRename())
@@ -519,10 +540,12 @@ try
     UObject* gameInstance = GameInstance();
     auto*    players      = LocalPlayers(gameInstance);
     const std::int32_t mirrors = Mirrors();  // the mirror player holds the column the seat takes (views/mirror_player.h)
-    // The seat takes the list's index `seat`: the seats before it in, this one free (Rebirth's rule).
-    if (players == nullptr || players->Num() != seat.index + mirrors)
+    // The list holds player 1 and the seats in, then the mirrors; the seat is appended after the players, so its
+    // column is the next one (with player 2 out, player 3 takes column 1).
+    const std::int32_t playersIn = 1 + Count();
+    if (players == nullptr || players->Num() != playersIn + mirrors)
     {
-        platform::Log(L"join refused: expected exactly {} local player(s){}, found {}", seat.index,
+        platform::Log(L"join refused: expected exactly {} local player(s){}, found {}", playersIn,
                       mirrors != 0 ? L" plus the mirror" : L"", players == nullptr ? -1 : players->Num());
         return;
     }
@@ -555,7 +578,7 @@ try
     if (mirrors != 0)
     {
         mirror_.clear(std::format(L"{} joins", seat.Name()).c_str());
-        if (players->Num() != seat.index)
+        if (players->Num() != playersIn)
         {
             platform::Log(L"join refused: the mirror player did not leave its column ({} local players)", players->Num());
             return;
@@ -570,13 +593,19 @@ try
 
     // The engine's list decides what happened: a player added before an exception must still be tracked,
     // so it can be removed before anything logs it in again.
-    if (players->Num() != seat.index + 1)
+    if (players->Num() != playersIn + 1)
     {
         platform::Log(L"join failed: the engine did not add a local player (count now {})", players->Num());
         return;
     }
-    seat.localPlayer = (*players)[seat.index];
+    seat.localPlayer = (*players)[playersIn];  // the engine appends the new player
     seat.awaiting    = false;
+    seat.rejoin      = Rejoin{};  // a join by hand during a rejoin's settle ends the rejoin
+    seat.lastColumn  = kNoColumn;
+    if (playersIn != seat.index)
+    {
+        platform::Log(L"join: {} takes column {} (the players before it in the list: {})", seat.Name(), playersIn + 1, playersIn);
+    }
 
     UObject* seatController = Controller(seat);
     UObject* managerOne     = Field(playerOneController, facts::kControllerCameraManager);
@@ -586,7 +615,7 @@ try
     platform::Log(L"join: {} is in; views filled: player 1 {}, {} {}", seat.Name(), filledOne ? L"yes" : L"NO", seat.Name(),
                   filledSeat ? L"yes" : L"NO");
     split_render::OnJoin();
-    pad_buttons::SetPlayers(1 + Count());  // from here the seat's pad's buttons are its own
+    pad_buttons::SetPads(SeatIds());  // from here the seat's pad's buttons are its own
     scopes::BindController(seat.index, seatController);
     seat_objects::BindController(seat.index, seatController);  // the one registry every module asks
     seat.seatRetryAt = 0;
@@ -659,7 +688,7 @@ try
     {
         if (!worldChange)
         {
-            platform::Log(L"leave refused: {}'s controller still holds its member; press Ctrl+F8 again to retry", seat.Name());
+            platform::Log(L"leave refused: {}'s controller still holds its member; press {} again to retry", seat.Name(), LeaveKey(seat.index));
             return false;
         }
         // The game destroys and rebuilds the party next; removing the controller unpossesses the member on the way.
@@ -679,7 +708,7 @@ try
         return false;
     }
     seat.localPlayer = nullptr;
-    pad_buttons::SetPlayers(1 + Count());
+    pad_buttons::SetPads(SeatIds());
     if (seatInstalled_)
     {
         party_seat::Forget(seat.index);  // a later player in this seat is a new controller, set up afresh
@@ -996,7 +1025,13 @@ try
         UObject* player     = (*players)[i];
         UObject* controller = Field(player, facts::kLocalPlayerController);
         UObject* manager    = Field(controller, facts::kControllerCameraManager);
-        platform::Log(L"player {}: {}", i + 1, Describe(player));
+        // The list's place is the column; the player is named by its seat (a mirror holds no seat).
+        const wchar_t* name = i == 0 ? SeatName(0) : L"a mirror";
+        for (int seat = 1; seat <= kSeatsBuilt; ++seat)
+        {
+            name = seats_[seat].localPlayer == player && player != nullptr ? SeatName(seat) : name;
+        }
+        platform::Log(L"column {}: {}: {}", i + 1, name, Describe(player));
         platform::Log(L"  controller {} (pawn {})", Describe(controller), Describe(Field(controller, facts::kControllerPawn)));
         platform::Log(L"  camera manager {} (owner {})", Describe(manager), Describe(Field(manager, facts::kCameraManagerPcOwner)));
         platform::Log(L"  main camera actor {}", Describe(Field(manager, facts::kCameraManagerMainCamera)));
@@ -1077,7 +1112,7 @@ try
             party_member::Choose(seat.index, Field((*players)[0], facts::kLocalPlayerController), nullptr, false);
         return std::format(L"awaiting: row {} type {}: {}", choice.ordinal, choice.type, party_member::Describe(choice.wait));
     }
-    if (players->Num() < seat.index + 1)
+    if (seat.localPlayer == nullptr)
     {
         return L"waiting (no seat)";
     }

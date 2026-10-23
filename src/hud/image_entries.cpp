@@ -24,10 +24,14 @@ using InitFn      = void (*)(void* resource);
 
 platform::CallRedirect  g_drawCall;
 platform::CodeRedirect  g_buffersCode;
-alignas(16) image_code::EntryTable g_table;  // column 1's: read by the render-thread code; entries written by the game thread
+// The further columns' tables (column c's is g_tables[c - 1]): read by the render-thread code; entries written by the
+// game thread, the buffer pairs by the render thread before g_ready.
+alignas(16) image_code::EntryTables g_tables;
 std::uintptr_t g_columnZero[4] = {};          // column 0's pool-2 entries (game thread writes, render thread reads)
 bool                    g_installed = false;
-bool                    g_ungatedLogged = false;  // a column beyond the one table (step 5), told once
+bool                    g_ungatedLogged = false;  // a column beyond the tables, told once
+constexpr int           kFurther = static_cast<int>(image_code::kTables);  // further columns with a table
+static_assert(kFurther + 1 == overlay_pass::kMaxColumns, "a table per further column");
 
 // Live addresses.
 void* const*   g_malloc       = nullptr;  // &GMalloc
@@ -76,25 +80,40 @@ void* MakeBuffer(std::uintptr_t vtable, std::uint32_t capacity) noexcept
     return platform::CallGuarded(reinterpret_cast<InitFn>(init), buffer) ? buffer : nullptr;
 }
 
+/// Every further column's pair, at once. Column 1's failing stops every further image; a later column's failing keeps
+/// the columns before it (that column's entries are then never recorded: its view draws as the image-less view).
 void MakeBuffers() noexcept
 {
-    void* vb = MakeBuffer(g_vertexVtable, 1024);
-    void* ib = vb != nullptr ? MakeBuffer(g_indexVtable, 1536) : nullptr;
-    if (vb == nullptr || ib == nullptr)
+    for (int t = 0; t < kFurther; ++t)
     {
-        g_failed.store(true, std::memory_order_relaxed);
-        platform::Log(L"HUD image: the second column's vertex/index buffers could not be made; player 2's image stays off");
-        return;
+        image_code::EntryTable& table = g_tables[static_cast<std::size_t>(t)];
+        if (table.vertexBuffer != 0 && table.indexBuffer != 0)
+        {
+            continue;
+        }
+        void* vb = MakeBuffer(g_vertexVtable, 1024);
+        void* ib = vb != nullptr ? MakeBuffer(g_indexVtable, 1536) : nullptr;
+        if (vb == nullptr || ib == nullptr)
+        {
+            if (t == 0)
+            {
+                g_failed.store(true, std::memory_order_relaxed);
+                platform::Log(L"HUD image: column 2's vertex/index buffers could not be made; the further players' images stay off");
+                return;
+            }
+            platform::Log(L"HUD image: column {}'s vertex/index buffers could not be made; that column's image stays off", t + 2);
+            break;
+        }
+        void* rhiVertex = nullptr;
+        void* rhiIndex  = nullptr;
+        std::memcpy(&rhiVertex, static_cast<std::uint8_t*>(vb) + 0x30, sizeof(void*));
+        std::memcpy(&rhiIndex, static_cast<std::uint8_t*>(ib) + 0x30, sizeof(void*));
+        table.vertexBuffer = reinterpret_cast<std::uintptr_t>(vb);
+        table.indexBuffer  = reinterpret_cast<std::uintptr_t>(ib);
+        platform::Log(L"HUD image: column {}'s vertex/index buffers made on the render thread (RHI buffers {} / {})", t + 2,
+                      rhiVertex, rhiIndex);
     }
-    void* rhiVertex = nullptr;
-    void* rhiIndex  = nullptr;
-    std::memcpy(&rhiVertex, static_cast<std::uint8_t*>(vb) + 0x30, sizeof(void*));
-    std::memcpy(&rhiIndex, static_cast<std::uint8_t*>(ib) + 0x30, sizeof(void*));
-    g_table.vertexBuffer = reinterpret_cast<std::uintptr_t>(vb);
-    g_table.indexBuffer  = reinterpret_cast<std::uintptr_t>(ib);
-    g_ready.store(true, std::memory_order_release);  // after the table: the game thread records entries only then
-    platform::Log(L"HUD image: the second column's vertex/index buffers made on the render thread (RHI buffers {} / {})",
-                  rhiVertex, rhiIndex);
+    g_ready.store(true, std::memory_order_release);  // after the tables: the game thread records entries only then
 }
 
 /// Whether `batch` is one of `entries`' batches: the draw call is given [entry+0x80] + 0x50 (RE-hud-two-images.md §2.3).
@@ -128,7 +147,8 @@ bool Record(std::uintptr_t (&entries)[4], std::uintptr_t entry) noexcept
         if (slot == 0)
         {
             reinterpret_cast<std::atomic<std::uintptr_t>&>(slot).store(entry, std::memory_order_release);
-            platform::LogDebug(L"HUD image: column {}'s layer entry {:#x} recorded", &entries == &g_table.entries ? 1 : 0, entry);
+            platform::LogDebug(L"HUD image: a layer entry {:#x} recorded ({})", entry,
+                               &entries == &g_columnZero ? L"player 1's column" : L"a further column");
             return true;
         }
     }
@@ -143,8 +163,12 @@ void DrawBatch(void* renderer, void* commandList, void* target, void* batch, voi
     // (the offscreen overlay), whose entries every view needs.
     if (g_view >= 0)
     {
-        const int owner = BatchOf(g_table.entries, batch) ? 1 : BatchOf(g_columnZero, batch) ? 0 : -1;
-        g_sawFurther    = g_sawFurther || owner >= 1;
+        int owner = BatchOf(g_columnZero, batch) ? 0 : -1;
+        for (int t = 0; owner < 0 && t < kFurther; ++t)
+        {
+            owner = BatchOf(g_tables[static_cast<std::size_t>(t)].entries, batch) ? t + 1 : -1;
+        }
+        g_sawFurther = g_sawFurther || owner >= 1;
         if (overlay_pass::DrawSkipped(g_view, owner, g_sawFurther))
         {
             ++g_skipped[g_view];
@@ -168,7 +192,7 @@ bool Install(const platform::GameImage& image) noexcept
     if (!site || !back || !drawCall || !drawFn || !malloc || !vertex || !index ||
         !image.BytesMatch(image_code::kBuffersCheckStart, image_code::kBuffersBytes))
     {
-        platform::Log(L"HUD image: the layer draw is not what the research read; player 2's image stays off");
+        platform::Log(L"HUD image: the layer draw is not what the research read; the further players' images stay off");
         return false;
     }
     g_malloc       = reinterpret_cast<void* const*>(*malloc);
@@ -176,13 +200,13 @@ bool Install(const platform::GameImage& image) noexcept
     g_indexVtable  = *index;
     if (!g_drawCall.Install(*drawCall, *drawFn, reinterpret_cast<std::uintptr_t>(&DrawBatch)))
     {
-        platform::Log(L"HUD image: the layer draw's call could not be redirected; player 2's image stays off");
+        platform::Log(L"HUD image: the layer draw's call could not be redirected; the further players' images stay off");
         return false;
     }
-    if (!g_buffersCode.Install(*site, image_code::kBuffersLoad, image_code::BuffersCode(g_table), *back))
+    if (!g_buffersCode.Install(*site, image_code::kBuffersLoad, image_code::BuffersCode(g_tables), *back))
     {
         g_drawCall.Restore();
-        platform::Log(L"HUD image: the layer draw's buffer load could not be redirected; player 2's image stays off");
+        platform::Log(L"HUD image: the layer draw's buffer load could not be redirected; the further players' images stay off");
         return false;
     }
     g_installed = true;
@@ -195,10 +219,13 @@ void Remove() noexcept
     {
         return;
     }
-    // The table empties first: whatever stays in place then treats every entry as column 0's.
-    for (auto& entry : g_table.entries)
+    // The tables empty first: whatever stays in place then treats every entry as column 0's.
+    for (auto& table : g_tables)
     {
-        entry = 0;
+        for (auto& entry : table.entries)
+        {
+            entry = 0;
+        }
     }
     const bool ok = g_buffersCode.Restore() & g_drawCall.Restore();
     if (!ok)
@@ -228,18 +255,22 @@ void RecordEntry(int column, void* entry) noexcept
     {
         return;
     }
-    if (column > 1)
+    if (column > kFurther)
     {
         if (!g_ungatedLogged)
         {
             g_ungatedLogged = true;
-            platform::LogWarning(L"HUD image: column {}'s layer entry ({}) has no buffer pair of its own yet (plan/seats.md step "
-                                 L"5); it is not gated by view",
-                                 column, entry);
+            platform::LogWarning(L"HUD image: column {}'s layer entry ({}) has no buffer pair of its own (only {} further columns "
+                                 L"are built); it is not gated by view",
+                                 column, entry, kFurther);
         }
         return;
     }
-    if (!Record(column == 1 ? g_table.entries : g_columnZero, value))
+    if (column >= 1 && g_tables[static_cast<std::size_t>(column - 1)].vertexBuffer == 0)
+    {
+        return;  // the column has no pair (its making failed, logged): its entry is never drawn from another's
+    }
+    if (!Record(column == 0 ? g_columnZero : g_tables[static_cast<std::size_t>(column - 1)].entries, value))
     {
         platform::LogWarning(L"HUD image: a fifth layer entry for column {} ({}); it is not gated by view", column, entry);
     }
@@ -252,9 +283,8 @@ void BeginUiPass(int column) noexcept
     {
         MakeBuffers();
     }
-    // One table serves column 1 (plan/seats.md step 5): a view beyond it draws as column 1's view would, as before the
-    // columns, instead of gating every column's entry out and leaving its image empty.
-    g_view       = column > 1 ? 1 : column;
+    // A table per further column; a view beyond them (none while the columns built match) draws as the last one's.
+    g_view       = column > kFurther ? kFurther : column;
     g_sawFurther = false;
 }
 

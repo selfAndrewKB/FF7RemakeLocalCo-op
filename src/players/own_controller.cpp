@@ -34,6 +34,7 @@ std::uintptr_t        g_cameraManagerVTable    = 0;
 // manager's BeginPlay) runs synchronously inside that call. BeginPlay of other camera managers reads it
 // only to see that no join is under way.
 void*  g_joiningPlayerOne = nullptr;
+int    g_joiningId        = 0;  // the joining player's controller id: its camera actor's name
 Report g_report{};
 
 std::uintptr_t VTableOf(const void* object) noexcept
@@ -126,7 +127,7 @@ void BeginPlay(void* cameraManager)
     {
         RefuseJoin(L"its owner is not a fitting End player controller");
     }
-    if (!WriteName(facts::kPlayerTwoCameraActorText))
+    if (!WriteName(facts::FurtherCameraActorText(g_joiningId)))
     {
         RefuseJoin(L"the camera actor's name could not be changed");
     }
@@ -180,15 +181,17 @@ bool UsesNativeClasses(const void* playerOneController) noexcept
            VTableOf(ReadPointer(playerOneController, facts::kControllerCameraManager)) == g_cameraManagerVTable;
 }
 
-JoinScope::JoinScope(void* playerOneController) noexcept
+JoinScope::JoinScope(void* playerOneController, int controllerId) noexcept
 {
-    g_report          = {};
+    g_report           = {};
     g_joiningPlayerOne = playerOneController;
+    g_joiningId        = controllerId;
 }
 
 JoinScope::~JoinScope()
 {
     g_joiningPlayerOne = nullptr;
+    g_joiningId        = 0;
 }
 
 Report JoinScope::Result() const noexcept

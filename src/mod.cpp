@@ -2,11 +2,12 @@
 //
 // Verifies every engine fact it relies on, installs, and turns the player-intent keys into joins and leaves
 // on the game thread (the engine tick's pre-callback), so they never land inside a frame's drawing. A retry, load,
-// jump or return to the title takes player 2 out first and brings it back after (players/field_exit.h). While the screen
-// is split the HUD is laid out for each half's shape (hud/overlay_layout.h, hud/root_placement.h).
-//   Ctrl+F7  player 2 joins with a controller and camera manager of its own, and takes its party member at once
-//   Ctrl+F8  player 2 leaves
-//   Ctrl+F6  log every local player's controller, camera manager and camera actor
+// jump or return to the title takes the further players out first and brings them back after (players/field_exit.h).
+// While the screen is split the HUD is laid out for each view's shape (hud/overlay_layout.h, hud/root_placement.h).
+//   Ctrl+F7        player 2 joins with a controller and camera manager of its own, and takes its party member at once
+//   Ctrl+F8        player 2 leaves
+//   Ctrl+Shift+F7  player 3 joins (the third row of the party order), Ctrl+Shift+F8 player 3 leaves
+//   Ctrl+F6        log every local player's controller, camera manager and camera actor
 // The same intents, and every module's switches, are commands on the console (control/remote.h), driven from
 // the host by tools/game.py.
 
@@ -29,6 +30,7 @@
 #include "control/remote.h"
 #include "hud/hud_probe.h"
 #include "hud/overlay_layout.h"
+#include "hud/overlay_pass.h"
 #include "hud/root_placement.h"
 #include "hud/field_icons.h"
 #include "hud/image_entries.h"
@@ -74,6 +76,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <format>
 #include <optional>
 #include <string>
 
@@ -86,7 +89,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.66.2-three-columns-review";
+constexpr const wchar_t* kVersion = L"0.67.0-third-player";
 static_assert(lss::views::column_rules::kMaxColumns == lss::hud::overlay_pass::kMaxColumns, "the columns the views and the HUD count");  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
@@ -99,11 +102,12 @@ bool GameHasFocus() noexcept
     return owner == GetCurrentProcessId();
 }
 
-/// True on the tick a Ctrl+key goes down; `wasDown` carries the state between ticks.
-bool Pressed(int virtualKey, bool& wasDown) noexcept
+/// True on the tick a Ctrl+key (with Shift when `shift`, without it otherwise) goes down; `wasDown` carries the state
+/// between ticks.
+bool Pressed(int virtualKey, bool& wasDown, bool shift = false) noexcept
 {
     const bool down    = GameHasFocus() && (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0 &&
-                         (GetAsyncKeyState(virtualKey) & 0x8000) != 0;
+                         ((GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0) == shift && (GetAsyncKeyState(virtualKey) & 0x8000) != 0;
     const bool pressed = down && !wasDown;
     wasDown            = down;
     return pressed;
@@ -113,7 +117,8 @@ using lss::control::Outcome;
 using lss::control::Shape;
 using lss::control::Value;
 
-constexpr int kSeatOne = 1;  // the p2.* readings and intents name seat 1 (plan/seats.md step 7 generalises them)
+constexpr int kSeatOne   = 1;  // player 2: the `join`, `leave` and p2.* commands (plan/seats.md step 7 may rename them)
+constexpr int kSeatThree = 2;  // player 3: `p3.join`, `p3.leave` and p3.*
 
 /// The input holds the console can make: at the mod's own per-pad stick layer, so a scripted stick takes the
 /// path a real pad takes.
@@ -140,42 +145,56 @@ private:
     lss::players::Session& session_;
 };
 
-/// The session's commands and readings on the console. The render modules register their own switches.
-void RegisterSessionCommands(lss::players::Session& session)
+/// One seat's intents and readings: `join`/`leave` (or the prefixed ones) and `<prefix>.member`, `.in`, `.rejoin`,
+/// `.state`.
+void RegisterSeatCommands(lss::players::Session& session, int seat, const wchar_t* prefix, const wchar_t* join, const wchar_t* leave)
 {
     using lss::control::Register;
-    Register({.name = L"join",
-              .help = L"player 2 joins on its member with a controller and camera manager of its own (Ctrl+F7); with the member not "
-                      L"free, nothing is made yet and player 2 joins once it is (p2.state awaiting)",
-              .set  = [&session](const Value&) {
-                  session.Join(kSeatOne);
-                  return session.In(kSeatOne) ? Outcome{}
-                         : session.Awaiting(kSeatOne)   ? Outcome{true, L"player 2 joins once its member is free (see the log; 'leave' stops the wait)"}
-                                                : Outcome{false, L"player 2 did not join (see the log)"};
+    const std::wstring name = lss::players::SeatName(seat);
+    Register({.name = join,
+              .help = std::format(L"{} joins on its member (the party order's row {}) with a controller and camera manager of its own ({}); "
+                                  L"with the member not free, nothing is made yet and {} joins once it is ({}.state awaiting)",
+                                  name, seat + 1, lss::players::JoinKey(seat), name, prefix),
+              .set  = [&session, seat, name, leave](const Value&) {
+                  session.Join(seat);
+                  return session.In(seat) ? Outcome{}
+                         : session.Awaiting(seat)
+                             ? Outcome{true, std::format(L"{} joins once its member is free (see the log; '{}' stops the wait)", name, leave)}
+                             : Outcome{false, std::format(L"{} did not join (see the log)", name)};
               }});
-    Register({.name = L"leave", .help = L"player 2 leaves, or stops waiting for a member (Ctrl+F8)", .set = [&session](const Value&) {
-                  session.Leave(kSeatOne);
-                  return session.In(kSeatOne) ? Outcome{false, L"player 2 is still in (see the log)"} : Outcome{};
+    Register({.name = leave,
+              .help = std::format(L"{} leaves, or stops waiting for a member ({})", name, lss::players::LeaveKey(seat)),
+              .set  = [&session, seat, name](const Value&) {
+                  session.Leave(seat);
+                  return session.In(seat) ? Outcome{false, std::format(L"{} is still in (see the log)", name)} : Outcome{};
               }});
-    Register({.name = L"party.ai", .shape = Shape::Text,
-              .help = L"each deployed member's status, PLAYER slot holder, actor mode and field AI layers (the take test's view)",
-              .get  = [&session] { return Value{session.FormationReading()}; }});
-    Register({.name = L"p2.member", .shape = Shape::Text,
-              .help = L"the member player 2 plays (its type and row of the party order), or why it waits for one",
-              .get  = [&session] { return Value{session.MemberReading(kSeatOne)}; }});
-    Register({.name = L"p2.in", .shape = Shape::OnOff, .help = L"player 2 is in",
-              .get = [&session] { return Value{session.In(kSeatOne)}; }});
-    Register({.name = L"p2.rejoin", .shape = Shape::OnOff,
-              .help = L"player 2 was taken out by a world change and joins again once the field is back ('leave' cancels)",
-              .get  = [&session] { return Value{session.RejoinPending(kSeatOne)}; }});
-    Register({.name  = L"p2.state",
+    Register({.name = std::format(L"{}.member", prefix), .shape = Shape::Text,
+              .help = std::format(L"the member {} plays (its type and row of the party order), or why it waits for one", name),
+              .get  = [&session, seat] { return Value{session.MemberReading(seat)}; }});
+    Register({.name = std::format(L"{}.in", prefix), .shape = Shape::OnOff, .help = std::format(L"{} is in", name),
+              .get = [&session, seat] { return Value{session.In(seat)}; }});
+    Register({.name = std::format(L"{}.rejoin", prefix), .shape = Shape::OnOff,
+              .help = std::format(L"{} was taken out by a world change and joins again once the field is back ('{}' cancels)", name, leave),
+              .get  = [&session, seat] { return Value{session.RejoinPending(seat)}; }});
+    Register({.name  = std::format(L"{}.state", prefix),
               .shape = Shape::Word,
               .words = {L"out", L"awaiting", L"rejoining", L"in", L"playing", L"handed"},
               .help  = L"out, awaiting (asked for; joins once its member is free), rejoining (taken out by a world change; joins "
                        L"again once the field is back), in (between a seat and the next, momentary), playing (holds its member), "
                        L"or handed (its member is with its AI while the game's leader is: a scene, a field action, the lock; or "
                        L"for the member's own hold: a script, an animation, a guide lead; the seat is kept)",
-              .get   = [&session] { return Value{std::wstring(lss::players::StateName(session.State(kSeatOne)))}; }});
+              .get   = [&session, seat] { return Value{std::wstring(lss::players::StateName(session.State(seat)))}; }});
+}
+
+/// The session's commands and readings on the console. The render modules register their own switches.
+void RegisterSessionCommands(lss::players::Session& session)
+{
+    using lss::control::Register;
+    RegisterSeatCommands(session, kSeatOne, L"p2", L"join", L"leave");
+    RegisterSeatCommands(session, kSeatThree, L"p3", L"p3.join", L"p3.leave");
+    Register({.name = L"party.ai", .shape = Shape::Text,
+              .help = L"each deployed member's status, PLAYER slot holder, actor mode and field AI layers (the take test's view)",
+              .get  = [&session] { return Value{session.FormationReading()}; }});
     Register({.name  = L"showflags",
               .shape = Shape::Hex,
               .max   = 0xFFFFFFFF,
@@ -200,7 +219,7 @@ void RegisterSessionCommands(lss::players::Session& session)
                   session.Status();
                   return Outcome{};
               }});
-    Register({.name = L"quit", .help = L"quit the game through the engine (player 2 must be out)",
+    Register({.name = L"quit", .help = L"quit the game through the engine (every further player must be out)",
               .set  = [&session](const Value&) {
                   if (session.Count() != 0)
                   {
@@ -355,7 +374,9 @@ public:
         const Hook::FCallbackOptions options{false, false, STR("LocalSplitScreen"), STR("player intent")};
         tickCallback_ = Hook::RegisterEngineTickPreCallback(
             [this](Hook::TCallbackIterationData<void>&, RC::Unreal::UEngine*, float, bool) { OnEngineTick(); }, options);
-        Log(L"ready: every engine check passed. Ctrl+F7 adds player 2 (it takes the 2nd party slot's member), Ctrl+F8 removes player 2, Ctrl+F6 reports, Ctrl+F2 toggles the window span; with window-span.hold on the mirror player fills the empty column");
+        Log(L"ready: every engine check passed. Ctrl+F7 adds player 2 (it takes the 2nd party slot's member), Ctrl+F8 removes player 2, "
+            L"Ctrl+Shift+F7 adds player 3 (the 3rd slot's member), Ctrl+Shift+F8 removes player 3, Ctrl+F6 reports, Ctrl+F2 toggles "
+            L"the window span; with window-span.hold on the mirror player fills the empty columns");
     }
 
 private:
@@ -369,6 +390,14 @@ private:
         {
             session_.Leave(kSeatOne);
         }
+        if (Pressed(VK_F7, joinThreeWasDown_, true))
+        {
+            session_.Join(kSeatThree);
+        }
+        if (Pressed(VK_F8, leaveThreeWasDown_, true))
+        {
+            session_.Leave(kSeatThree);
+        }
         if (Pressed(VK_F6, reportWasDown_))
         {
             session_.Status();
@@ -377,6 +406,9 @@ private:
         {
             lss::views::window_span::Toggle();
         }
+        // The console's lines (joins and leaves among them) before the session and the column map, as the keys, so
+        // this frame's HUD passes never name a player the console just took out.
+        remote_.Tick();
         lss::players::player_two_camera::MaintainInputTick();
         lss::players::game_state::Tick();  // first: the session and the console read this tick's values
         lss::players::pad_presence::Tick();
@@ -390,8 +422,14 @@ private:
         const int aloneColumns = lss::views::column_rules::Wanted(1, spanColumns, lss::views::column_layout::Override());
         lss::views::column_layout::Tick(viewColumns, playersIn + lss::views::mirror_player::Count());
         lss::views::mirror_player::Tick(playersIn, session_.SeatIds(), viewColumns, aloneColumns);
+        MapColumns();  // after every join, leave and mirror change of this tick: the HUD and this frame's passes read it
         lss::players::split_render::Tick(session_.Count() + lss::views::mirror_player::Count() > 0);
-        lss::views::scene_camera_two::Tick(CameraManagerOf(0), session_.In(kSeatOne) ? CameraManagerOf(1) : nullptr);  // seat 1 today
+        lss::views::scene_camera_two::SeatManagers seatManagers{};
+        for (int seat = 1; seat <= lss::players::kSeatsBuilt; ++seat)
+        {
+            seatManagers[static_cast<std::size_t>(seat)] = ManagerOfSeat(seat);
+        }
+        lss::views::scene_camera_two::Tick(CameraManagerOf(0), seatManagers);
         for (int seat = 1; seat <= lss::players::kSeatsBuilt; ++seat)
         {
             lss::battle::command_menu_two::Tick(seat, session_.Seated(seat));
@@ -407,7 +445,6 @@ private:
         lss::battle::sequence_camera_two::Tick();
         TickWorld();
         TickHud();
-        remote_.Tick();
     }
 
     /// A local player's view share (ULocalPlayer Origin and Size), read under a guard.
@@ -439,6 +476,37 @@ private:
         return lss::platform::ReadPointer(session_.LocalPlayer(index), lss::facts::kLocalPlayerController);
     }
 
+    /// A seat's own controller while its player is in (whatever its column), or null.
+    void* ControllerOfSeat(int seat) const noexcept
+    {
+        return lss::platform::ReadPointer(session_.SeatPlayer(seat), lss::facts::kLocalPlayerController);
+    }
+
+    /// A seat's own camera manager while its player is in, or null.
+    void* ManagerOfSeat(int seat) const noexcept
+    {
+        return lss::platform::ReadPointer(ControllerOfSeat(seat), lss::facts::kControllerCameraManager);
+    }
+
+    /// Which seat fills each column, from the engine's list (a seat's column is its place there: players/seats.h),
+    /// for every module that runs per column (hud/overlay_pass.h).
+    void MapColumns() noexcept
+    {
+        lss::hud::overlay_pass::Seats seats;
+        for (int column = 1; column < lss::hud::overlay_pass::kMaxColumns; ++column)
+        {
+            auto* player = session_.LocalPlayer(column);
+            for (int seat = 1; player != nullptr && seat <= lss::players::kSeatsBuilt; ++seat)
+            {
+                if (session_.SeatPlayer(seat) == player)
+                {
+                    seats.seat[column] = seat;
+                }
+            }
+        }
+        lss::hud::overlay_pass::SetSeats(seats);
+    }
+
     /// The world around the views (world/): party members kept visible near a camera, characters animated by the
     /// camera that sees them best, the NPCs near every further player kept awake and spawned around them too, and
     /// able to see them.
@@ -452,13 +520,13 @@ private:
         {
             const bool seatIn = session_.In(seat);
             void*      member = seatIn ? lss::players::scopes::Member(seat) : nullptr;
-            void*      camera = seatIn ? CameraManagerOf(seat) : nullptr;
+            void*      camera = seatIn ? ManagerOfSeat(seat) : nullptr;
             anyIn             = anyIn || seatIn;
             lss::world::anim_two_views::TickSeat(seat, camera, member);
             lss::world::npc_crowd::TickSeat(seat, member);
             lss::world::npc_senses::TickSeat(seat, member);
             lss::world::npc_detail::TickSeat(seat, camera);
-            lss::world::env_sets_two::TickSeat(seat, member, seatIn ? ControllerOf(seat) : nullptr);
+            lss::world::env_sets_two::TickSeat(seat, member, seatIn ? ControllerOfSeat(seat) : nullptr);
         }
         lss::world::anim_two_views::Tick();
         lss::world::npc_crowd::Tick();
@@ -468,7 +536,8 @@ private:
     }
 
     /// The HUD layout follows the split and each column's view (hud/overlay_pass.h: column 0 is player 1's, the seats'
-    /// follow in order, then the mirror's). With the mirror player in and no seat in, the HUD is laid out for player 1's
+    /// follow in the engine list's order, then the mirrors'). With the mirror player in and no seat in, the HUD is laid
+    /// out for player 1's
     /// column and every view samples that one image: the further passes and the per-view targets stay off, since only
     /// a further pass would draw into a second target, leaving the mirror's view empty.
     void TickHud() noexcept
@@ -498,14 +567,15 @@ private:
         {
             columns.localPlayer[column] = session_.LocalPlayer(column);
             columns.controller[column]  = ControllerOf(column);
-            // A further column's seat is its index while the seats fill in order (plan/seats.md): its member.
-            columns.member[column] = column >= 1 ? lss::players::scopes::Member(column) : nullptr;
+            // A further column's seat from the map (MapColumns): its member.
+            const int seat         = op::SeatOf(column);
+            columns.member[column] = seat >= 1 ? lss::players::scopes::Member(seat) : nullptr;
         }
         lss::hud::second_image::Tick(split, columns);
         lss::hud::minimap_two::Tick();
         for (int seat = 1; seat <= lss::players::kSeatsBuilt; ++seat)
         {
-            lss::hud::minimap_two::TickSeat(seat, split && session_.Seated(seat), columns.controller[seat]);
+            lss::hud::minimap_two::TickSeat(seat, split && session_.Seated(seat), split ? ControllerOfSeat(seat) : nullptr);
         }
         lss::hud::marker_replay::Tick();
         lss::hud::field_icons::Tick();
@@ -519,6 +589,8 @@ private:
     bool                  installed_     = false;
     bool                  joinWasDown_   = false;
     bool                  leaveWasDown_  = false;
+    bool                  joinThreeWasDown_  = false;
+    bool                  leaveThreeWasDown_ = false;
     bool                  reportWasDown_ = false;
     bool                  spanWasDown_   = false;
     Hook::GlobalCallbackId tickCallback_ = Hook::ERROR_ID;

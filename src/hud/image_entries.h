@@ -8,15 +8,13 @@
 //   - each entry is drawn only in its own column's view: the call to FEndMenuRenderer__DrawEntryBatchToTarget
 //     (0x1439FCFD8) is redirected and skipped for another column's entry (overlay_pass::DrawSkipped). Uploads stay
 //     (they run before it, and only on a fresh consume), so whichever view consumes the slot uploads every entry;
-//   - column 1's entries upload into and draw from a vertex/index buffer pair of their own (hud/image_code.h at
-//     0x143A000E2), so a view that reuses the slot draws each entry from its own last upload.
-// The pair is made on the render thread the way FEndMenuRenderer's constructor makes pool 2's (64-byte resources with
+//   - each further column's entries upload into and draw from a vertex/index buffer pair of that column's own
+//     (hud/image_code.h at 0x143A000E2), so a view that reuses the slot draws each entry from its own last upload.
+// The pairs are made on the render thread the way FEndMenuRenderer's constructor makes pool 2's (64-byte resources with
 // the game's vtables, capacities 1024/1536, InitResource), once, and never freed (the renderer lives as long as the
 // game). The game grows them as it grows its own. No game path makes a second pair: documented in
-// RE-hud-two-images.md §7 as the one recreation of this step.
-// One pair and one entry table serve one further column (column 1); a third view needs a second pair, built with it
-// (plan/seats.md step 5). Until then a second further column's entry is not gated (logged once) and a view beyond
-// column 1 draws as column 1's view.
+// RE-hud-two-images.md §7 as the one recreation of this step, made once more for the third column (plan/seats.md
+// step 6). One entry table and one pair per further column (columns 1 and 2).
 
 namespace lss::platform {
 class GameImage;
@@ -27,7 +25,8 @@ namespace lss::hud::image_entries {
 bool Install(const platform::GameImage& image) noexcept;
 void Remove() noexcept;
 
-/// Game thread: asks the render thread for column 1's buffer pair (made at the next UI pass). True once made.
+/// Game thread: asks the render thread for the further columns' buffer pairs (made at the next UI pass). True once
+/// made.
 bool BuffersReady() noexcept;
 void RequestBuffers() noexcept;
 

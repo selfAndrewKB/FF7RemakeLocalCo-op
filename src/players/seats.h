@@ -1,17 +1,19 @@
 #pragma once
 
 // The seats: the further human players the mod adds (plan/seats.md). Seat 0 is player 1, the game's own player;
-// seat 1 is player 2, seat 2 player 3. A seat's number is at once the scopes' player (players/scopes.h), the engine
-// list's index its local player takes (the seats before it filled first) and its controller id; its pad is XInput
-// user `seat`. Pure constants and names, no game.
+// seat 1 is player 2, seat 2 player 3. A seat's number is at once the scopes' player (players/scopes.h), its
+// controller id and its row of the party order after the field leader's; its pad is XInput user `seat`. Its column
+// (its view's place on screen) is its local player's index in the engine's list, which a join appends to: player 2
+// and player 3 in that order take columns 1 and 2, but with player 2 out player 3 takes column 1 (the HUD asks
+// overlay_pass::ColumnOf, never assumes the seat). Pure constants and names, no game.
 
 #include "players/scopes.h"
 
 namespace lss::players {
 
-/// The further players built and wired: seats 1..kSeatsBuilt. The modules behind them are sized by
-/// scopes::kMaxPlayers; the seats are wired one at a time (plan/seats.md step 6 wires seat 2).
-inline constexpr int kSeatsBuilt = 1;
+/// The further players built and wired: seats 1..kSeatsBuilt (plan/seats.md step 6 wired seat 2, player 3). The
+/// modules behind them are sized by scopes::kMaxPlayers.
+inline constexpr int kSeatsBuilt = 2;
 static_assert(kSeatsBuilt >= 1 && kSeatsBuilt < scopes::kMaxPlayers, "the seats are numbered within the scopes' players");
 
 /// "player 2" for seat 1: the name every line of a seat's uses, so three players read apart in the log.
@@ -19,6 +21,17 @@ constexpr const wchar_t* SeatName(int seat) noexcept
 {
     constexpr const wchar_t* kNames[scopes::kMaxPlayers] = {L"player 1", L"player 2", L"player 3", L"player 4"};
     return seat >= 0 && seat < scopes::kMaxPlayers ? kNames[seat] : L"a player";
+}
+
+/// The keys that bring the seat's player in and take it out (mod.cpp reads them): Ctrl+F7/F8 for player 2,
+/// Ctrl+Shift+F7/F8 for player 3. Named in the seat's log lines.
+constexpr const wchar_t* JoinKey(int seat) noexcept
+{
+    return seat == 1 ? L"Ctrl+F7" : seat == 2 ? L"Ctrl+Shift+F7" : L"the console's join";
+}
+constexpr const wchar_t* LeaveKey(int seat) noexcept
+{
+    return seat == 1 ? L"Ctrl+F8" : seat == 2 ? L"Ctrl+Shift+F8" : L"the console's leave";
 }
 
 /// A seat is one of the built ones.

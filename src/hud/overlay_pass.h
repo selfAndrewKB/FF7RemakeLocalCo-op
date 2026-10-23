@@ -2,7 +2,8 @@
 
 // The HUD passes by column (plan/seats.md step 4). A column is a view slot across the window: column 0 is player 1's,
 // the game's own render of the overlay, run last in the frame; the further columns (1..) are the seats' (a seat's
-// column is its index) and get the mod's extra renders before it, highest first (hud/second_image.h runs them). The
+// column is its place in the engine's list: Seats below, set each tick) and get the mod's extra renders before it,
+// highest first (hud/second_image.h runs them). The
 // mirror's columns show column 0's image and get no pass. Outside the passes, and during the game's one render while no
 // further column has an image, the column is kSingle. Set by second_image, the one module that runs the passes; read by
 // everything that paints into a menu-renderer slot during them (hud/overlay_layout.cpp, hud/minimap_two.cpp, the
@@ -23,6 +24,41 @@ void Set(int column) noexcept;
 bool Split() noexcept;
 /// A further column's pass runs: the mod's extra render.
 bool Further() noexcept;
+
+/// No seat: a mirror's column, an empty one, or a seat with no column.
+inline constexpr int kNoSeat = -1;
+
+/// Who fills each column: player 1 (seat 0) column 0, the seats in the engine list's order after it (a seat's column
+/// is its place in the list: with player 2 out, player 3 is in column 1), the mirrors' columns kNoSeat. Pure.
+struct Seats
+{
+    int seat[kMaxColumns] = {0, kNoSeat, kNoSeat};
+
+    constexpr int SeatOf(int column) const noexcept
+    {
+        return column >= 0 && column < kMaxColumns ? seat[column] : kNoSeat;
+    }
+    /// The seat's column, or -1 (no column; seat kNoSeat never has one).
+    constexpr int ColumnOf(int seatNumber) const noexcept
+    {
+        for (int column = 0; seatNumber >= 0 && column < kMaxColumns; ++column)
+        {
+            if (seat[column] == seatNumber)
+            {
+                return column;
+            }
+        }
+        return -1;
+    }
+};
+
+/// The columns' seats as the engine lists the local players this tick (mod.cpp, before the HUD's tick and the
+/// frame's passes). Game thread, as everything that asks.
+void SetSeats(const Seats& seats) noexcept;
+/// The seat whose pass `column` is (0 player 1's, kNoSeat a mirror's or none).
+int SeatOf(int column) noexcept;
+/// The column the seat's view fills (-1 none).
+int ColumnOf(int seat) noexcept;
 
 /// The FName value of a column's layer entry: the stock name for column 0 (and the single render); for a further column
 /// the stock name with another number, column + 1 (a distinct FName to the entry search's 8-byte compare, which needs

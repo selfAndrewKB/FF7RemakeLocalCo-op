@@ -14,7 +14,9 @@
 #include <array>
 #include <cstdint>
 #include <cstring>
+#include <format>
 #include <span>
+#include <string>
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -43,7 +45,7 @@ KeyEventFn             g_keyDown  = nullptr;
 KeyEventFn             g_keyUp    = nullptr;
 
 // Game thread only.
-int                                           g_players = 1;
+std::uint32_t                                 g_pads = 0;  // bit u: pad u has a player of its own (bit 0 never set)
 std::array<action_tables::View, kMaxPads>     g_views;  // index = XInput user; 0 unused (the live tables)
 UiContext                                     g_ui;
 bool                                          g_enabled   = true;
@@ -63,7 +65,7 @@ std::uint8_t* Owner() noexcept
 
 bool OwnPad(unsigned user) noexcept
 {
-    return g_enabled && user >= 1 && user < static_cast<unsigned>(g_players) && user < kMaxPads;
+    return g_enabled && user >= 1 && user < kMaxPads && ((g_pads >> user) & 1u) != 0;
 }
 
 bool OnGameThread() noexcept
@@ -188,7 +190,7 @@ std::int64_t RouteUp(void* owner, void* actionEvent)
 void Tick(void* self, float deltaTime, void* slateApp, void* cursor)
 {
     std::uint8_t* owner = static_cast<std::uint8_t*>(self);
-    if (g_players <= 1 || !g_enabled || !OnGameThread())
+    if (g_pads == 0 || !g_enabled || !OnGameThread())
     {
         g_tick(self, deltaTime, slateApp, cursor);
         return;
@@ -265,6 +267,9 @@ bool Install(const platform::GameImage& image) noexcept
     control::Register({.name = L"pad.events", .shape = control::Shape::Integer, .max = INT32_MAX,
                        .help = L"key events handled in pad 2's own state so far",
                        .get  = [] { return control::Value{static_cast<std::int64_t>(g_events[1])}; }});
+    control::Register({.name = L"pad.events-3", .shape = control::Shape::Integer, .max = INT32_MAX,
+                       .help = L"key events handled in pad 3's own state so far",
+                       .get  = [] { return control::Value{static_cast<std::int64_t>(g_events[2])}; }});
     platform::Log(L"pad buttons: installed; each further pad's buttons are its own player's");
     return true;
 }
@@ -278,19 +283,32 @@ void Remove() noexcept
     g_dispatch.Restore();
 }
 
-void SetPlayers(int players) noexcept
+void SetPads(std::uint32_t pads) noexcept
 {
-    if (players == g_players)
+    pads &= ((1u << kMaxPads) - 1u) & ~1u;  // pad 1 is player 1's: the game's own state
+    if (pads == g_pads)
     {
         return;
     }
-    g_players = players;
-    g_thread  = GetCurrentThreadId();  // the game thread: joins and leaves run on it, as the input object does
-    for (auto& view : g_views)
+    const std::uint32_t added = pads & ~g_pads;
+    g_pads   = pads;
+    g_thread = GetCurrentThreadId();  // the game thread: joins and leaves run on it, as the input object does
+    for (unsigned user = 1; user < kMaxPads; ++user)
     {
-        view = action_tables::View{};  // a pad's copy starts from nothing held
+        if (((added >> user) & 1u) != 0)
+        {
+            g_views[user] = action_tables::View{};  // a pad newly in starts from nothing held
+        }
     }
-    platform::LogDebug(L"pad buttons: {} player(s); pads 2..{} have their own buttons", players, players);
+    std::wstring own;
+    for (unsigned user = 1; user < kMaxPads; ++user)
+    {
+        if (((pads >> user) & 1u) != 0)
+        {
+            own += std::format(L"{}{}", own.empty() ? L"" : L", ", user + 1);
+        }
+    }
+    platform::LogDebug(L"pad buttons: pads with their own buttons: {}", own.empty() ? std::wstring(L"none") : own);
 }
 
 ButtonScope::ButtonScope(unsigned user) noexcept

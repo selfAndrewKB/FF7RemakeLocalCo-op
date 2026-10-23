@@ -9,7 +9,8 @@
 // the primary manager's slots only (every writer resolves the primary controller's manager): the cutscene pose into
 // slot 8 each frame, a talk camera into 14, an event camera into 18, the start and end blends as on-switches with a
 // 60-byte record in slots 2-7, 9-13, 16, 17 (seeded with the source pose: the field camera's slot 24 for 6, 12, 16).
-// Player 2's manager, fed by player 2's own field camera operator, keeps its slot 24 through a scene.
+// Player 2's manager, fed by player 2's own field camera operator, keeps its slot 24 through a scene. Every further
+// player gets the same, each seat with its own copy record (plan/seats.md step 6: player 3).
 //
 // The lever, the game's own setters on player 2's manager, applied right before its UpdateCamera each frame while a
 // scene holds the players (the cutscene manager playing, or the game's field control lock):
@@ -34,6 +35,9 @@
 // every copy; a mirror needs no scene to run. Each mirror has its own copy record, by the mirror module's slot.
 // Readings `scene.*`, `camera-slots.*`, `scene-camera-two.state`; the switch `scene-camera-two on|off` (on). Game thread.
 
+#include "players/seats.h"
+
+#include <array>
 #include <cstdint>
 #include <string>
 
@@ -49,13 +53,17 @@ namespace lss::views::scene_camera_two {
 bool Install(const platform::GameImage& image) noexcept;
 void Remove() noexcept;
 
-/// Once per engine tick with each local player's camera manager (null when absent): reads and logs what changed.
-void Tick(void* managerOne, void* managerTwo) noexcept;
+/// Each seat's camera manager while its player is in (null when out), by seat; [0] unused.
+using SeatManagers = std::array<void*, players::scopes::kMaxPlayers>;
 
-/// Right before a camera manager's UpdateCamera. Player 1's (`managerTwo` null): its cut bit is noted for this frame.
-/// Player 2's: the scene slots are mirrored onto it; the caller holds player 2's primary scope (the game's
-/// primary-scoped setters then reach player 2's manager).
-void BeforeUpdateCamera(void* managerOne, void* managerTwo) noexcept;
+/// Once per engine tick with player 1's camera manager and each seat's: reads and logs what changed; a seat that
+/// left has its copy forgotten.
+void Tick(void* managerOne, const SeatManagers& seatManagers) noexcept;
+
+/// Right before a camera manager's UpdateCamera. Player 1's (`seat` 0): its cut bit is noted for this frame. A
+/// seat's (`manager` its own): the scene slots are mirrored onto it; the caller holds the seat's primary scope (the
+/// game's primary-scoped setters then reach the seat's manager).
+void BeforeUpdateCamera(void* managerOne, int seat, void* manager) noexcept;
 
 /// The mirror players' copies (views/mirror_player), one per mirror slot 0..kMirrorSlots-1.
 inline constexpr int kMirrorSlots = 2;

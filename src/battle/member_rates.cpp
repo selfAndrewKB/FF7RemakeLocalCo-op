@@ -9,6 +9,7 @@
 #include "platform/verified_code.h"
 #include "platform/vtable_entry.h"
 #include "players/scopes.h"
+#include "players/seats.h"
 
 #include <array>
 #include <cstdint>
@@ -28,8 +29,6 @@ using PassiveAtbFn = void (*)(void* component, float deltaTime);
 using UcpcFlagFn   = char (*)(void* component, std::int64_t a2, std::int64_t a3);
 using StaggerFn    = char (*)(float* burst, void* attacker, void* hit);
 
-constexpr int kPlayer = 1;
-
 std::array<platform::VTableEntry, facts::kBattleCompVTables.size()> g_passiveSlots;
 std::array<platform::VTableEntry, facts::kBattleCompVTables.size()> g_flagSlots;
 platform::CallRedirect                                             g_staggerCall;
@@ -38,16 +37,42 @@ UcpcFlagFn                                                         g_flag    = n
 
 // Game thread.
 DWORD  g_thread    = 0;
-void*  g_component = nullptr;  // player 2's member's battle component this tick
+std::array<void*, players::scopes::kMaxPlayers> g_components{};  // each seat's member's battle component this tick; [0] unused
 bool   g_enabled   = true;
 std::uint32_t g_offThread[3]{};
 bool          g_offThreadLogged[3]{};
 bool          g_appliedLogged[3]{};
 
-/// Whether this call is player 2's member's and may run in its leader scope (the game thread only).
-bool Scoped(bool ours, int lever, const wchar_t* what) noexcept
+/// The seat whose member's battle component this is (0 none).
+int SeatOfComponent(const void* component) noexcept
 {
-    if (!ours || !g_enabled)
+    for (int seat = 1; component != nullptr && seat <= players::kSeatsBuilt; ++seat)
+    {
+        if (g_components[static_cast<std::size_t>(seat)] == component)
+        {
+            return seat;
+        }
+    }
+    return 0;
+}
+
+/// The seat whose member this character is (0 none).
+int SeatOfMember(const void* character) noexcept
+{
+    for (int seat = 1; character != nullptr && seat <= players::kSeatsBuilt; ++seat)
+    {
+        if (players::scopes::Member(seat) == character)
+        {
+            return seat;
+        }
+    }
+    return 0;
+}
+
+/// Whether this call is a seat's member's and may run in that seat's leader scope (the game thread only).
+bool Scoped(int seat, int lever, const wchar_t* what) noexcept
+{
+    if (seat == 0 || !g_enabled)
     {
         return false;
     }
@@ -57,23 +82,24 @@ bool Scoped(bool ours, int lever, const wchar_t* what) noexcept
         if (!g_offThreadLogged[lever])
         {
             g_offThreadLogged[lever] = true;
-            platform::LogWarning(L"member rates: {} for player 2's member ran off the game thread; the AI-ally rate stays there", what);
+            platform::LogWarning(L"member rates: {} for {}'s member ran off the game thread; the AI-ally rate stays there", what,
+                                 players::SeatName(seat));
         }
         return false;
     }
     if (!g_appliedLogged[lever])
     {
         g_appliedLogged[lever] = true;
-        platform::LogDebug(L"member rates: {} runs for player 2's member as the player's", what);
+        platform::LogDebug(L"member rates: {} runs for {}'s member as the player's", what, players::SeatName(seat));
     }
     return true;
 }
 
 void PassiveAtb(void* component, float deltaTime)
 {
-    if (Scoped(component == g_component, 0, L"the passive ATB tick"))
+    if (const int seat = SeatOfComponent(component); Scoped(seat, 0, L"the passive ATB tick"))
     {
-        players::scopes::Scope leader(kPlayer, players::scopes::Leader);
+        players::scopes::Scope leader(seat, players::scopes::Leader);
         g_passive(component, deltaTime);
         return;
     }
@@ -82,9 +108,9 @@ void PassiveAtb(void* component, float deltaTime)
 
 char UcpcFlag(void* component, std::int64_t a2, std::int64_t a3)
 {
-    if (Scoped(component == g_component, 1, L"the ability flag"))
+    if (const int seat = SeatOfComponent(component); Scoped(seat, 1, L"the ability flag"))
     {
-        players::scopes::Scope leader(kPlayer, players::scopes::Leader);
+        players::scopes::Scope leader(seat, players::scopes::Leader);
         return g_flag(component, a2, a3);
     }
     return g_flag(component, a2, a3);
@@ -93,9 +119,9 @@ char UcpcFlag(void* component, std::int64_t a2, std::int64_t a3)
 char Stagger(float* burst, void* attacker, void* hit)
 {
     const auto original = reinterpret_cast<StaggerFn>(g_staggerCall.Original());
-    if (Scoped(attacker != nullptr && attacker == players::scopes::Member(kPlayer), 2, L"the stagger hit"))
+    if (const int seat = SeatOfMember(attacker); Scoped(seat, 2, L"the stagger hit"))
     {
-        players::scopes::Scope leader(kPlayer, players::scopes::Leader);
+        players::scopes::Scope leader(seat, players::scopes::Leader);
         return original(burst, attacker, hit);
     }
     return original(burst, attacker, hit);
@@ -111,7 +137,7 @@ bool Install(const platform::GameImage& image) noexcept
     const auto site    = image.Rebase(facts::kBattleStaggerRewardsCall, 5);
     if (!passive || !flag || !stagger || !site)
     {
-        platform::Log(L"member rates: an engine check failed; player 2's member keeps the AI-ally rates");
+        platform::Log(L"member rates: an engine check failed; the further players' members keep the AI-ally rates");
         return false;
     }
     g_passive = reinterpret_cast<PassiveAtbFn>(*passive);
@@ -135,19 +161,19 @@ bool Install(const platform::GameImage& image) noexcept
     if (!installed)
     {
         Remove();
-        platform::Log(L"member rates: a slot or call could not be replaced; player 2's member keeps the AI-ally rates");
+        platform::Log(L"member rates: a slot or call could not be replaced; the further players' members keep the AI-ally rates");
         return false;
     }
     control::Register({.name  = L"rates-two",
                        .shape = control::Shape::OnOff,
-                       .help  = L"player 2's member fills ATB, flags abilities and staggers at the player's rates (battle/member_rates.h; on)",
+                       .help  = L"each further player's member fills ATB, flags abilities and staggers at the player's rates (battle/member_rates.h; on)",
                        .set   = [](const control::Value& value) {
                            g_enabled = std::get<bool>(value);
                            platform::Log(L"member rates {}", g_enabled ? L"on" : L"off");
                            return control::Outcome{};
                        },
                        .get = [] { return control::Value{g_enabled}; }});
-    platform::Log(L"member rates: installed; player 2's member's ATB, ability flag and staggers run as the player's");
+    platform::Log(L"member rates: installed; each further player's member's ATB, ability flag and staggers run as the player's");
     return true;
 }
 
@@ -166,12 +192,16 @@ void Remove() noexcept
 
 void Tick() noexcept
 {
-    g_thread      = GetCurrentThreadId();
-    void* member  = players::scopes::Member(kPlayer);
-    void* component = nullptr;
-    g_component = member != nullptr && Read(static_cast<const std::uint8_t*>(member) + facts::kCharacterBattleComponent, component)
-                      ? component
-                      : nullptr;
+    g_thread = GetCurrentThreadId();
+    for (int seat = 1; seat <= players::kSeatsBuilt; ++seat)
+    {
+        void* member    = players::scopes::Member(seat);
+        void* component = nullptr;
+        g_components[static_cast<std::size_t>(seat)] =
+            member != nullptr && Read(static_cast<const std::uint8_t*>(member) + facts::kCharacterBattleComponent, component)
+                ? component
+                : nullptr;
+    }
 }
 
 }  // namespace lss::battle::member_rates

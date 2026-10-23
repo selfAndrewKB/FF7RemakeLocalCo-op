@@ -10,6 +10,7 @@
 #include "battle/targeting_two.h"
 #include "control/registry.h"
 #include "engine_facts.h"
+#include "hud/overlay_pass.h"
 #include "platform/byte_scope.h"
 #include "platform/call_redirect.h"
 #include "platform/entry_redirect.h"
@@ -391,7 +392,8 @@ void BeginPass(int column) noexcept
     {
         return;
     }
-    // A seat's column is its index: the column's own cursor stays, every other player's goes transparent.
+    // A seat's column is its place in the engine's list (hud/overlay_pass.h's map): the column's own cursor stays,
+    // every other player's goes transparent.
     if (column >= 1)
     {
         void* one = nullptr;
@@ -403,7 +405,7 @@ void BeginPass(int column) noexcept
     for (int seat = 1; seat <= kSeatsBuilt; ++seat)
     {
         const Seat& s = g_seats[seat];
-        if (seat != column && s.copy.Defined() && system == s.system)
+        if (hud::overlay_pass::ColumnOf(seat) != column && s.copy.Defined() && system == s.system)
         {
             Transparent(CopyWidget(s));  // the seat's cursor out of another player's column
         }
