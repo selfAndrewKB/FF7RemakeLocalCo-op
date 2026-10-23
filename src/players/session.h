@@ -38,6 +38,7 @@
 // their step of plan/seats.md.
 
 #include "players/party_member.h"
+#include "players/seat_state.h"
 #include "players/seats.h"
 
 #include <array>
@@ -98,6 +99,12 @@ public:
     std::wstring FormationReading() const noexcept;
     /// The seat's player was taken out by a world change and joins again once the field is back.
     bool RejoinPending(int seat) const noexcept { return SeatBuilt(seat) && seats_[seat].rejoin.pending; }
+    /// The seat's state in one word (players/seat_state.h), from the record's flags.
+    SeatState State(int seat) const noexcept
+    {
+        return StateOf({.in = In(seat), .seated = Seated(seat), .handedToAi = HandedToAi(seat), .awaiting = Awaiting(seat),
+                        .rejoinPending = RejoinPending(seat)});
+    }
 
     /// An engine console command, as typed in the console (UKismetSystemLibrary::ExecuteConsoleCommand with
     /// player 1's controller). False if the call could not be made.

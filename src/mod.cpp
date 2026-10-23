@@ -83,7 +83,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.61.0-env-sets-by-seat";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.62.0-seat-state";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
@@ -166,16 +166,12 @@ void RegisterSessionCommands(lss::players::Session& session)
               .get  = [&session] { return Value{session.RejoinPending(kSeatOne)}; }});
     Register({.name  = L"p2.state",
               .shape = Shape::Word,
-              .words = {L"out", L"awaiting", L"in", L"playing", L"handed"},
-              .help  = L"out, awaiting (asked for; joins once its member is free), in (between a seat and the next, momentary), "
-                       L"playing (holds its member), or handed (its member is with its AI while the game's leader is: a scene, a "
-                       L"field action, the lock; or for the member's own hold: a script, an animation, a guide lead; the seat is kept)",
-              .get   = [&session] {
-                  return Value{std::wstring(!session.In(kSeatOne) ? (session.Awaiting(kSeatOne) ? L"awaiting" : L"out")
-                                            : !session.Seated(kSeatOne)     ? L"in"
-                                            : session.HandedToAi(kSeatOne)  ? L"handed"
-                                                                    : L"playing")};
-              }});
+              .words = {L"out", L"awaiting", L"rejoining", L"in", L"playing", L"handed"},
+              .help  = L"out, awaiting (asked for; joins once its member is free), rejoining (taken out by a world change; joins "
+                       L"again once the field is back), in (between a seat and the next, momentary), playing (holds its member), "
+                       L"or handed (its member is with its AI while the game's leader is: a scene, a field action, the lock; or "
+                       L"for the member's own hold: a script, an animation, a guide lead; the seat is kept); players/seat_state.h",
+              .get   = [&session] { return Value{std::wstring(lss::players::StateName(session.State(kSeatOne)))}; }});
     Register({.name  = L"showflags",
               .shape = Shape::Hex,
               .max   = 0xFFFFFFFF,

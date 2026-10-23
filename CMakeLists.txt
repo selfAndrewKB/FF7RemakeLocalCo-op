@@ -307,3 +307,10 @@ add_executable(MinimapRulesTests
 target_include_directories(MinimapRulesTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_compile_features(MinimapRulesTests PRIVATE cxx_std_20)
 add_test(NAME minimap_rules COMMAND MinimapRulesTests)
+
+add_executable(SeatStateTests
+    tests/seat_state_test.cpp
+)
+target_include_directories(SeatStateTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(SeatStateTests PRIVATE cxx_std_20)
+add_test(NAME seat_state COMMAND SeatStateTests)
