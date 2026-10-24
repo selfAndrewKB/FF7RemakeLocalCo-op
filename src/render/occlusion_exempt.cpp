@@ -7,6 +7,7 @@
 #include "platform/image.h"
 #include "platform/log.h"
 #include "platform/verified_code.h"
+#include "render/family_now.h"
 #include "render/index_ranges.h"
 
 #include <Unreal/NameTypes.hpp>
@@ -331,11 +332,26 @@ Slot* SlotFor(const void* params) noexcept
     {
         return &g_main;
     }
-    const void*  view = nullptr;
+    const void* view = nullptr;
+    if (!ReadAt(params, 8, view))
+    {
+        return nullptr;
+    }
+    // A split frame (render/family_now.h): every player's view is at (0, 0) of its own family; its place says who it is.
+    // A reflection drawn inside the family is not the player's view and keeps the rule below.
+    if (const family_now::Family family = family_now::For(view); family.index >= 0)
+    {
+        if (thirdOwn && family.index == kThirdColumn)
+        {
+            return &g_third;
+        }
+        const bool first = family.index == 0;
+        return views == Views::All || first == (views == Views::PlayerOne) ? &g_main : nullptr;
+    }
     std::int32_t minX = 0;
     std::int32_t minY = 0;
     std::int32_t maxX = 0;
-    if (!ReadAt(params, 8, view) || !ReadAt(view, facts::kViewRectMinX, minX) ||
+    if (!ReadAt(view, facts::kViewRectMinX, minX) ||
         !ReadAt(view, facts::kViewRectMinY, minY) || !ReadAt(view, facts::kViewRectMaxX, maxX))
     {
         return nullptr;

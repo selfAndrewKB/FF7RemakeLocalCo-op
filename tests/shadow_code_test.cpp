@@ -396,7 +396,8 @@ void TestArea()
     StandIn                     s(code::kAreaSite & 0xF, code::kAreaAdd, sizeof(code::kAreaAdd));
     alignas(16) static code::State state;
     lss::platform::CodeRedirect redirect;
-    EXPECT(redirect.Install(s.At(s.site), code::kAreaAdd, code::AreaCode(state), s.At(s.resume)));
+    static std::int32_t         family = -1;  // render/family_now.h: no split frame
+    EXPECT(redirect.Install(s.At(s.site), code::kAreaAdd, code::AreaCode(state, &family), s.At(s.resume)));
     std::vector<std::uint8_t> views(code::kViewStride * 2, 0), renderer(0x100, 0), scene(0x2000, 0), frame(0x40, 0);
     const auto                viewsAt = Address(views.data());
     std::memcpy(renderer.data() + 0xD0, &viewsAt, 8);
@@ -429,6 +430,19 @@ void TestArea()
     state.game.scene = nullptr;
     EXPECT(run(1) == 0xEE);  // nothing of this scene: untouched
     EXPECT(state.areaOwn == 1 && state.areaGame == 3);
+    // One family per player: every view is the renderer's view 0, and the family index picks the record.
+    state.records[1].scene = scene.data();
+    state.game.scene       = scene.data();
+    std::memcpy(views.data() + code::kViewState, &states[1], 8);  // the renderer's view 0 is player 2's
+    family = 1;
+    EXPECT(run(0) == 0x11);  // its own, by the family index
+    family = 0;
+    EXPECT(run(0) == 0x22);  // record 0 is empty: the game's
+    family = 1;
+    std::memcpy(views.data() + code::kViewState, &states[0], 8);
+    EXPECT(run(0) == 0x22);  // the family index names a record of another view state: the game's
+    family = -1;
+    EXPECT(state.areaOwn == 2 && state.areaGame == 5);
     EXPECT(redirect.Restore());
 }
 
@@ -438,7 +452,8 @@ void TestSun()
     StandIn                     s(code::kSunSite & 0xF, code::kSunAdd, sizeof(code::kSunAdd));
     alignas(16) static code::State state;
     lss::platform::CodeRedirect redirect;
-    EXPECT(redirect.Install(s.At(s.site), code::kSunAdd, code::SunCode(state), s.At(s.resume)));
+    static std::int32_t         family = -1;
+    EXPECT(redirect.Install(s.At(s.site), code::kSunAdd, code::SunCode(state, &family), s.At(s.resume)));
     std::vector<std::uint8_t> views(code::kViewStride * 2, 0), renderer(0x100, 0), scene(0x2000, 0), light(0x40, 0),
         proxy(0x200, 0);
     const auto viewsAt = Address(views.data()), sceneAt = Address(scene.data()), lightAt = Address(light.data()),
@@ -478,6 +493,15 @@ void TestSun()
     state.records[1].sun = nullptr;
     EXPECT(run(1, lightAt)[0] == state.game.cascades[0]);        // its record is of another proxy: the game's
     EXPECT(state.sunOwn == 1 && state.sunGame == 2);
+    // One family per player: the renderer's view 0 with player 2's state; rax (the view index) is kept (run checks).
+    state.records[1] = mine;
+    std::memcpy(views.data() + code::kViewState, &viewState, 8);
+    family = 1;
+    EXPECT(run(0, lightAt)[0] == mine.cascades[0]);
+    family = 2;
+    EXPECT(run(0, lightAt)[0] == state.game.cascades[0]);  // no record 2: the game's
+    family = -1;
+    EXPECT(state.sunOwn == 2 && state.sunGame == 3);
     EXPECT(redirect.Restore());
 }
 
@@ -487,7 +511,8 @@ void TestFog()
     StandIn                     s(code::kFogSite & 0xF, code::kFogLoad, sizeof(code::kFogLoad));
     alignas(16) static code::State state;
     lss::platform::CodeRedirect redirect;
-    EXPECT(redirect.Install(s.At(s.site), code::kFogLoad, code::FogCode(state), s.At(s.resume)));
+    static std::int32_t         family = -1;
+    EXPECT(redirect.Install(s.At(s.site), code::kFogLoad, code::FogCode(state, &family), s.At(s.resume)));
     std::vector<std::uint8_t> scene(0x2000, 0), fog(0xC8, 0), view(0x10, 0);
     const auto fogAt = Address(fog.data()), component = std::uint64_t{0xC0C0};
     std::memcpy(scene.data() + code::kSceneFogs, &fogAt, 8);
@@ -555,6 +580,17 @@ void TestFog()
     std::uint64_t kept = 0;
     std::memcpy(&kept, fog.data(), 8);
     EXPECT(kept == component);  // the fog's component is never written
+    // One family per player: the view is the renderer's view 0 (r15 = 0), the family index picks the record.
+    state.fogGame = record(0x22, 0, component);
+    state.fogs[1] = record(0x11, viewState, component);
+    family        = 1;
+    EXPECT(run(0) == 0x11);
+    family = 3;
+    EXPECT(run(0) == 0x22);  // no record 3: the game's
+    family = 7;
+    EXPECT(run(0) == 0x22);  // past the records: the game's
+    family = -1;
+    EXPECT(run(0) == 0x22);  // no split frame: the renderer's index 0, no record
 
     // A round trip through FogField (the mapping the mod's own copies use): a record taken from the fog's bytes, the
     // fog changed, the stub puts the same bytes back.

@@ -9,6 +9,7 @@
 #include "platform/module_pin.h"
 #include "platform/vtable_entry.h"
 #include "render/area_chains.h"
+#include "render/family_now.h"
 #include "render/shadow_code.h"
 
 #include <array>
@@ -420,9 +421,9 @@ bool Install(const platform::GameImage& image) noexcept
         const auto caster     = image.Rebase(code::kCasterSite, sizeof(code::kCasterLoad));
         const auto casterBack = image.Rebase(code::kCasterResume, sizeof(code::kCasterTail));
         // Every buffer before any install: a failed allocation leaves nothing half placed.
-        areaCode   = code::AreaCode(g_state);
-        sunCode    = code::SunCode(g_state);
-        fogCode    = code::FogCode(g_state);
+        areaCode   = code::AreaCode(g_state, family_now::IndexAddress());
+        sunCode    = code::SunCode(g_state, family_now::IndexAddress());
+        fogCode    = code::FogCode(g_state, family_now::IndexAddress());
         decideCode = code::DecideCode(g_state);
         gatherCode = code::GatherCode(g_state);
         hideCode   = notVisible ? code::HideCode(g_state, *notVisible) : std::vector<std::uint8_t>{};

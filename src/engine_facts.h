@@ -389,6 +389,12 @@ inline constexpr std::uintptr_t kCalcVolumeBoundsCall = 0x1425C4F78;
 inline constexpr std::uint32_t kViewFamily      = 0x00;
 inline constexpr std::uint32_t kFamilyViews     = 0x00;
 inline constexpr std::uint32_t kFamilyViewCount = 0x08;
+/// FSceneView::State (FSceneViewStateInterface*); the renderer's FViewInfo copies it in place.
+inline constexpr std::uint32_t kViewState = 0x08;
+/// FSceneViewFamily +0x70 (Square Enix): nonzero skips the scene's frame-number step in BeginRenderingViewFamily (the
+/// gate `0x1425C9A88`), the same offset as Rebirth. +0x74 is the FrameNumber the submit writes; this build has no
+/// bAdditionalViewFamily (RE-haze-occlusion.md Pass 9 H.3.2).
+inline constexpr std::uint32_t kFamilySkipFrameStep = 0x70;
 /// APlayerCameraManager::SetGameCameraCutThisFrame (stock 4.18, `or [rcx+1E18h], 400h; ret`): the next draw's views of
 /// that player drop their history (RE-haze-history.md §4). The engine clears the bit on every manager after each draw
 /// (FViewport::Draw, 0x14330DA82).
@@ -452,6 +458,12 @@ inline constexpr std::uint8_t   kOcclusionCanBeOccluded    = 0x01;
 inline constexpr std::uintptr_t kRendererModuleVTable = 0x144D655E0;
 inline constexpr std::array<std::uint8_t, 16> kBeginRenderingViewFamilyEntry{
     0x48, 0x89, 0x54, 0x24, 0x10, 0x55, 0x53, 0x57, 0x41, 0x54, 0x41, 0x56, 0x48, 0x8D, 0x6C, 0x24};
+/// UGameViewportClient::Draw's call of that slot, `call qword ptr [r9+40h]`: the address after it is the return address
+/// the replacement sees for the game viewport's family. The menu's own viewport (FUMGViewportClient::Draw 0x1428D5F90)
+/// is the slot's only other caller (RE-haze-occlusion.md Pass 10 I.4).
+inline constexpr std::uintptr_t                 kDrawSubmitCall = 0x142F66819;
+inline constexpr std::array<std::uint8_t, 4>    kDrawSubmitCallBytes{0x41, 0xFF, 0x51, 0x40};
+inline constexpr std::uintptr_t                 kDrawSubmitReturn = kDrawSubmitCall + kDrawSubmitCallBytes.size();
 inline constexpr platform::SlotFact kBeginRenderingViewFamily{
     L"FRendererModule::BeginRenderingViewFamily (slot 8)", kRendererModuleVTable + 8 * 8,
     {L"FRendererModule::BeginRenderingViewFamily", 0x1425C9770, kBeginRenderingViewFamilyEntry}};

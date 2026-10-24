@@ -9,6 +9,7 @@
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
+#include "render/family_now.h"
 #include "render/movie_frame.h"
 
 #include <algorithm>
@@ -86,6 +87,19 @@ int ColumnOf(const void* view, std::int32_t (&rect)[4]) noexcept
     return g_render.count < kMaxColumns ? std::max(g_render.count, 1) : -1;
 }
 
+/// The HUD image a UI pass draws. In a split frame (render/family_now.h) each player's family has one view at (0, 0), so
+/// ColumnOf calls every view column 0 and nothing moves: the game's own UI target is that family's. The image is then
+/// the family's place: its player's column's, or column 0's for a mirror's column (it shows player 1's HUD, which it
+/// draws itself, as it has no target to borrow). Otherwise the view's column.
+int ImageColumn(int column, render::family_now::Family family) noexcept
+{
+    if (family.index < 0)
+    {
+        return column;
+    }
+    return family.index < g_render.playerColumns ? family.index : 0;
+}
+
 /// Releases one reference the mod holds (IPooledRenderTarget::Release, vt+0x30).
 void ReleaseTarget(void* pooled) noexcept
 {
@@ -152,7 +166,7 @@ std::uint64_t UiPass(void* sceneTargets, void* commandList, void* view, platform
             SetMember(nullptr);
         }
     }
-    image_entries::BeginUiPass(enabled ? column : -1);
+    image_entries::BeginUiPass(enabled ? ImageColumn(column, render::family_now::For(view)) : -1);
     const std::uint64_t bound = reinterpret_cast<AllocBindFn>(call.Original())(sceneTargets, commandList);
     void* const after = Member();
     g_render.rotation.AfterUiPass(column, after);
@@ -162,8 +176,10 @@ std::uint64_t UiPass(void* sceneTargets, void* commandList, void* view, platform
     }
     if (Logging())
     {
-        platform::Log(L"HUD targets: UI pass view {} (column {}, rect {},{}-{},{}) target {} -> {}{}", view, column, rect[0],
-                      rect[1], rect[2], rect[3], before, after, moved ? L" (moved)" : L"");
+        const render::family_now::Family family = render::family_now::For(view);
+        platform::Log(L"HUD targets: UI pass view {} (column {}, family {} of {}, rect {},{}-{},{}) target {} -> {}{}", view,
+                      column, family.index, family.count, rect[0], rect[1], rect[2], rect[3], before, after,
+                      moved ? L" (moved)" : L"");
     }
     return bound;
 }
@@ -197,9 +213,12 @@ void PostProcess(void* postProcessing, void* commandList, void* view, void* velo
     {
         platform::Log(L"HUD targets: post-process view {} (column {}) samples {}", view, column, Member());
     }
-    // The movie frame's release at the end of this call runs only for the family's last view (render/movie_frame.h);
-    // a view the UI loop did not list releases as the game does.
-    render::movie_frame::BeginView(column < 0 || view == g_render.views[g_render.count - 1]);
+    // The movie frame's release at the end of this call runs only for the frame's last view (render/movie_frame.h): the
+    // last family of a split frame, else the family's last view; a view the UI loop did not list releases as the game
+    // does.
+    const render::family_now::Family family = render::family_now::For(view);
+    render::movie_frame::BeginView(family.index >= 0 ? family.index == family.count - 1
+                                                     : column < 0 || view == g_render.views[g_render.count - 1]);
     reinterpret_cast<PostProcessFn>(g_postCall.Original())(postProcessing, commandList, view, velocity);
     render::movie_frame::EndView();
     if (column >= 0 && ++g_render.composited >= g_render.count)

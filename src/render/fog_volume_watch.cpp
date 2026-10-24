@@ -7,6 +7,7 @@
 #include "platform/image.h"
 #include "platform/log.h"
 #include "platform/verified_code.h"
+#include "render/family_now.h"
 
 #include <Unreal/NameTypes.hpp>
 
@@ -155,15 +156,32 @@ void Missing(const std::vector<const void*>& from, const std::vector<const void*
     }
 }
 
-/// The views' lists this frame; once a second, the summary. Render thread. Only a draw of two or more views is
-/// watched (the split screen's or the mirror's): scene and reflection captures run the same call with one view of
-/// their own, and would mix into view 1's record.
+/// The views' lists this frame; once a second, the summary. Render thread. Only the players' views are watched: a
+/// draw of two or more views (the split screen's or the mirror's in one family), or a family of a split frame
+/// (render/family_now.h; its one view is the record of its place, when it is the player's view). Scene and reflection
+/// captures run the same call with one view of their own, and would mix into view 1's record.
 void Watch(void* renderer)
 {
     const std::uint8_t* views = nullptr;
-    std::int32_t        count = 0;
-    if (!ReadAt(renderer, facts::kRendererViews, views) || !ReadAt(renderer, facts::kRendererViewCount, count) ||
-        views == nullptr || count < 2)
+    std::int32_t        drawnViews = 0;
+    if (!ReadAt(renderer, facts::kRendererViews, views) || !ReadAt(renderer, facts::kRendererViewCount, drawnViews) ||
+        views == nullptr)
+    {
+        return;
+    }
+    const family_now::Family family = family_now::For(views);  // none for a reflection drawn inside a player's family
+    int                      first  = 0;           // the record of the renderer's view 0
+    int                      count  = drawnViews;  // the records of this frame
+    if (family.index >= 0)
+    {
+        if (drawnViews != 1 || family.index >= kMostViews)
+        {
+            return;
+        }
+        first = family.index;
+        count = family.count;
+    }
+    else if (drawnViews < 2)
     {
         return;
     }
@@ -175,10 +193,11 @@ void Watch(void* renderer)
     }
     std::vector<const void*> listed;
     std::vector<const void*> drawn;
-    for (int v = 0; v < count; ++v)
+    for (int r = first; r < std::min(first + drawnViews, count); ++r)
     {
-        const std::uint8_t* view = views + static_cast<std::size_t>(v) * facts::kViewInfoStride;
-        ViewRecord&         record = g_views[static_cast<std::size_t>(v)];
+        const int           v = r;  // the record's number in the log (view v + 1)
+        const std::uint8_t* view = views + static_cast<std::size_t>(r - first) * facts::kViewInfoStride;
+        ViewRecord&         record = g_views[static_cast<std::size_t>(r)];
         std::uint32_t       flags  = 0;
         if (ReadAt(view, facts::kViewFlags, flags))
         {

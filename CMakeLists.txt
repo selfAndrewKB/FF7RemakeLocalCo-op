@@ -96,7 +96,9 @@ add_library(LocalSplitScreen SHARED
     src/render/history_cut.cpp
     src/render/movie_frame.cpp
     src/render/occlusion_exempt.cpp
-    src/render/view_order.cpp
+    src/render/family_boundary.cpp
+    src/render/family_now.cpp
+    src/render/one_family.cpp
     src/render/ssr_origin.cpp
     src/render/sun_cascades.cpp
     src/views/letterbox_patch.cpp
@@ -216,6 +218,20 @@ add_executable(SunOwnerTests
 target_include_directories(SunOwnerTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_compile_features(SunOwnerTests PRIVATE cxx_std_20)
 add_test(NAME sun_owner COMMAND SunOwnerTests)
+
+add_executable(FamilySplitTests
+    tests/family_split_test.cpp
+)
+target_include_directories(FamilySplitTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(FamilySplitTests PRIVATE cxx_std_20)
+add_test(NAME family_split COMMAND FamilySplitTests)
+
+add_executable(FamilyBoundaryListTests
+    tests/family_boundary_list_test.cpp
+)
+target_include_directories(FamilyBoundaryListTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(FamilyBoundaryListTests PRIVATE cxx_std_20)
+add_test(NAME family_boundary_list COMMAND FamilyBoundaryListTests)
 
 add_executable(IndexRangesTests
     tests/index_ranges_test.cpp

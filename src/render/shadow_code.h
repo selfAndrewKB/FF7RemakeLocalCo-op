@@ -6,7 +6,9 @@
 // Every site is one instruction inside one aligned 16-byte block of the renderer (platform::CodeRedirect); each stub
 // re-does the replaced instruction, makes no call and keeps rsp. They read one state block of the mod's (switches and
 // counters) whose address is built into them. B and C keep the game's code path exactly while their switch is off or
-// the family has one view; A's stubs, switched on, write the view's own set, which with one view equals the game's.
+// the family has one view; A's stubs, switched on, write the view's own set: in one family of several views the record
+// of the view's index, and while one family per player is drawn (render/family_now.h) the record of the family's place,
+// each the game's set when the record's view state is not the view's.
 //
 // Lever B, a lamp's shadow per view (CreateWholeSceneProjectedShadow and InitProjectedShadowVisibility): the game drops
 // a lamp's whole-scene shadow for every view when any view is beyond the lamp's shadow cutoff. The byte the view loop
@@ -207,7 +209,7 @@ private:
     std::vector<std::uint8_t> bytes_;
 };
 
-inline constexpr std::uint8_t kJe = 0x74, kJne = 0x75, kJl = 0x7C, kJae = 0x73, kJbe = 0x76;
+inline constexpr std::uint8_t kJe = 0x74, kJne = 0x75, kJl = 0x7C, kJae = 0x73, kJbe = 0x76, kJns = 0x79;
 
 inline void MovRcxImm(Code& c, const void* p)
 {
@@ -440,10 +442,13 @@ inline constexpr std::uint8_t   kAreaContext[]    = {
     0x49, 0x8B, 0x9D, 0xB8, 0x17, 0x00, 0x00, 0x4D, 0x8D, 0xB5, 0xAC, 0x04, 0x00, 0x00, 0xC6, 0x44, 0x24, 0x52, 0x00, 0x49,
     0x8B, 0xD6, 0x48, 0x8B, 0x01};
 
-inline std::vector<std::uint8_t> AreaCode(State& s)
+/// The record index the A stubs take: the player's place in the frame's split (`familyIndex`, render/family_now.h) while
+/// one family per player is drawn, where every view is the renderer's view 0; otherwise the renderer's view index. The
+/// record's view-state check after it still decides.
+inline std::vector<std::uint8_t> AreaCode(State& s, const std::int32_t* familyIndex)
 {
     Code        c;
-    Code::Label done, game, copy;
+    Code::Label done, game, copy, have;
     c.Put(kAreaAdd);  // add r13,[r12+0D0h]   (replaced)
     c.Put({0x48, 0xB8});                                      // mov rax,&state
     c.Value(reinterpret_cast<std::uint64_t>(&s));
@@ -451,7 +456,13 @@ inline std::vector<std::uint8_t> AreaCode(State& s)
     c.Disp32(offsetof(State, on) + kAreas);
     c.Put({0x00});
     c.Jcc(kJe, done);
+    c.Put({0x48, 0xBA});              // mov rdx,familyIndex
+    c.Value(reinterpret_cast<std::uint64_t>(familyIndex));
+    c.Put({0x48, 0x63, 0x12});        // movsxd rdx,dword [rdx]   the player's place in a split frame (-1: none)
+    c.Put({0x48, 0x85, 0xD2});        // test rdx,rdx
+    c.Jcc(kJns, have);
     c.Put({0x48, 0x8B, 0x55, 0x10});  // mov rdx,[rbp+10h]       the view's index
+    c.Bind(have);
     c.Put({0x48, 0x83, 0xFA, static_cast<std::uint8_t>(kRecords)});  // cmp rdx,4
     c.Jcc(kJae, game);
     c.Put({0x48, 0x6B, 0xD2, static_cast<std::uint8_t>(sizeof(ViewRec))});  // imul rdx,rdx,60h
@@ -484,7 +495,7 @@ inline std::vector<std::uint8_t> AreaCode(State& s)
     c.Put({0x48, 0x8B, 0x5A, 0x30});                          // mov rbx,[rdx+30h]
     c.Put({0x48, 0x89, 0x99, 0x18, 0x16, 0x00, 0x00});        // mov [rcx+1618h],rbx
     c.Bind(done);
-    return c.Finish({&done, &game, &copy});
+    return c.Finish({&done, &game, &copy, &have});
 }
 
 /// The sun's cascade setup, its view loop: add rsi,[rdi+0D0h] (rax = the view's index, rdi = the renderer, rsi = the
@@ -500,10 +511,10 @@ inline constexpr std::uint8_t   kSunContext[]    = {
     0xB7, 0xD0, 0x00, 0x00, 0x00, 0x48, 0x89, 0x74, 0x24, 0x68, 0x48, 0x89, 0x55, 0x90, 0x85, 0xDB, 0x74, 0x64, 0x8B, 0xD3,
     0x48, 0x8D, 0x4D, 0x88};
 
-inline std::vector<std::uint8_t> SunCode(State& s)
+inline std::vector<std::uint8_t> SunCode(State& s, const std::int32_t* familyIndex)
 {
     Code        c;
-    Code::Label done, game, copy;
+    Code::Label done, game, copy, have;
     c.Put(kSunAdd);  // add rsi,[rdi+0D0h]   (replaced)
     MovRcxImm(c, &s);
     c.Put({0x80, 0xB9});  // cmp byte [rcx+on[kSun]],0
@@ -515,9 +526,16 @@ inline std::vector<std::uint8_t> SunCode(State& s)
     c.Put({0x4D, 0x3B, 0x90, 0x20, 0x16, 0x00, 0x00});  // cmp r10,[r8+1620h]      the sun the controllers drive
     c.Jcc(kJne, done);
     c.Put({0x4D, 0x8B, 0x52, 0x30});                    // mov r10,[r10+30h]       its proxy
-    c.Put({0x48, 0x83, 0xF8, static_cast<std::uint8_t>(kRecords)});  // cmp rax,4
+    c.Put({0x49, 0xBB});              // mov r11,familyIndex    (rax, the view's index, stays as the game left it)
+    c.Value(reinterpret_cast<std::uint64_t>(familyIndex));
+    c.Put({0x4D, 0x63, 0x1B});        // movsxd r11,dword [r11]  the player's place in a split frame (-1: none)
+    c.Put({0x4D, 0x85, 0xDB});        // test r11,r11
+    c.Jcc(kJns, have);
+    c.Put({0x49, 0x89, 0xC3});        // mov r11,rax             the view's index
+    c.Bind(have);
+    c.Put({0x49, 0x83, 0xFB, static_cast<std::uint8_t>(kRecords)});  // cmp r11,4
     c.Jcc(kJae, game);
-    c.Put({0x4C, 0x6B, 0xD8, static_cast<std::uint8_t>(sizeof(ViewRec))});  // imul r11,rax,60h
+    c.Put({0x4D, 0x6B, 0xDB, static_cast<std::uint8_t>(sizeof(ViewRec))});  // imul r11,r11,60h
     c.Put({0x4E, 0x8D, 0x9C, 0x19});                                        // lea r11,[rcx+r11+records]
     c.Disp32(offsetof(State, records));
     c.Put({0x41, 0x80, 0x3B, 0x00});  // cmp byte [r11],0
@@ -553,7 +571,7 @@ inline std::vector<std::uint8_t> SunCode(State& s)
     c.Put({0x4D, 0x8B, 0x43, 0x50});                    // mov r8,[r11+50h]
     c.Put({0x4D, 0x89, 0x82, 0xDC, 0x00, 0x00, 0x00});  // mov [r10+0DCh],r8
     c.Bind(done);
-    return c.Finish({&done, &game, &copy});
+    return c.Finish({&done, &game, &copy, &have});
 }
 
 // --- A-fog --------------------------------------------------------------------------------------------------------------
@@ -586,10 +604,10 @@ inline constexpr std::uint8_t   kFogContext[]    = {
     0xF3, 0x41, 0x0F, 0x5D, 0xCD, 0x41, 0x0F, 0x28, 0xC7, 0xE8, 0x65, 0xAC, 0xE2, 0x01};
 static_assert(sizeof(kFogContext) == 0x1422057A1 - kFogContextStart);
 
-inline std::vector<std::uint8_t> FogCode(State& s)
+inline std::vector<std::uint8_t> FogCode(State& s, const std::int32_t* familyIndex)
 {
     Code        c;
-    Code::Label done, game, copy;
+    Code::Label done, game, copy, have;
     c.Put(kFogLoad);  // mov rbx,[rbx+1DC0h]   (replaced) the first fog
     c.Put({0x48, 0xB8});  // mov rax,&state
     c.Value(reinterpret_cast<std::uint64_t>(&s));
@@ -597,7 +615,13 @@ inline std::vector<std::uint8_t> FogCode(State& s)
     c.Disp32(offsetof(State, on) + kFog);
     c.Put({0x00});
     c.Jcc(kJe, done);
+    c.Put({0x48, 0xBA});                                             // mov rdx,familyIndex
+    c.Value(reinterpret_cast<std::uint64_t>(familyIndex));
+    c.Put({0x48, 0x63, 0x12});                                       // movsxd rdx,dword [rdx]   (-1: none)
+    c.Put({0x85, 0xD2});                                             // test edx,edx
+    c.Jcc(kJns, have);
     c.Put({0x44, 0x89, 0xFA});                                       // mov edx,r15d             the view's index
+    c.Bind(have);
     c.Put({0x83, 0xFA, static_cast<std::uint8_t>(kRecords)});        // cmp edx,4
     c.Jcc(kJae, game);
     c.Put({0x48, 0x6B, 0xD2, static_cast<std::uint8_t>(sizeof(FogRec))});  // imul rdx,rdx,60h
@@ -644,7 +668,7 @@ inline std::vector<std::uint8_t> FogCode(State& s)
     c.Put({0x8B, 0x4A, 0x50});                                // mov ecx,[rdx+50h]
     c.Put({0x89, 0x8B, 0xC0, 0x00, 0x00, 0x00});              // mov [rbx+0C0h],ecx
     c.Bind(done);
-    return c.Finish({&done, &game, &copy});
+    return c.Finish({&done, &game, &copy, &have});
 }
 
 }  // namespace lss::render::shadow_code
