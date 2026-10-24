@@ -76,6 +76,7 @@ struct Seat
     void*        ctrl        = nullptr;  // the seat's controller, once built (kept for the game's life)
     bool         plays       = false;    // the seat's player holds a member (the session's word, each tick)
     bool         buildFailed = false;    // the allocation or the constructor failed once: no retry every tick
+    bool         caughtUp    = false;    // since its last Setup: panel refreshed, roots transparent (cleared at a leave)
     alignas(16) float colorOne[kRoots.size()][4]{};  // player 1's roots' colours while transparent in this seat's pass
     bool         swapped[kRoots.size()]{};           // which pair this seat's pass swapped this frame
     bool         borrowLogged = false;
@@ -222,6 +223,40 @@ void ForEachReady(Fn&& fn) noexcept
     }
 }
 
+/// Once per Setup of the seat's controller, whichever path ran it (the seat's own tick, the game's Setup repeated, a
+/// Setup the game deferred and finished in the controller's tick): the party panel the game rebuilt while the seat was
+/// out (a save load's new party) is caught up with the game's own refresh (Rebirth: right after the join Setup), then
+/// the roots start transparent (they show only in the seat's own pass).
+void CatchUp(int seat, Seat& s) noexcept
+{
+    const wchar_t* name = SeatName(seat);
+    {
+        players::scopes::Scope scope(seat, kScopes);
+        if (!scope.Held())
+        {
+            platform::LogDebug(L"command menu 2: {}'s party panel not refreshed after its Setup (its scopes could not open)", name);
+        }
+        else if (!platform::CallGuarded(g_refresh, s.ctrl))
+        {
+            platform::Log(L"command menu 2: the party panel refresh on {}'s controller RAISED AN EXCEPTION", name);
+        }
+        else
+        {
+            platform::LogDebug(L"command menu 2: the party panel rebuilt on {}'s controller after its Setup", name);
+        }
+    }
+    for (const std::uint32_t root : kRoots)
+    {
+        Transparent(Root(s.ctrl, root));
+    }
+    s.borrowLogged = false;
+    s.caughtUp     = true;
+    platform::Log(L"command menu 2: {}'s controller set up (its menu {} and panel {} in {}'s context; path set {})", name,
+                  Root(s.ctrl, facts::kCommandCtrlMenuWeak) != nullptr ? L"built" : L"MISSING",
+                  Root(s.ctrl, facts::kCommandCtrlFieldMenuWeak) != nullptr ? L"built" : L"MISSING", name,
+                  players::scopes::FocusPathSet(seat) ? L"yes" : L"NO");
+}
+
 // --- The game's calls, each made again on every seat's controller -------------------------------------------------
 
 std::uint64_t Setup(void* controller, void* world)
@@ -235,6 +270,7 @@ std::uint64_t Setup(void* controller, void* world)
             {
                 platform::LogDebug(L"command menu 2: the game's Setup, repeated on {}'s controller", SeatName(seat));
                 SetupSeat(seat, world);
+                g_seats[seat].caughtUp = false;  // its next tick catches it up again
             }
         }
     }
@@ -548,26 +584,19 @@ void Tick(int seat, bool seatPlays) noexcept
     if (!ReadyOf(s))
     {
         void* world = World();
-        if (world != nullptr && SetupSeat(seat, world))
+        if (world == nullptr || !SetupSeat(seat, world))
         {
-            if (ReadyOf(s))
-            {
-                // Its roots start transparent; they show only in the seat's own pass.
-                for (const std::uint32_t root : kRoots)
-                {
-                    Transparent(Root(s.ctrl, root));
-                }
-                s.borrowLogged = false;
-                platform::Log(L"command menu 2: {}'s controller set up (its menu {} and panel {} in {}'s context; path set {})", name,
-                              Root(s.ctrl, facts::kCommandCtrlMenuWeak) != nullptr ? L"built" : L"MISSING",
-                              Root(s.ctrl, facts::kCommandCtrlFieldMenuWeak) != nullptr ? L"built" : L"MISSING", name,
-                              players::scopes::FocusPathSet(seat) ? L"yes" : L"NO");
-            }
-            else
-            {
-                platform::LogDebug(L"command menu 2: {}'s Setup deferred by the game (pending {})", name, Byte(s.ctrl, facts::kCommandCtrlSetupPending));
-            }
+            return;
         }
+        if (!ReadyOf(s))
+        {
+            platform::LogDebug(L"command menu 2: {}'s Setup deferred by the game (pending {})", name, Byte(s.ctrl, facts::kCommandCtrlSetupPending));
+            return;
+        }
+    }
+    if (!s.caughtUp)
+    {
+        CatchUp(seat, s);
         return;
     }
     // The ordinal the controller's own tick caches (its poll stops while that member is KO'd): a change is logged.
@@ -619,8 +648,9 @@ void OnLeave(int seat) noexcept
         return;
     }
     Seat& s   = g_seats[seat];
-    s.plays   = false;
-    s.ordinal = -1;  // the seat's next player's ordinal is logged afresh
+    s.plays    = false;
+    s.ordinal  = -1;     // the seat's next player's ordinal is logged afresh
+    s.caughtUp = false;  // the seat's next Setup is caught up again
     if (s.ctrl == nullptr)
     {
         return;

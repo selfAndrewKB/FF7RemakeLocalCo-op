@@ -12,7 +12,8 @@
 // made again on every built seat's controller right after the game's: Setup (two call sites), ResetAll (three), the
 // battle HUD mode (its entry), the party panel rebuild (one site inside RefreshFieldMenu), the command lists (entry),
 // the menu-allowed setter (entry). Two bytes the game writes directly on its controller (menu allowed, input
-// live) are copied each tick: the only values with no call to repeat.
+// live) are copied each tick: the only values with no call to repeat. What the game did while a seat was out is caught
+// up when its player is back: the battle HUD mode, and the party panel (the game's refresh after the seat's Setup).
 //
 // A seat's widgets stay transparent (the game's SetColorAndOpacity) except in its column's pass of the HUD render
 // (hud/overlay_pass.h: a seat's column is its index), where they take player 1's roots' colours and player 1's two
@@ -34,7 +35,8 @@ bool Install(const platform::GameImage& image) noexcept;
 void Remove() noexcept;
 
 /// Each engine tick, per built seat: builds the seat's controller once its player plays a member and the game's is
-/// set up; keeps the two copied bytes current.
+/// set up; after each Setup catches up what the game did while the seat was out (the party panel, the battle HUD
+/// mode); keeps the two copied bytes current.
 void Tick(int seat, bool seatPlays) noexcept;
 
 /// The seat's player leaves (or a world change takes it out): its controller's layers are released inside its own
