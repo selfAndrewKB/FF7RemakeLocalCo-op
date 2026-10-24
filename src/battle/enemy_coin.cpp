@@ -9,6 +9,7 @@
 
 #include "battle/coin_choice.h"
 #include "battle/coin_table.h"
+#include "battle/enemy_watch.h"
 #include "battle/type_answer_code.h"
 #include "control/registry.h"
 #include "engine_facts.h"
@@ -106,7 +107,7 @@ constexpr const wchar_t* kAiControllerClass = L"/Script/EndGame.EndBattleAIContr
 
 // Set at install, then only read.
 platform::EntryRedirect g_gate, g_mineGate, g_hitApply;
-platform::CallRedirect  g_opening, g_hate, g_isAipc, g_eqs, g_hitApplyB, g_sensing, g_scriptLeader;
+platform::CallRedirect  g_opening, g_hate, g_isAipc, g_eqs, g_area, g_hitApplyB, g_sensing, g_scriptLeader;
 std::array<platform::CallRedirect, 2> g_tie, g_expect, g_scriptActor;
 platform::VTableEntry   g_battleStart;
 PmGetFn                 g_pmGet       = nullptr;
@@ -131,6 +132,7 @@ std::array<std::atomic<void*>, kSeats>        g_controllers{};
 std::atomic<unsigned>                         g_seated{1u};  // bit per seat with a member (bit 0: the game's leader)
 std::atomic<bool>                             g_on{false};
 std::atomic<bool>                             g_enabled{true};
+std::atomic<bool>                             g_areaOn{true};  // `member-area`: the area answer alone (an A/B)
 DWORD                                         g_thread = 0;  // the game thread
 
 // The enemy whose script native is running on this thread (null: none, or not an enemy).
@@ -149,6 +151,7 @@ struct Counts
     std::atomic<unsigned>                     expectationAnswers{};
     std::atomic<unsigned>                     apiAnswers{};
     std::atomic<unsigned>                     eqsKept{};
+    std::atomic<unsigned>                     areasRefreshed{};  // a human's member's area query tick let through
     std::atomic<unsigned>                     hitsScoped{};
     std::atomic<unsigned>                     sensingsScoped{};
     std::atomic<unsigned>                     offThread{};  // hits or sensings off the game thread: left as the game's
@@ -208,13 +211,20 @@ bool Standing(int seat) noexcept
     return component != nullptr && Read(component + facts::kBattleCompActionState, state) && state != facts::kBattleCompStateKnockedOut;
 }
 
-/// The controller's pawn is an enemy's (not on the party side). Any thread; false if unreadable.
-bool IsEnemy(void* controller) noexcept
+/// The battle component of the controller's pawn if it is an enemy's (not on the party side); else null. Any thread.
+void* EnemyComponent(void* controller) noexcept
 {
     void* component = nullptr;
     bool  party     = true;
     return controller != nullptr && platform::CallGuarded(g_pawnComp, component, controller) && component != nullptr &&
-           platform::CallGuarded(g_isPartySide, party, component) && !party;
+                   platform::CallGuarded(g_isPartySide, party, component) && !party
+               ? component
+               : nullptr;
+}
+
+bool IsEnemy(void* controller) noexcept
+{
+    return EnemyComponent(controller) != nullptr;
 }
 
 /// A further seat's controller (never player 1's).
@@ -314,11 +324,19 @@ void* MemberOf(int player) noexcept
 
 char GateFor(platform::EntryRedirect& redirect, void* controller) noexcept
 {
-    if (Tossing() && IsEnemy(controller))
+    const bool tossing  = Tossing();
+    const bool watching = enemy_watch::Watching();
+    void*      enemy    = tossing || watching ? EnemyComponent(controller) : nullptr;
+    if (enemy != nullptr)
     {
         const auto    key    = reinterpret_cast<std::uintptr_t>(controller);
         std::uint64_t action = 0;
-        if (Read(static_cast<const std::uint8_t*>(controller) + facts::kBattleAICurrentAction, action))
+        const bool    read   = Read(static_cast<const std::uint8_t*>(controller) + facts::kBattleAICurrentAction, action);
+        if (watching)
+        {
+            enemy_watch::Observe(controller, enemy, read ? action : 0);
+        }
+        if (tossing && read)
         {
             if (action != 0)
             {
@@ -437,6 +455,18 @@ bool EqsIsA(void* controller, void* b, void* c)
         return true;
     }
     return reinterpret_cast<IsAFn>(g_eqs.Original())(controller, b, c);
+}
+
+/// `IsA_EndBattleAIController` at the battle gate of a character's own area queries: a human's member refreshes its
+/// area as an AI ally does, so an enemy targeting it finds the points around it (RE-enemy-circling.md).
+bool AreaIsA(void* controller, void* b, void* c)
+{
+    if (g_on.load(std::memory_order_acquire) && g_areaOn.load(std::memory_order_relaxed) && IsFurtherController(controller))
+    {
+        Count(g_counts.areasRefreshed, g_totals.areasRefreshed);
+        return true;
+    }
+    return reinterpret_cast<IsAFn>(g_area.Original())(controller, b, c);
 }
 
 /// A native called from an enemy's script: the enemy recorded on this thread for the reads inside; the party API's
@@ -702,10 +732,10 @@ void TrySwaps() noexcept
 std::wstring Reading(const Counts& counts) noexcept
 {
     return std::format(L"tosses P1 {} / P2 {} / P3 {} (no further player {}, re-tossed {}); script answers P1 {} / P2 {} / P3 {}; opening {}, "
-                       L"expectation {}, party API {}; EQS kept {}; hits scoped {}, sensings scoped {}, off-thread {}",
+                       L"expectation {}, party API {}; EQS kept {}; areas refreshed {}; hits scoped {}, sensings scoped {}, off-thread {}",
                        counts.tosses[0].load(), counts.tosses[1].load(), counts.tosses[2].load(), counts.gamesOwn.load(), counts.retosses.load(),
                        counts.scriptAnswers[0].load(), counts.scriptAnswers[1].load(), counts.scriptAnswers[2].load(), counts.openingAnswers.load(),
-                       counts.expectationAnswers.load(), counts.apiAnswers.load(), counts.eqsKept.load(), counts.hitsScoped.load(),
+                       counts.expectationAnswers.load(), counts.apiAnswers.load(), counts.eqsKept.load(), counts.areasRefreshed.load(), counts.hitsScoped.load(),
                        counts.sensingsScoped.load(), counts.offThread.load());
 }
 
@@ -719,6 +749,7 @@ void ResetSince() noexcept
     Take(g_counts.expectationAnswers);
     Take(g_counts.apiAnswers);
     Take(g_counts.eqsKept);
+    Take(g_counts.areasRefreshed);
     Take(g_counts.hitsScoped);
     Take(g_counts.sensingsScoped);
     Take(g_counts.offThread);
@@ -727,7 +758,7 @@ void ResetSince() noexcept
 bool Any(const Counts& counts) noexcept
 {
     unsigned sum = counts.gamesOwn.load() + counts.retosses.load() + counts.openingAnswers.load() + counts.expectationAnswers.load() +
-                   counts.apiAnswers.load() + counts.eqsKept.load() + counts.hitsScoped.load() + counts.sensingsScoped.load() + counts.offThread.load();
+                   counts.apiAnswers.load() + counts.eqsKept.load() + counts.areasRefreshed.load() + counts.hitsScoped.load() + counts.sensingsScoped.load() + counts.offThread.load();
     for (std::size_t i = 0; i < kSeats; ++i)
     {
         sum += counts.tosses[i].load() + counts.scriptAnswers[i].load();
@@ -809,6 +840,7 @@ bool Install(const platform::GameImage& image) noexcept
     placed += isAipc && PlaceTypeAnswer(g_isAipc, *isAipc, type_answer_code::kRbx, *pmGet, true, L"IsAIPC's leader test") ? 1 : 0;
     // Membership, hits, sensing.
     placed += PlaceCall(g_eqs, image, facts::kBattleEqsIsACall, *isA, &EqsIsA, false, L"the enemy EQS membership test") ? 1 : 0;
+    placed += PlaceCall(g_area, image, facts::kCharacterAreaIsACall, *isA, &AreaIsA, false, L"a character's battle area test") ? 1 : 0;
     placed += g_hitApply.Install(*hitApply, facts::kBattleHitApplyFirst, reinterpret_cast<std::uintptr_t>(&HitApply)) ? 1 : 0;
     placed += PlaceCall(g_hitApplyB, image, facts::kBattleHitApplyBCall, *hitApplyB, &HitApplyB, true, L"the hit apply's second form") ? 1 : 0;
     placed += PlaceCall(g_sensing, image, facts::kBattleReactionSensingCall, *sensing, &Sensing, false, L"the reaction sensing") ? 1 : 0;
@@ -826,8 +858,17 @@ bool Install(const platform::GameImage& image) noexcept
                            return control::Outcome{};
                        },
                        .get = [] { return control::Value{g_enabled.load(std::memory_order_relaxed)}; }});
+    control::Register({.name  = L"member-area",
+                       .shape = control::Shape::OnOff,
+                       .help  = L"a human's member keeps the battle area enemies read around their target, as an AI ally does (battle/enemy_coin.h; on)",
+                       .set   = [](const control::Value& value) {
+                           g_areaOn.store(std::get<bool>(value), std::memory_order_relaxed);
+                           platform::Log(L"enemy coin: the members' battle area {}", std::get<bool>(value) ? L"on" : L"off");
+                           return control::Outcome{};
+                       },
+                       .get = [] { return control::Value{g_areaOn.load(std::memory_order_relaxed)}; }});
     g_lastSummary = std::chrono::steady_clock::now();
-    platform::Log(L"enemy coin: installed, {} of 17 levers placed; enemies toss a coin per decision between the humans (the script natives "
+    platform::Log(L"enemy coin: installed, {} of 18 levers placed; enemies toss a coin per decision between the humans (the script natives "
                   L"answer once swapped)",
                   placed);
     return true;
@@ -850,6 +891,7 @@ void Remove() noexcept
     }
     g_sensing.Restore();
     g_hitApply.Restore();
+    g_area.Restore();
     g_eqs.Restore();
     g_hate.Restore();
     g_tie[0].Restore();

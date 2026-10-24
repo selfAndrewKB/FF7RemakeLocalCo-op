@@ -6,10 +6,12 @@
 // its constructor): with three local players it takes the three-player entry the settings name, ThreePlayer_FavorTop
 // by default, whose records put player 1 on top and the other two in the quadrants below (research/RE-layout-fov.md
 // §2, RE-multi-monitor-views.md §7). UE 4.18 has no three-column entry (Rebirth's 4.26 has one, which its third view
-// selects by the setting; read 2026-10-22, cleanup-2026-10 views/third_view). So while three columns are wanted this
-// module writes that entry's three records to three equal full-height columns, in place, and puts the stock records
-// back when fewer are wanted and at the mod's end. The layout code itself stays the engine's: it reads the table on
-// every redraw (nothing is cached), so the write takes effect on the next frame and the restore likewise. The entry
+// selects by the setting; read 2026-10-22, cleanup-2026-10 views/third_view). So while three columns are wanted on a
+// span of monitors, or asked for on the console (in one window three players keep the engine's own entry, player 1
+// across the top and two below: the user's pick of 2026-10-24), this module writes that entry's three records to three
+// equal full-height columns, in place, and puts the stock records back otherwise and at the mod's end. The layout
+// code itself stays the engine's: it reads the table on every redraw (nothing is cached), so the write takes effect on
+// the next frame and the restore likewise. The entry
 // is written only when it holds the stock records (any other content is logged once and left alone, the hold
 // released), and restored only while it still holds the mod's; a failed read or write is logged once and retried
 // twice a second. The three-player layout setting is held at FavorTop (the entry written) while the columns are in,
@@ -35,9 +37,11 @@ namespace lss::views::column_layout {
 bool Install(const platform::GameImage& image) noexcept;
 
 /// Each engine tick, after the span's: `columns` the columns wanted this frame (views/column_rules::Wanted);
-/// `localPlayers` the local players the engine lists (player 1, the seats in, the mirrors): the columns are kept
-/// while three are listed, whatever is wanted, so no frame lays three players out in the stock quadrants.
-void Tick(int columns, int localPlayers) noexcept;
+/// `localPlayers` the local players the engine lists (player 1, the seats in, the mirrors); `spanColumns` the span's
+/// columns (0 when out). Three columns while three views exist (wanted, or three local players still listed) and the
+/// window spans monitors or the console asks for them (column_rules::ThreeColumns); in one window three players take
+/// the engine's own layout, player 1 across the top and two below.
+void Tick(int columns, int localPlayers, int spanColumns) noexcept;
 
 /// The console's override (`view-columns`): 0 for none.
 int Override() noexcept;

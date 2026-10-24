@@ -43,6 +43,20 @@ void WantedColumns()
     static_assert(Wanted(2, 3, 0) == 3, "constexpr");
 }
 
+/// Columns on a span or by the console's override; in one window the engine's top-and-bottom entry.
+void ColumnsOrStock()
+{
+    EXPECT(ThreeColumns(3, 3, 3, 0));    // three players over three monitors
+    EXPECT(ThreeColumns(3, 3, 2, 0));    // spanned over two: still columns (no layout keeps every view off that seam)
+    EXPECT(ThreeColumns(3, 2, 3, 0));    // two players and a mirror over three monitors
+    EXPECT(!ThreeColumns(3, 3, 0, 0));   // three players in one window: player 1 on top, two below
+    EXPECT(ThreeColumns(3, 3, 0, 3));    // the console's override in one window
+    EXPECT(!ThreeColumns(2, 2, 2, 0));   // two views: the entry is not used
+    EXPECT(ThreeColumns(2, 3, 2, 0));    // a mirror the engine still lists for a tick: kept in its column
+    EXPECT(!ThreeColumns(2, 2, 0, 3));   // an override with two views: nothing to lay out
+    static_assert(!ThreeColumns(3, 3, 0, 0), "constexpr");
+}
+
 /// The layout records: the stock entry and the mod's columns are distinct, the columns tile the width exactly.
 void Records()
 {
@@ -91,6 +105,7 @@ void Decisions()
 int main()
 {
     WantedColumns();
+    ColumnsOrStock();
     Records();
     Decisions();
     std::printf(g_failures == 0 ? "column_rules: all passed\n" : "column_rules: %d failure(s)\n", g_failures);

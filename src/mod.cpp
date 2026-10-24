@@ -20,6 +20,7 @@
 #include "battle/command_menu_two.h"
 #include "battle/enemy_coin.h"
 #include "battle/enemy_leader.h"
+#include "battle/enemy_watch.h"
 #include "battle/lock_camera_two.h"
 #include "battle/member_rates.h"
 #include "battle/party_switch.h"
@@ -99,7 +100,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.79.2-panel-after-rejoin";
+constexpr const wchar_t* kVersion = L"0.80.0-no-circling";
 static_assert(lss::views::column_rules::kMaxColumns == lss::hud::overlay_pass::kMaxColumns, "the columns the views and the HUD count");  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
@@ -375,7 +376,10 @@ public:
             lss::battle::command_camera_two::Install(*image);  // optional: without it the aim reading is off, the UI scope stays
             lss::battle::member_rates::Install(*image);
             lss::battle::enemy_leader::Install(*image);
-            lss::battle::enemy_coin::Install(*image);  // optional: without it enemies name player 1 as the player
+            if (lss::battle::enemy_coin::Install(*image))  // optional: without it enemies name player 1 as the player
+            {
+                lss::battle::enemy_watch::Install(*image);  // logging only: fed by the coin's decision gate
+            }
             lss::battle::sequence_camera_two::Install(*image);
         }
         lss::players::game_state::Install(*image);  // readings only; fine without
@@ -449,10 +453,11 @@ private:
         lss::views::letterbox_patch::Tick(playersIn > 1 || lss::views::window_span::Held());
         lss::views::window_span::Tick(playersIn > 1);
         // The columns this frame shows (views/column_rules.h): the players, the span's while held, or the console's.
-        const int spanColumns = lss::views::window_span::Held() ? lss::views::window_span::Columns() : 0;
-        const int viewColumns = lss::views::column_rules::Wanted(playersIn, spanColumns, lss::views::column_layout::Override());
-        const int aloneColumns = lss::views::column_rules::Wanted(1, spanColumns, lss::views::column_layout::Override());
-        lss::views::column_layout::Tick(viewColumns, playersIn + lss::views::mirror_player::Count());
+        const int heldColumns  = lss::views::window_span::Held() ? lss::views::window_span::Columns() : 0;
+        const int viewColumns  = lss::views::column_rules::Wanted(playersIn, heldColumns, lss::views::column_layout::Override());
+        const int aloneColumns = lss::views::column_rules::Wanted(1, heldColumns, lss::views::column_layout::Override());
+        // The layout asks whether the window spans monitors at all (held or entered at a join), not only while held.
+        lss::views::column_layout::Tick(viewColumns, playersIn + lss::views::mirror_player::Count(), lss::views::window_span::Columns());
         lss::views::mirror_player::Tick(playersIn, session_.SeatIds(), viewColumns, aloneColumns);
         MapColumns();  // after every join, leave and mirror change of this tick: the HUD and this frame's passes read it
         lss::players::split_render::Tick(session_.Count() + lss::views::mirror_player::Count() > 0);
@@ -475,6 +480,7 @@ private:
         lss::battle::member_rates::Tick();
         lss::battle::enemy_leader::Tick();
         lss::battle::enemy_coin::Tick();
+        lss::battle::enemy_watch::Tick();
         lss::battle::sequence_camera_two::Tick();
         TickWorld();
         TickHud();

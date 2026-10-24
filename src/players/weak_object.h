@@ -39,6 +39,11 @@ Weak MakeWeak(void* object) noexcept;
 /// The object a pair names, if it is still that object (same serial) and reachable; else nullptr.
 void* Resolve(const Weak& weak) noexcept;
 
+/// Whether an object lives at `address` now: the object array's item at the index read there holds exactly this
+/// address and is neither unreachable nor pending kill. Writes nothing (MakeWeak may allocate a serial), so it may be
+/// asked of an address that could have been freed, before MakeWeak is.
+bool Live(const void* address) noexcept;
+
 /// The same two, on the raw {index, serial} array other modules keep. False / nullptr as above.
 bool  WeakPairOf(void* object, std::int32_t (&pair)[2]) noexcept;
 void* ObjectOf(const std::int32_t (&pair)[2]) noexcept;

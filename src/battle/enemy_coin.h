@@ -22,13 +22,17 @@
 //     single-player ratio; ties between humans go to the first in party order (the game's own rule with both "the
 //     leader");
 //   - membership: the enemy EQS target context keeps a human's member (its controller answers as a battle AI's);
+//   - the target's area: a character's own area queries run in battle only for the leader or an AI-controlled
+//     character, and an enemy approaches, places itself around and checks sight against the area of the character
+//     it targets (RE-enemy-circling.md); at that gate a human's member answers as an AI ally, so its area is
+//     refreshed as theirs (the enemy circling player 2's Barret without attacking; `member-area` turns it alone off);
 //   - hits and reaction sensing by or on a further human's member run in that human's Leader and Primary scopes
 //     (the counters aim at who hit; the victim's own camera shakes and pad rumbles; the hit stop as for the player).
-// Nothing is written to the game's state: every answer passes through the game's own call. Any thread for the toss
-// and the type answers (the AI tick is written to run off the game thread); the natives run on the game thread;
-// hits and sensing are scoped on the game thread only (else counted and left as the game's).
+// Nothing is written to the game's state: every answer passes through the game's own call. Any thread for the toss,
+// the type answers and the area answer (the AI tick is written to run off the game thread); the natives run on the
+// game thread; hits and sensing are scoped on the game thread only (else counted and left as the game's).
 // Logged: the install (Info), each toss (Debug), a 60 s summary (Debug), each answer (Trace). `enemy-coin` reads
-// the counts; `coin-two` turns it off (every lever then passes the game's own answer through).
+// the counts; `coin-two` turns it off (every lever then passes the game's own answer through, the area's aside).
 
 namespace lss::platform {
 class GameImage;

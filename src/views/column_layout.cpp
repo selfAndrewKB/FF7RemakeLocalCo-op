@@ -297,7 +297,7 @@ bool Install(const platform::GameImage& image) noexcept
     return true;
 }
 
-void Tick(int columns, int localPlayers) noexcept
+void Tick(int columns, int localPlayers, int spanColumns) noexcept
 {
     if (!g_installed)
     {
@@ -306,9 +306,8 @@ void Tick(int columns, int localPlayers) noexcept
     ++g_ticks;
     g_columns      = columns;
     g_localPlayers = localPlayers;
-    // The columns stay while the engine still lists three local players (a mirror the engine kept a tick longer
-    // would otherwise be laid out in the stock quadrants).
-    const bool threeWanted = columns >= 3 || localPlayers >= 3;
+    // Columns on a span or by the console; in one window the engine's own entry (column_rules::ThreeColumns).
+    const bool threeWanted = column_rules::ThreeColumns(columns, localPlayers, spanColumns, g_override);
     const bool change      = threeWanted != g_written && !g_foreign && g_fault == nullptr;
     const bool cadence     = g_ticks % kCheckTicks == 0 &&
                          (g_written || g_foreign || g_fault != nullptr || threeWanted || g_settingByte != nullptr);

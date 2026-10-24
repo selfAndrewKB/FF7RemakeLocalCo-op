@@ -27,6 +27,19 @@ std::int32_t*    g_objectCount    = nullptr;
 void*            g_objectArray    = nullptr;
 AllocateSerialFn g_allocateSerial = nullptr;
 
+/// The object array's item at `index`, or null when out of range or unreadable.
+const std::uint8_t* ItemAt(std::int32_t index) noexcept
+{
+    std::uint8_t* objects = nullptr;
+    std::int32_t  count   = 0;
+    if (index < 0 || g_objects == nullptr || !Read(g_objects, objects) || !Read(g_objectCount, count) || index >= count ||
+        objects == nullptr)
+    {
+        return nullptr;
+    }
+    return objects + static_cast<std::size_t>(index) * kItemBytes;
+}
+
 }  // namespace
 
 bool Install(const platform::GameImage& image) noexcept
@@ -69,15 +82,12 @@ Weak MakeWeak(void* object) noexcept
 
 void* Resolve(const Weak& weak) noexcept
 {
-    std::uint8_t* objects = nullptr;
-    std::int32_t  count   = 0;
-    if (!weak.Set() || g_objects == nullptr || !Read(g_objects, objects) || !Read(g_objectCount, count) ||
-        weak.index >= count || objects == nullptr)
+    const std::uint8_t* item   = weak.Set() ? ItemAt(weak.index) : nullptr;
+    void*               object = nullptr;
+    if (item == nullptr)
     {
         return nullptr;
     }
-    const std::uint8_t* item   = objects + static_cast<std::size_t>(weak.index) * kItemBytes;
-    void*               object = nullptr;
     std::int32_t        flags = 0, serial = 0;
     if (!Read(item, object) || !Read(item + kItemFlags, flags) || !Read(item + kItemSerial, serial) ||
         serial != weak.serial || (flags & kUnreachableBits) != 0)
@@ -85,6 +95,18 @@ void* Resolve(const Weak& weak) noexcept
         return nullptr;
     }
     return object;
+}
+
+bool Live(const void* address) noexcept
+{
+    std::int32_t        index  = -1;
+    const std::uint8_t* item   = address != nullptr && Read(static_cast<const std::uint8_t*>(address) + facts::kObjectIndex, index)
+                                     ? ItemAt(index)
+                                     : nullptr;
+    void*               object = nullptr;
+    std::int32_t        flags  = 0;
+    return item != nullptr && Read(item, object) && object == address && Read(item + kItemFlags, flags) &&
+           (flags & kUnreachableBits) == 0;
 }
 
 bool WeakPairOf(void* object, std::int32_t (&pair)[2]) noexcept

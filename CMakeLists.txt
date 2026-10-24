@@ -33,6 +33,7 @@ add_library(LocalSplitScreen SHARED
     src/battle/command_menu_two.cpp
     src/battle/enemy_coin.cpp
     src/battle/enemy_leader.cpp
+    src/battle/enemy_watch.cpp
     src/battle/lock_camera_two.cpp
     src/battle/member_rates.cpp
     src/battle/party_switch.cpp

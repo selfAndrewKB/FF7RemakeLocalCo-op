@@ -1155,6 +1155,13 @@ inline constexpr platform::FunctionFact kGameFree{L"FMemory::Free", 0x1416C0370,
 // vtables; Reno's mines override it), which is true only while no action runs; the Blueprint OnUpdate then chooses.
 inline constexpr std::uint32_t kBattleAICurrentAction = 0x1A40;  // the controller's running action (an FName; 0 = none)
 inline constexpr std::uint32_t kBattleCompPlayerType  = 0x58;    // the battle component's player type byte (vs PM+0x233)
+// The battle component's own target (BattlePlayerComp_SetTarget38 / GetCurrentTarget 0x14096C410): a shared-pointer
+// pair, the target object at +0x38 and its reference block at +0x40 (live while the block's strong count at +8 > 0);
+// the target object's vtable slot +0x20 returns its character.
+inline constexpr std::uint32_t kBattleCompOwnTarget    = 0x38;
+inline constexpr std::uint32_t kBattleCompOwnTargetRef = 0x40;
+inline constexpr std::uint32_t kSharedRefStrongCount   = 0x8;
+inline constexpr std::uint32_t kTargetObjectCharacterSlot = 0x20 / 8;
 inline constexpr std::size_t   kPartyManagerBytes     = 0x258;   // the party manager's size
 inline constexpr std::uint32_t kFrameObject           = 0x18;    // FFrame: the object whose script is running (+0x20 = Code)
 inline constexpr std::uint32_t kCharacterController   = 0xCF0;   // AEndCharacter: the controller possessing it
@@ -1195,6 +1202,14 @@ inline constexpr std::uintptr_t kBattleIsAipcTypeCall = 0x14187D25D;            
 inline constexpr std::array<std::uintptr_t, 2> kBattleExpectationTypeCalls{0x1409598F1, 0x14095A3A7};  // E8 CA E1 CF FF, E8 14 D7 CF FF
 /// The enemy EQS target context keeps a party non-leader only if its controller IsA battle AI controller (E8 82 6A CD FF).
 inline constexpr std::uintptr_t kBattleEqsIsACall = 0x1409B0229;
+/// A character's own area queries (its EnvironmentQueryComponent, char+0x1AA8) run in battle only for the leader or a
+/// character whose controller IsA battle AI controller (EndEnvQueryComponent_TickQueries_BattleGate, E8 55 D0 00 FF;
+/// rcx = char+0xCF0, only al used after): enemies read the area of the character they target (RE-enemy-circling.md).
+inline constexpr std::uintptr_t kCharacterAreaIsACall    = 0x141679C56;
+inline constexpr std::uint32_t  kCharacterAreaQueries    = 0x1AA8;  // AEndCharacter: its EnvironmentQueryComponent
+inline constexpr std::uint32_t  kAreaQueryEntries        = 0xF8;    // the component's query entries (0x110 bytes each)
+inline constexpr std::uint32_t  kAreaQueryCount          = 0x100;   // their count (i32)
+inline constexpr std::uint32_t  kAreaEntryPointCount     = 0xB0;    // an entry's result points: the count (i32)
 /// Hits: the apply (entry; the hit's attacker weak at +0x50, victim weak at +0x78) and its second form's one call
 /// (E8 8F DF 2F FF, crossing its block; its 2nd and 4th arguments are the two characters).
 inline constexpr std::uintptr_t kBattleHitApply = 0x1409E9C70;  // BattleDamage_ApplyHitToVictim

@@ -30,6 +30,17 @@ constexpr int Wanted(int playersIn, int spanColumns, int override) noexcept
     return std::clamp(std::max(wanted, playersIn), 1, kMaxColumns);
 }
 
+/// Whether three views are laid out as three columns (the mod's records) rather than the engine's own three-player
+/// entry (player 1 across the top, two below: the user's pick for one window, 2026-10-24). Columns while the window
+/// spans monitors (`spanColumns` the span's columns, 0 when out: on a row of three a column per monitor; a row of two
+/// has no layout without a view across its seam and keeps the columns too) or the console asks for three
+/// (`override`); in one window the engine's entry stays. Only when three views exist: `columns` wanted or
+/// `localPlayers` the engine lists (a mirror kept a tick longer stays in a column).
+constexpr bool ThreeColumns(int columns, int localPlayers, int spanColumns, int override) noexcept
+{
+    return (columns >= 3 || localPlayers >= 3) && (spanColumns > 0 || override >= 3);
+}
+
 /// One record of the engine's per-player layout data (FPerPlayerSplitscreenData): fractions of the viewport.
 struct Record
 {
