@@ -445,6 +445,16 @@ inline constexpr std::uintptr_t kFetchVisibilityRangeCall  = 0x1425CCF89;
 inline constexpr std::uint32_t  kSceneOcclusionFlags       = 0x1530;
 inline constexpr std::uint32_t  kSceneOcclusionFlagCount   = 0x1538;
 inline constexpr std::uint8_t   kOcclusionCanBeOccluded    = 0x01;
+/// FRendererModule::BeginRenderingViewFamily(this, FCanvas*, FSceneViewFamily*) (stock 4.18): renders one family,
+/// called once per frame from UGameViewportClient::Draw (0x142F66819, `call [r9+40h]`) with every player's view in it,
+/// and by Square Enix's own one-view submit (0x1428D5F90). The renderer copies the family and its views when it starts
+/// (0x1425C6A20), so the views may be reordered around the call and put back after (RE-haze-occlusion.md, Pass 9).
+inline constexpr std::uintptr_t kRendererModuleVTable = 0x144D655E0;
+inline constexpr std::array<std::uint8_t, 16> kBeginRenderingViewFamilyEntry{
+    0x48, 0x89, 0x54, 0x24, 0x10, 0x55, 0x53, 0x57, 0x41, 0x54, 0x41, 0x56, 0x48, 0x8D, 0x6C, 0x24};
+inline constexpr platform::SlotFact kBeginRenderingViewFamily{
+    L"FRendererModule::BeginRenderingViewFamily (slot 8)", kRendererModuleVTable + 8 * 8,
+    {L"FRendererModule::BeginRenderingViewFamily", 0x1425C9770, kBeginRenderingViewFamilyEntry}};
 /// FScene::Primitives {FPrimitiveSceneInfo** Data, int32 Num} (+0x14E0); FPrimitiveSceneInfo::Proxy (+8).
 inline constexpr std::uint32_t kScenePrimitives      = 0x14E0;
 inline constexpr std::uint32_t kSceneInfoProxy       = 0x08;

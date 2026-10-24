@@ -96,6 +96,7 @@ add_library(LocalSplitScreen SHARED
     src/render/history_cut.cpp
     src/render/movie_frame.cpp
     src/render/occlusion_exempt.cpp
+    src/render/view_order.cpp
     src/render/ssr_origin.cpp
     src/render/sun_cascades.cpp
     src/views/letterbox_patch.cpp
