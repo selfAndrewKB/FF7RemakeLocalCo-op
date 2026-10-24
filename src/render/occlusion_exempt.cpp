@@ -16,6 +16,7 @@
 #include <climits>
 #include <cstdint>
 #include <format>
+#include <iterator>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -39,6 +40,19 @@ std::mutex                       g_setLock;
 std::vector<index_ranges::Range> g_set;               // guarded by g_setLock
 std::wstring                     g_setText = L"none";  // guarded by g_setLock
 std::atomic<std::uint32_t>       g_generation{0};
+
+/// Which views the set applies in: player 1's is the view whose rectangle starts at the window's top-left corner
+/// (as render/ao_origin reads it).
+enum class Views : int
+{
+    All,
+    PlayerOne,
+    Others,
+};
+constexpr const wchar_t* kViewWords[] = {L"all", L"player-1", L"others"};
+static_assert(std::size(kViewWords) == static_cast<std::size_t>(Views::Others) + 1,
+              "one word per Views value, in order");
+std::atomic<Views> g_views{Views::All};
 
 // Render thread only.
 std::vector<index_ranges::Range> g_ranges;          // the set in use
@@ -175,9 +189,9 @@ void Report(const void* scene, std::int32_t objects)
                 names += (i == 0 ? L": " : L", ") + Describe(scene, g_cleared[i]);
             }
         }
-        platform::Log(L"occlusion exempt: {} of {} objects skip their occlusion test and count as visible, in every view "
+        platform::Log(L"occlusion exempt: {} of {} objects skip their occlusion test and count as visible, in {} views "
                       L"(test; objects the game never tests are not counted){}",
-                      exempted, objects, names);
+                      exempted, objects, kViewWords[static_cast<int>(g_views.load(std::memory_order_relaxed))], names);
     }
     else if (exempted != previous)
     {
@@ -274,12 +288,31 @@ catch (...)
 {
 }
 
-/// The game's call for one view, between the set's flags cleared and put back. Params +0 is the scene. (A fault
-/// inside the game's function would leave the bits cleared, but it ends the process anyway.)
+/// Whether the set applies in this pass's view (params +8, its rectangle's top-left corner). A failed read: no.
+bool AppliesIn(const void* params) noexcept
+{
+    const Views views = g_views.load(std::memory_order_relaxed);
+    if (views == Views::All)
+    {
+        return true;
+    }
+    const void*  view = nullptr;
+    std::int32_t minX = 0;
+    std::int32_t minY = 0;
+    if (!ReadAt(params, 8, view) || !ReadAt(view, facts::kViewRectMinX, minX) ||
+        !ReadAt(view, facts::kViewRectMinY, minY))
+    {
+        return false;
+    }
+    return (minX == 0 && minY == 0) == (views == Views::PlayerOne);
+}
+
+/// The game's call for one view, between the set's flags cleared and put back. Params +0 is the scene, +8 the view.
+/// (A fault inside the game's function would leave the bits cleared, but it ends the process anyway.)
 std::uintptr_t FetchRange(void* params)
 {
     const void* scene = nullptr;
-    if (!ReadAt(params, 0, scene))
+    if (!AppliesIn(params) || !ReadAt(params, 0, scene))
     {
         return g_range(params);
     }
@@ -334,7 +367,8 @@ try
         const std::lock_guard lock(g_setLock);
         set = g_setText;
     }
-    return control::Value{std::format(L"{}; the last pass exempted {} of {} objects", set, g_lastExempted.load(),
+    return control::Value{std::format(L"{}; the last pass in an allowed view exempted {} of {} objects", set,
+                                      g_lastExempted.load(),
                                       g_lastObjects.load())};
 }
 catch (...)
@@ -363,11 +397,30 @@ bool Install(const platform::GameImage& image) noexcept
     g_installed.store(true);
     control::Register({.name  = L"occlusion-exempt",
                        .shape = control::Shape::Text,
-                       .help  = L"test: objects never hidden by occlusion culling, in every view: scene object indices "
-                                L"\"a b, c d\" (from a, up to but not including b), or none (render/occlusion_exempt.h)",
+                       .help  = L"test: objects never hidden by occlusion culling, in the views occlusion-exempt.views "
+                                L"allows (all by default): scene object indices \"a b, c d\" (from a, up to but not "
+                                L"including b), or none (render/occlusion_exempt.h)",
                        .set   = &Set,
                        .get   = &Get});
-    platform::Log(L"occlusion exempt: installed (command occlusion-exempt <a b, c d> | none; off until set)");
+    control::Register({.name  = L"occlusion-exempt.views",
+                       .shape = control::Shape::Word,
+                       .words = {std::begin(kViewWords), std::end(kViewWords)},
+                       .help  = L"test: the views occlusion-exempt applies in: all, player-1 (the view at the window's "
+                                L"top-left corner) or others (render/occlusion_exempt.h)",
+                       .set   = [](const control::Value& value) {
+                           const auto& word = std::get<std::wstring>(value);
+                           const auto  views = word == kViewWords[1] ? Views::PlayerOne
+                                               : word == kViewWords[2] ? Views::Others
+                                                                       : Views::All;
+                           g_views.store(views, std::memory_order_relaxed);  // guards no other data
+                           platform::Log(L"occlusion exempt: applies in {} views", word);
+                           return control::Outcome{};
+                       },
+                       .get   = [] {
+                           return control::Value{std::wstring(kViewWords[static_cast<int>(g_views.load())])};
+                       }});
+    platform::Log(L"occlusion exempt: installed (command occlusion-exempt <a b, c d> | none, off until set; "
+                  L"occlusion-exempt.views all | player-1 | others)");
     return true;
 }
 

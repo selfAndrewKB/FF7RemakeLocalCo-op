@@ -97,7 +97,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.78.0-occlusion-exempt";
+constexpr const wchar_t* kVersion = L"0.78.1-occlusion-exempt-views";
 static_assert(lss::views::column_rules::kMaxColumns == lss::hud::overlay_pass::kMaxColumns, "the columns the views and the HUD count");  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;

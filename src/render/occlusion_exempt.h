@@ -1,7 +1,8 @@
 #pragma once
 
 // A test for the blue haze in player 2's and player 3's views (RE-haze-occlusion.md): chosen objects skip their
-// occlusion test and count as visible, in every view. Off until the command sets objects.
+// occlusion test and count as visible, in all views or only some (the switch below). Off until the command sets
+// objects.
 //
 // Clearing every object's "can be occluded" flag (FScene::PrimitiveOcclusionFlags bit 0) from outside the game cures
 // the haze, and halving the set narrowed it, but the game rewrites some objects' flags every frame (animated
@@ -14,7 +15,13 @@
 // Command `occlusion-exempt <a b, c d>`: object indices in the scene (from a, up to but not including b), or `none`.
 // The indices are the main scene's (the one with the most objects); only its passes are reported. Logged: the install
 // and each new set (Info, with the objects' names when there are few), a change in how many objects a pass exempts
-// (Trace: the game rewrites some flags every frame). The reading gives the set and the last pass's count.
+// (Trace: the game rewrites some flags every frame). The reading gives the set and the last count in an allowed view.
+//
+// Switch `occlusion-exempt.views all | player-1 | others`: the views the set applies in (player 1's = the view whose
+// rectangle starts at the window's top-left corner; a scene capture's own view starts there too, so it counts with
+// player 1's). Exempting in player 1's view only tells
+// a limit shared by all views' queries [ASSUMPTION under test] from a fault in the answers of player 2's and
+// player 3's own views.
 
 namespace lss::platform {
 class GameImage;
