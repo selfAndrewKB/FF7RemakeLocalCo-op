@@ -430,6 +430,23 @@ inline constexpr std::uint32_t kProxySceneInfo       = 0x170;
 inline constexpr std::uint32_t kSceneInfoPackedIndex = 0x118;
 inline constexpr std::uint32_t kProxyOwnerName       = 0x178;
 inline constexpr std::uint32_t kProxyResourceName    = 0x180;
+/// FetchVisibilityForPrimitives_Range(params) (stock 4.18): one view's occlusion answers for its primitives. Params
+/// +0 = the FScene, +8 = the FViewInfo. It reads each primitive's occlusion flags from FScene::PrimitiveOcclusionFlags
+/// (TArray<uint8> +0x1530: data, num +0x1538) at 0x1425D8DBB; bit 0 (CanBeOccluded) clear = never tested, counted
+/// visible (0x1425D8FBE). Called once, from FetchVisibilityForPrimitives (0x1425CCF89), which OcclusionCull runs for
+/// each view in turn on the render thread; the parallel variant (0x1425D7DB0) is not used (RE-haze-occlusion.md,
+/// Pass 4, S-RMK-HAZEOCC).
+inline constexpr std::array<std::uint8_t, 16> kFetchVisibilityRangeEntry{
+    0x48, 0x8B, 0xC4, 0x48, 0x89, 0x58, 0x10, 0x48, 0x89, 0x70, 0x18, 0x48, 0x89, 0x78, 0x20, 0x55};
+inline constexpr platform::FunctionFact kFetchVisibilityRange{L"FetchVisibilityForPrimitives_Range", 0x1425D8B60,
+                                                              kFetchVisibilityRangeEntry};
+inline constexpr std::uintptr_t kFetchVisibilityRangeCall  = 0x1425CCF89;
+inline constexpr std::uint32_t  kSceneOcclusionFlags       = 0x1530;
+inline constexpr std::uint32_t  kSceneOcclusionFlagCount   = 0x1538;
+inline constexpr std::uint8_t   kOcclusionCanBeOccluded    = 0x01;
+/// FScene::Primitives {FPrimitiveSceneInfo** Data, int32 Num} (+0x14E0); FPrimitiveSceneInfo::Proxy (+8).
+inline constexpr std::uint32_t kScenePrimitives      = 0x14E0;
+inline constexpr std::uint32_t kSceneInfoProxy       = 0x08;
 
 // --- The game's own input tick (RE-input-p2.md §1) ------------------------------------------------
 // AEndPlayerController's constructor turns off the stock per-controller input tick in PlayerTick for gameplay;

@@ -95,6 +95,7 @@ add_library(LocalSplitScreen SHARED
     src/render/fog_volume_watch.cpp
     src/render/history_cut.cpp
     src/render/movie_frame.cpp
+    src/render/occlusion_exempt.cpp
     src/render/ssr_origin.cpp
     src/render/sun_cascades.cpp
     src/views/letterbox_patch.cpp
@@ -214,6 +215,13 @@ add_executable(SunOwnerTests
 target_include_directories(SunOwnerTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_compile_features(SunOwnerTests PRIVATE cxx_std_20)
 add_test(NAME sun_owner COMMAND SunOwnerTests)
+
+add_executable(IndexRangesTests
+    tests/index_ranges_test.cpp
+)
+target_include_directories(IndexRangesTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(IndexRangesTests PRIVATE cxx_std_20)
+add_test(NAME index_ranges COMMAND IndexRangesTests)
 
 add_executable(InstructionPatchTests
     tests/instruction_patch_test.cpp

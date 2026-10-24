@@ -65,6 +65,7 @@
 #include "render/ssr_origin.h"
 #include "render/sun_cascades.h"
 #include "render/fog_volume_watch.h"
+#include "render/occlusion_exempt.h"
 #include "render/history_cut.h"
 #include "render/lighting_volume.h"
 #include "views/column_layout.h"
@@ -96,7 +97,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.77.0-fog-lights-watch";
+constexpr const wchar_t* kVersion = L"0.78.0-occlusion-exempt";
 static_assert(lss::views::column_rules::kMaxColumns == lss::hud::overlay_pass::kMaxColumns, "the columns the views and the HUD count");  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
@@ -280,6 +281,7 @@ public:
         lss::render::sun_cascades::Remove();
         lss::render::lighting_volume::Remove();
         lss::render::history_cut::Remove();
+        lss::render::occlusion_exempt::Remove();
         lss::render::fog_volume_watch::Remove();
         lss::players::pad_buttons::Remove();
         lss::battle::sequence_camera_two::Remove();
@@ -332,6 +334,7 @@ public:
         lss::render::lighting_volume::Install(*image);  // optional: the volume-box test only
         lss::render::history_cut::Install(*image);      // optional: the history-cut test only
         lss::render::fog_volume_watch::Install(*image);  // optional: logging only
+        lss::render::occlusion_exempt::Install(*image);  // optional: the occlusion-exempt test only
         // Optional: without it player 2's bloom would be built from player 1's rows, so bloom stays off in split.
         if (lss::render::bloom_origin::Install(*image))
         {
