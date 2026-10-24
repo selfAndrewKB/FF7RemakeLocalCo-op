@@ -8,6 +8,7 @@
 #include "platform/log.h"
 #include "platform/verified_code.h"
 #include "render/dxbc_fix.h"
+#include "render/family_now.h"
 
 #include <array>
 #include <atomic>
@@ -65,6 +66,7 @@ std::uintptr_t         g_pixelVtable   = 0;        // FD3D12PixelShader
 std::atomic<bool> g_installed{false};
 std::atomic<bool> g_enabled{true};
 std::atomic<bool> g_loggedSwap{false};
+std::atomic<std::uint64_t> g_splitKept{0};  // pipeline calls inside a split frame, left with the game's shader
 
 // The pipeline calls run on the render thread [ASSUMPTION, as bloom's: RE-impl-facts-bloom-swap.md §7; the creation
 // logs its thread]. The table is locked all the same, so a second thread could only wait, never create twice.
@@ -233,6 +235,13 @@ void* Pipeline(void* commandList, const std::uint8_t* initializer, std::uint32_t
     {
         return g_getPipeline(commandList, initializer, applyFlags);
     }
+    if (family_now::Current().index >= 0)
+    {
+        // Inside a split frame every view drawn (the player's, and any capture drawn from its submission) is first in its
+        // own family with its rectangle at (0,0), where the game's shader reads the right pixels; so Current(), not For().
+        g_splitKept.fetch_add(1, std::memory_order_relaxed);
+        return g_getPipeline(commandList, initializer, applyFlags);
+    }
     void* const corrected = CorrectedFor(pixelShader, commandList);
     if (corrected == nullptr)
     {
@@ -254,7 +263,8 @@ std::wstring Reading()
 {
     const std::lock_guard lock(g_mutex);
     std::wstring          text = g_enabled.load() ? L"on" : L"off";
-    text += std::format(L"; {} SSR shader(s) met", g_shaderCount);
+    text += std::format(L"; {} pipeline call(s) in split frames (one family per player) kept the game's shader; {} SSR shader(s) met",
+                        g_splitKept.load(std::memory_order_relaxed), g_shaderCount);
     for (std::size_t i = 0; i < g_shaderCount; ++i)
     {
         text += std::format(L"; {}: {}", Hex(g_shaders[i].hash.data(), 4), g_shaders[i].outcome);

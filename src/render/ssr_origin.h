@@ -18,6 +18,10 @@
 // view and for single player), and created through the engine's own render-thread creation, from the render thread's
 // own command list only. A shader is re-signed only after its stored checksum was reproduced; one without that exact
 // instruction, once, is left as it is (logged). D3D11 keeps no code copy, so the fix stays off there (logged).
+//
+// While one family per player is drawn (render/one_family.h) every view starts at the corner, so the game's shader is
+// already right: the pipeline calls inside a split frame keep it (render/family_now.h). The fix acts outside split
+// frames (one view, `one-family off`, the split not running); it matters only with `one-family off`, kept for that.
 
 namespace lss::platform {
 class GameImage;
