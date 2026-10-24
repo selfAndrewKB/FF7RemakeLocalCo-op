@@ -416,6 +416,14 @@ inline constexpr std::uint32_t kViewFogVolumes        = 0x17A8;
 inline constexpr std::uint32_t kViewFogVolumeCount    = 0x17B0;
 inline constexpr std::uint32_t kViewVisibilityInline  = 0x1430;
 inline constexpr std::uint32_t kViewVisibilityHeap    = 0x1440;
+/// FViewInfo flag word (+0x229C). Bit 0x80 = bUsesLightingChannels: set by relevance only when a VISIBLE primitive
+/// (after occlusion culling) uses a lighting channel other than 0 (0x1425CE62E); without it, ShouldRenderLight
+/// (0x142237760, test at 0x1422377D8) drops every light outside channel 0 from that view's forward light data and
+/// volumetric fog. Bit 0x08 = the view ignores old occlusion answers (camera cut, `r.AllowOcclusionQueries 0`)
+/// (RE-haze-occlusion.md, Pass 5).
+inline constexpr std::uint32_t kViewFlags               = 0x229C;
+inline constexpr std::uint32_t kViewUsesLightingChannels = 0x80;
+inline constexpr std::uint32_t kViewIgnoresOldAnswers    = 0x08;
 /// FPrimitiveSceneProxy: PrimitiveSceneInfo (+0x170, whose packed index is at +0x118), OwnerName and ResourceName
 /// (FName, +0x178, +0x180) (RE-haze-occlusion.md, S-RMK-HAZESET).
 inline constexpr std::uint32_t kProxySceneInfo       = 0x170;

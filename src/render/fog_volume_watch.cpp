@@ -46,15 +46,28 @@ struct ViewRecord
     int                      drawnLow   = -1;
     int                      drawnHigh  = -1;
     unsigned                 changes    = 0;
+    unsigned                 passes     = 0;      // fog passes seen this window (one or two a frame)
+    unsigned                 channels   = 0;      // of which the view used lighting channels
+    unsigned                 ignoring   = 0;      // of which the view ignored old occlusion answers
+    bool                     seen       = false;  // lastBit holds a pass's bit (no false flip after a reset)
+    bool                     lastBit    = false;  // the last pass's lighting-channel bit (Trace on change)
 };
+
+/// None, some or all of a window's passes: the Debug line's state, steady while the exact counts wobble.
+const wchar_t* Share(unsigned part, unsigned whole) noexcept
+{
+    return part == 0 ? L"none" : part == whole ? L"all" : L"some";
+}
 
 std::array<ViewRecord, kMostViews>    g_views;
 int                                   g_watchedCount = 0;  // the view count the records belong to
 std::chrono::steady_clock::time_point g_windowStart{};
 std::wstring                          g_lastSummary;  // render thread: the last summary line written
+std::wstring                          g_lastLightsState;  // render thread: none/some/all of the last line written
 
-std::mutex   g_readingLock;  // guards g_reading (written on the render thread, read on the game thread)
-std::wstring g_reading = L"-";
+std::mutex   g_readingLock;  // guards both readings (written on the render thread, read on the game thread)
+std::wstring g_reading       = L"-";
+std::wstring g_lightsReading = L"-";
 
 template <class T>
 bool ReadAt(const void* base, std::size_t offset, T& out) noexcept
@@ -157,7 +170,7 @@ void Watch(void* renderer)
     count = std::min(count, kMostViews);
     if (count != g_watchedCount)
     {
-        g_views         = {};  // a view joined or left: start the records again
+        g_views        = {};  // a view joined or left: start the records again
         g_watchedCount = count;
     }
     std::vector<const void*> listed;
@@ -165,8 +178,24 @@ void Watch(void* renderer)
     for (int v = 0; v < count; ++v)
     {
         const std::uint8_t* view = views + static_cast<std::size_t>(v) * facts::kViewInfoStride;
-        const void* const*  data = nullptr;
-        std::int32_t        n    = 0;
+        ViewRecord&         record = g_views[static_cast<std::size_t>(v)];
+        std::uint32_t       flags  = 0;
+        if (ReadAt(view, facts::kViewFlags, flags))
+        {
+            const bool channels = (flags & facts::kViewUsesLightingChannels) != 0;
+            ++record.passes;
+            record.channels += channels ? 1u : 0u;
+            record.ignoring += (flags & facts::kViewIgnoresOldAnswers) != 0 ? 1u : 0u;
+            if (record.seen && channels != record.lastBit)
+            {
+                platform::LogTrace(L"fog lights: view {} {} lights outside the default lighting channel", v + 1,
+                                   channels ? L"takes" : L"drops");
+            }
+            record.seen    = true;
+            record.lastBit = channels;
+        }
+        const void* const* data = nullptr;
+        std::int32_t       n    = 0;
         if (!ReadAt(view, facts::kViewFogVolumes, data) || !ReadAt(view, facts::kViewFogVolumeCount, n) || n < 0)
         {
             continue;
@@ -186,7 +215,6 @@ void Watch(void* renderer)
         }
         std::sort(drawn.begin(), drawn.end());
 
-        ViewRecord& record = g_views[static_cast<std::size_t>(v)];
         Widen(record.listedLow, record.listedHigh, n);
         Widen(record.drawnLow, record.drawnHigh, static_cast<int>(drawn.size()));
         if (drawn != record.drawn)
@@ -214,6 +242,8 @@ void Watch(void* renderer)
     }
     g_windowStart = now;
     std::wstring summary;
+    std::wstring lights;
+    std::wstring lightsState;
     std::wstring details;
     bool         changed = false;
     for (int v = 0; v < count; ++v)
@@ -221,6 +251,10 @@ void Watch(void* renderer)
         ViewRecord& record = g_views[static_cast<std::size_t>(v)];
         summary += std::format(L"{}view {}: {}..{} listed, {}..{} taken, {} changes", v == 0 ? L"" : L" | ", v + 1,
                                record.listedLow, record.listedHigh, record.drawnLow, record.drawnHigh, record.changes);
+        lights += std::format(L"{}view {}: {} of {} passes take them ({} ignoring old answers)", v == 0 ? L"" : L" | ",
+                              v + 1, record.channels, record.passes, record.ignoring);
+        lightsState += std::format(L"{}view {}: {} take them ({} ignoring old answers)", v == 0 ? L"" : L" | ", v + 1,
+                                   Share(record.channels, record.passes), Share(record.ignoring, record.passes));
         if (record.changes != 0)
         {
             changed = true;
@@ -238,14 +272,21 @@ void Watch(void* renderer)
         record.went.clear();
         record.listedLow = record.listedHigh = record.drawnLow = record.drawnHigh = -1;
         record.changes                                                       = 0;
+        record.passes = record.channels = record.ignoring = 0;
     }
     if (changed || summary != g_lastSummary)
     {
         platform::LogDebug(L"fog volumes: {}{}", summary, details);
     }
-    g_lastSummary = summary;
+    if (lightsState != g_lastLightsState)
+    {
+        platform::LogDebug(L"fog lights outside the default channel: {}", lights);
+    }
+    g_lastSummary     = summary;
+    g_lastLightsState = lightsState;
     const std::lock_guard lock(g_readingLock);
-    g_reading = summary;
+    g_reading       = summary;
+    g_lightsReading = lights;
 }
 
 void WatchGuarded(void* renderer) noexcept
@@ -306,7 +347,23 @@ bool Install(const platform::GameImage& image) noexcept
                            }
                            return control::Value{text};
                        }});
-    platform::Log(L"fog volume watch: installed (reading fog-volumes; changes at log level debug)");
+    control::Register({.name  = L"fog-lights",
+                       .shape = control::Shape::Text,
+                       .help  = L"each view over the last one-second window: on how many fog passes its fog and "
+                                L"lighting take lights outside the default lighting channel (render/fog_volume_watch.h)",
+                       .get   = [] {
+                           std::wstring text;
+                           try
+                           {
+                               const std::lock_guard lock(g_readingLock);
+                               text = g_lightsReading;
+                           }
+                           catch (...)
+                           {
+                           }
+                           return control::Value{text};
+                       }});
+    platform::Log(L"fog volume watch: installed (reading fog-volumes and fog-lights; changes at log level debug)");
     return true;
 }
 

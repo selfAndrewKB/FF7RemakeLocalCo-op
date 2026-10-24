@@ -15,6 +15,15 @@
 // for that view is not checked), and changes nothing. Only draws of two or more views are read: captures have one.
 // Logged: the install (Info), a summary each second with the views' counts and the fog volumes that came and went
 // (Debug, only when something changed), each change (Trace). Reading `fog-volumes`: the last summary.
+//
+// Fog volumes proved empty in the Mako 5 hallway (2026-10-23 22:01), and the haze proved to be views 2 and 3
+// losing their volumetric fog. Pass 5 found the one other fog input culling feeds: a view takes lights outside
+// the default lighting channel only while one of its visible objects uses such a channel (the view's
+// bUsesLightingChannels bit) [CONFIRMED code; whether it carries the haze is what this reads]. The watch counts,
+// per view and one-second window, the fog passes (one or two a frame) with that bit and those ignoring old
+// occlusion answers (the state that cures the haze, as a camera cut or culling off [ASSUMPTION: through this
+// bit]): Debug when either share changes between none, some and all, each flip of the bit at Trace, exact counts
+// in the reading `fog-lights`.
 
 namespace lss::platform {
 class GameImage;
