@@ -19,9 +19,14 @@
 //
 // Switch `occlusion-exempt.views all | player-1 | others`: the views the set applies in (player 1's = the view whose
 // rectangle starts at the window's top-left corner; a scene capture's own view starts there too, so it counts with
-// player 1's). Exempting in player 1's view only tells
-// a limit shared by all views' queries [ASSUMPTION under test] from a fault in the answers of player 2's and
-// player 3's own views.
+// player 1's). Exempting in player 1's view only tells a limit shared by all views' queries from a fault in the
+// answers of player 2's and player 3's own views (2026-10-24: the latter).
+//
+// Command `occlusion-exempt.third <a b, c d> | none | main`: a set of its own for the third column's view (the view
+// whose rectangle's left edge is two widths in, in the top row; it then ignores `.views`), so one look tests two
+// sets: player 2's view takes the main set (with `.views others`), player 3's its own. `main` gives it the main set
+// again. Halving with the depth-pyramid test on (`r.HZBOcclusion 1`, which tests each object alone, not in groups
+// of 8) gives clear answers.
 
 namespace lss::platform {
 class GameImage;

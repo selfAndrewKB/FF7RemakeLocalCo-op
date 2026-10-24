@@ -225,6 +225,7 @@ inline constexpr std::uint32_t  kSplitForcedFlags     = 0x1008;
 inline constexpr std::uint32_t kPassContextView = 0x00;  // FRenderingCompositePassContext: const FViewInfo*
 inline constexpr std::uint32_t kViewRectMinX    = 0x70;  // FViewInfo::ViewRect.Min.X (int32)
 inline constexpr std::uint32_t kViewRectMinY    = 0x74;
+inline constexpr std::uint32_t kViewRectMaxX    = 0x78;  // ViewRect.Max.X: FIntRect is {Min, Max}, stock 4.18
 
 inline constexpr std::array<std::uint8_t, 16> kAoDownsampleSetParamsEntry{
     0x48, 0x89, 0x5C, 0x24, 0x10, 0x48, 0x89, 0x74, 0x24, 0x18, 0x55, 0x57, 0x41, 0x55, 0x41, 0x56};

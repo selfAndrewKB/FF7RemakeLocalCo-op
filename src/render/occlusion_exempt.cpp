@@ -29,19 +29,38 @@ using RangeFn = std::uintptr_t (*)(void* params);  // the game's result (none is
 
 constexpr std::size_t kMostNamed = 32;  // a set this small or smaller is logged with its objects' names
 constexpr int kMainSceneGone = 64;  // passes without the main scene after which another may take its place
+constexpr std::int32_t kThirdColumn = 2;  // the third column's index (its rectangle's left edge / its width)
 
 // Set once at install, on the game thread, before the redirect is live; read on the render thread afterwards.
 platform::CallRedirect g_call;
 RangeFn                g_range = nullptr;
 std::atomic<bool>      g_installed{false};
 
-// The set as the command gave it: written on the game thread, taken by the render thread when the generation moves.
-std::mutex                       g_setLock;
-std::vector<index_ranges::Range> g_set;               // guarded by g_setLock
-std::wstring                     g_setText = L"none";  // guarded by g_setLock
-std::atomic<std::uint32_t>       g_generation{0};
+/// One set of objects: as the command gave it (written on the game thread, taken by the render thread when the
+/// generation moves) and as the render thread uses it.
+struct Slot
+{
+    const wchar_t* label = L"";  // after "occlusion exempt" in its log lines
 
-/// Which views the set applies in: player 1's is the view whose rectangle starts at the window's top-left corner
+    std::mutex                       lock;
+    std::vector<index_ranges::Range> set;            // guarded by lock
+    std::wstring                     text = L"none";  // guarded by lock
+    std::atomic<std::uint32_t>       generation{0};
+
+    // Render thread only.
+    std::vector<index_ranges::Range> ranges;          // the set in use
+    std::uint32_t                    taken  = 0;      // the generation ranges came from
+    bool                             report = false;  // the next main-scene pass logs the new set
+
+    std::atomic<std::int64_t> lastExempted{0};  // objects the main scene's last pass exempted (read by the command)
+    std::atomic<std::int64_t> lastObjects{0};   // objects in it
+};
+
+Slot g_main;  // the views occlusion-exempt.views allows (not a third column with a set of its own)
+Slot g_third{.label = L" (third column)"};  // the third column's view, while it has a set of its own
+std::atomic<bool> g_thirdOwn{false};
+
+/// Which views the main set applies in: player 1's is the view whose rectangle starts at the window's top-left corner
 /// (as render/ao_origin reads it).
 enum class Views : int
 {
@@ -55,21 +74,15 @@ static_assert(std::size(kViewWords) == static_cast<std::size_t>(Views::Others) +
 std::atomic<Views> g_views{Views::All};
 
 // Render thread only.
-std::vector<index_ranges::Range> g_ranges;          // the set in use
-std::uint32_t                    g_taken  = 0;      // the generation g_ranges came from
-bool                             g_report = false;  // the next pass logs the new set
-std::vector<std::uint8_t>        g_flags;           // the scene's flags, copied each pass
-std::vector<std::int32_t>        g_cleared;         // the objects this pass cleared, to put back
-std::uint8_t*                    g_clearedIn   = nullptr;  // the flag array they were cleared in
-bool                             g_warnedMoved = false;
-// The set's indices are the main scene's: the one with the most objects (scene and reflection captures of the same
+std::vector<std::uint8_t> g_flags;                  // the scene's flags, copied each pass
+std::vector<std::int32_t> g_cleared;                // the objects this pass cleared, to put back
+std::uint8_t*             g_clearedIn   = nullptr;  // the flag array they were cleared in
+bool                      g_warnedMoved = false;
+// The sets' indices are the main scene's: the one with the most objects (scene and reflection captures of the same
 // world share it; a preview scene would have its own, smaller). Only its passes are reported and read.
 const void*  g_mainScene   = nullptr;
 std::int32_t g_mainObjects = 0;
 int          g_sinceMain   = 0;  // passes since the main scene's last
-
-std::atomic<std::int64_t> g_lastExempted{0};  // objects the main scene's last pass exempted (read by the command)
-std::atomic<std::int64_t> g_lastObjects{0};   // objects in it
 
 template <class T>
 bool ReadAt(const void* base, std::size_t offset, T& out) noexcept
@@ -133,17 +146,17 @@ std::wstring Describe(const void* scene, std::int32_t index)
     return std::format(L"{} {} ({})", index, ownerText.empty() ? L"?" : ownerText, resText.empty() ? L"?" : resText);
 }
 
-/// Takes the command's newest set, if it changed.
-void TakeSet()
+/// Takes the command's newest set for the slot, if it changed.
+void TakeSet(Slot& slot)
 {
-    if (g_generation.load(std::memory_order_acquire) == g_taken)
+    if (slot.generation.load(std::memory_order_acquire) == slot.taken)
     {
         return;
     }
-    const std::lock_guard lock(g_setLock);
-    g_ranges = g_set;
-    g_taken  = g_generation.load(std::memory_order_relaxed);  // read under the lock: the set and its generation match
-    g_report = true;
+    const std::lock_guard lock(slot.lock);
+    slot.ranges = slot.set;
+    slot.taken  = slot.generation.load(std::memory_order_relaxed);  // under the lock: the set and its generation match
+    slot.report = true;
 }
 
 /// Whether this pass is the main scene's (adopting a bigger scene, or any scene once the main one is gone).
@@ -162,23 +175,41 @@ bool IsMainScene(const void* scene, std::int32_t objects) noexcept
     return true;
 }
 
+/// The views a slot's set applies in, for the log.
+std::wstring Where(const Slot& slot)
+{
+    if (&slot == &g_third)
+    {
+        return L"in the third column's view";
+    }
+    const bool third = g_thirdOwn.load(std::memory_order_relaxed);
+    switch (g_views.load(std::memory_order_relaxed))
+    {
+    case Views::PlayerOne: return L"in player 1's view";
+    case Views::Others:
+        return third ? L"in the views other than player 1's and the third column's"
+                     : L"in the views other than player 1's";
+    default: return third ? L"in every view but the third column's" : L"in every view";
+    }
+}
+
 /// For the main scene's passes: the new set's line (Info), a change in how many objects a pass exempts (Trace: the
 /// game rewrites some flags every frame, so the count may move with it).
-void Report(const void* scene, std::int32_t objects)
+void Report(const void* scene, std::int32_t objects, Slot& slot)
 {
     if (!IsMainScene(scene, objects))
     {
         return;
     }
     const auto exempted = static_cast<std::int64_t>(g_cleared.size());
-    const auto previous = g_lastExempted.exchange(exempted);
-    g_lastObjects.store(objects);
-    if (g_report)
+    const auto previous = slot.lastExempted.exchange(exempted);
+    slot.lastObjects.store(objects);
+    if (slot.report)
     {
-        g_report = false;
-        if (g_ranges.empty())
+        slot.report = false;
+        if (slot.ranges.empty())
         {
-            platform::Log(L"occlusion exempt: off; culling hides objects as the game decides");
+            platform::Log(L"occlusion exempt{}: none; culling hides objects as the game decides", slot.label);
             return;
         }
         std::wstring names;
@@ -189,23 +220,24 @@ void Report(const void* scene, std::int32_t objects)
                 names += (i == 0 ? L": " : L", ") + Describe(scene, g_cleared[i]);
             }
         }
-        platform::Log(L"occlusion exempt: {} of {} objects skip their occlusion test and count as visible, in {} views "
+        platform::Log(L"occlusion exempt{}: {} of {} objects skip their occlusion test and count as visible, {} "
                       L"(test; objects the game never tests are not counted){}",
-                      exempted, objects, kViewWords[static_cast<int>(g_views.load(std::memory_order_relaxed))], names);
+                      slot.label, exempted, objects, Where(slot), names);
+        return;
     }
-    else if (exempted != previous)
+    if (exempted != previous)
     {
-        platform::LogTrace(L"occlusion exempt: a pass now exempts {} of {} objects", exempted, objects);
+        platform::LogTrace(L"occlusion exempt{}: a pass now exempts {} of {} objects", slot.label, exempted, objects);
     }
 }
 
-/// Clears "can be occluded" on the set's objects that have it, recording them for PutBack.
-void Clear(const void* scene)
+/// Clears "can be occluded" on the slot's objects that have it, recording them for PutBack.
+void Clear(const void* scene, Slot& slot)
 {
     g_cleared.clear();
     g_clearedIn = nullptr;
-    TakeSet();
-    if (g_ranges.empty() && !g_report)
+    TakeSet(slot);
+    if (slot.ranges.empty() && !slot.report)
     {
         return;
     }
@@ -217,7 +249,7 @@ void Clear(const void* scene)
     }
     g_cleared.reserve(g_flags.size());  // before any write: a cleared bit is always recorded, so always put back
     g_clearedIn = flags.data;
-    for (const index_ranges::Range& range : g_ranges)
+    for (const index_ranges::Range& range : slot.ranges)
     {
         const std::int32_t end = std::min(range.to, flags.count);
         for (std::int32_t i = range.from; i < end; ++i)
@@ -235,7 +267,7 @@ void Clear(const void* scene)
             }
         }
     }
-    Report(scene, flags.count);
+    Report(scene, flags.count, slot);
 }
 
 /// Puts back the bits Clear took, in the array they were taken from.
@@ -270,10 +302,10 @@ void PutBack(const void* scene)
     g_cleared.clear();
 }
 
-void ClearGuarded(const void* scene) noexcept
+void ClearGuarded(const void* scene, Slot& slot) noexcept
 try
 {
-    Clear(scene);
+    Clear(scene, slot);
 }
 catch (...)
 {
@@ -288,45 +320,56 @@ catch (...)
 {
 }
 
-/// Whether the set applies in this pass's view (params +8, its rectangle's top-left corner). A failed read: no.
-bool AppliesIn(const void* params) noexcept
+/// The slot whose set applies in this pass's view (params +8, its rectangle), or none. The third column's view takes
+/// its own set while it has one; otherwise a view takes the main set if occlusion-exempt.views allows it. A failed
+/// read: none.
+Slot* SlotFor(const void* params) noexcept
 {
-    const Views views = g_views.load(std::memory_order_relaxed);
-    if (views == Views::All)
+    const Views views    = g_views.load(std::memory_order_relaxed);
+    const bool  thirdOwn = g_thirdOwn.load(std::memory_order_relaxed);
+    if (views == Views::All && !thirdOwn)
     {
-        return true;
+        return &g_main;
     }
     const void*  view = nullptr;
     std::int32_t minX = 0;
     std::int32_t minY = 0;
+    std::int32_t maxX = 0;
     if (!ReadAt(params, 8, view) || !ReadAt(view, facts::kViewRectMinX, minX) ||
-        !ReadAt(view, facts::kViewRectMinY, minY))
+        !ReadAt(view, facts::kViewRectMinY, minY) || !ReadAt(view, facts::kViewRectMaxX, maxX))
     {
-        return false;
+        return nullptr;
     }
-    return (minX == 0 && minY == 0) == (views == Views::PlayerOne);
+    const std::int64_t width = std::int64_t{maxX} - minX;  // 64-bit: a torn read cannot overflow
+    // The third column: a top-row rectangle starting on the boundary two widths in (a pixel either way for rounding).
+    if (thirdOwn && width > 0 && minY == 0 && minX / width == kThirdColumn && minX % width <= 1)
+    {
+        return &g_third;
+    }
+    const bool playerOne = minX == 0 && minY == 0;
+    return views == Views::All || playerOne == (views == Views::PlayerOne) ? &g_main : nullptr;
 }
 
 /// The game's call for one view, between the set's flags cleared and put back. Params +0 is the scene, +8 the view.
 /// (A fault inside the game's function would leave the bits cleared, but it ends the process anyway.)
 std::uintptr_t FetchRange(void* params)
 {
+    Slot*       slot  = SlotFor(params);
     const void* scene = nullptr;
-    if (!AppliesIn(params) || !ReadAt(params, 0, scene))
+    if (slot == nullptr || !ReadAt(params, 0, scene))
     {
         return g_range(params);
     }
-    ClearGuarded(scene);
+    ClearGuarded(scene, *slot);
     const std::uintptr_t result = g_range(params);
     PutBackGuarded(scene);
     return result;
 }
 
-control::Outcome Set(const control::Value& value)
-try
+/// Stores a new set in the slot for the render thread. False when the text is not a set.
+control::Outcome SetSlot(Slot& slot, const std::wstring& text)
 {
-    const std::wstring& text   = std::get<std::wstring>(value);
-    auto                ranges = index_ranges::Parse(text);
+    auto ranges = index_ranges::Parse(text);
     if (!ranges)
     {
         return {false, L"wants pairs of object indices \"a b\" (from a, up to but not including b) separated by "
@@ -346,30 +389,80 @@ try
         shown += std::format(L" ({} indices)", index_ranges::Count(*ranges, INT32_MAX));
     }
     {
-        const std::lock_guard lock(g_setLock);
-        g_set     = std::move(*ranges);
-        g_setText = shown;
+        const std::lock_guard lock(slot.lock);
+        slot.set  = std::move(*ranges);
+        slot.text = shown;
     }
-    g_generation.fetch_add(1, std::memory_order_release);
-    platform::Log(L"occlusion exempt: set to {} (taken at the next frame)", shown);
+    slot.generation.fetch_add(1, std::memory_order_release);
+    platform::Log(L"occlusion exempt{}: set to {} (taken at the next frame)", slot.label, shown);
     return {};
+}
+
+std::wstring Reading(Slot& slot)
+{
+    std::wstring set;
+    {
+        const std::lock_guard lock(slot.lock);
+        set = slot.text;
+    }
+    const std::int64_t objects = slot.lastObjects.load();
+    if (objects == 0)
+    {
+        return set + L"; no pass yet";
+    }
+    return std::format(L"{}; its last pass ({}) exempted {} of {} objects", set, Where(slot), slot.lastExempted.load(),
+                       objects);
+}
+
+control::Outcome SetMain(const control::Value& value)
+try
+{
+    return SetSlot(g_main, std::get<std::wstring>(value));
 }
 catch (...)
 {
     return {false, L"the set could not be stored"};
 }
 
-control::Value Get()
+/// `main` gives the third column back to the main set; anything else is a set of its own (none included).
+control::Outcome SetThird(const control::Value& value)
 try
 {
-    std::wstring set;
+    const std::wstring& text = std::get<std::wstring>(value);
+    if (text == L"main")
     {
-        const std::lock_guard lock(g_setLock);
-        set = g_setText;
+        if (g_thirdOwn.exchange(false, std::memory_order_relaxed))
+        {
+            platform::Log(L"occlusion exempt (third column): takes the main set again");
+        }
+        return {};
     }
-    return control::Value{std::format(L"{}; the last pass in an allowed view exempted {} of {} objects", set,
-                                      g_lastExempted.load(),
-                                      g_lastObjects.load())};
+    control::Outcome outcome = SetSlot(g_third, text);
+    if (outcome.ok)
+    {
+        g_thirdOwn.store(true, std::memory_order_relaxed);
+    }
+    return outcome;
+}
+catch (...)
+{
+    return {false, L"the set could not be stored"};
+}
+
+control::Value GetMain()
+try
+{
+    return control::Value{Reading(g_main)};
+}
+catch (...)
+{
+    return control::Value{std::wstring{}};
+}
+
+control::Value GetThird()
+try
+{
+    return control::Value{g_thirdOwn.load() ? Reading(g_third) : std::wstring(L"main")};
 }
 catch (...)
 {
@@ -398,10 +491,11 @@ bool Install(const platform::GameImage& image) noexcept
     control::Register({.name  = L"occlusion-exempt",
                        .shape = control::Shape::Text,
                        .help  = L"test: objects never hidden by occlusion culling, in the views occlusion-exempt.views "
-                                L"allows (all by default): scene object indices \"a b, c d\" (from a, up to but not "
-                                L"including b), or none (render/occlusion_exempt.h)",
-                       .set   = &Set,
-                       .get   = &Get});
+                                L"allows (all by default; a third column with a set of its own takes that): scene "
+                                L"object indices \"a b, c d\" (from a, up to but not including b), or none "
+                                L"(render/occlusion_exempt.h)",
+                       .set   = &SetMain,
+                       .get   = &GetMain});
     control::Register({.name  = L"occlusion-exempt.views",
                        .shape = control::Shape::Word,
                        .words = {std::begin(kViewWords), std::end(kViewWords)},
@@ -419,8 +513,14 @@ bool Install(const platform::GameImage& image) noexcept
                        .get   = [] {
                            return control::Value{std::wstring(kViewWords[static_cast<int>(g_views.load())])};
                        }});
+    control::Register({.name  = L"occlusion-exempt.third",
+                       .shape = control::Shape::Text,
+                       .help  = L"test: a set of its own for the third column's view (\"a b, c d\" or none), so one "
+                                L"look tests two sets; main gives it the main set again (render/occlusion_exempt.h)",
+                       .set   = &SetThird,
+                       .get   = &GetThird});
     platform::Log(L"occlusion exempt: installed (command occlusion-exempt <a b, c d> | none, off until set; "
-                  L"occlusion-exempt.views all | player-1 | others)");
+                  L"occlusion-exempt.views all | player-1 | others; occlusion-exempt.third <a b, c d> | none | main)");
     return true;
 }
 
