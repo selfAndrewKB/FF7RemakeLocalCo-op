@@ -92,6 +92,7 @@ add_library(LocalSplitScreen SHARED
     src/render/bloom_origin.cpp
     src/render/distortion_apply.cpp
     src/render/lighting_volume.cpp
+    src/render/fog_volume_watch.cpp
     src/render/history_cut.cpp
     src/render/movie_frame.cpp
     src/render/ssr_origin.cpp

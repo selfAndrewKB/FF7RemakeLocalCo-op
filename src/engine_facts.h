@@ -395,6 +395,33 @@ inline constexpr std::array<std::uint8_t, 16> kSetGameCameraCutEntry{
     0x81, 0x89, 0x18, 0x1E, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0xC3, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC};
 inline constexpr platform::FunctionFact kSetGameCameraCut{L"APlayerCameraManager::SetGameCameraCutThisFrame",
                                                           0x143719650, kSetGameCameraCutEntry};
+/// FDeferredShadingSceneRenderer::ComputeVolumetricFog(renderer, cmdList) (stock 4.18): each view's volumetric fog,
+/// after visibility and relevance, so each view's fog-volume list is final when it is called. Called from Render on
+/// the early-depth path (0x1421E6C12) and the other (0x1421E6FD0), each `E8 rel32` inside one 16-byte block
+/// (RE-haze-occlusion.md, Pass 4).
+inline constexpr std::array<std::uint8_t, 16> kComputeVolumetricFogEntry{
+    0x40, 0x55, 0x41, 0x55, 0x41, 0x57, 0x48, 0x8D, 0xAC, 0x24, 0x60, 0xFC, 0xFF, 0xFF, 0x48, 0x81};
+inline constexpr platform::FunctionFact kComputeVolumetricFog{L"FDeferredShadingSceneRenderer::ComputeVolumetricFog",
+                                                              0x14264D410, kComputeVolumetricFogEntry};
+inline constexpr std::array<std::uintptr_t, 2> kComputeVolumetricFogCalls{0x1421E6C12, 0x1421E6FD0};
+/// FSceneRenderer::Views {FViewInfo* Data, int32 Num} (+0xD0, +0xD8), one FViewInfo every 0x28B0 bytes.
+inline constexpr std::uint32_t kRendererViews     = 0xD0;
+inline constexpr std::uint32_t kRendererViewCount = 0xD8;
+inline constexpr std::uint32_t kViewInfoStride    = 0x28B0;
+/// FViewInfo::VolumetricPrimSet {FPrimitiveSceneProxy** Data, int32 Num} (+0x17A8, +0x17B0): the view's fog-volume
+/// primitives, filled by relevance from the visibility map after occlusion culling (0x1425CDD51, 0x1425CECAB) and
+/// voxelized into that view's fog by VoxelizeFogVolumePrimitives (0x142653660), which skips an entry whose bit in
+/// the view's PrimitiveVisibilityMap (TBitArray +0x1430: inline words, heap pointer at +0x1440) is clear.
+inline constexpr std::uint32_t kViewFogVolumes        = 0x17A8;
+inline constexpr std::uint32_t kViewFogVolumeCount    = 0x17B0;
+inline constexpr std::uint32_t kViewVisibilityInline  = 0x1430;
+inline constexpr std::uint32_t kViewVisibilityHeap    = 0x1440;
+/// FPrimitiveSceneProxy: PrimitiveSceneInfo (+0x170, whose packed index is at +0x118), OwnerName and ResourceName
+/// (FName, +0x178, +0x180) (RE-haze-occlusion.md, S-RMK-HAZESET).
+inline constexpr std::uint32_t kProxySceneInfo       = 0x170;
+inline constexpr std::uint32_t kSceneInfoPackedIndex = 0x118;
+inline constexpr std::uint32_t kProxyOwnerName       = 0x178;
+inline constexpr std::uint32_t kProxyResourceName    = 0x180;
 
 // --- The game's own input tick (RE-input-p2.md §1) ------------------------------------------------
 // AEndPlayerController's constructor turns off the stock per-controller input tick in PlayerTick for gameplay;
