@@ -2070,4 +2070,87 @@ inline constexpr std::uint32_t kComponentWorldRotation = 0x1A0;
 inline constexpr std::uint32_t kFieldActionStates = 0x10;
 inline constexpr std::uint32_t kSqueezeFromPoint = 0x3A, kSqueezeSide = 0x70, kSqueezeEndYaw = 0x84;
 
+// --- Field targets: chests, ground items, doors for a further player (research/RE-chest-two.md §8) ---------------------
+/// The field target manager (g_EndGameRoot+0x158, one for the game's life): its pick each frame (the nearest target, the
+/// icons, the prompt row) and its press (FieldAction on the current target), both void(mgr, float dt), each called once
+/// by a game-mode tick on the game thread. The pick's call crosses a 16-byte block, the press's fits.
+inline constexpr std::uint32_t  kRootFieldTargets     = 0x158;
+inline constexpr std::uintptr_t kFieldTargetPick      = 0x14101C140;  // FieldActionMgr__TickTargetIcons_LeaderBased
+inline constexpr std::uintptr_t kFieldTargetPickCall  = 0x1416BBDDE;  // E8 5D 03 96 FF
+inline constexpr std::uintptr_t kFieldTargetPress     = 0x14101BE20;  // FieldActionMgr__TickPressed_LeaderBased
+inline constexpr std::uintptr_t kFieldTargetPressCall = 0x140FF5DFB;  // E8 20 60 02 00
+/// The pick's screen test asks for "the first local player" (UWorld::GetFirstLocalPlayerFromController, void*(world)):
+/// a row flagged NeedScreenSpace passes only on that player's screen. Only caller on this path; crosses a block.
+inline constexpr std::uintptr_t kFirstLocalPlayer     = 0x143370570;
+inline constexpr std::uintptr_t kFieldTargetScreenCall = 0x141017B7F;  // E8 EC 89 35 02
+/// The manager's per-player state (§8.3): the last pick's visited entries (TArray, inline 64) and its name-to-trace map
+/// (TMap) in one range; the current target (name, state name, actor tag), its prompt text (FString), hold timer and
+/// duration, the trimmed nearest name and its location, the last pressed name; FieldAction held / pressed / latch;
+/// the far-icon sweep timer. The ctor zeroes all of it but the map's first free index (-1).
+inline constexpr std::uint32_t kTargetsVisited = 0x130, kTargetsVisitedSize = 0x260;  // +0x130..+0x38F
+inline constexpr std::uint32_t kTargetsMapFirstFree = 0x370;
+inline constexpr std::uint32_t kTargetsCurrent = 0xBD00, kTargetsCurrentSize = 0x4C;  // +0xBD00..+0xBD4B
+inline constexpr std::uint32_t kTargetsState = 0xBD08, kTargetsPromptText = 0xBD18;
+inline constexpr std::uint32_t kTargetsHeld = 0xBD57, kTargetsPressed = 0xBD58, kTargetsLatch = 0xBD59;  // 3 bytes
+inline constexpr std::uint32_t kTargetsSweepTimer = 0xBD5C;                                            // 4 bytes
+/// The heap blocks a copy of that state owns (the dtor frees the same five): visited heap, map data, map bits, map hash,
+/// prompt text.
+inline constexpr std::array<std::uint32_t, 5> kTargetsOwned{0x330, 0x340, 0x360, 0x380, 0xBD18};
+/// The pool's 256 items (stride 0xB8 from +0x390): each entry's "was the current target last pick" byte (item +0xA5,
+/// entry +0x8D), which widens its range check.
+inline constexpr std::uint32_t kTargetsPool = 0x390, kTargetsItemSize = 0xB8, kTargetsItemWasCurrent = 0xA5;
+inline constexpr std::size_t   kTargetsItems = 256;
+/// The press's inline FieldAction read (the caller of the press): the gate, then the held and pressed getters on a copy
+/// of the FieldAction key (24 bytes: FName, details object, reference controller; each getter releases the copy's
+/// reference), into held / pressed, the latch cleared on release.
+inline constexpr std::uintptr_t kFieldActionKey = 0x145903B48;
+inline constexpr std::array<std::uint8_t, 13> kFieldActionGateEntry{0x48, 0x89, 0x5C, 0x24, 0x08, 0x57, 0x48, 0x83, 0xEC, 0x40, 0x40, 0x32, 0xFF};
+inline constexpr platform::FunctionFact kFieldActionGate{L"FieldAction_PressGate_CamLockUi19Pause", 0x140FD5E40, kFieldActionGateEntry};
+inline constexpr std::array<std::uint8_t, 16> kActionHeldByKeyEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x74, 0x24, 0x10, 0x57, 0x48, 0x83, 0xEC, 0x40, 0x48};
+inline constexpr platform::FunctionFact kActionHeldByKey{L"Input_IsActionHeld_ByKey", 0x1416E26C0, kActionHeldByKeyEntry};
+inline constexpr std::array<std::uint8_t, 16> kActionPressedByKeyEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x08, 0x57, 0x48, 0x83, 0xEC, 0x40, 0x48, 0x8B, 0x01, 0x48, 0x8B, 0xD9};
+inline constexpr platform::FunctionFact kActionPressedByKey{L"Input_IsActionPressed_ByKey", 0x1416E25C0, kActionPressedByKeyEntry};
+/// The press writes the push-button manager's FieldAction held byte (g_EndGameRoot+0x1C8, +8) from the game's own read.
+inline constexpr std::uint32_t kRootPushButtons = 0x1C8, kPushButtonsHeld = 8;
+/// The dispatch's row tables (each an array of three UDataTable*) and the game's lookup over them, void*(tables, FName);
+/// its prefix test, bool(FName*, const char*).
+inline constexpr std::array<std::uint8_t, 16> kFindRowInTablesEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x74, 0x24, 0x10, 0x57, 0x48, 0x83, 0xEC, 0x20, 0x48};
+inline constexpr platform::FunctionFact kFindRowInTables{L"DataTableSet3_FindRowByName", 0x140B61EF0, kFindRowInTablesEntry};
+inline constexpr std::array<std::uint8_t, 11> kNameStartsWithEntry{0x40, 0x53, 0x56, 0x57, 0x48, 0x81, 0xEC, 0xF0, 0x00, 0x00, 0x00};
+inline constexpr platform::FunctionFact kNameStartsWith{L"FName_StartsWithAnsi_NoCase", 0x140AFB480, kNameStartsWithEntry};
+inline constexpr std::uintptr_t kTableSituationTrigger = 0x145843EF0;  // keyed by the state name: talk and events
+inline constexpr std::uintptr_t kTableObjectLayout     = 0x1458428D0;
+inline constexpr std::uintptr_t kTableObjectActor      = 0x145842750;
+inline constexpr std::uintptr_t kTableObjectEnemy      = 0x145842810;
+inline constexpr std::uintptr_t kTableObjectTreasure   = 0x145842B70;  // chests and ground items
+inline constexpr std::uintptr_t kTableObjectParty      = 0x145842AB0;
+/// The chests waiting for their open (state manager +0x10D4C80: a pointer to a TArray<FName>; the dispatch appends, the
+/// open's end pops the head) and the open's Begin (vtable slot; it takes the head's chest and, unless the act row names
+/// an actor, the party leader at that moment as the opener: char(runner)). The runner's chest name (+0x6C, unaligned)
+/// and "the opener is the leader" (+0x8C).
+inline constexpr std::uint32_t  kStateChestQueue = 0x10D4C80;
+inline constexpr std::uintptr_t kChestOpenBeginSlot = 0x144B913D8;
+inline constexpr std::array<std::uint8_t, 16> kChestOpenBeginEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x10, 0x48, 0x89, 0x74, 0x24, 0x18, 0x55, 0x57, 0x41, 0x54, 0x41, 0x56};
+inline constexpr platform::SlotFact kChestOpenBegin{L"the chest open's Begin", kChestOpenBeginSlot,
+                                                    {L"ActTreasure_Begin_ActorNamedElseLeader", 0x140E16E60, kChestOpenBeginEntry}};
+inline constexpr std::uint32_t kChestRunnerName = 0x6C, kChestRunnerActor = 0x28, kChestRunnerOpenerIsLeader = 0x8C;
+/// The pick's icon writes (one widget per target, shared by every run, drawn in player 1's half): the icon state setter
+/// it alone calls (void(entry, u8 state): SetState on the entry's widget, or Show for a new one; first instructions
+/// push rbx, rbp, rsi; sub rsp,40h, reached only by fall-through), its two direct SetState calls (UI15, widget, state 0:
+/// three arguments, the result unused at both; the first crosses a block) and its hold gauge call (void(UI15, widget,
+/// float ratio in xmm2)).
+inline constexpr std::uintptr_t kTargetIconState = 0x14101B7D0;
+inline constexpr std::array<std::uint8_t, 8> kTargetIconStateFirst{0x40, 0x53, 0x55, 0x56, 0x48, 0x83, 0xEC, 0x40};
+inline constexpr std::uintptr_t kTargetIconSetState     = 0x14142A1B0;  // EndUI15_FieldTargetIcon_SetState
+inline constexpr std::uintptr_t kPickIconOffCall        = 0x14101CF6E;  // not visited this run -> 0 (crosses)
+inline constexpr std::uintptr_t kPickIconOldTargetCall  = 0x14101D025;  // the old target -> 0
+inline constexpr std::uintptr_t kTargetIconHoldGauge    = 0x14142A2A0;  // EndUI15_FieldTargetIcon_SetHoldGauge
+inline constexpr std::uintptr_t kPickHoldGaugeCall      = 0x14101D319;
+/// A command controller's FieldAction prompt row (the pick writes it): shown, and the dirty bit its tick applies.
+inline constexpr std::uint32_t kCommandPromptShown = 0x4B0, kCommandPromptDirty = 0x4B1;
+
 }  // namespace lss::facts
