@@ -51,14 +51,16 @@
 // tick is still on a worker, player 1's crawl lock comes from its game-thread task (not redirected) and hands the
 // seats' members to their AI until its unlock; a story lock taken during player 1's crawl or squeeze is not a first
 // lock, so the seats' members stay playable through it.
-// The ladder's camera exit and the squeeze's and crawl's final switch-off run on the animation side, outside these
-// scopes, and test the leader there: for a seat's member they never run, so when its action ends the mod leaves what is
-// left on the seat's operator with the game's own leave (the duct camera, eased; skipped if already leaving) or
-// deactivate (logged). Not covered yet: the ladder camera's mid-climb phase changes on the animation side, and a two-way
-// jump's direction (the game's default). The gap jump is not admitted yet: its long jump's finish ticks the component
-// from the animation side, outside these scopes (research/RE-traversal-slides-two.md).
-// Logged: Info when the tick moves; Debug per seat action start and end, per camera eased out (near the exit or after the
-// action) or switched off, and the squeeze-camera watch (any player's duct camera through the first 3 s of a squeeze,
+// The ladder camera's leave at an exit (top, bottom, slide landing, jump off) is asked by the behaviour's phase delegate
+// on the animation side, for the leader's type only: for a seat's member the call is noted (its stub's tail jump) and the
+// game thread runs the same delegate in the seat's Leader and Operator scopes the next tick, so the seat's ladder camera
+// eases out at the exit as player 1's does. The squeeze's and crawl's final switch-off also run on the animation side:
+// when a seat's action ends the mod leaves what is left on the seat's operator with the game's own leave (the duct and
+// ladder cameras, eased; skipped if already leaving) or deactivate (logged). A two-way jump takes its side from where
+// the jumper stands (research/RE-traversal-phases-two.md §3). The gap jump is not admitted yet: its long jump's finish
+// ticks the component from the animation side, outside these scopes (research/RE-traversal-slides-two.md).
+// Logged: Info when the tick moves; Debug per seat action start and end, per camera eased out (near or at the exit, or after
+// the action) or switched off, and the squeeze-camera watch (any player's duct camera through the first 3 s of a squeeze,
 // research/RE-traversal-duct-camera-two.md); in the `traversal.action` reading the tick's thread counts and the time
 // spent inside the component ticks per frame over the last 5 s.
 
@@ -71,9 +73,9 @@ class GameImage;
 namespace lss::world::traversal_action {
 
 /// Checks every site against the research and places the component-tick redirect, the action start's entry, the
-/// slide-down's post-tick, the balance beam's end delegate, the squeeze's and the crawl's near-exit delegates and the
-/// monkey bars' and the beam's Start/Exit slots with the monkey bars' base-exit call (logged; the last six only warn
-/// when they fail). False if a check
+/// slide-down's post-tick, the balance beam's end delegate, the squeeze's and the crawl's near-exit delegates, the
+/// ladder's phase call and the monkey bars' and the beam's Start/Exit slots with the monkey bars' base-exit call (logged;
+/// the last seven only warn when they fail). False if a check
 /// failed: further players' members then take walk-up actions as the game's members do.
 bool Install(const platform::GameImage& image) noexcept;
 

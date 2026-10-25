@@ -51,6 +51,8 @@ using PostTickFn   = void (*)(void* state, float dt);
 using BalanceEndFn = void (*)(void** capture, char reached);
 using NearExitFn   = void (*)(void** capture, char end);
 using StateCallFn  = void (*)(void* state);
+using PhaseFn      = void (*)(void** capture, char phase);
+using LadderLeaveFn = void (*)(void* flavor, char keepYaw);
 
 constexpr int           kSeats   = players::scopes::kMaxPlayers;
 constexpr std::uint8_t  kFlavors[] = {facts::kFlavorLadder, facts::kFlavorDuct, facts::kFlavorCustomizable};
@@ -62,6 +64,7 @@ struct SeatState
     std::uint8_t  action    = 0;  // the component's running action at the last tick
     std::uint32_t actions = 0, camerasLeft = 0, camerasOff = 0, locksSkipped = 0;  // left: the game's eased leave
     std::uint32_t leaderResumed = 0;  // Start/Exit calls run with the seat's leader inside the action start
+    std::int8_t   ladderKeepYaw = -1;  // an exit phase noted as the climb ended: its leave's keep-yaw flag (-1 none)
 };
 
 // Set at install, then only read.
@@ -70,6 +73,7 @@ std::uintptr_t g_root      = 0;
 std::uintptr_t g_party     = 0;
 DeactivateFn   g_deactivate = nullptr;
 FlavorLeaveFn  g_ductLeave  = nullptr;
+LadderLeaveFn  g_ladderLeave = nullptr;
 std::uintptr_t g_lockSet = 0, g_lockClear = 0, g_queueSet = 0, g_queueClear = 0;
 std::uintptr_t g_crawlLockSite = 0, g_crawlUnlockSite = 0, g_squeezeLockSite = 0, g_squeezeUnlockSite = 0;
 bool           g_installed = false;
@@ -83,6 +87,7 @@ platform::EntryRedirect g_squeezeNearExit;
 platform::CallRedirect  g_crawlNearExit;
 platform::VTableEntry   g_monkeyBarsStart, g_monkeyBarsExit, g_balanceStart;
 platform::CallRedirect  g_monkeyBarsBaseExit;
+platform::CallRedirect  g_ladderPhase;
 
 std::atomic<DWORD> g_gameThread{0};
 std::atomic<int>   g_ticking{0};       // the seat whose member's component the game thread is ticking now
@@ -93,6 +98,10 @@ std::array<std::atomic<void*>, kSeats> g_seatComponents{};  // each seat's membe
 std::atomic<int>   g_pausedSeat{0};    // the seat whose action start runs now with player 1's leader
 std::atomic<int>   g_resumedSeat{0};   // the seat whose Start or Exit runs now with its own leader again
 std::array<std::atomic<std::uint8_t>, kSeats> g_ductNearEnd{};  // the action (squeeze, crawl) whose near-exit call ran for a seat's member
+std::array<std::atomic<void*>, kSeats>        g_ladderExit{};       // a seat's member's ladder state that reached an exit phase
+std::array<std::atomic<std::uint8_t>, kSeats> g_ladderExitPhase{};  // that phase (written before the state)
+std::atomic<int> g_ladderThread{0};  // the ladder's phase call seen on: 1 the game thread, 2 another (logged once)
+bool             g_ladderThreadTold = false;
 std::atomic<std::int64_t>  g_workerTime{0};  // performance-counter ticks spent inside component ticks on workers
 
 // Game thread.
@@ -301,6 +310,27 @@ void CrawlNearExit(void** capture, char end)
 {
     reinterpret_cast<NearExitFn>(g_crawlNearExit.Original())(capture, end);
     NoteNearEnd(capture, facts::kFieldActionCrawl);
+}
+
+/// The ladder behaviour's phase delegate (animation side): the game asks the ladder camera to leave on an exit phase
+/// for the party leader's type only. For a seat's member's exit phase the call is noted, and the game thread runs the
+/// same delegate in the seat's scopes the next tick (the seat's leader type, the seat's camera).
+void LadderPhase(void** capture, char phase)
+{
+    reinterpret_cast<PhaseFn>(g_ladderPhase.Original())(capture, phase);
+    const auto reached = static_cast<std::uint8_t>(phase);
+    if (reached != facts::kLadderTopExit && reached != facts::kLadderBottomExit && reached != facts::kLadderSlideLanding &&
+        reached != facts::kLadderJumpOff)
+    {
+        return;
+    }
+    void* state = capture != nullptr ? ReadPointer(capture, 0) : nullptr;
+    if (const int seat = state != nullptr && Scoping() ? SeatOfComponentAnyThread(ReadPointer(state, facts::kStateComponent)) : 0; seat != 0)
+    {
+        g_ladderThread.store(OnGameThreadNow() ? 1 : 2, std::memory_order_relaxed);  // research: which thread the animation side is
+        g_ladderExitPhase[seat].store(reached, std::memory_order_relaxed);
+        g_ladderExit[seat].store(state, std::memory_order_release);
+    }
 }
 
 /// The slide-down's post-tick (its side steer, outside the component tick): a seat's member's runs as its component
@@ -525,6 +555,55 @@ void DuctLeaveNearEnd(int seat, std::uint8_t action) noexcept
     }
 }
 
+/// The ladder camera is leaving already: its current or pending phase (a leave asked for this tick) is the Leave.
+bool LadderLeaving(const void* flavor) noexcept
+{
+    for (const std::uint32_t at : {facts::kLadderPhaseCurrent, facts::kLadderPhasePending})
+    {
+        const void*  entry = ReadPointer(flavor, at);
+        std::int32_t kind  = -1;
+        if (entry != nullptr && Read(entry, kind) && kind == static_cast<std::int32_t>(facts::kLadderPhaseLeave))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+/// A seat's member's ladder reached an exit phase (noted on the animation side): the game's own phase delegate again,
+/// in the seat's Leader and Operator scopes, so its gate (the leader type, no cutscene) passes for the seat and its leave
+/// request reaches the seat's ladder camera, one frame after player 1's would. Not if the climb already ended (the
+/// after-action switch-off eases it then) or the camera is leaving already.
+void LadderLeaveAtExit(int seat, void* state, std::uint8_t phase) noexcept
+{
+    const auto*  component = static_cast<const std::uint8_t*>(g_seats[seat].component);
+    std::uint8_t action    = 0;
+    const void*  op        = players::player_two_camera::Operator(seat);
+    void*        flavor    = op != nullptr ? ReadPointer(op, facts::kOperatorFlavors + 8u * facts::kFlavorLadder) : nullptr;
+    const bool   climbing  = component != nullptr && Read(component + facts::kFieldActionState, action) &&
+                          action == facts::kFieldActionLadder &&
+                          ReadPointer(component, facts::kFieldActionStates + 8u * facts::kFieldActionLadder) == state;
+    if (!climbing)
+    {
+        // The climb ended in the same tick: the after-action leave takes the exit's flag (no end-yaw turn at the top).
+        g_seats[seat].ladderKeepYaw = phase == facts::kLadderTopExit || phase == facts::kLadderJumpOff ? 1 : 0;
+        return;
+    }
+    if (flavor == nullptr || LadderLeaving(flavor))
+    {
+        return;
+    }
+    const players::scopes::Scope scope(seat, players::scopes::Leader | players::scopes::Operator);
+    void*                        capture = state;
+    if (scope.Held() &&
+        platform::CallGuarded(reinterpret_cast<PhaseFn>(g_ladderPhase.Original()), &capture, static_cast<char>(phase)) &&
+        LadderLeaving(flavor))
+    {
+        ++g_seats[seat].camerasLeft;
+        platform::LogDebug(L"traversal: {}'s ladder camera eases out at the exit, as player 1's does", players::SeatName(seat));
+    }
+}
+
 /// After a seat's action ends: the camera flavors its exit left on the seat's operator, switched off by the game.
 void CamerasOffAfter(int seat, std::uint8_t ended) noexcept
 {
@@ -535,7 +614,7 @@ void CamerasOffAfter(int seat, std::uint8_t ended) noexcept
     }
     for (const std::uint8_t id : kFlavors)
     {
-        const void*  flavor = ReadPointer(op, facts::kOperatorFlavors + 8u * id);
+        void*        flavor = ReadPointer(op, facts::kOperatorFlavors + 8u * id);
         std::uint8_t active = 0;
         if (flavor == nullptr || !Read(static_cast<const std::uint8_t*>(flavor) + facts::kFlavorActive, active) || active == 0)
         {
@@ -555,6 +634,23 @@ void CamerasOffAfter(int seat, std::uint8_t ended) noexcept
                 continue;
             }
         }
+        if (id == facts::kFlavorLadder)
+        {
+            const char keepYaw             = g_seats[seat].ladderKeepYaw > 0 ? 1 : 0;
+            g_seats[seat].ladderKeepYaw = -1;
+            if (LadderLeaving(flavor))
+            {
+                platform::LogDebug(L"traversal: {}'s ladder camera eases out by its exit's leave", players::SeatName(seat));
+                continue;
+            }
+            // The game's own leave (eased): the climb ended before an exit phase, or the exit's leave did not run.
+            if (g_ladderLeave != nullptr && platform::CallGuarded(g_ladderLeave, flavor, keepYaw))
+            {
+                ++g_seats[seat].camerasLeft;
+                platform::LogDebug(L"traversal: {}'s ladder camera eases out after the action", players::SeatName(seat));
+                continue;
+            }
+        }
         if (id == facts::kFlavorDuct && g_ductLeave != nullptr)
         {
             if (DuctLeaving(flavor))
@@ -562,7 +658,7 @@ void CamerasOffAfter(int seat, std::uint8_t ended) noexcept
                 continue;  // its leave started near the exit already
             }
             // The game's own leave (eases back to the follow camera, as player 1's squeeze does): a plain switch-off jumped.
-            if (platform::CallGuarded(g_ductLeave, const_cast<void*>(flavor)))
+            if (platform::CallGuarded(g_ductLeave, flavor))
             {
                 ++g_seats[seat].camerasLeft;
                 platform::LogDebug(L"traversal: {}'s duct camera eases out after the action (its exit runs on the animation side, "
@@ -899,6 +995,23 @@ bool Install(const platform::GameImage& image) noexcept
         platform::LogWarning(L"traversal: the crawl's near-exit call is not as the research read it; a further player's crawl camera "
                              L"switches off at the end instead of easing out near the exit");
     }
+    const auto ladderJump  = image.Rebase(facts::kLadderPhaseJump, 5);
+    const auto ladderPhase = platform::FindFunction(image, facts::kLadderPhaseDelegate);
+    if (const auto leave = platform::FindFunction(image, facts::kLadderLeave))
+    {
+        g_ladderLeave = reinterpret_cast<LadderLeaveFn>(*leave);
+    }
+    else
+    {
+        platform::LogWarning(L"traversal: the ladder camera's leave is not as the research read it; a further player's ladder camera "
+                             L"cuts back after a climb that ends before its exit");
+    }
+    if (!ladderJump || !ladderPhase ||
+        !g_ladderPhase.InstallTailJump(*ladderJump, *ladderPhase, reinterpret_cast<std::uintptr_t>(&LadderPhase)))
+    {
+        platform::LogWarning(L"traversal: the ladder's phase call is not as the research read it; a further player's ladder camera "
+                             L"eases out after the climb instead of at the exit");
+    }
     const auto postSlot = image.Rebase(facts::kSlideDownPostTickSlot, 8);
     const auto postTick = platform::FindFunction(image, facts::kSlideDownPostTick);
     if (!postSlot || !postTick ||
@@ -953,6 +1066,16 @@ void TickSeat(int seat, void* member) noexcept
     {
         DuctLeaveNearEnd(seat, nearEnd);
     }
+    if (void* ladder = g_ladderExit[seat].exchange(nullptr, std::memory_order_acquire); ladder != nullptr && member != nullptr)
+    {
+        LadderLeaveAtExit(seat, ladder, g_ladderExitPhase[seat].load(std::memory_order_relaxed));
+    }
+    if (const int thread = g_ladderThread.load(std::memory_order_relaxed); thread != 0 && !g_ladderThreadTold)
+    {
+        g_ladderThreadTold = true;
+        platform::LogDebug(L"traversal: the ladder's phase call runs on {} (research/RE-traversal-phases-two.md live check 3)",
+                           thread == 1 ? L"the game thread" : L"another thread");
+    }
     if (action == state.action)
     {
         return;
@@ -968,6 +1091,7 @@ void TickSeat(int seat, void* member) noexcept
     }
     if (action != 0)
     {
+        state.ladderKeepYaw = -1;
         ++state.actions;
         platform::LogDebug(L"traversal: {}'s member starts a {}", players::SeatName(seat), ActionName(action));
     }
@@ -1000,11 +1124,14 @@ void Remove() noexcept
     g_monkeyBarsStart.Restore();
     g_monkeyBarsBaseExit.Restore();
     g_slideDownPostTick.Restore();
+    g_ladderPhase.Restore();
     g_crawlNearExit.Restore();
     g_squeezeNearExit.Restore();
     for (int seat = 0; seat < kSeats; ++seat)
     {
         g_ductNearEnd[seat].store(0, std::memory_order_relaxed);
+        g_ladderExit[seat].store(nullptr, std::memory_order_relaxed);
+        g_ladderExitPhase[seat].store(0, std::memory_order_relaxed);
     }
     g_balanceEnd.Restore();
     g_compTick.Restore();

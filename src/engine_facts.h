@@ -2088,6 +2088,24 @@ inline constexpr std::size_t kSqueezeNearExitDelegateFirst = 5;
 /// tail jump redirected.
 inline constexpr std::uintptr_t kCrawlNearExitDelegate = 0x1410364E0;
 inline constexpr std::uintptr_t kCrawlNearExitJump     = 0x14104D533;  // jmp rel32 in sub_14104D530
+/// The ladder behaviour's phase delegate (animation side, void(capture* = {state}, char phase); research/RE-traversal-
+/// phases-two.md §2): on the exit phases (3 top exit and 11 jump off: flag 1, no end-yaw turn; 6 bottom exit and 10
+/// slide landing: flag 0) it asks the ladder camera (flavor 15) to leave, for the party leader's type only and outside a
+/// cutscene; it reads only the capture's state. Its first instruction is too short for an entry redirect; its one
+/// caller is a stub (movzx edx, byte [rdx]; jmp) whose tail jump is redirected (block 0x141093F20).
+inline constexpr std::array<std::uint8_t, 14> kLadderPhaseDelegateEntry{
+    0x40, 0x53, 0x48, 0x83, 0xEC, 0x20, 0x44, 0x0F, 0xB6, 0xC2, 0x41, 0x83, 0xE8, 0x03};
+inline constexpr platform::FunctionFact kLadderPhaseDelegate{L"FieldActionLadder_CameraPhaseDelegate_Flavor15_LeaderType",
+                                                             0x1410548F0, kLadderPhaseDelegateEntry};
+inline constexpr std::uintptr_t kLadderPhaseJump = 0x141093F23;  // E9 C8 09 FC FF
+inline constexpr std::uint8_t   kLadderTopExit = 3, kLadderBottomExit = 6, kLadderSlideLanding = 10, kLadderJumpOff = 11;
+/// The ladder camera's leave request (void(flavor, char keepYaw)): if the flavor is active, its pending phase becomes
+/// the Leave entry; the Leave eases back and switches the flavor off itself. Its phase machine's current and pending
+/// entries (+0x3F0, +0x3F8: pointers to entries whose first int is the kind; 2 = Leave).
+inline constexpr std::array<std::uint8_t, 16> kLadderLeaveEntry{
+    0x80, 0x79, 0x38, 0x00, 0x4C, 0x8B, 0xC1, 0x0F, 0x84, 0xA3, 0x00, 0x00, 0x00, 0xF3, 0x0F, 0x10};
+inline constexpr platform::FunctionFact kLadderLeave{L"FEndCameraFlavorLadder_RequestState2", 0x1410AED90, kLadderLeaveEntry};
+inline constexpr std::uint32_t kLadderPhaseCurrent = 0x3F0, kLadderPhasePending = 0x3F8, kLadderPhaseLeave = 2;
 inline constexpr std::uint32_t kOperatorPoseYaw = 0x42C;  // the operator's pose rotation (+0x428) yaw, phase 1's start
 /// A scene component's world transform rotation (FQuat x, y, z, w; the duct update reads the owner's root here as the
 /// anchor its hold fades to).
