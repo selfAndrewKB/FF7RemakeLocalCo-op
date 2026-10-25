@@ -31,6 +31,9 @@ using RemoveKeyFn = std::uint64_t (*)(void* map, std::uint64_t key);  // the ent
 
 constexpr std::size_t kMaxEntered = 32;  // a leader stands in at most 16 nav areas
 
+// The seat's camera operator, leader and primary controller: what the diff's camera settings and marks reach.
+constexpr unsigned kSeatScopes = scopes::Primary | scopes::Operator | scopes::Leader;
+
 // Set at install, then only read.
 TickFn                g_tick      = nullptr;
 RefreshFn             g_refresh   = nullptr;  // null: the re-enter at a spawn is off
@@ -42,6 +45,8 @@ struct Counts
 {
     std::uint32_t ticks     = 0;  // ticks of the seat's controller's component
     std::uint32_t scoped    = 0;  // of them, run with all three scopes held
+    std::uint32_t ownRow    = 0;  // of those, with the seat's command controller in the UI slot too
+    std::uint32_t rowOnly   = 0;  // the three not held (a scene holds the member), the seat's row held
     std::uint32_t spawns    = 0;  // operator spawns the re-enter ran at
     std::uint32_t reentered = 0;  // volumes forgotten and entered again over them
 };
@@ -98,10 +103,20 @@ void TickComponent(void* component, float deltaTime, int tickType, void* tickFun
         return;
     }
     ++g_counts[seat].ticks;
-    const scopes::Scope scope(seat, scopes::Primary | scopes::Operator | scopes::Leader);
+    const scopes::Scope scope(seat, kSeatScopes);
+    // A hook area's prompt row: the seat's own. Declared after `scope` so it closes first, as one four-context scope would.
+    const scopes::Scope row(seat, scopes::UiSlot);
     if (scope.Held())
     {
         ++g_counts[seat].scoped;
+        if (row.Held())
+        {
+            ++g_counts[seat].ownRow;
+        }
+    }
+    else if (row.Held())
+    {
+        ++g_counts[seat].rowOnly;
     }
     g_tick(component, deltaTime, tickType, tickFunction);
 }
@@ -112,8 +127,8 @@ std::wstring Reading()
     for (int seat = 1; seat <= kSeatsBuilt; ++seat)
     {
         const Counts& c = g_counts[seat];
-        text += std::format(L"{}{}: ticks {}, scoped {}, spawns {}, re-entered {}", seat == 1 ? L"" : L"; ", SeatName(seat), c.ticks,
-                            c.scoped, c.spawns, c.reentered);
+        text += std::format(L"{}{}: ticks {}, scoped {}, own row {}, own row only {}, spawns {}, re-entered {}", seat == 1 ? L"" : L"; ",
+                            SeatName(seat), c.ticks, c.scoped, c.ownRow, c.rowOnly, c.spawns, c.reentered);
     }
     return text;
 }
@@ -146,7 +161,7 @@ bool Install(const platform::GameImage& image) noexcept
         platform::Log(L"nav area 2: the component's diff or its map's Remove differs; a respawned operator keeps missing the InDoor setting pushed before it");
     }
     control::Register({.name = L"nav-area-two", .shape = control::Shape::Text,
-                       .help = L"each seat's controller's nav-area component ticks: all, of them in the seat's scopes; operator spawns re-entered at, volumes entered again",
+                       .help = L"each seat's controller's nav-area component ticks: all, of them in the seat's scopes, of those with its own command row, with its row alone; operator spawns re-entered at, volumes entered again",
                        .get  = [] { return control::Value{Reading()}; }});
     platform::Log(L"nav area 2: each seat's nav-area component ticks in that seat's scopes{}",
                   g_refresh != nullptr ? L"; its volumes enter again at each operator spawn" : L"");
@@ -168,11 +183,17 @@ void OnOperatorStarted(int seat, void* seatController) noexcept
         platform::LogDebug(L"nav area 2: {}'s component has not begun play at the operator spawn; its first tick enters", name);
         return;
     }
-    const scopes::Scope scope(seat, scopes::Primary | scopes::Operator | scopes::Leader);
+    const scopes::Scope scope(seat, kSeatScopes);
     if (!scope.Held())
     {
         platform::Log(L"nav area 2: {}'s scopes could not be held at the operator spawn; the volumes entered before it stay missing", name);
         return;
+    }
+    const scopes::Scope row(seat, scopes::UiSlot);
+    if (!row.Held())
+    {
+        platform::LogDebug(L"nav area 2: {}'s UI slot could not be held at the operator spawn (no command controller bound?); a hook area "
+                           L"entered again shows its row in player 1's menu", name);
     }
     // The game's own diff once, out of band as its camera reset runs it: volumes left during the scene Leave, new
     // ones Enter on the new operator. Then the listed volumes are forgotten with the map's own Remove, and the

@@ -19,6 +19,14 @@
 // At each spawn of a seat's operator, inside its scopes: the game's diff run once (volumes left during the scene
 // Leave, new ones Enter on the new operator), the listed keys forgotten with the map's own Remove, the diff run
 // again so that every current volume Enters on the new operator through the game's own sequence.
+//
+// A hook area (EndNavAreaHookShot) is entered through the same diff: its enter writes the "Search (RS)" row on the
+// command controller in EndUISystem[19] and its leave clears it (RE-hookshot-two.md §1 item 5 (ii)). The component
+// diffs the seat's own leader, so every enter or leave it runs is the seat's: the seat's command controller is put in
+// that slot on its own, whether or not the other three held (a scene that gives the member back unbinds the operator
+// and leader, not the command controller), and the tick runs either way. Known edge: a seat that stands in a hook area
+// before its command controller is bound (the first frame of a join) writes the row on player 1's menu, and the later
+// leave, then the seat's, does not clear it there.
 
 #include <cstdint>
 
