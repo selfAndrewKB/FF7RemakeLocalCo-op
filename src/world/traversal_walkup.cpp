@@ -531,7 +531,6 @@ void TryStartFor(int seat, void* actor, std::size_t cls, float dt, TryStartFn or
     auto*       base   = static_cast<std::uint8_t*>(actor);
     const auto& spot = facts::kWalkUpClasses[cls];
     auto*       root   = static_cast<std::uint8_t*>(ReadPointer(reinterpret_cast<const void*>(g_root), 0));
-    auto*       sm     = static_cast<std::uint8_t*>(ReadPointer(root, facts::kRootStateManager));
     auto*       comp   = static_cast<std::uint8_t*>(ReadPointer(state.member, facts::kCharacterFieldAction));
     if (comp == nullptr)
     {
@@ -544,7 +543,6 @@ void TryStartFor(int seat, void* actor, std::size_t cls, float dt, TryStartFn or
     {
         Kept<std::uint8_t> exception, latch;
         Kept<float>        cooldown;
-        Kept<std::int32_t> actionOn;
         if (spot.exceptionFlag != 0)
         {
             exception.Hold(base + spot.exceptionFlag, 0);  // the member branch would take player 1's leader in this scope
@@ -559,15 +557,9 @@ void TryStartFor(int seat, void* actor, std::size_t cls, float dt, TryStartFn or
         {
             latch.Hold(root + facts::kRootStickLatch, 0);  // player 1's camera-cut latch: the seat's own camera decides
         }
-        auto* counter = sm != nullptr ? reinterpret_cast<std::int32_t*>(sm + facts::kOnOffTable + 4 * facts::kOnOffDisableFieldAction) : nullptr;
-        std::int32_t on = 0;
-        // Read before the seat's Leader scope opens below: inside it the party leader is the seat's member.
-        if (counter != nullptr && traversal_action::PlayerOneActionHoldsNoAction() && Read(counter, on) && on > 0)
-        {
-            // Player 1's own action turned this on for everyone; it locks only the mover (the user, 2026-10-24). Only that
-            // share is taken away: a script's own hold stays.
-            actionOn.Hold(counter, on - 1);
-        }
+        // "No new action" without player 1's own action's share and with the seat's own (a script's hold stays): opened
+        // before the seat's Leader scope below, inside which the party leader is the seat's member.
+        const traversal_action::NoActionScope noAction(seat, true);
         const players::scopes::Scope scope(seat, players::scopes::Leader | players::scopes::Primary);
         if (scope.Held())
         {

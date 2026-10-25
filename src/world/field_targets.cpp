@@ -480,6 +480,9 @@ void PickFor(int seat, void* mgr, float dt, TickFn original) noexcept
     }
     bool ran = false, ok = true;
     {
+        // The seat's own "no new action" share while its member acts (its targets dimmed, nothing to press, as the
+        // game's leader's are; player 1's own action's share kept); opened before the Leader scope.
+        const traversal_action::NoActionScope noAction(seat, false);
         const players::scopes::Scope scope(seat, players::scopes::Leader | players::scopes::Primary | players::scopes::UiSlot);
         if (!scope.Held())
         {

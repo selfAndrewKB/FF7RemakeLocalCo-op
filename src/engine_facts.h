@@ -2018,7 +2018,7 @@ inline constexpr std::size_t   kWalkUpPole           = 18;     // admitted only 
 inline constexpr std::uint32_t kCrawlCooldown        = 0x588;  // float
 inline constexpr std::uint32_t kFieldActionIgnore    = 0x520;  // the actor's ignore group: TArray<FName> (data, count +8)
 inline constexpr std::uint32_t kRootStickLatch       = 0x9E4;  // g_EndGameRoot: player 1's camera-cut stick latch (byte)
-inline constexpr std::uint32_t kOnOffDisableFieldAction = 4;  // set by player 1's own walk-up action, read by every start
+inline constexpr std::uint32_t kOnOffDisableFieldAction = 4;  // set by the party leader's action start (actor not forcing its icons), read by the pick and every start
 
 /// The field-action tick (research/RE-traversal-action-two.md §2): the FieldActionSystem's tick function at +0x10
 /// ticks every character's field-action component; it is registered to run on any thread (flags +0x1C bit 0x20,
@@ -2035,7 +2035,12 @@ inline constexpr std::uint32_t kCharacterFieldAction = 0xE58;  // EndCharacter: 
 inline constexpr std::uint32_t kFieldActionState     = 0x159;  // the component's running action (EFieldActionActorType; 0 none)
 inline constexpr std::uint32_t kFieldActionPending   = 0x1F0;  // a requested action waits for the next component tick (byte)
 inline constexpr std::uint32_t kFieldActionTookLocks = 0x1FC;  // the action start took its global switches (byte)
-inline constexpr std::uint32_t kCharacterKeepsFieldActions = 0x3D0;  // EndCharacter byte: set, the start leaves "no new action" off
+inline constexpr std::uint32_t kFieldActionActorWeak = 0x8;  // the running action's actor (weak pair; StartByName sets it)
+/// AEndFieldActionActorBase::ForceActiveTargetIcon (reflected, byte): set, the leader's action start leaves "no new
+/// action" (OnOff 4) off (FieldActionComp_OnActionStartEnd 0x140FEFB70, research/RE-hookshot-press.md §2.1).
+inline constexpr std::uint32_t kFieldActorForceTargetIcon = 0x3D0;
+inline constexpr std::uint32_t kControllerCharacter = 0x390;  // AController::Character (reflected): the possessed character
+inline constexpr std::uint32_t kSceneRelativeRotation = 0x188;  // USceneComponent::RelativeRotation (reflected): pitch, yaw, roll
 inline constexpr std::uint8_t  kFieldActionLadder = 1, kFieldActionCrawl = 3, kFieldActionSqueeze = 4, kFieldActionMonkeyBars = 10;
 inline constexpr std::uint8_t  kFieldActionVault = 18, kFieldActionRubble = 28, kFieldActionDuck = 32;
 inline constexpr std::uint8_t  kFieldActionStep = 9, kFieldActionSlide = 16, kFieldActionSlideDown = 17, kFieldActionFenceGap = 27;

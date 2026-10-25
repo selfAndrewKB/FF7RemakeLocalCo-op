@@ -43,7 +43,9 @@
 //     MoverLockNow and PlayerOneMoveHolds and keeps the seats' members theirs; the scene camera (views/scene_camera_two)
 //     does not count its bits as a scene and the command menu (battle/command_menu_two) does not copy player 1's closed
 //     menu to the seats while it holds; and that action's "no new action" switch is taken away for the seats' start
-//     tests (world/traversal_walkup.h), a script's own hold kept.
+//     tests (world/traversal_walkup.h), a script's own hold kept;
+//   - a seat's own action takes "no new action" for the seat's own target pick and start tests (NoActionScope), as the
+//     game's start takes it for its leader: a second press cannot restart the seat's running action.
 // A seat's member is ticked in its scopes only once the four lock calls are redirected (the frame after the tick is
 // first seen on the game thread): until then it runs as the game's member does. The lock redirects stay in place at an
 // unload (three cross a 16-byte block and may only change on the thread that runs them; they pass straight through when
@@ -125,8 +127,28 @@ bool PlayerOneMoveHolds(std::uint32_t mask) noexcept;
 /// redirected (any thread).
 bool HookShotReady() noexcept;
 
-/// Player 1's leader's running action took the "no new action" switch for everyone (one count of it). Game thread.
-bool PlayerOneActionHoldsNoAction() noexcept;
+/// For one seat's run of the game's target pick or walk-up start (game thread; opened before the seat's Leader scope,
+/// which would make player 1's leader read as the seat's member): the game's "no new action" switch (OnOff 4, a count)
+/// as the seat's own play sees it. The seat's own running action's share is added, as the game's action start adds it
+/// for its leader: the pick then dims the seat's targets and no start is admitted while the seat's member acts
+/// (research/RE-hookshot-press.md: without it a second press restarts the running action, and a restarted grappling hook
+/// loses its animations: a T-pose flight, no landing, the mesh left tilted). `withoutPlayerOne` also takes player 1's own
+/// action's share away (it locks only the mover, the user 2026-10-24): the walk-up starts, which keep a copy of each
+/// spot's user per seat; the pick keeps it (its targets have no per-seat user: player 1's door or hook point is not the
+/// seat's to press meanwhile). Put back by difference when the scope closes. Logged: Debug when a seat's own share comes
+/// and goes.
+class NoActionScope
+{
+public:
+    NoActionScope(int seat, bool withoutPlayerOne) noexcept;
+    ~NoActionScope();
+    NoActionScope(const NoActionScope&)            = delete;
+    NoActionScope& operator=(const NoActionScope&) = delete;
+
+private:
+    std::int32_t* at_    = nullptr;
+    std::int32_t  delta_ = 0;
+};
 
 /// The pole slide's finish fix is installed: a seat's pole slide may be admitted (world/traversal_walkup.h).
 bool PoleReady() noexcept;

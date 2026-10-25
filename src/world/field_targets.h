@@ -20,6 +20,10 @@
 //     object events stay player 1's: for the player's pick every other active target is marked disabled (the entry's
 //     own byte, the pick's rejection test; put back after, unless the run applied the game's own pending write to it),
 //     so the game gives the player neither an icon nor a prompt for them.
+//   - While the player's member runs a field action, the player's pick sees the game's "no new action" switch on as the
+//     game's leader's action sets it (world/traversal_action.h NoActionScope): every target dimmed, nothing to press, so
+//     a second press cannot restart the running action (a restarted grappling hook loses its animations). Player 1's own
+//     action dims the further players' targets as before.
 //   - The press only queues the chest's open; the opener is taken a step later, when the open begins, as the party leader
 //     at that moment. The chests a further player's press queued are noted, and that open's Begin runs in the player's
 //     Leader scope, so the player's member opens it with the game's own animation (otherwise player 1's would walk over).

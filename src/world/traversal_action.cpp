@@ -12,6 +12,7 @@
 #include "players/pad_buttons.h"
 #include "players/player_two_camera.h"
 #include "players/scopes.h"
+#include "players/seat_objects.h"
 #include "players/seats.h"
 #include "players/weak_object.h"
 
@@ -23,6 +24,7 @@
 #endif
 #include <Windows.h>
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <cmath>
@@ -129,6 +131,8 @@ std::atomic<bool> g_hookShotQueued{false};  // player 1's hookshot turn lock que
 std::atomic<std::uint8_t> g_squeezeBit{0}, g_hookShotBit{1};  // the queued lock bit player 1's squeeze and hookshot took last
 std::atomic<std::uint32_t> g_crawlBits{0};  // the mask player 1's crawl lock holds (0: none; its unlock or its end clears it)
 std::uint32_t  g_moveSeen = 0;  // lock bits seen standing for player 1's own move, kept while each stays set (game thread)
+std::array<bool, kSeats> g_seatNoAction{};     // game thread: the seat's own action held "no new action" at its last run
+std::array<bool, kSeats> g_seatActorUnread{};  // game thread: a seat's running action's actor could not be read (logged once)
 bool           g_neverMovable = false;  // a FieldActionSystem whose tick never ran on any thread: logged once
 std::uint32_t  g_gameTicks = 0;
 std::int64_t   g_gameTime  = 0;  // performance-counter ticks spent inside component ticks on the game thread
@@ -837,12 +841,22 @@ int FlavorActive(const void* op, std::uint8_t id) noexcept
 }
 
 /// A seat's grappling hook starting or ending: the hookshot camera on its player's operator and on player 1's
-/// (research/RE-hookshot-two.md live check 4: the seat's goes on and off, player 1's stays off).
-void LogHookShotCameras(int seat, const wchar_t* when) noexcept
+/// (research/RE-hookshot-two.md live check 4: the seat's goes on and off, player 1's stays off); whether the seat's
+/// controller possesses the member (the game's own move hold during the turn needs it, RE-hookshot-press.md live check 4)
+/// and the member's mesh tilt (a flight without its landing leaves it tilted, live check 1d).
+void LogHookShotCameras(int seat, const void* member, const wchar_t* when) noexcept
 {
-    platform::LogDebug(L"traversal: {}'s grappling hook {}: its hookshot camera {}, player 1's {}", players::SeatName(seat), when,
-                       FlavorActive(players::player_two_camera::Operator(seat), facts::kFlavorHookShot),
-                       FlavorActive(players::player_two_camera::OperatorOne(), facts::kFlavorHookShot));
+    const void* controller = players::seat_objects::Controller(seat);
+    const void* possessed  = ReadPointer(controller, facts::kControllerCharacter);  // null-safe
+    const auto* mesh      = static_cast<const std::uint8_t*>(ReadPointer(member, facts::kCharacterMesh));
+    float       tilt[3]{};
+    const bool  tiltRead = mesh != nullptr && platform::CopyGuarded(tilt, mesh + facts::kSceneRelativeRotation, sizeof(tilt));
+    platform::LogDebug(L"traversal: {}'s grappling hook {}: its hookshot camera {}, player 1's {}; its controller possesses the member: {}; "
+                       L"mesh pitch {:.1f} roll {:.1f}{}",
+                       players::SeatName(seat), when, FlavorActive(players::player_two_camera::Operator(seat), facts::kFlavorHookShot),
+                       FlavorActive(players::player_two_camera::OperatorOne(), facts::kFlavorHookShot),
+                       member == nullptr ? L"no member" : controller == nullptr ? L"no controller" : possessed == member ? L"yes" : L"NO",
+                       tilt[0], tilt[2], tiltRead ? L"" : L" (unread)");
 }
 
 /// After a seat's action ends: the camera flavors its exit left on the seat's operator, switched off by the game.
@@ -1014,6 +1028,49 @@ const std::uint8_t* PlayerOneLeader(const std::uint8_t** component) noexcept
     const auto* leader = static_cast<const std::uint8_t*>(players::weak_object::ObjectOf(pair));
     *component         = leader != nullptr ? static_cast<const std::uint8_t*>(ReadPointer(leader, facts::kCharacterFieldAction)) : nullptr;
     return leader;
+}
+
+/// Whether a component's running action's actor forces its target icons (the leader's action start then leaves "no new
+/// action" off): 1 forces, 0 does not or there is no actor (the start takes nothing without one), -1 an actor named that
+/// cannot be read now.
+int ActorForcesIcons(const std::uint8_t* component) noexcept
+{
+    std::int32_t pair[2]{-1, 0};
+    if (component == nullptr || !platform::CopyGuarded(pair, component + facts::kFieldActionActorWeak, sizeof(pair)))
+    {
+        return -1;
+    }
+    if (pair[0] < 0 || pair[1] == 0)
+    {
+        return 0;  // no actor: the game's start tests a live actor before it takes the switch
+    }
+    const auto*  actor  = static_cast<const std::uint8_t*>(players::weak_object::ObjectOf(pair));
+    std::uint8_t forces = 0;
+    if (actor == nullptr || !Read(actor + facts::kFieldActorForceTargetIcon, forces))
+    {
+        return -1;
+    }
+    return forces != 0 ? 1 : 0;
+}
+
+/// A seat's member runs an action that takes "no new action" as the game's start takes it for its leader. An actor that
+/// cannot be read counts as taking it (nearly every actor does; a second request would restart the action), logged once.
+bool SeatActionHoldsNoAction(int seat) noexcept
+{
+    const auto*  comp   = static_cast<const std::uint8_t*>(g_seats[seat].component);
+    std::uint8_t action = 0;
+    if (comp == nullptr || !Read(comp + facts::kFieldActionState, action) || action == 0)
+    {
+        return false;
+    }
+    const int forces = ActorForcesIcons(comp);
+    if (forces < 0 && !g_seatActorUnread[seat])
+    {
+        g_seatActorUnread[seat] = true;
+        platform::LogDebug(L"traversal: {}'s {}: its actor could not be read; its targets and starts are held as most actors' are",
+                           players::SeatName(seat), ActionName(action));
+    }
+    return forces != 1;
 }
 
 /// Player 1's leader is running `action` now.
@@ -1422,12 +1479,13 @@ void TickSeat(int seat, void* member) noexcept
                            ActionName(state.action));
         if (state.action == facts::kFieldActionHookShot)
         {
-            LogHookShotCameras(seat, L"ended");
+            LogHookShotCameras(seat, member, L"ended");
         }
         if (member != nullptr)
         {
             CamerasOffAfter(seat, state.action);
         }
+        g_seatActorUnread[seat] = false;  // the next action's unread actor is logged again
     }
     if (action != 0)
     {
@@ -1436,7 +1494,7 @@ void TickSeat(int seat, void* member) noexcept
         platform::LogDebug(L"traversal: {}'s member starts a {}", players::SeatName(seat), ActionName(action));
         if (action == facts::kFieldActionHookShot)
         {
-            LogHookShotCameras(seat, L"started");
+            LogHookShotCameras(seat, member, L"started");
         }
     }
     state.action = action;
@@ -1554,13 +1612,62 @@ bool PoleReady() noexcept
     return g_poleReady;
 }
 
+namespace {
+
+/// Player 1's leader's running action took the "no new action" switch for everyone (one count of it). The start sets
+/// "took" for every leader action and the switch only when the action's actor does not force its icons (until v0.94.0
+/// this read the leader character's byte at the actor's offset). An actor that cannot be read counts as not taking it.
 bool PlayerOneActionHoldsNoAction() noexcept
 {
-    const std::uint8_t* comp   = nullptr;
-    const std::uint8_t* leader = PlayerOneLeader(&comp);
-    std::uint8_t        took = 0, keeps = 1;
-    return comp != nullptr && Read(comp + facts::kFieldActionTookLocks, took) && took != 0 &&
-           Read(leader + facts::kCharacterKeepsFieldActions, keeps) && keeps == 0;
+    const std::uint8_t* comp = nullptr;
+    std::uint8_t        took = 0;
+    return PlayerOneLeader(&comp) != nullptr && comp != nullptr && Read(comp + facts::kFieldActionTookLocks, took) && took != 0 &&
+           ActorForcesIcons(comp) == 0;
+}
+
+}  // namespace
+
+NoActionScope::NoActionScope(int seat, bool withoutPlayerOne) noexcept
+{
+    if (seat < 1 || seat > players::kSeatsBuilt || !OnGameThreadNow())
+    {
+        return;
+    }
+    const auto* root    = ReadPointer(reinterpret_cast<const void*>(g_root), 0);
+    auto*       sm      = static_cast<std::uint8_t*>(ReadPointer(root, facts::kRootStateManager));
+    auto*       counter = sm != nullptr ? reinterpret_cast<std::int32_t*>(sm + facts::kOnOffTable + 4 * facts::kOnOffDisableFieldAction) : nullptr;
+    std::int32_t on     = 0;
+    if (counter == nullptr || !Read(counter, on))
+    {
+        return;
+    }
+    const bool         playerOne = withoutPlayerOne && on > 0 && PlayerOneActionHoldsNoAction();
+    const bool         own       = SeatActionHoldsNoAction(seat);
+    const std::int32_t seen      = on - (playerOne ? 1 : 0) + (own ? 1 : 0);
+    const bool         written   = seen == on || platform::WriteGuarded(counter, &seen, sizeof(seen));
+    if (written && seen != on)
+    {
+        at_    = counter;
+        delta_ = seen - on;
+    }
+    if (bool& was = g_seatNoAction[seat]; written && was != own)
+    {
+        was = own;
+        platform::LogDebug(L"traversal: {}'s own {} {} its target pick and walk-up starts (the game's \"no new action\", as its leader's action "
+                           L"takes it)",
+                           players::SeatName(seat), own ? L"action" : L"action's end", own ? L"holds" : L"frees");
+    }
+}
+
+NoActionScope::~NoActionScope()
+{
+    // By difference: a script's set or clear made inside the run (the pick calls the actors' notifications) is kept.
+    std::int32_t now = 0;
+    if (at_ != nullptr && Read(at_, now))
+    {
+        const std::int32_t back = std::max(now - delta_, 0);
+        platform::WriteGuarded(at_, &back, sizeof(back));
+    }
 }
 
 std::wstring Reading() noexcept
