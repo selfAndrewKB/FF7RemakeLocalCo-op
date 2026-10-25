@@ -1128,6 +1128,36 @@ inline constexpr std::uint32_t kCharaRegistry                    = 0xCE98;  // t
 inline constexpr std::array<std::uint8_t, 16> kGetPartyLeaderEntry{
     0x40, 0x53, 0x48, 0x83, 0xEC, 0x20, 0x48, 0x8B, 0xD9, 0x0F, 0xB6, 0xCA, 0x84, 0xD2, 0x74, 0x65};
 inline constexpr platform::FunctionFact kGetPartyLeader{L"PartyManager_GetPartyLeader", 0x1415F1CE0, kGetPartyLeaderEntry};
+/// GetPartyLeader's selectors: 0 the current leader (PM+0x238), 1 the default party leader (the type byte behind
+/// Get/SetDefaultPartyLeaderTypeBP; no scope of the mod swaps it).
+inline constexpr std::uint8_t kLeaderCurrent = 0, kLeaderDefault = 1;
+/// A character's walk caps (research/RE-forced-walk-two.md): EEndSpecificMoveType per EEndSpecificMoveTypeLayer at
+/// +0x2258 (7; 6 = none) and EEndDashType per layer at +0x225F (7; 0 = dash allowed). Only each controller's own field
+/// move reads them, from its own character (PC+0x6F8): a further player's member is capped by its own bytes.
+inline constexpr std::uint32_t kCharacterMoveCaps  = 0x2258;
+inline constexpr std::uint32_t kCharacterDashCaps  = 0x225F;
+inline constexpr std::uint8_t  kMoveCapNone = 6, kDashCapNone = 0;
+inline constexpr std::uint8_t  kCapLayerScript = 1, kCapLayerAfterScene = 2, kCapLayerGuide = 4;
+/// The story acts that cap the party leader's walk (act runners: vtable +0x08 Begin, +0x10 End, +0x20 Tick(runner,
+/// float dt) returning nonzero while running; the act sequence calls them on the game thread from the world tick).
+/// They store the layer pair straight into the leader's character (no setter): PlayerMoveType (act 0x29, layer 1, set
+/// every Tick, cleared at End; the default leader), AfterGlow (0x79, layer 2: Walk at Begin, Jog after a time, cleared
+/// at End; the current leader) and AutoWalk (0x38, layer 4, a band by the leader's distance to a guide point every Tick,
+/// cleared at End; the default leader).
+inline constexpr std::array<std::uint8_t, 16> kActScriptWalkTickEntry{0x48, 0x89, 0x5C, 0x24, 0x10, 0x55, 0x56, 0x57, 0x41, 0x54, 0x41, 0x55, 0x41, 0x56, 0x41, 0x57};
+inline constexpr platform::SlotFact kActScriptWalkTick{L"ActRunner29_PlayerMoveType_Tick_SetL1", 0x144B923E0, {L"ActRunner29_PlayerMoveType_Tick_SetL1", 0x140DE65B0, kActScriptWalkTickEntry}};
+inline constexpr std::array<std::uint8_t, 16> kActScriptWalkEndEntry{0x40, 0x53, 0x48, 0x83, 0xEC, 0x20, 0xE8, 0x55, 0x15, 0x87, 0xFF, 0x48, 0x8B, 0xC8, 0xB2, 0x01};
+inline constexpr platform::SlotFact kActScriptWalkEnd{L"ActRunner29_PlayerMoveType_End_ClearL1", 0x144B923D0, {L"ActRunner29_PlayerMoveType_End_ClearL1", 0x140DE6560, kActScriptWalkEndEntry}};
+inline constexpr std::array<std::uint8_t, 16> kActGuideWalkTickEntry{0x40, 0x55, 0x57, 0x48, 0x8D, 0x6C, 0x24, 0xB1, 0x48, 0x81, 0xEC, 0xB8, 0x00, 0x00, 0x00, 0x48};
+inline constexpr platform::SlotFact kActGuideWalkTick{L"ActRunner38_AutoWalk_Tick_SetL4ByDistance", 0x144B874A0, {L"ActRunner38_AutoWalk_Tick_SetL4ByDistance", 0x140DA9280, kActGuideWalkTickEntry}};
+inline constexpr std::array<std::uint8_t, 16> kActGuideWalkEndEntry{0x48, 0x89, 0x5C, 0x24, 0x10, 0x48, 0x89, 0x74, 0x24, 0x18, 0x57, 0x48, 0x83, 0xEC, 0x20, 0x48};
+inline constexpr platform::SlotFact kActGuideWalkEnd{L"ActRunner38_AutoWalk_End_ClearL4", 0x144B87490, {L"ActRunner38_AutoWalk_End_ClearL4", 0x140DA9190, kActGuideWalkEndEntry}};
+inline constexpr std::array<std::uint8_t, 16> kActAfterSceneBeginEntry{0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x74, 0x24, 0x10, 0x48, 0x89, 0x7C, 0x24, 0x18, 0x55};
+inline constexpr platform::SlotFact kActAfterSceneBegin{L"ActRunner79_AfterGlow_Begin_SetL2Walk", 0x144B92418, {L"ActRunner79_AfterGlow_Begin_SetL2Walk", 0x140DE6110, kActAfterSceneBeginEntry}};
+inline constexpr std::array<std::uint8_t, 16> kActAfterSceneTickEntry{0x48, 0x89, 0x5C, 0x24, 0x18, 0x48, 0x89, 0x6C, 0x24, 0x20, 0x41, 0x56, 0x48, 0x83, 0xEC, 0x40};
+inline constexpr platform::SlotFact kActAfterSceneTick{L"ActRunner79_AfterGlow_Tick_L2Jog", 0x144B92430, {L"ActRunner79_AfterGlow_Tick_L2Jog", 0x140DE6420, kActAfterSceneTickEntry}};
+inline constexpr std::array<std::uint8_t, 16> kActAfterSceneEndEntry{0x40, 0x53, 0x48, 0x83, 0xEC, 0x20, 0xE8, 0xE5, 0x16, 0x87, 0xFF, 0x48, 0x8B, 0xC8, 0x33, 0xD2};
+inline constexpr platform::SlotFact kActAfterSceneEnd{L"ActRunner79_AfterGlow_End_ClearL2", 0x144B92420, {L"ActRunner79_AfterGlow_End_ClearL2", 0x140DE63D0, kActAfterSceneEndEntry}};
 /// AEndBattleAIController_TickBattleAI's leader read (E8 06 4E CD 00, inside its block): the remembered leader
 /// against the party leader, then the Blueprint OnChangeLeader.
 inline constexpr std::uintptr_t kBattleAITickLeaderCall = 0x14091CED5;
