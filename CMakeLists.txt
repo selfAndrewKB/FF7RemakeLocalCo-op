@@ -116,6 +116,7 @@ add_library(LocalSplitScreen SHARED
     src/world/npc_detail.cpp
     src/world/npc_senses.cpp
     src/world/party_fade.cpp
+    src/world/overlap_fade.cpp
     src/world/field_targets.cpp
     src/world/target_icons.cpp
     src/world/traversal_action.cpp

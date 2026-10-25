@@ -84,6 +84,7 @@
 #include "world/npc_crowd.h"
 #include "world/npc_detail.h"
 #include "world/npc_senses.h"
+#include "world/overlap_fade.h"
 #include "world/party_fade.h"
 #include "world/field_targets.h"
 #include "world/traversal_action.h"
@@ -104,7 +105,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.88.0-grappling-hook";
+constexpr const wchar_t* kVersion = L"0.89.0-overlap-fade";
 static_assert(lss::views::column_rules::kMaxColumns == lss::hud::overlay_pass::kMaxColumns, "the columns the views and the HUD count");  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
@@ -304,6 +305,7 @@ public:
         lss::battle::party_switch::Remove();
         lss::battle::command_menu_tick::Remove();
         lss::battle::command_menu_two::Remove();
+        lss::world::overlap_fade::Remove();  // any time: its slots pass through and it writes no game state
         if (installed_)
         {
             session_.Remove();  // the field-exit calls go back whether or not player 2 is in
@@ -394,6 +396,7 @@ public:
         }
         lss::players::game_state::Install(*image);  // readings only; fine without
         lss::world::party_fade::Install(*image);    // optional: without it a member near player 2's camera vanishes in both halves
+        lss::world::overlap_fade::Install(*image);  // optional: without it characters in a ladder or squeeze turn see-through near another
         lss::world::anim_two_views::Install(*image);  // optional: without it characters near a further player animate by player 1's camera
         lss::world::npc_detail::Install(*image);      // optional: without it NPCs near a further player pause by player 1's camera
         lss::world::npc_crowd::Install(*image);       // optional: without it the crowd is spawned around player 1 only
@@ -571,6 +574,7 @@ private:
         // while the seat's player is in, then its once-a-tick work.
         bool anyIn = false;
         lss::world::party_fade::Tick(session_.Count());
+        lss::world::overlap_fade::Tick(session_.Count());
         for (int seat = 1; seat <= lss::players::kSeatsBuilt; ++seat)
         {
             const bool seatIn = session_.In(seat);

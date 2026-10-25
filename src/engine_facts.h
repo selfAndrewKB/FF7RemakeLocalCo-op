@@ -2014,6 +2014,34 @@ inline constexpr std::array<std::uint8_t, 16> kSlideDownPostTickEntry{
 inline constexpr platform::FunctionFact kSlideDownPostTick{L"FieldActionSlideDownState_PostTick_SideSteerLeftX", 0x14106C0B0,
                                                            kSlideDownPostTickEntry};
 inline constexpr std::uint32_t kStateComponent = 0x30;  // a field-action state: its component
+/// The overlap fade (research/RE-overlap-fade-two.md): eight field-action states' vtable +0x58, called only from their
+/// post-tick (+0x20) on the game thread, outside the component tick. While the acting character is not the party
+/// leader's type (its component's +0x158 against PM+0x233) and a party member before it in formation order is near
+/// (and, but on a ladder, in an action too), it fades the character to 0.3 (the vent crawl's to 0) on the generic hide
+/// reason bit 0, and back when none is near; state+0x48 is 1 while this has it unfaded. The action's base exit fades it
+/// back at the end. Ladder, crawl, squeeze, beam, fan, jump, trap and vent crawl; every other state's +0x58 is a return.
+inline constexpr std::uint32_t kFieldActionCompPlayerType = 0x158;  // the component's player type byte
+inline constexpr std::uint32_t kStateNotFaded              = 0x48;   // byte: 1 while the overlap fade has it unfaded
+inline constexpr std::array<std::uint8_t, 16> kOverlapFadeLadderEntry{
+    0x40, 0x55, 0x53, 0x57, 0x48, 0x8D, 0x6C, 0x24, 0xB0, 0x48, 0x81, 0xEC, 0x50, 0x01, 0x00, 0x00};
+inline constexpr std::array<std::uint8_t, 16> kOverlapFadeD0Entry{
+    0x40, 0x55, 0x53, 0x57, 0x48, 0x8D, 0x6C, 0x24, 0xB9, 0x48, 0x81, 0xEC, 0xD0, 0x00, 0x00, 0x00};
+inline constexpr std::array<std::uint8_t, 16> kOverlapFadeC0Entry{
+    0x40, 0x55, 0x53, 0x57, 0x48, 0x8D, 0x6C, 0x24, 0xB9, 0x48, 0x81, 0xEC, 0xC0, 0x00, 0x00, 0x00};
+inline constexpr platform::FunctionFact kOverlapFadeLadder{L"FieldActionLadderState_vt58_NonLeaderProximityFade", 0x141051660,
+                                                           kOverlapFadeLadderEntry};
+inline constexpr platform::FunctionFact kOverlapFadeShared{L"FieldActionState_vt58_NonLeaderProximityFade_CrawlSqueezeBeamFan",
+                                                           0x141021EF0, kOverlapFadeD0Entry};
+inline constexpr platform::FunctionFact kOverlapFadeJump{L"FieldActionJumpState_vt58_NonLeaderProximityFade", 0x14104E640,
+                                                         kOverlapFadeD0Entry};
+inline constexpr platform::FunctionFact kOverlapFadeTrap{L"FieldActionTrapState_vt58_NonLeaderProximityFade", 0x14107DBB0,
+                                                         kOverlapFadeC0Entry};
+inline constexpr platform::FunctionFact kOverlapFadeDuct{L"FieldActionDuctMoveState_vt58_ProximityFadeToZero_LeaderPC860",
+                                                         0x14103AFC0, kOverlapFadeC0Entry};
+inline constexpr std::uintptr_t kOverlapFadeLadderSlot = 0x144BB76F0, kOverlapFadeCrawlSlot = 0x144BB6860,
+                                kOverlapFadeSqueezeSlot = 0x144BB6940, kOverlapFadeBeamSlot = 0x144BB6B70,
+                                kOverlapFadeFanSlot = 0x144BB6580, kOverlapFadeJumpSlot = 0x144BB7760,
+                                kOverlapFadeTrapSlot = 0x144BB6FF0, kOverlapFadeDuctSlot = 0x144BB6710;
 /// The balance beam's end delegate (animation side, void(capture* = {state}, char reached)): it leaves camera flavor 20
 /// only if the operator it reads unscoped (player 1's) holds the flavor the start stored at state+0x178, and clears that
 /// store either way, so the state's exit (inside the action start, on the seat's operator; it has no leader test: the
