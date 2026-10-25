@@ -2053,6 +2053,58 @@ inline constexpr std::uintptr_t kHookShotLockCall = 0x141047786;        // E8 95
 inline constexpr std::uintptr_t kHookShotUnlockCall = 0x141048614;      // E8 D7 44 F8 FF, to kQueueLockBitClear
 inline constexpr std::uintptr_t kHookShotExitUnlockCall = 0x141047FC6;  // E8 25 4B F8 FF, to kQueueLockBitClear
 inline constexpr std::uint8_t   kFlavorHookShot = 16;
+/// The hook area's search arrow (research/RE-hookshot-arrows.md). EndUISystem[55] is one 128-byte Square Enix object (no
+/// vtable): a search compass widget (weak, +0x00), two more weak pairs, a state (+0x28: 0 run, 1 fade all out, 2 clear
+/// when faded, 3 clear) and a map of arrows (TMap<weak widget, {FVector, u8 removeState}> at +0x30). A hook area's enter and
+/// its target-lost re-show call Begin on it (ClearAll, a new compass, then their arrow); its leave, focus clear and EndPlay
+/// set state 1 (every arrow fades). The HUD tick ticks it once a frame (AnimStates, then PlaceArrow for each arrow through
+/// the arrow's own player, +0x1E8). The area actor (AEndFieldActionActorHookShotChild) keeps one in-area flag (+0x638)
+/// and one arrow (+0x640); its nav-area interface sits at +0x3C8 (enter, stay, leave take the interface).
+inline constexpr std::uintptr_t kSearchSlotGlobal = 0x1459CAB28;  // EndUISystem[55]
+inline constexpr std::uint32_t  kSearchSlotBytes = 0x80;
+inline constexpr std::uint32_t  kSearchSlotCompass = 0x00, kSearchSlotState = 0x28;
+inline constexpr std::uint32_t  kSearchSlotMapNum = 0x38, kSearchSlotMapBits = 0x40, kSearchSlotMapFree = 0x60, kSearchSlotMapFreeCount = 0x64;
+inline constexpr std::uint32_t  kHookAreaIface = 0x3C8;
+inline constexpr std::uint32_t  kHookAreaFields = 0x638, kHookAreaFieldsBytes = 16;  // the flag (u8), padding, the arrow (widget*)
+inline constexpr std::uint32_t  kHookAreaArrow = 0x640;
+inline constexpr std::array<std::uint8_t, 16> kHookAreaEnterEntry{
+    0x40, 0x55, 0x41, 0x56, 0x41, 0x57, 0x48, 0x8D, 0x6C, 0x24, 0xB9, 0x48, 0x81, 0xEC, 0xD0, 0x00};
+inline constexpr std::array<std::uint8_t, 16> kHookAreaStayEntry{
+    0x48, 0x83, 0xEC, 0x48, 0x4C, 0x8B, 0x81, 0x78, 0x02, 0x00, 0x00, 0x4D, 0x85, 0xC0, 0x74, 0x43};
+inline constexpr std::array<std::uint8_t, 16> kHookAreaLeaveEntry{
+    0x40, 0x55, 0x57, 0x41, 0x56, 0x48, 0x8B, 0xEC, 0x48, 0x83, 0xEC, 0x30, 0x45, 0x33, 0xF6, 0x48};
+inline constexpr std::array<std::uint8_t, 16> kHookAreaFocusClearEntry{
+    0x40, 0x57, 0x48, 0x83, 0xEC, 0x30, 0x48, 0x83, 0xB9, 0x40, 0x06, 0x00, 0x00, 0x00, 0x48, 0x8B};
+inline constexpr std::array<std::uint8_t, 16> kHookAreaTargetLostEntry{
+    0x40, 0x55, 0x53, 0x41, 0x57, 0x48, 0x8D, 0x6C, 0x24, 0xB9, 0x48, 0x81, 0xEC, 0x90, 0x00, 0x00};
+inline constexpr std::array<std::uint8_t, 16> kHookAreaEndPlayEntry{
+    0x40, 0x57, 0x48, 0x83, 0xEC, 0x30, 0x48, 0x8B, 0xF9, 0xE8, 0x32, 0x21, 0xFC, 0xFF, 0x48, 0x83};
+inline constexpr platform::SlotFact kHookAreaEnter{L"the hook area's nav-area enter (interface slot 2)", 0x144BA3FE8,
+    {L"HookShotChild_NavArea_OnEnter_SearchRowWidgetCamPush", 0x140F2B920, kHookAreaEnterEntry}};
+inline constexpr platform::SlotFact kHookAreaStay{L"the hook area's nav-area stay (interface slot 3)", 0x144BA3FF0,
+    {L"HookShotChild_NavArea_OnStay_PlaceSearchWidget", 0x140F2BEA0, kHookAreaStayEntry}};
+inline constexpr platform::SlotFact kHookAreaLeave{L"the hook area's nav-area leave (interface slot 4)", 0x144BA3FF8,
+    {L"HookShotChild_NavArea_OnLeave_ClearRowWidgetCamPop", 0x140F2BF00, kHookAreaLeaveEntry}};
+inline constexpr platform::SlotFact kHookAreaFocusClear{L"the hook area's focus clear (vtable +0x6B8)", 0x144BA3F90,
+    {L"HookShotChild_vt6B8_OnFocused_ClearSearchWidget", 0x140F2B1E0, kHookAreaFocusClearEntry}};
+inline constexpr platform::SlotFact kHookAreaTargetLost{L"the hook area's target-lost re-show (vtable +0x6C0)", 0x144BA3F98,
+    {L"HookShotChild_vt6C0_OnTargetLost_ShowSearchIfLeaderIdle", 0x140F2B2D0, kHookAreaTargetLostEntry}};
+inline constexpr platform::SlotFact kHookAreaEndPlay{L"the hook area's EndPlay (vtable +0x4D0)", 0x144BA3DA8,
+    {L"HookShotChild_vt4D0_EndPlay_ClearSearchWidget", 0x140F2AF10, kHookAreaEndPlayEntry}};
+/// The slot's own functions (each takes the slot object), the bit array's init the constructor calls on the map's
+/// allocation bits (void(bits, bool value, int32 count)), and the one ClearAll of player 1's slot in the game mode's reset
+/// (crosses a block).
+inline constexpr std::array<std::uint8_t, 16> kSearchSlotClearAllEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x74, 0x24, 0x10, 0x48, 0x89, 0x7C, 0x24, 0x18, 0x4C};
+inline constexpr platform::FunctionFact kSearchSlotClearAll{L"EndUISlot55_FieldTargetSearch_ClearAll", 0x14140E0F0,
+                                                            kSearchSlotClearAllEntry};
+inline constexpr std::array<std::uint8_t, 16> kSearchSlotTickEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x08, 0x55, 0x48, 0x8D, 0x6C, 0x24, 0xA9, 0x48, 0x81, 0xEC, 0x90, 0x00};
+inline constexpr platform::FunctionFact kSearchSlotTick{L"EndUISlot55_FieldTargetSearch_Tick", 0x14140EED0, kSearchSlotTickEntry};
+inline constexpr std::array<std::uint8_t, 16> kBitArrayInitEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x6C, 0x24, 0x10, 0x48, 0x89, 0x74, 0x24, 0x18, 0x48};
+inline constexpr platform::FunctionFact kBitArrayInit{L"TBitArray init (bits, value, count)", 0x14063F170, kBitArrayInitEntry};
+inline constexpr std::uintptr_t kSearchSlotResetCall = 0x1413ADF8C;  // E8 5F 01 06 00, to kSearchSlotClearAll
 /// The slide-down state's post-tick (state vtable +0x20, void(state, float dt)): its side steer reads the merged stick.
 /// The engine calls every character's post-tick at the top of the walk-up start loop (game thread), outside the
 /// component tick (research/RE-traversal-slides-two.md §4).

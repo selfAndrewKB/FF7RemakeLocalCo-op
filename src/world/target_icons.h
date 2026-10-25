@@ -69,6 +69,23 @@ private:
     bool  gaugeSwapped_ = false;
 };
 
+/// While held, a widget the game creates on this thread is owned by `localPlayer`: the widget creation's one "first local
+/// player" call answers it (world/search_arrows.h, for the seats' search arrows). Held only once the call is placed, on the
+/// game thread, and while no other creation is answered.
+class CreatingAs
+{
+public:
+    explicit CreatingAs(void* localPlayer) noexcept;
+    ~CreatingAs();
+    CreatingAs(const CreatingAs&)            = delete;
+    CreatingAs& operator=(const CreatingAs&) = delete;
+
+    bool Held() const noexcept { return held_; }
+
+private:
+    bool held_ = false;
+};
+
 /// Destroys the seat's widgets with the game's destroy (game thread): its player left, changed member or local player.
 void DropSeat(int seat) noexcept;
 

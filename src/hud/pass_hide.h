@@ -3,15 +3,15 @@
 // Each view's HUD image shows only its own player's world cursors (RE-hud-families.md §3, RE-field-icons-two.md; the
 // user's first report, 2026-09-30: "player 1's blue talk/examine cursor shows in player 2's half").
 //
-// The search arrows (slot 55) and the turn-back alert (slot 36, over player 1's leader) are decided from player 1's
-// leader and placed through player 1's view: player 1's alone. The field target icons (slot 15: talk, examine, chests,
-// field actions) are each player's own (world/target_icons.h): each widget is placed through its own player's view.
+// The turn-back alert (slot 36, over player 1's leader) is decided from player 1's leader and placed through player 1's
+// view: player 1's alone. The field target icons (slot 15: talk, examine, chests, field actions) and the search compass
+// and arrows (slot 55, world/search_arrows.h) are each player's own: each widget is placed through its own player's view.
 // Around each pass of the overlay render (hud/second_image.h) the roots that are not the pass's player's are made
 // transparent through the game's own UUserWidget::SetColorAndOpacity, and their colour is put back right after, through
-// the same setter: in a further column's pass player 1's cursors and the other seats' icons; in player 1's pass (and
-// the game's single render) the seats' icons. They stay painted, so they are ticked as before. The further passes run
-// first in the frame with DeltaTime 0: nothing the paint advances is lost, and the owner's pass paints it with its own
-// colour. Game thread only.
+// the same setter: in a further column's pass player 1's cursors and the other seats' icons and search arrows; in player
+// 1's pass (and the game's single render) the seats' icons and search arrows. They stay painted, so they are ticked as
+// before. The further passes run first in the frame with DeltaTime 0: nothing the paint advances is lost, and the owner's
+// pass paints it with its own colour. Game thread only.
 
 namespace lss::hud::pass_hide {
 

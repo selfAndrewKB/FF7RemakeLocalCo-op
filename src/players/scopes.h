@@ -60,6 +60,8 @@ void*        CommandController(int player) noexcept;
 std::uint8_t OtherLeaderType(int player) noexcept;
 /// This player's focus path holds at least one widget (their menu is up in their own context).
 bool FocusPathSet(int player) noexcept;
+/// The player one of whose `which` contexts is open now (a Scope of theirs is running the game's code), else 0.
+int OpenPlayer(unsigned which) noexcept;
 
 class Scope
 {

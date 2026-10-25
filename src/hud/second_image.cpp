@@ -22,6 +22,7 @@
 #include "platform/verified_code.h"
 #include "platform/vtable_entry.h"
 #include "players/seats.h"
+#include "world/search_arrows.h"
 #include "world/target_icons.h"
 
 #ifndef WIN32_LEAN_AND_MEAN
@@ -233,6 +234,7 @@ void Driver(void* delegate)
                 field_icons::Replay(column, g_columns.controller[column], g_columns.member[column]);
                 outside_icons::RunForColumn(column, g_columns.controller[column]);
                 world::target_icons::PlaceForPass();  // each player's target icons through its own view into this one
+                world::search_arrows::TickForPass(overlay_pass::SeatOf(column));  // the seat's search arrows from its own camera
             }
             if (!RenderFurther(overlay, column))
             {

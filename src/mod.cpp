@@ -85,6 +85,7 @@
 #include "world/npc_detail.h"
 #include "world/npc_senses.h"
 #include "world/forced_walk.h"
+#include "world/search_arrows.h"
 #include "render/area_blend.h"
 #include "world/overlap_fade.h"
 #include "world/party_fade.h"
@@ -107,7 +108,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.92.0-battle-leader-swap";
+constexpr const wchar_t* kVersion = L"0.93.0-search-arrows";
 static_assert(lss::views::column_rules::kMaxColumns == lss::hud::overlay_pass::kMaxColumns, "the columns the views and the HUD count");  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
@@ -309,6 +310,7 @@ public:
         lss::battle::command_menu_two::Remove();
         lss::world::overlap_fade::Remove();  // any time: its slots pass through and it writes no game state
         lss::world::forced_walk::Remove();   // any time: its slots call the game's first; the members keep the caps last copied
+        lss::world::search_arrows::Remove();  // the seats' arrows cleared on the game thread
         if (installed_)
         {
             session_.Remove();  // the field-exit calls go back whether or not player 2 is in
@@ -402,6 +404,7 @@ public:
         lss::world::party_fade::Install(*image);    // optional: without it a member near player 2's camera vanishes in both halves
         lss::world::overlap_fade::Install(*image);  // optional: without it characters in a ladder or squeeze turn see-through near another
         lss::world::forced_walk::Install(*image);   // optional: without it further players run free in a story walk
+        lss::world::search_arrows::Install(*image); // optional: without it a further player's hook area uses player 1's search arrow
         lss::world::anim_two_views::Install(*image);  // optional: without it characters near a further player animate by player 1's camera
         lss::world::npc_detail::Install(*image);      // optional: without it NPCs near a further player pause by player 1's camera
         lss::world::npc_crowd::Install(*image);       // optional: without it the crowd is spawned around player 1 only
@@ -596,9 +599,11 @@ private:
             lss::world::traversal_action::TickSeat(seat, member);
             lss::world::forced_walk::TickSeat(seat, member);
             lss::world::field_targets::TickSeat(seat, seatIn ? session_.SeatPlayer(seat) : nullptr, member);
+            lss::world::search_arrows::TickSeat(seat, seatIn ? session_.SeatPlayer(seat) : nullptr);
         }
         lss::world::traversal_action::Tick(anyIn);
         lss::world::field_targets::Tick();
+        lss::world::search_arrows::Tick();
         lss::world::anim_two_views::Tick();
         lss::world::npc_crowd::Tick();
         lss::world::npc_senses::Tick(anyIn ? PawnOf(0) : nullptr);

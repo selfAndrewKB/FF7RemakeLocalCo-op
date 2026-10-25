@@ -295,6 +295,8 @@ void* Show(void* ui15, void* world, std::uint64_t name, const void* location, st
     {
         return nullptr;  // the owner answer does not reach this game's creation: the seats show no icons (logged)
     }
+    // A CreatingAs (world/search_arrows) is never held here: it is opened only around a hook area's call, which makes no
+    // target icon; if one ever were, this clear would end its answer early and its own owner check would catch it.
     g_creatingPlayer.store(g_swapPlayer, std::memory_order_relaxed);
     g_creatingThread.store(GetCurrentThreadId(), std::memory_order_relaxed);
     void* widget = original(ui15, world, name, location, state, type);
@@ -649,6 +651,25 @@ SeatSwap::~SeatSwap()
     g_swapPlayer = nullptr;
     g_swapHeld.store(false, std::memory_order_relaxed);
     Note(seat_);
+}
+
+CreatingAs::CreatingAs(void* localPlayer) noexcept
+{
+    if (!g_placed || localPlayer == nullptr || !OnGameThreadNow() || g_creatingPlayer.load(std::memory_order_relaxed) != nullptr)
+    {
+        return;
+    }
+    g_creatingPlayer.store(localPlayer, std::memory_order_relaxed);
+    g_creatingThread.store(GetCurrentThreadId(), std::memory_order_relaxed);
+    held_ = true;
+}
+
+CreatingAs::~CreatingAs()
+{
+    if (held_)
+    {
+        ClearCreating();
+    }
 }
 
 void DropSeat(int seat) noexcept

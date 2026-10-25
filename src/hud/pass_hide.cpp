@@ -14,6 +14,7 @@
 #include "platform/guarded.h"
 #include "platform/log.h"
 #include "players/unreal_call.h"
+#include "world/search_arrows.h"
 #include "world/target_icons.h"
 
 #include <cstdint>
@@ -32,16 +33,17 @@ using RC::Unreal::UObject;
 namespace UObjectGlobals = RC::Unreal::UObjectGlobals;
 
 /// Root classes of the world cursors (prefix match on the Blueprint class name).
-constexpr std::wstring_view kTargetIcons = L"FieldTarget_";  // FieldTarget_01_C, _Block_C: each player's own (slot 15)
+constexpr std::wstring_view kTargetIcons  = L"FieldTarget_";        // FieldTarget_01_C, _Block_C: each player's own (slot 15)
+constexpr std::wstring_view kSearchArrows = L"FieldTargetSearch";   // FieldTargetSearch_02_C, _02_Arrow_C, FieldTargetSearchIcon_C (slot 55)
 constexpr std::wstring_view kPlayerOneCursors[] = {
-    L"FieldTargetSearch",  // FieldTargetSearch_02_C, _02_Arrow_C, FieldTargetSearchIcon_C (slot 55)
-    L"TurnBackAlert",      // TurnBackAlert_C: over player 1's leader, triggered by player 1 (slot 36)
+    L"TurnBackAlert",  // TurnBackAlert_C: over player 1's leader, triggered by player 1 (slot 36)
 };
 
 enum class Cursor : std::uint8_t
 {
     None,
     TargetIcon,  // a field target icon: its owner's (world/target_icons.h OwnerSeat)
+    SearchArrow, // a search compass or arrow: its owner's (world/search_arrows.h OwnerSeat)
     PlayerOne,   // player 1's alone
 };
 
@@ -85,7 +87,7 @@ Cursor CursorOf(UObject* widget)
         return found->second;
     }
     const std::wstring name(widget->GetClassPrivate()->GetName());
-    Cursor cursor = name.starts_with(kTargetIcons) ? Cursor::TargetIcon : Cursor::None;
+    Cursor cursor = name.starts_with(kTargetIcons) ? Cursor::TargetIcon : name.starts_with(kSearchArrows) ? Cursor::SearchArrow : Cursor::None;
     for (const auto prefix : kPlayerOneCursors)
     {
         cursor = name.starts_with(prefix) ? Cursor::PlayerOne : cursor;
@@ -115,8 +117,9 @@ try
     {
         const Cursor cursor = CursorOf(widget.object);
         const bool   hide   = cursor == Cursor::PlayerOne ? playerOneCursors
-                              : cursor == Cursor::TargetIcon ? world::target_icons::OwnerSeat(widget.object) != seat
-                                                             : false;
+                              : cursor == Cursor::TargetIcon  ? world::target_icons::OwnerSeat(widget.object) != seat
+                              : cursor == Cursor::SearchArrow ? world::search_arrows::OwnerSeat(widget.object) != seat
+                                                              : false;
         void* canvas = nullptr;
         float color[4]{};
         // Roots only (an overlay canvas at UEndUserWidget+0x230), shown and opaque.
@@ -153,7 +156,7 @@ int BeginFurtherPass(int seat) noexcept
 int BeginOwnPass() noexcept
 {
     g_hidden.clear();
-    return world::target_icons::AnySeatIcons() ? Begin(0, false) : 0;
+    return world::target_icons::AnySeatIcons() || world::search_arrows::AnySeatArrows() ? Begin(0, false) : 0;
 }
 
 void EndPass() noexcept

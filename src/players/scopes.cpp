@@ -262,6 +262,21 @@ bool FocusPathSet(int player) noexcept
     return count > 0;
 }
 
+int OpenPlayer(unsigned which) noexcept
+{
+    for (int player = 1; player < kMaxPlayers; ++player)
+    {
+        const Player& p = g_players[player];
+        if (((which & Primary) != 0 && p.primary.IsOpen()) || ((which & Operator) != 0 && p.cameraOperator.IsOpen()) ||
+            ((which & Leader) != 0 && p.leader.IsOpen()) || ((which & UiSlot) != 0 && p.uiSlot.IsOpen()) ||
+            ((which & Focus) != 0 && p.focus.IsOpen()) || ((which & Latches) != 0 && p.latches.IsOpen()))
+        {
+            return player;
+        }
+    }
+    return 0;
+}
+
 Scope::Scope(int player, unsigned which) noexcept : player_(player)
 {
     if (!ValidPlayer(player))
