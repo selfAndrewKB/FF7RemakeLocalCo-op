@@ -116,6 +116,8 @@ add_library(LocalSplitScreen SHARED
     src/world/npc_detail.cpp
     src/world/npc_senses.cpp
     src/world/party_fade.cpp
+    src/world/traversal_action.cpp
+    src/world/traversal_walkup.cpp
 )
 
 # Includes are rooted at src/ so every #include names its module ("platform/log.h").

@@ -41,8 +41,8 @@ using Console = bool (*)(const wchar_t* command) noexcept;
 /// commands. False (logged) if anything differs from the research: split keeps the streaks at a low option.
 bool Install(const platform::GameImage& image, Console console) noexcept;
 
-/// Each engine tick, after the layout: `split` while further views are shown in window pixels (a further player or a
-/// mirror, and the letterbox patch applied).
+/// Each engine tick, after the layout: `split` while the views are laid out in window pixels (the letterbox patch
+/// applied: further players, a mirror, or the span's hold with one view).
 void Tick(bool split) noexcept;
 
 /// Puts the two values back if the mod's are in place. Runs only from UE4SS's mod reload (the destructor never runs at

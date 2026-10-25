@@ -77,4 +77,22 @@ private:
     bool     held_   = false;
 };
 
+/// The game's own leader (player 1's) back in the slot for its lifetime, inside an open Scope of `player`'s that holds
+/// Leader; nothing otherwise. For one game call that must not take the player's member as the party leader (the
+/// action start's global locks: world/traversal_action.h). Game thread; the Scope's leader is written in again after.
+class LeaderPause
+{
+public:
+    explicit LeaderPause(int player) noexcept;
+    ~LeaderPause();
+    LeaderPause(const LeaderPause&)            = delete;
+    LeaderPause& operator=(const LeaderPause&) = delete;
+
+    bool Paused() const noexcept { return paused_; }
+
+private:
+    int  player_ = 0;
+    bool paused_ = false;
+};
+
 }  // namespace lss::players::scopes

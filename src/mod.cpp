@@ -85,6 +85,8 @@
 #include "world/npc_detail.h"
 #include "world/npc_senses.h"
 #include "world/party_fade.h"
+#include "world/traversal_action.h"
+#include "world/traversal_walkup.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -101,7 +103,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.81.0-split-scale";
+constexpr const wchar_t* kVersion = L"0.82.0-walk-up-moves";
 static_assert(lss::views::column_rules::kMaxColumns == lss::hud::overlay_pass::kMaxColumns, "the columns the views and the HUD count");  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
@@ -310,6 +312,8 @@ public:
         if (installed_ && session_.Count() == 0)
         {
             lss::players::player_two_camera::RemoveInputTick();
+            lss::world::traversal_walkup::Remove();  // the seats' triggers no longer reach the dispatcher
+            lss::world::traversal_action::Remove();  // the field-action tick back on any thread
             lss::players::nav_area_two::Remove();
             lss::players::operator_battle_mode::Remove();
             lss::players::camera_override_two::Remove();
@@ -393,6 +397,8 @@ public:
         lss::world::npc_crowd::Install(*image);       // optional: without it the crowd is spawned around player 1 only
         lss::world::npc_senses::Install(*image);      // optional: without it NPCs see nobody beyond player 1's grid
         lss::world::env_sets_two::Install(*image);    // optional: without it only player 1's ground hides the area's actors
+        lss::world::traversal_action::Install(*image);  // optional: without it further players' members take ladders by themselves
+        lss::world::traversal_walkup::Install(*image);  // optional: without it further players cannot use walk-up spots
         lss::hud::hud_probe::Install(*image);       // logging only; fine without
         lss::hud::overlay_layout::Install(*image);  // optional: without it each half shows the middle of the HUD
         lss::hud::ui_targets::Install(*image);      // optional: without it both halves sample one UI image
@@ -463,7 +469,9 @@ private:
         // The layout asks whether the window spans monitors at all (held or entered at a join), not only while held.
         lss::views::column_layout::Tick(viewColumns, playersIn + lss::views::mirror_player::Count(), lss::views::window_span::Columns());
         lss::views::mirror_player::Tick(playersIn, session_.SeatIds(), viewColumns, aloneColumns);
-        lss::views::split_scale::Tick(session_.Count() + lss::views::mirror_player::Count() > 0 && lss::views::letterbox_patch::Applied());
+        // Whenever the letterbox patch is on the views are in window pixels, one view included (the span's hold keeps it on
+        // with player 2 awaiting a member: seen 2026-10-24 on the ultrawide, player 1's view streaked past the resolution).
+        lss::views::split_scale::Tick(lss::views::letterbox_patch::Applied());
         MapColumns();  // after every join, leave and mirror change of this tick: the HUD and this frame's passes read it
         lss::players::split_render::Tick(session_.Count() + lss::views::mirror_player::Count() > 0);
         lss::views::scene_camera_two::SeatManagers seatManagers{};
@@ -571,7 +579,10 @@ private:
             lss::world::npc_senses::TickSeat(seat, member);
             lss::world::npc_detail::TickSeat(seat, camera);
             lss::world::env_sets_two::TickSeat(seat, member, seatIn ? ControllerOfSeat(seat) : nullptr);
+            lss::world::traversal_walkup::TickSeat(seat, seatIn ? ControllerOfSeat(seat) : nullptr, member);
+            lss::world::traversal_action::TickSeat(seat, member);
         }
+        lss::world::traversal_action::Tick(anyIn);
         lss::world::anim_two_views::Tick();
         lss::world::npc_crowd::Tick();
         lss::world::npc_senses::Tick(anyIn ? PawnOf(0) : nullptr);

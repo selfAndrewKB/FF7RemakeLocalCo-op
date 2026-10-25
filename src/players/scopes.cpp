@@ -323,4 +323,21 @@ Scope::~Scope()
     }
 }
 
+LeaderPause::LeaderPause(int player) noexcept : player_(player)
+{
+    if (ValidPlayer(player) && g_players[player].leader.IsOpen())
+    {
+        g_players[player].leader.Close();  // the game's (player 1's) leader bytes back
+        paused_ = true;
+    }
+}
+
+LeaderPause::~LeaderPause()
+{
+    if (paused_ && !g_players[player_].leader.Open())
+    {
+        platform::LogWarning(L"scopes: player {}'s leader could not be written in again after a pause", player_ + 1);
+    }
+}
+
 }  // namespace lss::players::scopes

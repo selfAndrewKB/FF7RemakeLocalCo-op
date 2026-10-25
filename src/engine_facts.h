@@ -1873,4 +1873,201 @@ inline constexpr std::uint32_t kFieldControlLockCounter = 0x1109C88;  // dword
 inline constexpr std::uint32_t kOnOffTable              = 0x11063B4;  // dword per id, 92 ids
 inline constexpr std::uint32_t kOnOffCount              = 92;
 
+// Walk-up traversal for further players: ladders, squeezes, crawls, monkey bars, climbs and jumps
+// (research/RE-traversal-walkup-two.md, S-RMK-TRAVERSE3B; RE-traversal-action-two.md, S-RMK-TRAVERSE3A; both read in
+// IDA by the integrator 2026-10-24). Every walk-up spot is a field-action actor: the primary controller's
+// PlayerTrigger enter stores the party leader as the actor's one user, a per-frame TryStart requests the action on that
+// user's own field-action component, and the component runs it.
+
+/// The trigger sweep (PC vtable slot 417, called only for *(PM+0) by the game mode's late tick): issues the
+/// controller's trigger component (PC+0x6E8), which appends its owner's Tags[0] to the pending names.
+inline constexpr std::uintptr_t kPlayerTriggerSweepSlot = 0x144C17998;
+inline constexpr std::array<std::uint8_t, 16> kPlayerTriggerSweepEntry{
+    0x48, 0x8B, 0xC4, 0x57, 0x48, 0x81, 0xEC, 0x90, 0x00, 0x00, 0x00, 0x48, 0x83, 0xB9, 0xE8, 0x06};
+inline constexpr platform::FunctionFact kPlayerTriggerSweep{L"EndPlayerController_UpdatePlayerTriggerSweep", 0x1415F6980,
+                                                            kPlayerTriggerSweepEntry};
+inline constexpr std::uint32_t  kControllerTriggerComponent = 0x6E8;  // AEndPlayerController: its trigger's overlap component
+inline constexpr std::uint32_t  kControllerNaviVolumes      = 0x750;  // AEndPlayerController: the navi volumes it is in (TArray)
+/// The pending collider names (TArray<FName>: data, then the count at +8), emptied by the dispatcher.
+inline constexpr std::uintptr_t kPendingOverlapNames = 0x14586A4E0;
+inline constexpr std::uintptr_t kFNamePlayerTrigger  = 0x145903968;  // the FName "PlayerTrigger" (8 bytes)
+/// EndCapsuleOverlap_DispatchPendingColliders 0x141659FF0: the call sites (each `call rel32` inside one 16-byte block).
+inline constexpr std::uintptr_t kDispatchResolveCall     = 0x14165A109;  // PartyManager_Get: [rax] = the trigger's controller
+inline constexpr std::uintptr_t kDispatchBeginRouterCall = 0x14165A548;  // EndTrigger_OnColliderBeginOverlap(volume, collider)
+inline constexpr std::uintptr_t kDispatchNaviListCall    = 0x14165A644;  // PartyManager_Get: [rax]+0x750 gets the volume
+inline constexpr std::uintptr_t kDispatchNaviEnterCall   = 0x14165A6D8;  // player 1's minimap area enter
+inline constexpr std::uintptr_t kDispatchEndRouterCall   = 0x14165A8EA;  // EndTrigger_OnColliderEndOverlap(volume, collider)
+inline constexpr std::uintptr_t kDispatchNaviRemoveCall  = 0x14165AA06;  // removes the volume from rcx = [PM+0]+0x750
+inline constexpr std::uintptr_t kDispatchNaviLeaveCall   = 0x14165AA42;  // player 1's minimap area leave
+inline constexpr std::array<std::uint8_t, 16> kTriggerBeginRouterEntry{
+    0x48, 0x89, 0x4C, 0x24, 0x08, 0x55, 0x53, 0x56, 0x57, 0x41, 0x54, 0x48, 0x8D, 0x6C, 0x24, 0xC9};
+inline constexpr platform::FunctionFact kTriggerBeginRouter{L"EndTrigger_OnColliderBeginOverlap", 0x140FCF5E0, kTriggerBeginRouterEntry};
+inline constexpr std::array<std::uint8_t, 16> kTriggerEndRouterEntry{
+    0x48, 0x89, 0x4C, 0x24, 0x08, 0x55, 0x53, 0x56, 0x57, 0x41, 0x55, 0x41, 0x56, 0x41, 0x57, 0x48};
+inline constexpr platform::FunctionFact kTriggerEndRouter{L"EndTrigger_OnColliderEndOverlap", 0x140FCFE10, kTriggerEndRouterEntry};
+inline constexpr std::array<std::uint8_t, 16> kNaviEnterAreaEntry{
+    0x40, 0x53, 0x57, 0x41, 0x56, 0x48, 0x83, 0xEC, 0x40, 0x4C, 0x8B, 0x02, 0x48, 0x8B, 0xF9, 0x4C};
+inline constexpr platform::FunctionFact kNaviEnterArea{L"NaviMapMgr_OnPlayerTriggerEnterArea", 0x1416856D0, kNaviEnterAreaEntry};
+inline constexpr std::array<std::uint8_t, 16> kNaviLeaveAreaEntry{
+    0x40, 0x55, 0x41, 0x57, 0x48, 0x83, 0xEC, 0x38, 0x4C, 0x8B, 0x02, 0x48, 0x8D, 0x69, 0x58, 0x4C};
+inline constexpr platform::FunctionFact kNaviLeaveArea{L"NaviMapMgr_OnPlayerTriggerLeaveArea", 0x141685930, kNaviLeaveAreaEntry};
+inline constexpr std::array<std::uint8_t, 16> kNaviListRemoveEntry{
+    0x48, 0x89, 0x54, 0x24, 0x10, 0x41, 0x54, 0x41, 0x55, 0x48, 0x83, 0xEC, 0x48, 0x4C, 0x63, 0xA1};
+inline constexpr platform::FunctionFact kNaviListRemove{L"NaviVolumeList_Remove", 0x140FA7EA0, kNaviListRemoveEntry};
+/// The field-action manager's volume map (FieldActionMgr+0x280, TMap<FName, actor>, 24-byte pairs: key, actor),
+/// searched by the game's own FName find (out: the index, -1 if absent).
+inline constexpr std::array<std::uint8_t, 16> kFieldActionMgrGetEntry{
+    0x48, 0x83, 0xEC, 0x28, 0x48, 0x8B, 0x05, 0x1D, 0x97, 0x17, 0x05, 0x48, 0x85, 0xC0, 0x75, 0x5C};
+inline constexpr platform::FunctionFact kFieldActionMgrGet{L"FieldActionMgr_Get", 0x140670300, kFieldActionMgrGetEntry};
+inline constexpr std::array<std::uint8_t, 16> kNameMapFindEntry{
+    0x48, 0x89, 0x74, 0x24, 0x08, 0x48, 0x89, 0x7C, 0x24, 0x10, 0x8B, 0x41, 0x08, 0x48, 0x8B, 0xFA};
+inline constexpr platform::FunctionFact kNameMapFind{L"TMap_FNameKey24_FindIndex", 0x14067E200, kNameMapFindEntry};
+inline constexpr std::uint32_t kFieldActionMgrVolumes = 0x280;
+inline constexpr std::uint32_t kNameMapPairSize       = 24;
+inline constexpr std::uint32_t kNameMapPairValue      = 8;
+
+/// The walk-up classes the further players take (the vault, the rubble step-over and the duck-under from
+/// research/RE-traversal-vault-two.md, the slides, the fence gap and the step from RE-traversal-slides-two.md, the
+/// balance beam, the fan, the counter gate and the lifting rope from RE-traversal-spline-two.md; the
+/// vault and the slides have no arrows, their `+0x610` is the shared empty function): native vtables (placed Blueprint actors keep them), TryStart
+/// (`+0x608`, void(actor, float dt), game thread), the enter and leave the install check expects, the markers update
+/// (`+0x610`, void(actor, float dt, const FVector* point): the arrows spawn within 40 m of the point, despawn past 50 m),
+/// the user block the enter writes (the user's weak pair and the nearer end's transform; read by the ctor, enter,
+/// leave and TryStart only) and the member branch's ExceptionFlg byte (0: none).
+struct WalkUpClass
+{
+    const wchar_t* name;
+    std::uintptr_t vtable, tryStart, enter, leave, markers;
+    std::uint32_t  blockA, sizeA, blockB, sizeB;  // sizeB 0: one range
+    std::uint32_t  exceptionFlag;
+};
+inline constexpr std::uint32_t kVtTryStart = 0x608, kVtMarkers = 0x610, kVtEnter = 0x688, kVtLeave = 0x690;
+inline constexpr WalkUpClass kWalkUpClasses[] = {
+    {L"ladder", 0x144BA2098, 0x140F35140, 0x140F367C0, 0x140F36C50, 0x140F35FB0, 0x648, 0x38, 0, 0, 0x625},
+    {L"squeeze", 0x144B97D30, 0x140EFF570, 0x140EE5EA0, 0x140EE6190, 0x140EE5700, 0x658, 0x38, 0, 0, 0x654},
+    {L"crawl", 0x144BA8FC8, 0x140F05A60, 0x140F067D0, 0x140F06AC0, 0x140F05FF0, 0x660, 0x08, 0x670, 0x30, 0},
+    {L"climb", 0x144B995F0, 0x140EF8C40, 0x140EF9540, 0x140EF9830, 0x140EF9190, 0x630, 0x08, 0x640, 0x30, 0},
+    {L"jump", 0x144BA30E8, 0x140F30300, 0x140F312E0, 0x140F314F0, 0x140F05FF0, 0x668, 0x38, 0, 0, 0},
+    {L"monkey bars", 0x144BA11A8, 0x140F3BE30, 0x140F3CCD0, 0x140F3CFF0, 0x140F3C380, 0x698, 0x38, 0, 0, 0},
+    {L"vault", 0x144B9E840, 0x140F42DB0, 0x140F43320, 0x140F435E0, 0x14062CFC0, 0x640, 0x08, 0x650, 0x30, 0},
+    {L"rubble step-over", 0x144BB2038, 0x140F4FBE0, 0x140F1DCA0, 0x140F1DF90, 0x140EF9190, 0x638, 0x38, 0, 0, 0},
+    {L"duck-under", 0x144BA78E8, 0x140F1D130, 0x140F1DCA0, 0x140F1DF90, 0x140EF9190, 0x638, 0x38, 0, 0, 0},
+    {L"slide", 0x144BB0838, 0x140F591D0, 0x140F58560, 0x140F36C50, 0x14062CFC0, 0x648, 0x38, 0, 0, 0},
+    {L"slide-down", 0x144BB0F68, 0x140F577C0, 0x140F58560, 0x140F36C50, 0x14062CFC0, 0x648, 0x38, 0, 0, 0},
+    {L"fence gap", 0x144BB3F08, 0x140F46C80, 0x140EF9540, 0x140EF9830, 0x140EF9190, 0x630, 0x08, 0x640, 0x30, 0},
+    {L"step", 0x144BAD280, 0x140F62320, 0x140EF9540, 0x140EF9830, 0x140EF9190, 0x630, 0x08, 0x640, 0x30, 0},
+    {L"balance beam", 0x144B9C850, 0x140EE51B0, 0x140EE5EA0, 0x140EE6190, 0x140EE5700, 0x658, 0x38, 0, 0, 0},
+    {L"fan", 0x144BA4EB0, 0x140F1FD50, 0x140F204A0, 0x140F20790, 0x140EE5700, 0x650, 0x08, 0x660, 0x30, 0},
+    {L"counter gate", 0x144B9D110, 0x140EE9040, 0x140EE5EA0, 0x140EE6190, 0x140EE9710, 0x658, 0x38, 0, 0, 0},
+    {L"lifting rope", 0x144BA1998, 0x140F39190, 0x140F3A160, 0x140F1DF90, 0x140EF9190, 0x638, 0x38, 0, 0, 0},
+};
+inline constexpr std::size_t   kWalkUpCrawl          = 2;      // its TryStart counts a cooldown down: kept for the re-run
+inline constexpr std::uint32_t kCrawlCooldown        = 0x588;  // float
+inline constexpr std::uint32_t kFieldActionIgnore    = 0x520;  // the actor's ignore group: TArray<FName> (data, count +8)
+inline constexpr std::uint32_t kRootStickLatch       = 0x9E4;  // g_EndGameRoot: player 1's camera-cut stick latch (byte)
+inline constexpr std::uint32_t kOnOffDisableFieldAction = 4;  // set by player 1's own walk-up action, read by every start
+
+/// The field-action tick (research/RE-traversal-action-two.md §2): the FieldActionSystem's tick function at +0x10
+/// ticks every character's field-action component; it is registered to run on any thread (flags +0x1C bit 0x20,
+/// FTickFunction::bRunOnAnyThread, read each frame by the engine's queue), so in practice a worker runs every action.
+inline constexpr std::uintptr_t kFieldActionSystemGlobal = 0x1457E99C0;
+inline constexpr std::uint32_t  kFieldActionTickFlags    = 0x1C;
+inline constexpr std::uint8_t   kTickRunOnAnyThread      = 0x20;
+/// EndField_TickAllFieldActionComps_AnyThreadTick: `call FieldActionComp_Tick(comp = [char+0xE58], float dt)`.
+inline constexpr std::uintptr_t kFieldActionCompTickCall = 0x140FBE528;
+inline constexpr std::array<std::uint8_t, 16> kFieldActionCompTickEntry{
+    0x40, 0x55, 0x56, 0x57, 0x41, 0x56, 0x48, 0x8D, 0x6C, 0x24, 0xC1, 0x48, 0x81, 0xEC, 0x98, 0x00};
+inline constexpr platform::FunctionFact kFieldActionCompTick{L"FieldActionComp_Tick", 0x140FEE320, kFieldActionCompTickEntry};
+inline constexpr std::uint32_t kCharacterFieldAction = 0xE58;  // EndCharacter: its field-action component
+inline constexpr std::uint32_t kFieldActionState     = 0x159;  // the component's running action (EFieldActionActorType; 0 none)
+inline constexpr std::uint32_t kFieldActionPending   = 0x1F0;  // a requested action waits for the next component tick (byte)
+inline constexpr std::uint32_t kFieldActionTookLocks = 0x1FC;  // the action start took its global switches (byte)
+inline constexpr std::uint32_t kCharacterKeepsFieldActions = 0x3D0;  // EndCharacter byte: set, the start leaves "no new action" off
+inline constexpr std::uint8_t  kFieldActionLadder = 1, kFieldActionCrawl = 3, kFieldActionSqueeze = 4, kFieldActionMonkeyBars = 10;
+inline constexpr std::uint8_t  kFieldActionVault = 18, kFieldActionRubble = 28, kFieldActionDuck = 32;
+inline constexpr std::uint8_t  kFieldActionStep = 9, kFieldActionSlide = 16, kFieldActionSlideDown = 17, kFieldActionFenceGap = 27;
+inline constexpr std::uint8_t  kFieldActionJump = 8, kFieldActionClimb = 21;
+inline constexpr std::uint8_t  kFieldActionBalance = 6, kFieldActionFan = 20, kFieldActionCounterGate = 31, kFieldActionRope = 40;
+/// The slide-down state's post-tick (state vtable +0x20, void(state, float dt)): its side steer reads the merged stick.
+/// The engine calls every character's post-tick at the top of the walk-up start loop (game thread), outside the
+/// component tick (research/RE-traversal-slides-two.md §4).
+inline constexpr std::uintptr_t kSlideDownPostTickSlot = 0x144BB7178;
+inline constexpr std::array<std::uint8_t, 16> kSlideDownPostTickEntry{
+    0x40, 0x55, 0x57, 0x48, 0x8D, 0x6C, 0x24, 0xB1, 0x48, 0x81, 0xEC, 0xF8, 0x00, 0x00, 0x00, 0x48};
+inline constexpr platform::FunctionFact kSlideDownPostTick{L"FieldActionSlideDownState_PostTick_SideSteerLeftX", 0x14106C0B0,
+                                                           kSlideDownPostTickEntry};
+inline constexpr std::uint32_t kStateComponent = 0x30;  // a field-action state: its component
+/// The balance beam's end delegate (animation side, void(capture* = {state}, char reached)): it leaves camera flavor 20
+/// only if the operator it reads unscoped (player 1's) holds the flavor the start stored at state+0x178, and clears that
+/// store either way, so the state's exit (component tick: in the seat's scopes, the game's eased leave) finds nothing to
+/// leave for a seat's member (research/RE-traversal-spline-two.md). First instruction: mov [rsp+20h], rsi.
+inline constexpr std::array<std::uint8_t, 16> kBalanceEndDelegateEntry{
+    0x48, 0x89, 0x74, 0x24, 0x20, 0x55, 0x48, 0x8D, 0x6C, 0x24, 0xA9, 0x48, 0x81, 0xEC, 0xB0, 0x00};
+inline constexpr platform::FunctionFact kBalanceEndDelegate{L"FieldActionBalanceMoveState_EndDelegate_Flavor20Leave", 0x141024570,
+                                                            kBalanceEndDelegateEntry};
+inline constexpr std::size_t   kBalanceEndDelegateFirst = 5;
+inline constexpr std::uint32_t kBalanceStoredFlavor     = 0x178;
+/// Camera flavor 20 (customizable): its current phase entry (+0x468; the entries at +0x458, 56 bytes each, the first
+/// dword the phase's kind). The beam's exit leaves it by pointing it at the entry of kind 2 (the way out).
+inline constexpr std::uint32_t kFlavorCurrentPhase = 0x468;
+inline constexpr std::uint32_t kFlavorPhaseLeaving = 2;
+/// The action's start and end: for the party leader's component the start turns on OnOff 11/4/1 for everyone (the
+/// field menu, every walk-up start, encounters) until its end. Its first instruction: mov [rsp+10h], rbx.
+inline constexpr std::array<std::uint8_t, 16> kActionStartEndEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x10, 0x55, 0x56, 0x57, 0x41, 0x54, 0x41, 0x55, 0x41, 0x56, 0x41, 0x57};
+inline constexpr std::size_t kActionStartEndFirst = 5;
+inline constexpr platform::FunctionFact kActionStartEnd{L"FieldActionComp_OnActionStartEnd_LeaderOnOffLocks", 0x140FEFB70,
+                                                        kActionStartEndEntry};
+/// The crawl's and the squeeze's field control lock (reason "EndFieldActionCrack"), taken for the party leader's
+/// component only: the first lock hands the party leader to its AI and stops player 1's command input. Three of the
+/// four calls cross a 16-byte block (placed from the game thread once the field-action tick runs there).
+inline constexpr std::uintptr_t kCrawlLockCall      = 0x141034A5F;  // EndStateMgr_FieldControlLock_Set(sm, 1, reason)
+inline constexpr std::uintptr_t kCrawlUnlockCall    = 0x141032E7E;  // EndStateMgr_FieldControlLock_Clear(sm, 1, reason)
+inline constexpr std::uintptr_t kSqueezeLockCall    = 0x14102FE4D;  // StateMgr_QueueLockBit_Set(0, reason)
+inline constexpr std::uintptr_t kSqueezeUnlockCall  = 0x14102E3EA;  // StateMgr_QueueLockBit_Clear(0, reason)
+inline constexpr std::uintptr_t kFieldControlLockSet   = 0x14113ED90;
+inline constexpr std::uintptr_t kFieldControlLockClear = 0x14113F0C0;
+inline constexpr std::uintptr_t kQueueLockBitSet       = 0x140FCCA20;
+inline constexpr std::uintptr_t kQueueLockBitClear     = 0x140FCCAF0;
+/// The field camera's flavors (per operator: kOperatorFlavors + 8 x id, kFlavorActive above): 15 ladder, 17 duct (squeeze,
+/// crawl), 20 the customizable one (monkey bars). The game's deactivate resolves the operator from g_EndGameRoot+0x9B0.
+inline constexpr std::uintptr_t kFieldCameraDeactivateFlavor = 0x140FCE480;  // void(u8 id)
+inline constexpr std::array<std::uint8_t, 8> kFieldCameraDeactivateFlavorEntry{0x48, 0x8B, 0x05, 0x49, 0xB5, 0x81, 0x04, 0x44};
+inline constexpr std::uint8_t   kFlavorLadder = 15, kFlavorDuct = 17, kFlavorCustomizable = 20;
+/// The duct flavor's leave, as the squeeze's own exit calls it (0x141031A30 via GetFlavor(17)): with weight left (+0x4CC)
+/// it starts its out phase and eases back to the follow camera, else it switches itself off. void(flavor).
+inline constexpr std::uintptr_t kDuctFlavorLeave = 0x1410AC620;
+inline constexpr std::array<std::uint8_t, 16> kDuctFlavorLeaveEntry{
+    0xF3, 0x0F, 0x10, 0x81, 0xCC, 0x04, 0x00, 0x00, 0x48, 0x8B, 0xD1, 0x0F, 0x54, 0x05, 0x6E, 0x89};
+/// The duct flavor's fields read by the squeeze-camera watch (research/RE-traversal-duct-camera-two.md; read only).
+/// The squeeze's camera enter (0x1410308A0) seeds a side-on view (the gap end's yaw +-90); its phase 1 snapshots the
+/// operator's pose and eases from it to that view over the in time (a cut when that time is ~0).
+inline constexpr std::uint32_t kDuctBegun = 0x39, kDuctOutputYaw = 0x250, kDuctWeight = 0x344, kDuctTargetYaw = 0x44C;
+inline constexpr std::uint32_t kDuctSeeded = 0x460, kDuctSeedYaw = 0x468, kDuctAnchorWeight = 0x470, kDuctSeedRequest = 0x48C;
+inline constexpr std::uint32_t kDuctInTime = 0x490, kDuctStartYaw = 0x4A4, kDuctYawDelta = 0x4C0, kDuctPhase = 0x510;
+inline constexpr std::uint32_t kDuctPhaseTimer = 0x524, kDuctPendingPhase = 0x518;  // pending: the entry the next tick enters
+/// The duct flavor's leaving phases (out, then return): its current phase entry (+0x510) has one of these kinds.
+inline constexpr std::uint32_t kDuctPhaseOut = 3, kDuctPhaseReturn = 4;
+/// The squeeze's near-exit delegate (animation side, void(capture* = {state}, char end); research/RE-traversal-duct-
+/// camera-two.md): fired by the squeeze's behaviour 70 cm before an end, it records the member's end spot and, for the
+/// party leader's type only, starts the duct camera's leave. Without it the camera stays in its hold, whose anchor
+/// fades to the squeezer's facing: a 90-degree turn mid-squeeze. Same prologue as the beam's end delegate.
+inline constexpr std::array<std::uint8_t, 16> kSqueezeNearExitDelegateEntry{
+    0x48, 0x89, 0x74, 0x24, 0x20, 0x55, 0x48, 0x8D, 0x6C, 0x24, 0xA9, 0x48, 0x81, 0xEC, 0xB0, 0x00};
+inline constexpr platform::FunctionFact kSqueezeNearExitDelegate{L"FieldActionCrackState_ExtraAction_Delegate800_DuctIfLeader",
+                                                                 0x141031A30, kSqueezeNearExitDelegateEntry};
+inline constexpr std::size_t kSqueezeNearExitDelegateFirst = 5;
+/// The crawl's near-exit delegate (same signal, same leader-type-only leave of the duct camera, if begun): its first
+/// instruction is too short for an entry redirect, so the stub that reaches it (movzx edx, byte [rdx]; jmp) has its
+/// tail jump redirected.
+inline constexpr std::uintptr_t kCrawlNearExitDelegate = 0x1410364E0;
+inline constexpr std::uintptr_t kCrawlNearExitJump     = 0x14104D533;  // jmp rel32 in sub_14104D530
+inline constexpr std::uint32_t kOperatorPoseYaw = 0x42C;  // the operator's pose rotation (+0x428) yaw, phase 1's start
+/// A scene component's world transform rotation (FQuat x, y, z, w; the duct update reads the owner's root here as the
+/// anchor its hold fades to).
+inline constexpr std::uint32_t kComponentWorldRotation = 0x1A0;
+/// A field-action component's states (by action type) and the squeeze state's path byte, side and end yaw.
+inline constexpr std::uint32_t kFieldActionStates = 0x10;
+inline constexpr std::uint32_t kSqueezeFromPoint = 0x3A, kSqueezeSide = 0x70, kSqueezeEndYaw = 0x84;
+
 }  // namespace lss::facts

@@ -30,6 +30,7 @@
 #include "battle/command_menu_two.h"
 #include "battle/targeting_two.h"
 #include "battle/lock_camera_two.h"
+#include "world/traversal_action.h"
 #include "players/pad_buttons.h"
 #include "players/scopes.h"
 #include "players/split_render.h"
@@ -963,6 +964,14 @@ void Session::HandWithLeader(Seat& seat) noexcept
     if (party_member::ActorMode(member) == facts::kActorModeBattle)
     {
         platform::LogDebug(L"the game handed its leader to its AI in battle (lock {:#x}); {}'s member stays (unread case)",
+                           party_member::ControlLockMask(), seat.Name());
+        return;
+    }
+    // Player 1's crawl or squeeze locks the field for its own leader only (the user, 2026-10-24: a crawl locks only the
+    // mover): the member stays its player's.
+    if (world::traversal_action::MoverLockNow())
+    {
+        platform::LogDebug(L"player 1's crawl or squeeze handed only player 1's character to its AI (lock {:#x}); {}'s member stays theirs",
                            party_member::ControlLockMask(), seat.Name());
         return;
     }
