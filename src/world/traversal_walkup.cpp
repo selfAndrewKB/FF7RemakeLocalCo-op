@@ -21,6 +21,7 @@
 #include <cstring>
 #include <format>
 #include <string>
+#include <string_view>
 #include <utility>
 
 namespace lss::world::traversal_walkup {
@@ -252,6 +253,8 @@ void* ActorOfVolume(std::uint64_t volume) noexcept
 
 // The live vtables (rebased at install).
 std::array<std::uintptr_t, kClasses> g_vtables{};
+std::array<bool, kClasses>           g_admitted{};  // a class a seat's trigger reaches (set at install)
+static_assert(std::wstring_view(facts::kWalkUpClasses[facts::kWalkUpPole].name) == L"pole slide");
 std::uintptr_t                       g_imageBase = 0;  // set at install: names a held-back class's vtable as IDA does
 
 /// The admitted class of a live actor (its native vtable: placed Blueprint actors keep it), or kClasses.
@@ -412,7 +415,7 @@ char Route(std::uint64_t volume, void* collider, bool enter, const platform::Cal
     }
     void*             actor = ActorOfVolume(volume);
     const std::size_t cls   = actor == nullptr ? kClasses : ClassOfVtable(actor);
-    if (cls == kClasses)
+    if (cls == kClasses || !g_admitted[cls])
     {
         ++g_seats[g_current].heldBack;
         if (actor == nullptr)
@@ -710,6 +713,12 @@ bool Install(const platform::GameImage& image) noexcept
             return fail(c.name);
         }
         g_vtables[cls]   = *vtable;
+        // The pole slide only with its finish's fix (else its end leaves player 1's pole camera).
+        g_admitted[cls] = cls != facts::kWalkUpPole || traversal_action::PoleReady();
+        if (!g_admitted[cls])
+        {
+            platform::LogWarning(L"walk-up: the {} is held back for further players (its fix is not installed)", c.name);
+        }
         slots[cls]       = *vtable + facts::kVtTryStart;
         markerSlots[cls] = *vtable + facts::kVtMarkers;
         tryStartFns[cls] = *tries;

@@ -1,7 +1,8 @@
 #pragma once
 
 // Players 2 and 3 walk their member up to ladders, squeezes, crawls, monkey bars, climbs, jumps, vaults, rubble,
-// duck-unders, slides, fence gaps, steps, balance beams, fans, counter gates and lifting ropes, as player 1 does
+// duck-unders, slides, fence gaps, steps, balance beams, fans, counter gates, lifting ropes, gap jumps, pole slides and
+// wire fences, as player 1 does
 // (the user's report of 2026-10-21, picked 2026-10-24; research/RE-traversal-walkup-two.md, RE-traversal-items.md
 // §10-§13; the action itself: world/traversal_action.h).
 //

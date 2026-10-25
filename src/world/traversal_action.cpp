@@ -52,10 +52,12 @@ using BalanceEndFn = void (*)(void** capture, char reached);
 using NearExitFn   = void (*)(void** capture, char end);
 using StateCallFn  = void (*)(void* state);
 using PhaseFn      = void (*)(void** capture, char phase);
+using FinishFn     = void (*)(void** capture);
+using EndSignalsFn = std::uint64_t (*)(void* actor, void* list, char reached);
 using LadderLeaveFn = void (*)(void* flavor, char keepYaw);
 
 constexpr int           kSeats   = players::scopes::kMaxPlayers;
-constexpr std::uint8_t  kFlavors[] = {facts::kFlavorLadder, facts::kFlavorDuct, facts::kFlavorCustomizable};
+constexpr std::uint8_t  kFlavors[] = {facts::kFlavorLadder, facts::kFlavorDuct, facts::kFlavorRope, facts::kFlavorCustomizable};
 
 struct SeatState
 {
@@ -74,6 +76,7 @@ std::uintptr_t g_party     = 0;
 DeactivateFn   g_deactivate = nullptr;
 FlavorLeaveFn  g_ductLeave  = nullptr;
 LadderLeaveFn  g_ladderLeave = nullptr;
+FlavorLeaveFn  g_ropeLeave   = nullptr;
 std::uintptr_t g_lockSet = 0, g_lockClear = 0, g_queueSet = 0, g_queueClear = 0;
 std::uintptr_t g_crawlLockSite = 0, g_crawlUnlockSite = 0, g_squeezeLockSite = 0, g_squeezeUnlockSite = 0;
 bool           g_installed = false;
@@ -88,6 +91,10 @@ platform::CallRedirect  g_crawlNearExit;
 platform::VTableEntry   g_monkeyBarsStart, g_monkeyBarsExit, g_balanceStart;
 platform::CallRedirect  g_monkeyBarsBaseExit;
 platform::CallRedirect  g_ladderPhase;
+platform::EntryRedirect g_gapJumpFinish, g_poleFinish;
+platform::VTableEntry   g_fenceStart, g_fenceExit;
+platform::CallRedirect  g_fenceEndSignals, g_fenceBaseStart;
+bool                    g_poleReady = false;  // the pole's finish fix and its camera leave installed
 
 std::atomic<DWORD> g_gameThread{0};
 std::atomic<int>   g_ticking{0};       // the seat whose member's component the game thread is ticking now
@@ -100,6 +107,10 @@ std::atomic<int>   g_resumedSeat{0};   // the seat whose Start or Exit runs now 
 std::array<std::atomic<std::uint8_t>, kSeats> g_ductNearEnd{};  // the action (squeeze, crawl) whose near-exit call ran for a seat's member
 std::array<std::atomic<void*>, kSeats>        g_ladderExit{};       // a seat's member's ladder state that reached an exit phase
 std::array<std::atomic<std::uint8_t>, kSeats> g_ladderExitPhase{};  // that phase (written before the state)
+std::array<std::atomic<bool>, kSeats>         g_poleFinished{};     // a seat's member's pole slide finished (its camera's leave)
+std::array<std::atomic<bool>, kSeats>         g_gapJumpFinished{};  // a seat's member's long jump finished (set done only)
+std::atomic<int> g_finishThread{0};  // the jump's or pole's finish seen on: 1 the game thread, 2 another (logged once)
+bool             g_finishThreadTold = false;
 std::atomic<int> g_ladderThread{0};  // the ladder's phase call seen on: 1 the game thread, 2 another (logged once)
 bool             g_ladderThreadTold = false;
 std::atomic<std::int64_t>  g_workerTime{0};  // performance-counter ticks spent inside component ticks on workers
@@ -333,6 +344,50 @@ void LadderPhase(void** capture, char phase)
     }
 }
 
+/// A seat's member's state (animation side): the seat, or 0.
+int SeatOfStateAnyThread(void* const* capture, void** state) noexcept
+{
+    *state = capture != nullptr ? ReadPointer(capture, 0) : nullptr;
+    return *state != nullptr && Scoping() ? SeatOfComponentAnyThread(ReadPointer(*state, facts::kStateComponent)) : 0;
+}
+
+/// The gap jump's long-jump finish (animation side): the game sets the state done and ticks the owner's component there,
+/// outside the seat's scopes (the jump's end, the queued slide). For a seat's member only the done byte is set: the
+/// member's next tick on the game thread, in its scopes, ends the jump and starts the slide (up to a frame later).
+void GapJumpFinish(void** capture)
+{
+    void*                  state = nullptr;
+    constexpr std::uint8_t done  = 1;
+    if (const int seat = SeatOfStateAnyThread(capture, &state);
+        seat != 0 && platform::WriteGuarded(static_cast<std::uint8_t*>(state) + facts::kStateDone, &done, 1))
+    {
+        g_finishThread.store(OnGameThreadNow() ? 1 : 2, std::memory_order_relaxed);
+        g_gapJumpFinished[seat].store(true, std::memory_order_relaxed);
+        return;
+    }
+    reinterpret_cast<FinishFn>(g_gapJumpFinish.Original())(capture);  // a write that faulted: the game's own end
+}
+
+/// The pole slide's finish (animation side): its "was the leader" byte was captured in the seat's scopes, so the game
+/// would leave player 1's pole camera from here. For a seat's member the byte is cleared first (done only), and the
+/// seat's own camera leave runs on the game thread next tick.
+void PoleFinish(void** capture)
+{
+    void*     state = nullptr;
+    const int seat  = SeatOfStateAnyThread(capture, &state);
+    if (seat != 0)
+    {
+        constexpr std::uint8_t no = 0;
+        platform::WriteGuarded(reinterpret_cast<std::uint8_t*>(capture) + facts::kPoleFinishWasLeader, &no, 1);
+    }
+    reinterpret_cast<FinishFn>(g_poleFinish.Original())(capture);
+    if (seat != 0)
+    {
+        g_finishThread.store(OnGameThreadNow() ? 1 : 2, std::memory_order_relaxed);
+        g_poleFinished[seat].store(true, std::memory_order_relaxed);
+    }
+}
+
 /// The slide-down's post-tick (its side steer, outside the component tick): a seat's member's runs as its component
 /// tick does, so pad 2 or 3 steers it.
 void SlideDownPostTick(void* state, float dt)
@@ -383,26 +438,27 @@ void StartEnd(void* component, char start, char end)
 
 /// A state's own Start or Exit (`slot` holds the game's). Called by the action start for a seat's member, while the mod
 /// holds player 1's leader there, it runs with the seat's leader again for this one call: its camera code (the leader
-/// type's) then answers for the seat, on the seat's operator. Any other call is the game's.
-void WithSeatLeader(const platform::VTableEntry& slot, void* state, const wchar_t* what)
+/// type's) then answers for the seat, on the seat's operator. Any other call is the game's. True if it ran resumed.
+bool WithSeatLeader(const platform::VTableEntry& slot, void* state, const wchar_t* what)
 {
     const auto original = reinterpret_cast<StateCallFn>(slot.Original());
     const int  seat     = g_pausedSeat.load(std::memory_order_relaxed);
     if (seat == 0 || !OnGameThreadNow() || ReadPointer(state, facts::kStateComponent) != g_seats[seat].component)
     {
         original(state);
-        return;
+        return false;
     }
     const players::scopes::Scope leader(seat, players::scopes::Leader);
     if (!leader.Held())
     {
         original(state);  // player 1's leader, as before: no camera for the seat
-        return;
+        return false;
     }
     ++g_seats[seat].leaderResumed;
     platform::LogDebug(L"traversal: {}'s {} runs with its own member as the leader (its camera)", players::SeatName(seat), what);
     const SeatMark resumed(g_resumedSeat, seat);
     original(state);
+    return true;
 }
 
 /// The monkey bars' Exit's first call, the base exit: its end signals choose the leader's set or the member's by the
@@ -419,6 +475,97 @@ void MonkeyBarsBaseExit(void* state)
     }
     const players::scopes::LeaderPause pause(seat);
     original(state);
+}
+
+const std::uint8_t* PlayerOneLeader(const std::uint8_t** component) noexcept;
+
+/// The actor a state acts on (its weak pair at +0x120; the Start sets it, the Exit clears it at its end), or null.
+std::uint8_t* StateActor(const void* state) noexcept
+{
+    std::int32_t pair[2]{-1, 0};
+    if (!platform::CopyGuarded(pair, static_cast<const std::uint8_t*>(state) + facts::kStateActorWeak, sizeof(pair)))
+    {
+        return nullptr;
+    }
+    return static_cast<std::uint8_t*>(players::weak_object::ObjectOf(pair));
+}
+
+/// Player 1's leader climbs this wire fence now (its own fence state names the actor): the value the game keeps in the
+/// actor's "the party leader is on this mesh" byte, which only the party leader's Start and Exit write.
+bool PlayerOneOnFence(const void* actor) noexcept
+{
+    const std::uint8_t* comp   = nullptr;
+    std::uint8_t        action = 0;
+    if (PlayerOneLeader(&comp) == nullptr || comp == nullptr || !Read(comp + facts::kFieldActionState, action) ||
+        action != facts::kFieldActionWireFence)
+    {
+        return false;
+    }
+    const void* state = ReadPointer(comp, facts::kFieldActionStates + 8u * facts::kFieldActionWireFence);
+    return state != nullptr && StateActor(state) == actor;
+}
+
+/// The wire fence's Start or Exit with the seat's leader again (its camera). The actor's "the party leader is on this
+/// mesh" byte, which AI members follow, is then set back to what player 1's own climb makes it: never a seat's member.
+void WireFenceCall(const platform::VTableEntry& slot, void* state, const wchar_t* what)
+{
+    const int  seat  = g_pausedSeat.load(std::memory_order_relaxed);
+    const bool mine  = seat != 0 && OnGameThreadNow() && ReadPointer(state, facts::kStateComponent) == g_seats[seat].component;
+    std::uint8_t* actor = mine ? StateActor(state) : nullptr;  // the Exit's: cleared by the call
+    if (!WithSeatLeader(slot, state, what) || !mine)
+    {
+        return;  // the game ran it with player 1's leader: it left the byte as the game keeps it
+    }
+    if (actor == nullptr)
+    {
+        actor = StateActor(state);  // the Start's: set by the call
+    }
+    std::uint8_t on = 0;
+    if (actor == nullptr || !Read(actor + facts::kWireFenceLeaderOn, on))
+    {
+        platform::LogDebug(L"traversal: {}'s {}: the fence could not be found; its AI follow flag left as the call left it",
+                           players::SeatName(seat), what);
+        return;
+    }
+    const std::uint8_t want = PlayerOneOnFence(actor) ? 1 : 0;
+    if (on != want && platform::WriteGuarded(actor + facts::kWireFenceLeaderOn, &want, 1))
+    {
+        platform::LogDebug(L"traversal: {}'s {}: the fence's AI follow flag put back to player 1's ({})", players::SeatName(seat), what,
+                           want);
+    }
+}
+
+void WireFenceStart(void* state) { WireFenceCall(g_fenceStart, state, L"wire-fence start"); }
+void WireFenceExit(void* state) { WireFenceCall(g_fenceExit, state, L"wire-fence exit"); }
+
+/// The wire fence's Start's base start (its tail call takes the leader-typed OnOff 25, a global switch): inside a resumed
+/// Start it runs with player 1's leader again.
+void WireFenceBaseStart(void* state)
+{
+    const auto original = reinterpret_cast<StateCallFn>(g_fenceBaseStart.Original());
+    const int  seat     = g_resumedSeat.load(std::memory_order_relaxed);
+    if (seat == 0 || !OnGameThreadNow() || ReadPointer(state, facts::kStateComponent) != g_seats[seat].component)
+    {
+        original(state);
+        return;
+    }
+    const players::scopes::LeaderPause pause(seat);
+    original(state);
+}
+
+/// The wire fence's Exit's end signals (a direct call: the leader's set or the member's by the leader type): inside a
+/// resumed Exit they run with player 1's leader again, as every seat's action end does. Its one call site is inside the
+/// fence's Exit, so the resumed seat is enough (its arguments name no state).
+std::uint64_t WireFenceEndSignals(void* actor, void* list, char reached)
+{
+    const auto original = reinterpret_cast<EndSignalsFn>(g_fenceEndSignals.Original());
+    const int  seat     = g_resumedSeat.load(std::memory_order_relaxed);
+    if (seat == 0 || !OnGameThreadNow())
+    {
+        return original(actor, list, reached);
+    }
+    const players::scopes::LeaderPause pause(seat);
+    return original(actor, list, reached);
 }
 
 void MonkeyBarsStart(void* state) { WithSeatLeader(g_monkeyBarsStart, state, L"monkey-bars start"); }
@@ -507,6 +654,9 @@ const wchar_t* ActionName(std::uint8_t action) noexcept
         case facts::kFieldActionFan: return L"fan";
         case facts::kFieldActionCounterGate: return L"counter gate";
         case facts::kFieldActionRope: return L"lifting rope";
+        case facts::kFieldActionGapJump: return L"gap jump";
+        case facts::kFieldActionPole: return L"pole slide";
+        case facts::kFieldActionWireFence: return L"wire-fence climb";
         default: return L"field action";
     }
 }
@@ -552,6 +702,33 @@ void DuctLeaveNearEnd(int seat, std::uint8_t action) noexcept
         ++g_seats[seat].camerasLeft;
         platform::LogDebug(L"traversal: {}'s {} camera eases out near the exit, as player 1's does", players::SeatName(seat),
                            ActionName(action));
+    }
+}
+
+/// The rope/pole camera is leaving already: its current phase is past kind 1, or a way out is pending.
+bool RopeLeaving(const void* flavor) noexcept
+{
+    const void*  current = ReadPointer(flavor, facts::kRopePhaseCurrent);
+    const void*  pending = ReadPointer(flavor, facts::kRopePhasePending);
+    std::int32_t kind    = 0;
+    return (current != nullptr && Read(current, kind) && kind > 1) || (pending != nullptr && Read(pending, kind) && kind > 1);
+}
+
+/// The seat's rope/pole camera eased out with the game's own leave, unless it is leaving already.
+void RopeLeave(int seat, const wchar_t* when) noexcept
+{
+    const void* op     = players::player_two_camera::Operator(seat);
+    void*       flavor = op != nullptr ? ReadPointer(op, facts::kOperatorFlavors + 8u * facts::kFlavorRope) : nullptr;
+    std::uint8_t active = 0;
+    if (flavor == nullptr || g_ropeLeave == nullptr || !Read(static_cast<const std::uint8_t*>(flavor) + facts::kFlavorActive, active) ||
+        active == 0 || RopeLeaving(flavor))
+    {
+        return;
+    }
+    if (platform::CallGuarded(g_ropeLeave, flavor))
+    {
+        ++g_seats[seat].camerasLeft;
+        platform::LogDebug(L"traversal: {}'s pole/rope camera eases out {}", players::SeatName(seat), when);
     }
 }
 
@@ -622,7 +799,7 @@ void CamerasOffAfter(int seat, std::uint8_t ended) noexcept
         }
         if (id == facts::kFlavorCustomizable)
         {
-            if (ended != facts::kFieldActionMonkeyBars && ended != facts::kFieldActionBalance)
+            if (ended != facts::kFieldActionMonkeyBars && ended != facts::kFieldActionBalance && ended != facts::kFieldActionWireFence)
             {
                 continue;  // not this action's (a script's or a scene's camera on the seat's operator)
             }
@@ -633,6 +810,14 @@ void CamerasOffAfter(int seat, std::uint8_t ended) noexcept
                                    ActionName(ended));
                 continue;
             }
+        }
+        if (id == facts::kFlavorRope)
+        {
+            if (ended == facts::kFieldActionPole || ended == facts::kFieldActionRope)
+            {
+                RopeLeave(seat, L"after the action");  // the game's leave, eased (none if already leaving)
+            }
+            continue;  // not this action's (a script's camera on the seat's operator)
         }
         if (id == facts::kFlavorLadder)
         {
@@ -995,6 +1180,45 @@ bool Install(const platform::GameImage& image) noexcept
         platform::LogWarning(L"traversal: the crawl's near-exit call is not as the research read it; a further player's crawl camera "
                              L"switches off at the end instead of easing out near the exit");
     }
+    if (const auto leave = platform::FindFunction(image, facts::kRopeFlavorLeave))
+    {
+        g_ropeLeave = reinterpret_cast<FlavorLeaveFn>(*leave);
+    }
+    // The two finishes copy a run of two instructions (7 bytes): installed here, at the mod's start, before any field action
+    // runs, so no thread is ever inside that run while it is replaced (platform/entry_redirect.h's contract).
+    if (const auto finish = platform::FindFunction(image, facts::kGapJumpFinish);
+        !finish || !g_gapJumpFinish.Install(*finish, std::span(facts::kGapJumpFinish.entryBytes.data(), facts::kGapJumpFinishFirst),
+                                            reinterpret_cast<std::uintptr_t>(&GapJumpFinish)))
+    {
+        platform::LogWarning(L"traversal: the gap jump's finish is not as the research read it; a further player's long jump ends "
+                             L"outside that player's scopes");
+    }
+    if (const auto finish = platform::FindFunction(image, facts::kPoleFinish);
+        !g_ropeLeave || !finish ||
+        !(g_poleReady = g_poleFinish.Install(*finish, std::span(facts::kPoleFinish.entryBytes.data(), facts::kPoleFinishFirst),
+                                             reinterpret_cast<std::uintptr_t>(&PoleFinish))))
+    {
+        platform::LogWarning(L"traversal: the pole slide's finish or its camera leave is not as the research read it; a further "
+                             L"player's pole slide can end player 1's pole camera");
+    }
+    // The wire fence goes in together: a Start without its Exit would leave the camera and the markers on, an Exit without
+    // its end-signal call would send the leader's end signals for a seat.
+    const auto fenceSignals = image.Rebase(facts::kWireFenceEndSignalsCall, 5);
+    const auto endSignals   = image.Rebase(facts::kEndSignals);
+    const auto fenceBase    = image.Rebase(facts::kWireFenceBaseStartCall, 5);
+    const auto baseStart    = image.Rebase(facts::kStateBaseStart);
+    if (!fenceSignals || !endSignals || !fenceBase || !baseStart ||
+        !g_fenceEndSignals.Install(*fenceSignals, *endSignals, reinterpret_cast<std::uintptr_t>(&WireFenceEndSignals)) ||
+        !g_fenceBaseStart.Install(*fenceBase, *baseStart, reinterpret_cast<std::uintptr_t>(&WireFenceBaseStart)) ||
+        !ReplaceStateSlot(image, facts::kWireFenceStartSlot, facts::kWireFenceStart, g_fenceStart, &WireFenceStart) ||
+        !ReplaceStateSlot(image, facts::kWireFenceExitSlot, facts::kWireFenceExit, g_fenceExit, &WireFenceExit))
+    {
+        const bool startBack = g_fenceStart.Restore();
+        const bool baseBack  = g_fenceBaseStart.Restore();
+        const bool back      = g_fenceEndSignals.Restore() && startBack && baseBack;
+        platform::LogWarning(L"traversal: the wire fence's start or exit is not as the research read it; a further player on a wire "
+                             L"fence keeps the follow camera{}", back ? L"" : L" (a slot could not be put back; it passes through)");
+    }
     const auto ladderJump  = image.Rebase(facts::kLadderPhaseJump, 5);
     const auto ladderPhase = platform::FindFunction(image, facts::kLadderPhaseDelegate);
     if (const auto leave = platform::FindFunction(image, facts::kLadderLeave))
@@ -1070,6 +1294,21 @@ void TickSeat(int seat, void* member) noexcept
     {
         LadderLeaveAtExit(seat, ladder, g_ladderExitPhase[seat].load(std::memory_order_relaxed));
     }
+    if (g_poleFinished[seat].exchange(false, std::memory_order_relaxed) && member != nullptr)
+    {
+        platform::LogDebug(L"traversal: {}'s pole slide finished; player 1's pole camera kept out of it", players::SeatName(seat));
+        RopeLeave(seat, L"at the pole's foot");
+    }
+    if (g_gapJumpFinished[seat].exchange(false, std::memory_order_relaxed))
+    {
+        platform::LogDebug(L"traversal: {}'s long jump finished: set done only, the member's own tick ends it", players::SeatName(seat));
+    }
+    if (const int thread = g_finishThread.load(std::memory_order_relaxed); thread != 0 && !g_finishThreadTold)
+    {
+        g_finishThreadTold = true;
+        platform::LogDebug(L"traversal: the jump's and pole's finishes run on {} (research/RE-traversal-deferred-two.md live check 3)",
+                           thread == 1 ? L"the game thread" : L"another thread");
+    }
     if (const int thread = g_ladderThread.load(std::memory_order_relaxed); thread != 0 && !g_ladderThreadTold)
     {
         g_ladderThreadTold = true;
@@ -1123,6 +1362,12 @@ void Remove() noexcept
     g_monkeyBarsExit.Restore();
     g_monkeyBarsStart.Restore();
     g_monkeyBarsBaseExit.Restore();
+    g_fenceExit.Restore();
+    g_fenceStart.Restore();
+    g_fenceBaseStart.Restore();
+    g_fenceEndSignals.Restore();
+    g_poleFinish.Restore();
+    g_gapJumpFinish.Restore();
     g_slideDownPostTick.Restore();
     g_ladderPhase.Restore();
     g_crawlNearExit.Restore();
@@ -1132,6 +1377,8 @@ void Remove() noexcept
         g_ductNearEnd[seat].store(0, std::memory_order_relaxed);
         g_ladderExit[seat].store(nullptr, std::memory_order_relaxed);
         g_ladderExitPhase[seat].store(0, std::memory_order_relaxed);
+        g_poleFinished[seat].store(false, std::memory_order_relaxed);
+        g_gapJumpFinished[seat].store(false, std::memory_order_relaxed);
     }
     g_balanceEnd.Restore();
     g_compTick.Restore();
@@ -1163,6 +1410,11 @@ bool MoverLockNow() noexcept
 bool Scoping() noexcept
 {
     return g_onGame.load(std::memory_order_relaxed) && g_locksOk.load(std::memory_order_relaxed);
+}
+
+bool PoleReady() noexcept
+{
+    return g_poleReady;
 }
 
 bool PlayerOneActionHoldsNoAction() noexcept

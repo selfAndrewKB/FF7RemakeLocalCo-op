@@ -25,7 +25,7 @@
 // switches on and eases out on the seat's operator as player 1's does on his, and the monkey bars' in-use markers aim from
 // the seat's member (their user, as in single player). The monkey bars' Exit's base exit (its end signals: the leader's
 // set or the member's) runs with player 1's leader again, so a seat's action still sends the member's. After a monkey
-// bars or beam action the flavor-20 camera is left to finish its leave, else switched off.
+// bars, beam or wire-fence action the flavor-20 camera is left to finish its leave, else switched off.
 // The balance beam's end delegate (animation side) tests player 1's camera for the flavor its start stored and clears
 // that store; for a seat's member the mod keeps it out of that test, so the state's exit eases the seat's camera out.
 // The squeeze's and the crawl's near-exit delegates (animation side, signalled by the behaviour partway along) start the
@@ -57,8 +57,14 @@
 // eases out at the exit as player 1's does. The squeeze's and crawl's final switch-off also run on the animation side:
 // when a seat's action ends the mod leaves what is left on the seat's operator with the game's own leave (the duct and
 // ladder cameras, eased; skipped if already leaving) or deactivate (logged). A two-way jump takes its side from where
-// the jumper stands (research/RE-traversal-phases-two.md §3). The gap jump is not admitted yet: its long jump's finish
-// ticks the component from the animation side, outside these scopes (research/RE-traversal-slides-two.md).
+// the jumper stands (research/RE-traversal-phases-two.md §3).
+// The three moves the game's AI companions also take (research/RE-traversal-deferred-two.md): the gap jump's long-jump
+// finish ticks the component on the animation side, outside these scopes: for a seat's member it only sets the state
+// done and the member's next scoped tick ends the jump; the pole slide's finish would leave player 1's pole camera (its
+// "was the leader" byte was captured in the seat's scopes): for a seat's member the byte is cleared and the seat's own
+// camera leave runs the next tick; the wire fence's Start and Exit run with the seat's leader again (its camera), the
+// actor's "the party leader is on this mesh" byte the AI members follow set to what player 1's own climb makes it, and its end signals under the
+// pause, as the fence Start's base start (its tail call takes the leader-typed OnOff 25, a global switch).
 // Logged: Info when the tick moves; Debug per seat action start and end, per camera eased out (near or at the exit, or after
 // the action) or switched off, and the squeeze-camera watch (any player's duct camera through the first 3 s of a squeeze,
 // research/RE-traversal-duct-camera-two.md); in the `traversal.action` reading the tick's thread counts and the time
@@ -74,8 +80,8 @@ namespace lss::world::traversal_action {
 
 /// Checks every site against the research and places the component-tick redirect, the action start's entry, the
 /// slide-down's post-tick, the balance beam's end delegate, the squeeze's and the crawl's near-exit delegates, the
-/// ladder's phase call and the monkey bars' and the beam's Start/Exit slots with the monkey bars' base-exit call (logged;
-/// the last seven only warn when they fail). False if a check
+/// ladder's phase call, the gap jump's and the pole's finishes, the monkey bars', the beam's and the wire fence's
+/// Start/Exit slots with their base and end-signal calls (logged; all but the first two only warn when they fail). False if a check
 /// failed: further players' members then take walk-up actions as the game's members do.
 bool Install(const platform::GameImage& image) noexcept;
 
@@ -101,6 +107,9 @@ bool MoverLockNow() noexcept;
 
 /// Player 1's leader's running action took the "no new action" switch for everyone (one count of it). Game thread.
 bool PlayerOneActionHoldsNoAction() noexcept;
+
+/// The pole slide's finish fix is installed: a seat's pole slide may be admitted (world/traversal_walkup.h).
+bool PoleReady() noexcept;
 
 /// The `traversal.action` reading.
 std::wstring Reading() noexcept;

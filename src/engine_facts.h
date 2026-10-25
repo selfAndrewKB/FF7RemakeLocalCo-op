@@ -1960,8 +1960,13 @@ inline constexpr WalkUpClass kWalkUpClasses[] = {
     {L"fan", 0x144BA4EB0, 0x140F1FD50, 0x140F204A0, 0x140F20790, 0x140EE5700, 0x650, 0x08, 0x660, 0x30, 0},
     {L"counter gate", 0x144B9D110, 0x140EE9040, 0x140EE5EA0, 0x140EE6190, 0x140EE9710, 0x658, 0x38, 0, 0, 0},
     {L"lifting rope", 0x144BA1998, 0x140F39190, 0x140F3A160, 0x140F1DF90, 0x140EF9190, 0x638, 0x38, 0, 0, 0},
+    // research/RE-traversal-deferred-two.md §7: the game's AI companions take these three too (its nav-link route).
+    {L"gap jump", 0x144B9F7F0, 0x140F40E10, 0x140F41380, 0x140F36C50, 0x14062CFC0, 0x648, 0x38, 0, 0, 0},
+    {L"pole slide", 0x144BB3018, 0x140F4A3C0, 0x140F4AE50, 0x140F1DF90, 0x140F4AE10, 0x638, 0x38, 0, 0, 0},
+    {L"wire fence", 0x144BAC390, 0x140F67C90, 0x140F68410, 0x140F68770, 0x140F681E0, 0x620, 0x08, 0x630, 0x30, 0},
 };
 inline constexpr std::size_t   kWalkUpCrawl          = 2;      // its TryStart counts a cooldown down: kept for the re-run
+inline constexpr std::size_t   kWalkUpPole           = 18;     // admitted only with its finish's fix (world/traversal_action.h)
 inline constexpr std::uint32_t kCrawlCooldown        = 0x588;  // float
 inline constexpr std::uint32_t kFieldActionIgnore    = 0x520;  // the actor's ignore group: TArray<FName> (data, count +8)
 inline constexpr std::uint32_t kRootStickLatch       = 0x9E4;  // g_EndGameRoot: player 1's camera-cut stick latch (byte)
@@ -1988,6 +1993,7 @@ inline constexpr std::uint8_t  kFieldActionVault = 18, kFieldActionRubble = 28, 
 inline constexpr std::uint8_t  kFieldActionStep = 9, kFieldActionSlide = 16, kFieldActionSlideDown = 17, kFieldActionFenceGap = 27;
 inline constexpr std::uint8_t  kFieldActionJump = 8, kFieldActionClimb = 21;
 inline constexpr std::uint8_t  kFieldActionBalance = 6, kFieldActionFan = 20, kFieldActionCounterGate = 31, kFieldActionRope = 40;
+inline constexpr std::uint8_t  kFieldActionGapJump = 19, kFieldActionWireFence = 38, kFieldActionPole = 39;
 /// The slide-down state's post-tick (state vtable +0x20, void(state, float dt)): its side steer reads the merged stick.
 /// The engine calls every character's post-tick at the top of the walk-up start loop (game thread), outside the
 /// component tick (research/RE-traversal-slides-two.md §4).
@@ -2059,7 +2065,7 @@ inline constexpr std::uintptr_t kQueueLockBitClear     = 0x140FCCAF0;
 /// crawl), 20 the customizable one (monkey bars). The game's deactivate resolves the operator from g_EndGameRoot+0x9B0.
 inline constexpr std::uintptr_t kFieldCameraDeactivateFlavor = 0x140FCE480;  // void(u8 id)
 inline constexpr std::array<std::uint8_t, 8> kFieldCameraDeactivateFlavorEntry{0x48, 0x8B, 0x05, 0x49, 0xB5, 0x81, 0x04, 0x44};
-inline constexpr std::uint8_t   kFlavorLadder = 15, kFlavorDuct = 17, kFlavorCustomizable = 20;
+inline constexpr std::uint8_t   kFlavorLadder = 15, kFlavorDuct = 17, kFlavorCustomizable = 20;  // 18 rope/pole: kFlavorRope
 /// The duct flavor's leave, as the squeeze's own exit calls it (0x141031A30 via GetFlavor(17)): with weight left (+0x4CC)
 /// it starts its out phase and eases back to the follow camera, else it switches itself off. void(flavor).
 inline constexpr std::uintptr_t kDuctFlavorLeave = 0x1410AC620;
@@ -2106,6 +2112,53 @@ inline constexpr std::array<std::uint8_t, 16> kLadderLeaveEntry{
     0x80, 0x79, 0x38, 0x00, 0x4C, 0x8B, 0xC1, 0x0F, 0x84, 0xA3, 0x00, 0x00, 0x00, 0xF3, 0x0F, 0x10};
 inline constexpr platform::FunctionFact kLadderLeave{L"FEndCameraFlavorLadder_RequestState2", 0x1410AED90, kLadderLeaveEntry};
 inline constexpr std::uint32_t kLadderPhaseCurrent = 0x3F0, kLadderPhasePending = 0x3F8, kLadderPhaseLeave = 2;
+/// A field-action state's done byte (the component's tick ends the action when it is set).
+inline constexpr std::uint32_t kStateDone = 0x38;
+/// The gap jump's long-jump finish (animation side, void(capture* = {state}); research/RE-traversal-deferred-two.md §3):
+/// sets the state done, then ticks the owner's component there (the jump's end and the queued slide-down start), outside
+/// the mod's scopes. First instructions mov rax,[rcx]; mov byte [rax+38h],1 (7 bytes, aligned, no RIP-relative operand).
+inline constexpr std::array<std::uint8_t, 16> kGapJumpFinishEntry{
+    0x48, 0x8B, 0x01, 0xC6, 0x40, 0x38, 0x01, 0x48, 0x8B, 0x01, 0x48, 0x8B, 0x48, 0x30, 0x44, 0x8B};
+inline constexpr platform::FunctionFact kGapJumpFinish{L"FieldActionParkourJump_OnFinish_TickOwnerComp", 0x141093D40, kGapJumpFinishEntry};
+inline constexpr std::size_t           kGapJumpFinishFirst = 7;
+/// The pole slide's finish (animation side, void(capture* = {state, u8 wasLeader})): done, then if the "was the leader"
+/// byte its slide start captured (+8; set for a seat's member, whose start runs in the seat's scopes) is set, the leave
+/// of the rope/pole camera (flavor 18) on "the" operator, player 1's from there (§4). First instructions sub rsp,28h;
+/// mov rax,[rcx] (7 bytes, aligned).
+inline constexpr std::array<std::uint8_t, 16> kPoleFinishEntry{
+    0x48, 0x83, 0xEC, 0x28, 0x48, 0x8B, 0x01, 0xC6, 0x40, 0x38, 0x01, 0x80, 0x79, 0x08, 0x00, 0x74};
+inline constexpr platform::FunctionFact kPoleFinish{
+    L"FieldActionPoleSliderState_ExtraAction_OnFinish_SetDone_Flavor18LeaveIfWasLeader_AnimSide", 0x141093CD0, kPoleFinishEntry};
+inline constexpr std::size_t   kPoleFinishFirst     = 7;
+inline constexpr std::uint32_t kPoleFinishWasLeader = 8;
+/// The rope/pole camera (flavor 18) leave (void(flavor)): nothing if the current phase (+0x4E0, an entry whose first int is
+/// its kind) is past kind 1, else the pending phase (+0x4E8) becomes the way out.
+inline constexpr std::uint8_t kFlavorRope = 18;
+inline constexpr std::array<std::uint8_t, 16> kRopeFlavorLeaveEntry{
+    0x48, 0x8B, 0x81, 0xE0, 0x04, 0x00, 0x00, 0x4C, 0x8B, 0xC1, 0x48, 0x85, 0xC0, 0x74, 0x09, 0x83};
+inline constexpr platform::FunctionFact kRopeFlavorLeave{L"FEndCameraFlavor18Rope_BeginLeave_ASSUMED", 0x1410BBDF0, kRopeFlavorLeaveEntry};
+inline constexpr std::uint32_t kRopePhaseCurrent = 0x4E0, kRopePhasePending = 0x4E8;
+/// The wire-fence climb's state (§5): its Start (camera flavor 20 for the leader type; for the party leader the doorway
+/// markers and the actor's "the party leader is on this mesh" byte, +0x4D0, which AI members follow) and Exit (the end
+/// signals through a direct call, 0x141084516, fits its block; for the party leader the markers cleared and +0x4D0
+/// cleared; the stored camera eased out). The state's actor is its weak pair at +0x120.
+inline constexpr std::uintptr_t kWireFenceStartSlot = 0x144BB6EC0, kWireFenceExitSlot = 0x144BB6EC8;
+inline constexpr std::array<std::uint8_t, 16> kWireFenceStartEntry{
+    0x4C, 0x8B, 0xDC, 0x55, 0x56, 0x57, 0x48, 0x8D, 0x6C, 0x24, 0x90, 0x48, 0x81, 0xEC, 0x70, 0x01};
+inline constexpr platform::FunctionFact kWireFenceStart{L"FieldActionWireMeshMoveState_Start_Flavor20IfLeaderType_Set4D0IfPMLeader",
+                                                        0x141083480, kWireFenceStartEntry};
+inline constexpr std::array<std::uint8_t, 16> kWireFenceExitEntry{
+    0x4C, 0x8B, 0xDC, 0x55, 0x57, 0x41, 0x55, 0x49, 0x8D, 0xAB, 0xF8, 0xFE, 0xFF, 0xFF, 0x48, 0x81};
+inline constexpr platform::FunctionFact kWireFenceExit{L"FieldActionWireMeshMoveState_Exit_Clear4D0IfPMLeader_Flavor20Leave",
+                                                       0x1410841B0, kWireFenceExitEntry};
+inline constexpr std::uintptr_t kWireFenceEndSignalsCall = 0x141084516;  // E8 95 98 E6 FF
+/// The fence Start's first call, the base start, ends by tail-jumping the state's vt+0x60, which for this state is the
+/// leader-typed OnOff 25 (FieldActionState_vt60_OnOff25IfLeader 0x141026AA0; the Exit's vt+0x68 releases it by the
+/// state's own flag +0x54): a global switch, so it runs under the pause in a resumed Start.
+inline constexpr std::uintptr_t kWireFenceBaseStartCall = 0x1410834BA;  // E8 D1 2A FA FF
+inline constexpr std::uintptr_t kStateBaseStart = 0x141025F90;  // FieldActionState_BaseStart_ASSUMED, void(state)
+inline constexpr std::uintptr_t kEndSignals = 0x140EEDDB0;  // FieldActionBase_SendEndStateTriggers_LeaderType_ASSUMED
+inline constexpr std::uint32_t  kStateActorWeak = 0x120, kWireFenceLeaderOn = 0x4D0;
 inline constexpr std::uint32_t kOperatorPoseYaw = 0x42C;  // the operator's pose rotation (+0x428) yaw, phase 1's start
 /// A scene component's world transform rotation (FQuat x, y, z, w; the duct update reads the owner's root here as the
 /// anchor its hold fades to).
