@@ -48,13 +48,20 @@ VTableEntry::~VTableEntry()
 bool VTableEntry::Replace(std::uintptr_t entryAddress, std::uintptr_t expected, std::uintptr_t replacement) noexcept
 {
     const bool aligned = entryAddress % sizeof(void*) == 0;  // the atomic store requires it
-    if (entry_ != 0 || !aligned || !PinThisModule() || !SwapPointer(entryAddress, expected, replacement))
+    if (entry_ != 0 || !aligned || !PinThisModule())
     {
         return false;
     }
-    entry_       = entryAddress;
+    // Set before the swap: another thread may call the replacement the moment the slot holds it, and it calls Original()
+    // (the swap's interlocked store orders these writes before it).
     original_    = expected;
     replacement_ = replacement;
+    if (!SwapPointer(entryAddress, expected, replacement))
+    {
+        original_ = replacement_ = 0;
+        return false;
+    }
+    entry_ = entryAddress;
     return true;
 }
 

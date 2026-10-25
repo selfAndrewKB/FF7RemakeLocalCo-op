@@ -1999,18 +1999,44 @@ inline constexpr platform::FunctionFact kSlideDownPostTick{L"FieldActionSlideDow
 inline constexpr std::uint32_t kStateComponent = 0x30;  // a field-action state: its component
 /// The balance beam's end delegate (animation side, void(capture* = {state}, char reached)): it leaves camera flavor 20
 /// only if the operator it reads unscoped (player 1's) holds the flavor the start stored at state+0x178, and clears that
-/// store either way, so the state's exit (component tick: in the seat's scopes, the game's eased leave) finds nothing to
-/// leave for a seat's member (research/RE-traversal-spline-two.md). First instruction: mov [rsp+20h], rsi.
+/// store either way, so the state's exit (inside the action start, on the seat's operator; it has no leader test: the
+/// game's eased leave) finds nothing to leave for a seat's member (research/RE-traversal-spline-two.md). First
+/// instruction: mov [rsp+20h], rsi.
 inline constexpr std::array<std::uint8_t, 16> kBalanceEndDelegateEntry{
     0x48, 0x89, 0x74, 0x24, 0x20, 0x55, 0x48, 0x8D, 0x6C, 0x24, 0xA9, 0x48, 0x81, 0xEC, 0xB0, 0x00};
 inline constexpr platform::FunctionFact kBalanceEndDelegate{L"FieldActionBalanceMoveState_EndDelegate_Flavor20Leave", 0x141024570,
                                                             kBalanceEndDelegateEntry};
 inline constexpr std::size_t   kBalanceEndDelegateFirst = 5;
 inline constexpr std::uint32_t kBalanceStoredFlavor     = 0x178;
-/// Camera flavor 20 (customizable): its current phase entry (+0x468; the entries at +0x458, 56 bytes each, the first
-/// dword the phase's kind). The beam's exit leaves it by pointing it at the entry of kind 2 (the way out).
+/// Camera flavor 20 (customizable): its current phase entry (+0x468, a pointer into the phase array: data +0x458, count
+/// +0x450, 56 bytes each, the first dword the phase's kind). The beam's and the monkey bars' exits leave it by pointing it
+/// at the entry of kind 2 (the way out).
 inline constexpr std::uint32_t kFlavorCurrentPhase = 0x468;
 inline constexpr std::uint32_t kFlavorPhaseLeaving = 2;
+/// The monkey bars' Start and Exit and the balance beam's Start (state vtable +0x08 / +0x10, void(state); the callers
+/// discard the return). The action start calls them inside it (0x140FF0278 the new state's Start, 0x140FEFECD the old
+/// state's Exit), where the mod holds player 1's leader for a seat's member (research/RE-traversal-deferred-two.md §5.4).
+/// What in them reads the party leader: camera flavor 20 (the leader type's Start activates it, then the spot's camera by
+/// name, and stores it at state+0x178; the monkey bars' Exit eases the stored one out; the beam's Exit has no leader
+/// test); the monkey bars' in-use markers (actor vt+0x660, aimed from the leader's position; the beam's is the base
+/// in-use count); and the base exit's end signals (FieldActionState_BaseExit -> SendEndStateTriggers, the leader set or
+/// the member's by PM+0x233), called first in the monkey bars' Exit at 0x141056D22 (fits its block). The base start
+/// reads no leader, and both states' vt+0x60/+0x68 are the shared no-op (no OnOff 25).
+inline constexpr std::uintptr_t kMonkeyBarsStartSlot = 0x144BB7550, kMonkeyBarsExitSlot = 0x144BB7558, kBalanceStartSlot = 0x144BB6B20;
+inline constexpr std::array<std::uint8_t, 16> kMonkeyBarsStartEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x10, 0x57, 0x48, 0x83, 0xEC, 0x20, 0x48, 0x8B, 0xF9, 0xE8, 0x1E, 0xF5};
+inline constexpr platform::FunctionFact kMonkeyBarsStart{L"FieldActionMonkeyBarsState_Start_Flavor20IfLeader", 0x141056A60,
+                                                         kMonkeyBarsStartEntry};
+inline constexpr std::array<std::uint8_t, 16> kMonkeyBarsExitEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x10, 0x48, 0x89, 0x74, 0x24, 0x18, 0x57, 0x48, 0x83, 0xEC, 0x60, 0x48};
+inline constexpr platform::FunctionFact kMonkeyBarsExit{L"FieldActionMonkeyBarsState_Exit_Flavor20IfLeader", 0x141056D10,
+                                                        kMonkeyBarsExitEntry};
+inline constexpr std::array<std::uint8_t, 16> kBalanceStartEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x10, 0x48, 0x89, 0x7C, 0x24, 0x18, 0x55, 0x48, 0x8B, 0xEC, 0x48, 0x83};
+inline constexpr platform::FunctionFact kBalanceStart{L"FieldActionBalanceMoveState_Start_Flavor20IfLeaderCustomName", 0x1410211E0,
+                                                      kBalanceStartEntry};
+inline constexpr std::uintptr_t kMonkeyBarsBaseExitCall = 0x141056D22;  // E8 E9 F7 FC FF
+inline constexpr std::uintptr_t kStateBaseExit          = 0x141026510;  // FieldActionState_BaseExit_ASSUMED, void(state)
 /// The action's start and end: for the party leader's component the start turns on OnOff 11/4/1 for everyone (the
 /// field menu, every walk-up start, encounters) until its end. Its first instruction: mov [rsp+10h], rbx.
 inline constexpr std::array<std::uint8_t, 16> kActionStartEndEntry{

@@ -18,6 +18,14 @@
 // then answer for the seat, its input reads the seat's pad, and its camera calls land on the seat's operator.
 // The slide-down's side steer runs in its state's post-tick, which the engine calls outside the component tick (at the
 // top of the walk-up start loop, game thread): for a seat's member that call runs the same way.
+// The action start runs the new state's Start and the old state's Exit inside it, where a seat's member has player 1's
+// leader in place (below), so the leader-gated camera code in them never ran for a seat. The monkey bars' Start and Exit
+// and the balance beam's Start (camera flavor 20, the spot's own camera by name) are replaced in their states' vtables:
+// called by that action start for a seat's member, they run with the seat's leader again for the one call, so the camera
+// switches on and eases out on the seat's operator as player 1's does on his, and the monkey bars' in-use markers aim from
+// the seat's member (their user, as in single player). The monkey bars' Exit's base exit (its end signals: the leader's
+// set or the member's) runs with player 1's leader again, so a seat's action still sends the member's. After a monkey
+// bars or beam action the flavor-20 camera is left to finish its leave, else switched off.
 // The balance beam's end delegate (animation side) tests player 1's camera for the flavor its start stored and clears
 // that store; for a seat's member the mod keeps it out of that test, so the state's exit eases the seat's camera out.
 // The squeeze's and the crawl's near-exit delegates (animation side, signalled by the behaviour partway along) start the
@@ -63,8 +71,10 @@ class GameImage;
 namespace lss::world::traversal_action {
 
 /// Checks every site against the research and places the component-tick redirect, the action start's entry, the
-/// slide-down's post-tick, the balance beam's end delegate and the squeeze's and the crawl's near-exit delegates (logged;
-/// the last four only warn when they fail). False if a check failed: further players' members then take walk-up actions as the game's members do.
+/// slide-down's post-tick, the balance beam's end delegate, the squeeze's and the crawl's near-exit delegates and the
+/// monkey bars' and the beam's Start/Exit slots with the monkey bars' base-exit call (logged; the last six only warn
+/// when they fail). False if a check
+/// failed: further players' members then take walk-up actions as the game's members do.
 bool Install(const platform::GameImage& image) noexcept;
 
 /// Game thread, each engine tick: the seat's member while its player is in (null otherwise).

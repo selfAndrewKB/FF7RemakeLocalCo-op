@@ -50,6 +50,7 @@ using FlavorLeaveFn = void (*)(void* flavor);
 using PostTickFn   = void (*)(void* state, float dt);
 using BalanceEndFn = void (*)(void** capture, char reached);
 using NearExitFn   = void (*)(void** capture, char end);
+using StateCallFn  = void (*)(void* state);
 
 constexpr int           kSeats   = players::scopes::kMaxPlayers;
 constexpr std::uint8_t  kFlavors[] = {facts::kFlavorLadder, facts::kFlavorDuct, facts::kFlavorCustomizable};
@@ -60,6 +61,7 @@ struct SeatState
     void*         component = nullptr;
     std::uint8_t  action    = 0;  // the component's running action at the last tick
     std::uint32_t actions = 0, camerasLeft = 0, camerasOff = 0, locksSkipped = 0;  // left: the game's eased leave
+    std::uint32_t leaderResumed = 0;  // Start/Exit calls run with the seat's leader inside the action start
 };
 
 // Set at install, then only read.
@@ -79,13 +81,17 @@ platform::VTableEntry   g_slideDownPostTick;
 platform::EntryRedirect g_balanceEnd;
 platform::EntryRedirect g_squeezeNearExit;
 platform::CallRedirect  g_crawlNearExit;
+platform::VTableEntry   g_monkeyBarsStart, g_monkeyBarsExit, g_balanceStart;
+platform::CallRedirect  g_monkeyBarsBaseExit;
 
 std::atomic<DWORD> g_gameThread{0};
 std::atomic<int>   g_ticking{0};       // the seat whose member's component the game thread is ticking now
 std::atomic<bool>  g_onGame{false};    // the field-action tick ran on the game thread since the mod moved it
 std::atomic<std::uint32_t> g_workerTicks{0};
 std::array<std::atomic<void*>, kSeats> g_seatComponents{};  // each seat's member's component, for the animation side
-std::array<std::atomic<bool>, kSeats>  g_beamCameraKept{};  // a seat's balance-beam camera kept for its exit's eased leave
+// Written on the game thread, read on any (a state's slot can be called on a worker while the tick is not moved).
+std::atomic<int>   g_pausedSeat{0};    // the seat whose action start runs now with player 1's leader
+std::atomic<int>   g_resumedSeat{0};   // the seat whose Start or Exit runs now with its own leader again
 std::array<std::atomic<std::uint8_t>, kSeats> g_ductNearEnd{};  // the action (squeeze, crawl) whose near-exit call ran for a seat's member
 std::atomic<std::int64_t>  g_workerTime{0};  // performance-counter ticks spent inside component ticks on workers
 
@@ -249,7 +255,8 @@ int SeatOfComponentAnyThread(const void* component) noexcept
 }
 
 /// The balance beam's end delegate (animation side): for a seat's member, its stored camera is kept out of the
-/// delegate's test of player 1's camera, so the state's exit, in the seat's scopes, eases the seat's camera out.
+/// delegate's test of player 1's camera, so the state's exit (inside the action start, on the seat's operator; it has no
+/// leader test) eases the seat's camera out.
 void BalanceEnd(void** capture, char reached)
 {
     const auto original = reinterpret_cast<BalanceEndFn>(g_balanceEnd.Original());
@@ -264,9 +271,10 @@ void BalanceEnd(void** capture, char reached)
     void* none = nullptr;
     const bool hidden = platform::WriteGuarded(state + facts::kBalanceStoredFlavor, &none, sizeof(none));
     original(capture, reached);
-    if (hidden && platform::WriteGuarded(state + facts::kBalanceStoredFlavor, &stored, sizeof(stored)))
+    if (hidden && !platform::WriteGuarded(state + facts::kBalanceStoredFlavor, &stored, sizeof(stored)))
     {
-        g_beamCameraKept[seat].store(true, std::memory_order_relaxed);
+        platform::LogDebug(L"traversal: {}'s beam camera could not be kept for its exit; it is switched off after the beam",
+                           players::SeatName(seat));
     }
 }
 
@@ -316,16 +324,84 @@ int TickingSeatOf(const void* component) noexcept
     return seat != 0 && OnGameThreadNow() && component == g_seats[seat].component ? seat : 0;
 }
 
+/// A seat number held in one of the markers above for one call, the outer value put back after (nesting).
+class SeatMark
+{
+public:
+    SeatMark(std::atomic<int>& mark, int seat) noexcept : mark_(mark), outer_(mark.exchange(seat, std::memory_order_relaxed)) {}
+    ~SeatMark() { mark_.store(outer_, std::memory_order_relaxed); }
+    SeatMark(const SeatMark&)            = delete;
+    SeatMark& operator=(const SeatMark&) = delete;
+
+private:
+    std::atomic<int>& mark_;
+    int               outer_;
+};
+
 void StartEnd(void* component, char start, char end)
 {
     const auto original = reinterpret_cast<StartEndFn>(g_startEnd.Original());
     if (const int seat = TickingSeatOf(component))
     {
         const players::scopes::LeaderPause pause(seat);  // player 1's leader: the seat's action takes no global switch
+        const SeatMark                     paused(g_pausedSeat, pause.Paused() ? seat : 0);
         original(component, start, end);
         return;
     }
     original(component, start, end);
+}
+
+/// A state's own Start or Exit (`slot` holds the game's). Called by the action start for a seat's member, while the mod
+/// holds player 1's leader there, it runs with the seat's leader again for this one call: its camera code (the leader
+/// type's) then answers for the seat, on the seat's operator. Any other call is the game's.
+void WithSeatLeader(const platform::VTableEntry& slot, void* state, const wchar_t* what)
+{
+    const auto original = reinterpret_cast<StateCallFn>(slot.Original());
+    const int  seat     = g_pausedSeat.load(std::memory_order_relaxed);
+    if (seat == 0 || !OnGameThreadNow() || ReadPointer(state, facts::kStateComponent) != g_seats[seat].component)
+    {
+        original(state);
+        return;
+    }
+    const players::scopes::Scope leader(seat, players::scopes::Leader);
+    if (!leader.Held())
+    {
+        original(state);  // player 1's leader, as before: no camera for the seat
+        return;
+    }
+    ++g_seats[seat].leaderResumed;
+    platform::LogDebug(L"traversal: {}'s {} runs with its own member as the leader (its camera)", players::SeatName(seat), what);
+    const SeatMark resumed(g_resumedSeat, seat);
+    original(state);
+}
+
+/// The monkey bars' Exit's first call, the base exit: its end signals choose the leader's set or the member's by the
+/// leader type, so inside a resumed Exit it runs with player 1's leader again, as every seat's action end does
+/// (a level script listening for the leader's end stays player 1's).
+void MonkeyBarsBaseExit(void* state)
+{
+    const auto original = reinterpret_cast<StateCallFn>(g_monkeyBarsBaseExit.Original());
+    const int  seat     = g_resumedSeat.load(std::memory_order_relaxed);
+    if (seat == 0 || !OnGameThreadNow() || ReadPointer(state, facts::kStateComponent) != g_seats[seat].component)
+    {
+        original(state);
+        return;
+    }
+    const players::scopes::LeaderPause pause(seat);
+    original(state);
+}
+
+void MonkeyBarsStart(void* state) { WithSeatLeader(g_monkeyBarsStart, state, L"monkey-bars start"); }
+void MonkeyBarsExit(void* state) { WithSeatLeader(g_monkeyBarsExit, state, L"monkey-bars exit"); }
+void BalanceStart(void* state) { WithSeatLeader(g_balanceStart, state, L"balance-beam start"); }
+
+/// Points a state's vtable slot at `thunk` if it holds the function the research read. False (nothing changed) otherwise.
+bool ReplaceStateSlot(const platform::GameImage& image, std::uintptr_t slotFact, const platform::FunctionFact& target,
+                      platform::VTableEntry& entry, StateCallFn thunk) noexcept
+{
+    const auto slot = image.Rebase(slotFact, 8);
+    const auto fn   = platform::FindFunction(image, target);
+    return slot && fn && entry.Replace(*slot, *fn, reinterpret_cast<std::uintptr_t>(thunk));
 }
 
 /// A crawl's or squeeze's lock call: skipped while a seat's member's component ticks (game thread).
@@ -452,8 +528,7 @@ void DuctLeaveNearEnd(int seat, std::uint8_t action) noexcept
 /// After a seat's action ends: the camera flavors its exit left on the seat's operator, switched off by the game.
 void CamerasOffAfter(int seat, std::uint8_t ended) noexcept
 {
-    void*      op       = players::player_two_camera::Operator(seat);
-    const bool beamKept = g_beamCameraKept[seat].exchange(false, std::memory_order_relaxed) && ended == facts::kFieldActionBalance;
+    void* op = players::player_two_camera::Operator(seat);
     if (op == nullptr || g_deactivate == nullptr)
     {
         return;
@@ -466,10 +541,19 @@ void CamerasOffAfter(int seat, std::uint8_t ended) noexcept
         {
             continue;
         }
-        if (id == facts::kFlavorCustomizable && beamKept && Leaving(flavor))
+        if (id == facts::kFlavorCustomizable)
         {
-            platform::LogDebug(L"traversal: {}'s balance-beam camera eases out by the game's own exit", players::SeatName(seat));
-            continue;
+            if (ended != facts::kFieldActionMonkeyBars && ended != facts::kFieldActionBalance)
+            {
+                continue;  // not this action's (a script's or a scene's camera on the seat's operator)
+            }
+            if (Leaving(flavor))
+            {
+                // Already leaving (usually the state's own exit started it): the game finishes it.
+                platform::LogDebug(L"traversal: {}'s {} camera eases out by the game's own exit", players::SeatName(seat),
+                                   ActionName(ended));
+                continue;
+            }
         }
         if (id == facts::kFlavorDuct && g_ductLeave != nullptr)
         {
@@ -733,9 +817,10 @@ std::wstring Report()
     for (int seat = 1; seat <= players::kSeatsBuilt; ++seat)
     {
         const SeatState& s = g_seats[seat];
-        out += std::format(L"; {}: {} now, {} action(s), {} camera(s) eased out, {} switched off, {} lock(s) skipped",
-                           players::SeatName(seat), s.action == 0 ? L"no action" : ActionName(s.action), s.actions, s.camerasLeft,
-                           s.camerasOff, s.locksSkipped);
+        out += std::format(L"; {}: {} now, {} action(s), {} start/exit call(s) with its own leader, {} camera(s) eased out, {} switched off, "
+                           L"{} lock(s) skipped",
+                           players::SeatName(seat), s.action == 0 ? L"no action" : ActionName(s.action), s.actions, s.leaderResumed,
+                           s.camerasLeft, s.camerasOff, s.locksSkipped);
     }
     return out;
 }
@@ -822,6 +907,24 @@ bool Install(const platform::GameImage& image) noexcept
         platform::LogWarning(L"traversal: the slide-down's steer is not as the research read it; a further player's slide-down "
                              L"steers by player 1's stick");
     }
+    // The monkey bars go in together: a Start without its Exit would leave the camera to a plain switch-off, an Exit
+    // without its base-exit call would send the leader's end signals for a seat.
+    const auto baseExitCall = image.Rebase(facts::kMonkeyBarsBaseExitCall, 5);
+    const auto baseExit     = image.Rebase(facts::kStateBaseExit);
+    if (!baseExitCall || !baseExit || !g_monkeyBarsBaseExit.Install(*baseExitCall, *baseExit, reinterpret_cast<std::uintptr_t>(&MonkeyBarsBaseExit)) ||
+        !ReplaceStateSlot(image, facts::kMonkeyBarsStartSlot, facts::kMonkeyBarsStart, g_monkeyBarsStart, &MonkeyBarsStart) ||
+        !ReplaceStateSlot(image, facts::kMonkeyBarsExitSlot, facts::kMonkeyBarsExit, g_monkeyBarsExit, &MonkeyBarsExit))
+    {
+        const bool startBack = g_monkeyBarsStart.Restore();
+        const bool back      = g_monkeyBarsBaseExit.Restore() && startBack;
+        platform::LogWarning(L"traversal: the monkey bars' start or exit is not as the research read it; a further player on monkey "
+                             L"bars keeps the follow camera{}", back ? L"" : L" (a slot could not be put back; it passes through)");
+    }
+    if (!ReplaceStateSlot(image, facts::kBalanceStartSlot, facts::kBalanceStart, g_balanceStart, &BalanceStart))
+    {
+        platform::LogWarning(L"traversal: the balance beam's start is not as the research read it; a further player on a beam keeps "
+                             L"the follow camera");
+    }
     g_installed = true;
     control::Register({.name  = L"traversal.action",
                        .shape = control::Shape::Text,
@@ -863,10 +966,6 @@ void TickSeat(int seat, void* member) noexcept
             CamerasOffAfter(seat, state.action);
         }
     }
-    if (action != 0 || member == nullptr)
-    {
-        g_beamCameraKept[seat].store(false, std::memory_order_relaxed);  // only the beam that ends may keep it
-    }
     if (action != 0)
     {
         ++state.actions;
@@ -896,13 +995,16 @@ void Remove() noexcept
 {
     // The four lock calls stay redirected (see the header): with the component tick restored no seat's component ticks
     // scoped again, so they pass straight through.
+    g_balanceStart.Restore();
+    g_monkeyBarsExit.Restore();
+    g_monkeyBarsStart.Restore();
+    g_monkeyBarsBaseExit.Restore();
     g_slideDownPostTick.Restore();
     g_crawlNearExit.Restore();
     g_squeezeNearExit.Restore();
     for (int seat = 0; seat < kSeats; ++seat)
     {
         g_ductNearEnd[seat].store(0, std::memory_order_relaxed);
-        g_beamCameraKept[seat].store(false, std::memory_order_relaxed);
     }
     g_balanceEnd.Restore();
     g_compTick.Restore();
