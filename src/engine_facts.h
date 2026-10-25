@@ -391,6 +391,24 @@ inline constexpr std::uint32_t kFamilyViews     = 0x00;
 inline constexpr std::uint32_t kFamilyViewCount = 0x08;
 /// FSceneView::State (FSceneViewStateInterface*); the renderer's FViewInfo copies it in place.
 inline constexpr std::uint32_t kViewState = 0x08;
+/// The area controllers' time blend (research/RE-indoor-light-two.md): FSceneViewFamily::Scene (+0x30), whose vtable
+/// +0x2D0 answers the world; the world's rendering settings controllers (TArray at +0x8E8, count +0x8F0), each a
+/// URenderingSettingsControllerComponent: BlendType +0x2C1 (3 TimeInBox, 4 TimeInSphere fade over BlendTime +0x2C8),
+/// then unreflected: the pending time its tick adds (+0x2D4), the timer (+0x2D8), the weight (+0x2DC), the snap byte
+/// (+0x2E4). FSceneView__StartFinalPostprocessSettings_SE_RSCBlend (0x14320FBD0, the call shadows_per_view redirects)
+/// moves the timer by the pending time and zeroes it and the snap, per view.
+inline constexpr std::uint32_t kFamilyScene         = 0x30;
+inline constexpr std::uint32_t kSceneGetWorldSlot   = 0x2D0;
+inline constexpr std::uint32_t kWorldAreaControllers     = 0x8E8;
+inline constexpr std::uint32_t kWorldAreaControllerCount = 0x8F0;
+inline constexpr std::uint32_t kRscBlendType = 0x2C1;
+inline constexpr std::uint32_t kRscBlendTime = 0x2C8;
+inline constexpr std::uint32_t kRscPending   = 0x2D4;  // pending, timer and weight are written for every blend type
+inline constexpr std::uint32_t kRscTimer     = 0x2D8;
+inline constexpr std::uint32_t kRscWeight    = 0x2DC;
+inline constexpr std::uint32_t kRscSnap      = 0x2E4;
+inline constexpr std::uint8_t  kRscTimeInBox    = 3;
+inline constexpr std::uint8_t  kRscTimeInSphere = 4;
 /// FSceneViewFamily +0x70 (Square Enix): nonzero skips the scene's frame-number step in BeginRenderingViewFamily (the
 /// gate `0x1425C9A88`), the same offset as Rebirth. +0x74 is the FrameNumber the submit writes; this build has no
 /// bAdditionalViewFamily (RE-haze-occlusion.md Pass 9 H.3.2).

@@ -85,6 +85,7 @@
 #include "world/npc_detail.h"
 #include "world/npc_senses.h"
 #include "world/forced_walk.h"
+#include "render/area_blend.h"
 #include "world/overlap_fade.h"
 #include "world/party_fade.h"
 #include "world/field_targets.h"
@@ -106,7 +107,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.90.0-forced-walk";
+constexpr const wchar_t* kVersion = L"0.91.0-area-blend";
 static_assert(lss::views::column_rules::kMaxColumns == lss::hud::overlay_pass::kMaxColumns, "the columns the views and the HUD count");  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
@@ -345,6 +346,7 @@ public:
         // Optional: without it a distortion crossing the split line streaks over the other half.
         lss::render::distortion_apply::Install(*image);
         lss::render::shadows_per_view::Install(*image);  // optional: without it one camera decides some shadows for every view
+        lss::render::area_blend::Install(*image);        // its site is the shadows' call: without it every view takes player 1's area fades
         lss::render::ssr_origin::Install(*image);  // optional: without it a view's reflections read the next column's surfaces
         lss::render::sun_cascades::Install(*image);  // optional: without it each view takes every view's sun cascades
         lss::render::lighting_volume::Install(*image);  // optional: the volume-box test only
@@ -483,6 +485,7 @@ private:
         lss::views::split_scale::Tick(lss::views::letterbox_patch::Applied());
         MapColumns();  // after every join, leave and mirror change of this tick: the HUD and this frame's passes read it
         lss::players::split_render::Tick(session_.Count() + lss::views::mirror_player::Count() > 0);
+        lss::render::area_blend::Tick(session_.Count() + lss::views::mirror_player::Count() > 0);  // before this frame's views
         lss::views::scene_camera_two::SeatManagers seatManagers{};
         for (int seat = 1; seat <= lss::players::kSeatsBuilt; ++seat)
         {
