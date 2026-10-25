@@ -22,6 +22,7 @@
 #include "platform/verified_code.h"
 #include "platform/vtable_entry.h"
 #include "players/seats.h"
+#include "world/target_icons.h"
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -156,7 +157,7 @@ bool RenderFurther(void* overlay, int column) noexcept
     const double deltaTime = *g_deltaTime;
     Fade         fade;
     platform::CopyGuarded(&fade, static_cast<const std::uint8_t*>(overlay) + facts::kOverlayFade, sizeof(fade));
-    pass_hide::BeginFurtherPass();
+    pass_hide::BeginFurtherPass(overlay_pass::SeatOf(column));
     battle::command_menu_two::BeginPass(column);
     battle::target_cursor_two::BeginPass(column);
     *g_deltaTime = 0.0;
@@ -194,7 +195,7 @@ bool RenderFurther(void* overlay, int column) noexcept
     }
     battle::target_cursor_two::EndPass();
     battle::command_menu_two::EndPass();
-    pass_hide::EndFurtherPass();
+    pass_hide::EndPass();
     return ok;
 }
 
@@ -231,6 +232,7 @@ void Driver(void* delegate)
                 marker_replay::Replay(column, g_columns.localPlayer[column], g_columns.controller[column]);
                 field_icons::Replay(column, g_columns.controller[column], g_columns.member[column]);
                 outside_icons::RunForColumn(column, g_columns.controller[column]);
+                world::target_icons::PlaceForPass();  // each player's target icons through its own view into this one
             }
             if (!RenderFurther(overlay, column))
             {
@@ -243,10 +245,18 @@ void Driver(void* delegate)
             marker_replay::Replay(0, g_columns.localPlayer[0], g_columns.controller[0]);
             field_icons::Replay(0, g_columns.controller[0], nullptr);
             outside_icons::RestorePlayerOne();
+            world::target_icons::PlaceForPass();
         }
     }
     const double middle = NowMs();
     const int    own    = further ? 0 : overlay_pass::kSingle;
+    // The hides read the game thread's widget list; the overlay renders there in practice (an off-thread render would
+    // show the seats' icons once in player 1's view).
+    const bool   onGame = GetCurrentThreadId() == g_gameThread;
+    if (onGame)
+    {
+        pass_hide::BeginOwnPass();  // the seats' target icons are not player 1's (nor the single render's)
+    }
     overlay_pass::Set(own);
     minimap_two::BeginPass(own);
     battle::command_menu_two::BeginPass(own);
@@ -255,6 +265,10 @@ void Driver(void* delegate)
     battle::target_cursor_two::EndPass();
     battle::command_menu_two::EndPass();
     minimap_two::EndPass();
+    if (onGame)
+    {
+        pass_hide::EndPass();
+    }
     overlay_pass::Set(overlay_pass::kSingle);
     minimap_two::EndFrame();  // pool 0's slot, if player 1's map did not take it
     if (GetCurrentThreadId() == g_gameThread)  // the replays' records are the game thread's

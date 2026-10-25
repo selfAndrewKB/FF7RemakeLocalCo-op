@@ -15,8 +15,9 @@
 //     three bytes the game writes (held, pressed, the latch cleared on release): the one rule restated here.
 //   - Only chests and ground items (an ObjectTreasure row), doors (Door_, HeavyDoor_) and the member's own swing
 //     (TarzanJump_ and its tag) are pressed, the last two while the member's field actions run as the player's
-//     (world/traversal_action.h). Talk and events stay player 1's: the player's prompt row is turned off whenever the
-//     game shows one of those there.
+//     (world/traversal_action.h). Talk, events and object events stay player 1's: for the player's pick every other
+//     active target is marked disabled (the entry's own byte, the pick's rejection test; put back after, unless the
+//     run applied the game's own pending write to it), so the game gives the player neither an icon nor a prompt for them.
 //   - The press only queues the chest's open; the opener is taken a step later, when the open begins, as the party leader
 //     at that moment. The chests a further player's press queued are noted, and that open's Begin runs in the player's
 //     Leader scope, so the player's member opens it with the game's own animation (otherwise player 1's would walk over).
@@ -24,12 +25,11 @@
 //     further player's pick it answers with that player's.
 // The open itself takes the game's field lock, which hands the party leader to its AI and holds every player for the
 // open, as an opener is held in single player; the session hands the seats' members with it (players/session.h).
-// The target icons stay player 1's: one widget per target, drawn in player 1's half only, so a further player's pick
-// writes none (its icon state setter, its two direct state calls and its hold gauge pass while that pick runs) and never
-// reaches the far-icon sweep (its copy's timer starts each run at zero). A further player's feedback is the prompt in
-// their own command menu. Still shared, last run wins: the swing ropes' enter and exit switches.
+// The target icons are each player's own (world/target_icons.h): the player's widgets are exchanged in around its pick
+// and press, so the game makes, updates and sweeps them, and each view shows only its player's. Still shared, last run
+// wins: the swing ropes' enter and exit switches.
 // Logged: Info at install and placement; Debug per target change of a further player, per press, per chest noted and per
-// open begun as a further player's; the `field.targets` reading (with the icon writes left out).
+// open begun as a further player's; the `field.targets` reading (with each player's icon counts).
 
 #include <string>
 
@@ -40,7 +40,7 @@ class GameImage;
 namespace lss::world::field_targets {
 
 /// Checks the research's sites and functions, redirects the press call and the open's Begin. The redirects inside the
-/// pick (three of its calls cross a block) are placed on the game thread by Tick. False (logged) if a check failed:
+/// pick (two of them cross a block) are placed on the game thread by Tick. False (logged) if a check failed:
 /// further players then have no prompts or presses of their own.
 bool Install(const platform::GameImage& image) noexcept;
 

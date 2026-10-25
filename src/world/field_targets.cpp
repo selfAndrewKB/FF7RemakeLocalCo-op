@@ -13,12 +13,14 @@
 #include "players/pad_buttons.h"
 #include "players/scopes.h"
 #include "players/seats.h"
+#include "world/target_icons.h"
 #include "world/traversal_action.h"
 
 #include <Unreal/NameTypes.hpp>
 
 #include <algorithm>
 #include <array>
+#include <bitset>
 #include <cstdint>
 #include <cstring>
 #include <cwctype>
@@ -41,11 +43,9 @@ using KeyTestFn    = bool (*)(void* key);
 using FindRowFn    = void* (*)(const void* tables, std::uint64_t name);
 using StartsWithFn = bool (*)(const std::uint64_t* name, const char* prefix);
 using FreeFn       = void (*)(void* block);
-using IconStateFn  = void (*)(void* entry, std::uint8_t state);
-using SetStateFn   = void (*)(void* slot, void* widget, std::uint8_t state);  // as both pick sites call it (result unused)
-using HoldGaugeFn  = void (*)(void* slot, void* widget, float ratio);
 
 constexpr int         kSeats   = players::scopes::kMaxPlayers;
+constexpr std::size_t kItems   = facts::kTargetsItems;
 constexpr std::size_t kPending = 16;  // chests a further player's press queued that have not begun yet
 
 /// What a target is, by the dispatch's own order (research/RE-chest-two.md §8.1): only chests, ground items, doors and
@@ -92,11 +92,13 @@ struct SeatState
     void*                                     member      = nullptr;
     platform::ByteContext                     copy;           // the four ranges at `copyOf`
     void*                                     copyOf = nullptr;
-    std::array<std::uint8_t, facts::kTargetsItems> wasCurrent{};  // each pool entry's "was the current target" byte
+    std::array<std::uint8_t, kItems>          wasCurrent{};  // each pool entry's "was the current target" byte
     std::uint64_t                             target = 0, state = 0;  // the copy's current target when last classified
     Kind                                      kind   = Kind::None;
-    std::uint32_t picks = 0, changes = 0, rowsOff = 0, presses = 0, chests = 0, opens = 0, screens = 0;
-    bool          rowOffLogged = false;  // the first turn-off for this target logged
+    std::array<std::uint64_t, kItems>         itemName{}, itemState{};  // each pool item as last classified for this seat
+    std::array<Kind, kItems>                  itemKind{};
+    std::uint32_t picks = 0, changes = 0, presses = 0, chests = 0, opens = 0, screens = 0;
+    std::uint32_t leftToPlayerOne = 0;  // targets the last pick left to player 1 (marked disabled for the seat)
 };
 
 struct Pending
@@ -115,11 +117,8 @@ FindRowFn    g_findRow    = nullptr;
 StartsWithFn g_startsWith = nullptr;
 FreeFn       g_free       = nullptr;
 std::uintptr_t g_pickSite = 0, g_pickTarget = 0, g_screenSite = 0, g_screenTarget = 0;
-std::uintptr_t g_iconState = 0, g_setState = 0, g_holdGauge = 0, g_iconOffSite = 0, g_iconOldSite = 0, g_gaugeSite = 0;
 
-platform::CallRedirect  g_pick, g_press, g_screen, g_iconOff, g_iconOld, g_gauge;
-platform::EntryRedirect g_icons;
-std::uint32_t           g_iconsKept = 0;  // icon writes of a further player's pick left out
+platform::CallRedirect g_pick, g_press, g_screen;
 platform::VTableEntry  g_begin;
 bool                   g_installed = false;
 bool                   g_placed    = false;  // the redirects inside the pick tried (on the game thread)
@@ -130,8 +129,9 @@ std::array<SeatState, kSeats> g_seats{};
 std::array<Pending, kPending> g_pending{};
 int                           g_pickSeat = 0;  // the seat whose pick runs now (the screen test answers with its player)
 std::uint32_t                 g_playerOneOpens = 0;
+bool                          g_pressSkipLogged = false;
 
-constexpr std::size_t kRangeVisited = 0, kRangeSweep = 3;  // the copy's ranges (FreshCopy's order)
+constexpr std::size_t kRangeVisited = 0;  // the copy's ranges (FreshCopy's order)
 
 void NameText(std::int64_t bits, std::wstring* out) noexcept
 try
@@ -216,6 +216,9 @@ void DropCopy(SeatState& state) noexcept
     state.wasCurrent.fill(0);
     state.target = state.state = 0;
     state.kind   = Kind::None;
+    state.itemName.fill(0);  // classified again (a swing is the member's own)
+    state.itemState.fill(0);
+    state.itemKind.fill(Kind::None);
 }
 
 /// A fresh copy at `mgr`, as the game's ctor leaves the state: all zero, the map's first free index -1.
@@ -340,53 +343,109 @@ void NoteTarget(int seat, SeatState& state) noexcept
     state.state  = named;
     state.kind   = Classify(name, named, state.member);
     ++state.changes;
-    state.rowOffLogged = false;
     if (platform::Enabled(platform::Level::Debug))
     {
-        platform::LogDebug(L"field targets: {}'s target: {} ({}{})", SeatName(seat), Name(name), KindName(state.kind),
-                           name == 0 || Admitted(state.kind) ? L"" : L"; player 1's to press, the prompt stays off");
+        platform::LogDebug(L"field targets: {}'s target: {} ({})", SeatName(seat), Name(name), KindName(state.kind));
     }
 }
 
-/// The seat's prompt row stays off for a target only player 1 presses: turned off whenever the game shows it (the pick
-/// shows it once per new prompt text; a show every frame would log one line per target and count each turn-off).
-void KeepRowOff(int seat, SeatState& state) noexcept
+/// For one run of the seat's pick: every active target the seat may not press is marked disabled (entry +0x94, the
+/// pick's own rejection test), so the game gives the seat neither an icon nor a prompt for it (talk, events, object
+/// events stay player 1's); put back after. Targets are classified once per name and state.
+class LeftToPlayerOne
 {
-    if (state.target == 0 || Admitted(state.kind))
+public:
+    LeftToPlayerOne(SeatState& state, std::uint8_t* mgr) noexcept : mgr_(mgr)
     {
-        return;
-    }
-    auto*        controller = static_cast<std::uint8_t*>(players::scopes::CommandController(seat));
-    std::uint8_t shown      = 0;
-    if (controller != nullptr && Read(controller + facts::kCommandPromptShown, shown) && shown != 0)
-    {
-        const std::uint8_t off = 0, dirty = 1;
-        platform::WriteGuarded(controller + facts::kCommandPromptShown, &off, 1);
-        platform::WriteGuarded(controller + facts::kCommandPromptDirty, &dirty, 1);
-        ++state.rowsOff;
-        if (!state.rowOffLogged)
+        std::bitset<kItems> active;
+        if (!target_icons::ActiveItems(mgr, active))
         {
-            state.rowOffLogged = true;
-            platform::LogDebug(L"field targets: {}'s prompt turned off for a target player 1 presses", SeatName(seat));
+            return;  // a list read mid-change: this run marks nothing (its presses still pass the admit test)
+        }
+        for (std::size_t i = 0; i < kItems; ++i)
+        {
+            std::uint8_t* item  = mgr + facts::kTargetsPool + i * facts::kTargetsItemSize;
+            std::uint64_t name  = 0, named = 0;
+            std::uint8_t  off   = 0;
+            if (!active.test(i) || !Read(item + facts::kTargetsItemName, name) || !Read(item + facts::kTargetsItemStateName, named))
+            {
+                continue;
+            }
+            if (name != state.itemName[i] || named != state.itemState[i])
+            {
+                state.itemName[i]  = name;
+                state.itemState[i] = named;
+                state.itemKind[i]  = Classify(name, named, state.member);
+            }
+            constexpr std::uint8_t disabled = 1;
+            if (name == 0 || Admitted(state.itemKind[i]) || !Read(item + facts::kTargetsItemDisabled, off) || off != 0 ||
+                !platform::WriteGuarded(item + facts::kTargetsItemDisabled, &disabled, 1))
+            {
+                continue;
+            }
+            marked_.set(i);
+            names_[i] = name;
+        }
+        // The pick also applies a pending write of one entry's byte (the field-action component's, for the seat's copy's
+        // name): that entry's byte is then the game's, not put back.
+        std::uint64_t pending = 0;
+        pending_     = Read(mgr + facts::kTargetsPendingEnable, pending) && pending != 0;
+        pendingName_ = InCopy<std::uint64_t>(state, facts::kTargetsPendingName);
+        state.leftToPlayerOne = static_cast<std::uint32_t>(marked_.count());
+    }
+
+    ~LeftToPlayerOne()
+    {
+        std::uint64_t pending = 1;
+        const bool    applied = pending_ && Read(mgr_ + facts::kTargetsPendingEnable, pending) && pending == 0;
+        for (std::size_t i = 0; marked_.any() && i < kItems; ++i)
+        {
+            std::uint8_t* item = mgr_ + facts::kTargetsPool + i * facts::kTargetsItemSize;
+            std::uint8_t  off  = 0;
+            if (!marked_.test(i) || (applied && names_[i] == pendingName_) || !Read(item + facts::kTargetsItemDisabled, off) || off != 1)
+            {
+                continue;
+            }
+            constexpr std::uint8_t enabled = 0;
+            platform::WriteGuarded(item + facts::kTargetsItemDisabled, &enabled, 1);
         }
     }
-}
 
-/// The seat can run now: in, with its member, and its copy at this manager (a new manager drops the old copy; the
-/// manager is one object for the game's life, §8.3).
-bool Ready(SeatState& state, void* mgr) noexcept
+    LeftToPlayerOne(const LeftToPlayerOne&)            = delete;
+    LeftToPlayerOne& operator=(const LeftToPlayerOne&) = delete;
+
+private:
+    std::uint8_t*                     mgr_;
+    std::bitset<kItems>               marked_;
+    std::array<std::uint64_t, kItems> names_{};
+    std::uint64_t                     pendingName_ = 0;
+    bool                              pending_     = false;
+};
+
+/// The seat can run now: in, with its member, and its copy at this manager (a new manager drops the old copy and the
+/// seat's icons; the manager is one object for the game's life, §8.3).
+bool Ready(int seat, SeatState& state, void* mgr) noexcept
 {
     if (g_broken || state.member == nullptr || state.localPlayer == nullptr || mgr == nullptr)
     {
         return false;
     }
-    return state.copyOf == mgr || FreshCopy(state, mgr);
+    if (state.copyOf == mgr)
+    {
+        return true;
+    }
+    target_icons::DropSeat(seat);
+    return FreshCopy(state, mgr);
 }
 
 void Break(int seat, const wchar_t* what) noexcept
 {
     g_broken = true;
-    platform::LogWarning(L"field targets: {}'s {} raised an exception; further players' prompts and presses are off from here on",
+    for (int other = 1; other <= players::kSeatsBuilt; ++other)
+    {
+        target_icons::DropSeat(other);
+    }
+    platform::LogWarning(L"field targets: {}'s {} raised an exception; further players' prompts, icons and presses are off from here on",
                          SeatName(seat), what);
 }
 
@@ -394,7 +453,7 @@ void Break(int seat, const wchar_t* what) noexcept
 void PickFor(int seat, void* mgr, float dt, TickFn original) noexcept
 {
     SeatState& state = g_seats[seat];
-    if (!Ready(state, mgr))
+    if (!Ready(seat, state, mgr))
     {
         return;
     }
@@ -405,11 +464,8 @@ void PickFor(int seat, void* mgr, float dt, TickFn original) noexcept
         {
             return;
         }
-        auto* live = static_cast<std::uint8_t*>(mgr);
-        // The far-icon sweep stays player 1's (the icons are its view's): this run's timer starts at zero and reaches the
-        // sweep's 3 s only in a single frame that long (its widget destroy is not left out).
-        std::memset(state.copy.Value(kRangeSweep).data(), 0, state.copy.Value(kRangeSweep).size());
-        constexpr std::size_t all = facts::kTargetsItems;
+        auto*                 live = static_cast<std::uint8_t*>(mgr);
+        constexpr std::size_t all  = kItems;
         if (const std::size_t done = ExchangeWasCurrent(live, state.wasCurrent.data(), all); done != all)
         {
             ExchangeWasCurrent(live, state.wasCurrent.data(), done);  // the ones exchanged back
@@ -417,8 +473,11 @@ void PickFor(int seat, void* mgr, float dt, TickFn original) noexcept
             return;
         }
         {
-            const platform::ByteScope swapped(state.copy);
-            if (swapped.Held())
+            // The seat's own icons (its far-icon sweep, in its copy's timer, meets only those), its targets only.
+            const LeftToPlayerOne        leftOut(state, live);
+            const target_icons::SeatSwap icons(seat, mgr, state.localPlayer, true);
+            const platform::ByteScope    swapped(state.copy);
+            if (swapped.Held() && icons.Held())
             {
                 g_pickSeat = seat;
                 ok         = platform::CallGuarded(original, mgr, dt);
@@ -440,7 +499,6 @@ void PickFor(int seat, void* mgr, float dt, TickFn original) noexcept
     {
         ++state.picks;
         NoteTarget(seat, state);
-        KeepRowOff(seat, state);
     }
 }
 
@@ -512,7 +570,7 @@ void NotePending(int seat, std::uint64_t name) noexcept
 void PressFor(int seat, void* mgr, float dt, TickFn original) noexcept
 {
     SeatState& state = g_seats[seat];
-    if (!Ready(state, mgr))
+    if (!Ready(seat, state, mgr))
     {
         return;
     }
@@ -549,7 +607,19 @@ void PressFor(int seat, void* mgr, float dt, TickFn original) noexcept
             std::uint8_t pushHeld = 0;
             const bool   kept     = push != nullptr && Read(push + facts::kPushButtonsHeld, pushHeld);
             queued                = ChestQueue(queue, before);
-            ok = platform::CallGuarded(original, mgr, dt);
+            {
+                // The seat's icons in: a press's feedback anchors on the pressed target's icon.
+                const target_icons::SeatSwap icons(seat, mgr, state.localPlayer, false);
+                if (icons.Held())
+                {
+                    ok = platform::CallGuarded(original, mgr, dt);
+                }
+                else if (!g_pressSkipLogged)
+                {
+                    g_pressSkipLogged = true;
+                    platform::LogDebug(L"field targets: {}'s press skipped (its icons could not be exchanged in)", SeatName(seat));
+                }
+            }
             if (kept)
             {
                 platform::WriteGuarded(push + facts::kPushButtonsHeld, &pushHeld, 1);  // player 1's, as the game's run left it
@@ -592,6 +662,10 @@ void PressFor(int seat, void* mgr, float dt, TickFn original) noexcept
 void Pick(void* mgr, float dt)
 {
     const auto original = reinterpret_cast<TickFn>(g_pickTarget);
+    if (g_installed)
+    {
+        target_icons::BeforePick(mgr);  // the location refreshes posted since, kept for each seat's run
+    }
     original(mgr, dt);  // player 1's
     if (!g_installed)
     {
@@ -615,39 +689,6 @@ void Press(void* mgr, float dt)
     {
         PressFor(seat, mgr, dt, original);
     }
-}
-
-// The icons are one widget per target, drawn in player 1's half: a further player's pick writes none of them, so player 1's
-// half shows exactly the icons of player 1's own pick (no state fought over each frame, no transition replayed).
-
-void IconState(void* entry, std::uint8_t state)
-{
-    if (g_pickSeat != 0)
-    {
-        ++g_iconsKept;
-        return;
-    }
-    reinterpret_cast<IconStateFn>(g_icons.Original())(entry, state);
-}
-
-void IconOff(void* slot, void* widget, std::uint8_t state)
-{
-    if (g_pickSeat != 0)
-    {
-        ++g_iconsKept;
-        return;
-    }
-    reinterpret_cast<SetStateFn>(g_setState)(slot, widget, state);
-}
-
-void HoldGauge(void* slot, void* widget, float ratio)
-{
-    if (g_pickSeat != 0)
-    {
-        ++g_iconsKept;
-        return;
-    }
-    reinterpret_cast<HoldGaugeFn>(g_holdGauge)(slot, widget, ratio);
 }
 
 void* FirstLocalPlayer(void* world)
@@ -708,8 +749,8 @@ char Begin(void* runner)
     return result;
 }
 
-/// The redirects inside the pick (the icon setter's entry, three icon calls, the pick's call and its screen test; three
-/// of the calls cross a block), placed from the game thread outside the pick.
+/// The redirects inside the pick (the icons' own, then the pick's call and its screen test; two cross a block), placed
+/// from the game thread outside the pick.
 void PlaceCrossing() noexcept
 {
     if (g_placed)
@@ -717,21 +758,12 @@ void PlaceCrossing() noexcept
         return;
     }
     g_placed = true;
-    // The icon writes first (each runs only inside the pick, on this thread; the setter's entry is a run of pushes): a
-    // further player's pick never runs without them.
-    const bool icons =
-        g_icons.Install(g_iconState, facts::kTargetIconStateFirst, reinterpret_cast<std::uintptr_t>(&IconState)) &&
-        g_iconOff.InstallFromOwnThread(g_iconOffSite, g_setState, reinterpret_cast<std::uintptr_t>(&IconOff)) &&
-        g_iconOld.InstallFromOwnThread(g_iconOldSite, g_setState, reinterpret_cast<std::uintptr_t>(&IconOff)) &&
-        g_gauge.InstallFromOwnThread(g_gaugeSite, g_holdGauge, reinterpret_cast<std::uintptr_t>(&HoldGauge));
+    // The icons first (world/target_icons.h): a further player's pick never runs without its own icons.
+    const bool icons = target_icons::Place();
     if (!icons || !g_pick.InstallFromOwnThread(g_pickSite, g_pickTarget, reinterpret_cast<std::uintptr_t>(&Pick)))
     {
-        g_gauge.Restore();
-        g_iconOld.Restore();
-        g_iconOff.Restore();
-        g_icons.Restore();
         platform::LogWarning(L"field targets: the pick's {} could not be redirected; further players get no prompts and press nothing",
-                             icons ? L"call" : L"icon writes");
+                             icons ? L"call" : L"icon calls");
         return;
     }
     if (!g_screen.InstallFromOwnThread(g_screenSite, g_screenTarget, reinterpret_cast<std::uintptr_t>(&FirstLocalPlayer)))
@@ -752,15 +784,16 @@ std::wstring Report()
     std::int32_t count = 0;
     const std::uint64_t* queue = nullptr;
     ChestQueue(queue, count);
-    out += std::format(L"; chests queued {}, player 1's opens {}, icon writes left to player 1 {}", count, g_playerOneOpens, g_iconsKept);
+    out += std::format(L"; chests queued {}, player 1's opens {}", count, g_playerOneOpens);
     for (int seat = 1; seat <= players::kSeatsBuilt; ++seat)
     {
         const SeatState& s = g_seats[seat];
-        out += std::format(L"; {}: target {} ({}), picks {}, changes {}, prompts turned off {}, presses {}, chests noted {}, opens {}, "
+        out += std::format(L"; {}: target {} ({}), picks {}, changes {}, targets left to player 1 {}, presses {}, chests noted {}, opens {}, "
                            L"screen tests {}",
-                           SeatName(seat), Name(s.target), KindName(s.kind), s.picks, s.changes, s.rowsOff, s.presses, s.chests,
-                           s.opens, s.screens);
+                           SeatName(seat), Name(s.target), KindName(s.kind), s.picks, s.changes, s.leftToPlayerOne, s.presses,
+                           s.chests, s.opens, s.screens);
     }
+    out += L"; " + target_icons::Report();
     return out;
 }
 
@@ -786,17 +819,10 @@ bool Install(const platform::GameImage& image) noexcept
     const auto findRow    = platform::FindFunction(image, facts::kFindRowInTables);
     const auto startsWith = platform::FindFunction(image, facts::kNameStartsWith);
     const auto freeFn     = platform::FindFunction(image, facts::kGameFree);
-    const auto iconState  = image.Rebase(facts::kTargetIconState, facts::kTargetIconStateFirst.size());
-    const auto setState   = image.Rebase(facts::kTargetIconSetState), holdGauge = image.Rebase(facts::kTargetIconHoldGauge);
-    const auto iconOff    = image.Rebase(facts::kPickIconOffCall, 5), iconOld = image.Rebase(facts::kPickIconOldTargetCall, 5);
-    const auto gaugeSite  = image.Rebase(facts::kPickHoldGaugeCall, 5);
-    if (!iconState || !setState || !holdGauge || !iconOff || !iconOld || !gaugeSite ||
-        !image.BytesMatch(facts::kTargetIconState, facts::kTargetIconStateFirst))
+    if (!target_icons::Install(image))
     {
-        return fail(L"an icon write of the pick");
+        return fail(L"the pick's icon calls");
     }
-    g_iconState = *iconState, g_setState = *setState, g_holdGauge = *holdGauge;
-    g_iconOffSite = *iconOff, g_iconOldSite = *iconOld, g_gaugeSite = *gaugeSite;
     if (!root || !key || !pickSite || !pick || !pressSite || !press || !screenSite || !screen || !gate || !held || !pressed || !findRow ||
         !startsWith || !freeFn)
     {
@@ -854,6 +880,7 @@ void TickSeat(int seat, void* localPlayer, void* member) noexcept
                                member == nullptr ? L"the player left" : L"a new member or local player");
         }
         DropCopy(state);  // the next pick starts from the game's empty state
+        target_icons::DropSeat(seat);
     }
     state.localPlayer = localPlayer;
     state.member      = member;
@@ -866,6 +893,7 @@ void Tick() noexcept
         return;
     }
     PlaceCrossing();
+    target_icons::Tick(ReadPointer(Root(), facts::kRootFieldTargets));
     const std::uint64_t* queue = nullptr;
     std::int32_t         count = 0;
     if (!ChestQueue(queue, count))
@@ -889,11 +917,12 @@ void Tick() noexcept
 
 void Remove() noexcept
 {
-    // The six redirects inside the pick stay: restoring them must also come from the game thread outside the pick, and
-    // with nothing installed they pass straight through. Called with no seat in (mod.cpp), so no pick is using a copy.
+    // The pick's two redirects stay: restoring them must also come from the game thread outside the pick, and with nothing
+    // installed they pass straight through. Called with no seat in (mod.cpp), so no pick is using a copy.
     g_installed = false;
     g_press.Restore();
     g_begin.Restore();
+    target_icons::Remove();
     g_pending.fill({});
     for (SeatState& state : g_seats)
     {

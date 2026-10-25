@@ -14,6 +14,7 @@
 #include "platform/guarded.h"
 #include "platform/log.h"
 #include "players/unreal_call.h"
+#include "world/target_icons.h"
 
 #include <cstdint>
 #include <cstring>
@@ -30,11 +31,18 @@ using RC::Unreal::UFunction;
 using RC::Unreal::UObject;
 namespace UObjectGlobals = RC::Unreal::UObjectGlobals;
 
-/// Root classes whose widgets show player 1's world cursors (prefix match on the Blueprint class name).
+/// Root classes of the world cursors (prefix match on the Blueprint class name).
+constexpr std::wstring_view kTargetIcons = L"FieldTarget_";  // FieldTarget_01_C, _Block_C: each player's own (slot 15)
 constexpr std::wstring_view kPlayerOneCursors[] = {
-    L"FieldTarget_",       // FieldTarget_01_C, FieldTarget_Block_C: talk, examine, field actions (slot 15)
     L"FieldTargetSearch",  // FieldTargetSearch_02_C, _02_Arrow_C, FieldTargetSearchIcon_C (slot 55)
     L"TurnBackAlert",      // TurnBackAlert_C: over player 1's leader, triggered by player 1 (slot 36)
+};
+
+enum class Cursor : std::uint8_t
+{
+    None,
+    TargetIcon,  // a field target icon: its owner's (world/target_icons.h OwnerSeat)
+    PlayerOne,   // player 1's alone
 };
 
 struct Hidden
@@ -47,7 +55,7 @@ std::vector<Hidden> g_hidden;
 UFunction*   g_setter      = nullptr;  // /Script/UMG.UserWidget:SetColorAndOpacity
 std::int32_t g_paramOffset = -1;
 bool         g_lookedUp    = false;
-std::unordered_map<const void*, bool> g_isCursorClass;
+std::unordered_map<const void*, Cursor> g_cursorClass;
 
 bool LookUp()
 {
@@ -69,20 +77,20 @@ bool LookUp()
     return true;
 }
 
-bool IsCursorClass(UObject* widget)
+Cursor CursorOf(UObject* widget)
 {
     const void* cls = widget->GetClassPrivate();
-    if (const auto found = g_isCursorClass.find(cls); found != g_isCursorClass.end())
+    if (const auto found = g_cursorClass.find(cls); found != g_cursorClass.end())
     {
         return found->second;
     }
     const std::wstring name(widget->GetClassPrivate()->GetName());
-    bool cursor = false;
+    Cursor cursor = name.starts_with(kTargetIcons) ? Cursor::TargetIcon : Cursor::None;
     for (const auto prefix : kPlayerOneCursors)
     {
-        cursor = cursor || name.starts_with(prefix);
+        cursor = name.starts_with(prefix) ? Cursor::PlayerOne : cursor;
     }
-    g_isCursorClass.emplace(cls, cursor);
+    g_cursorClass.emplace(cls, cursor);
     return cursor;
 }
 
@@ -93,9 +101,9 @@ bool SetColor(UObject* widget, const float (&color)[4]) noexcept
     return players::GuardedProcessEvent(widget, g_setter, frame);
 }
 
-}  // namespace
-
-int BeginFurtherPass() noexcept
+/// Every cursor root on the overlay, shown and opaque, that the pass of `seat` (0 player 1's) does not show, made
+/// transparent. `playerOneCursors`: player 1's own cursors too (a further pass).
+int Begin(int seat, bool playerOneCursors) noexcept
 try
 {
     g_hidden.clear();
@@ -105,10 +113,14 @@ try
     }
     for (const auto& widget : user_widgets::Live())
     {
+        const Cursor cursor = CursorOf(widget.object);
+        const bool   hide   = cursor == Cursor::PlayerOne ? playerOneCursors
+                              : cursor == Cursor::TargetIcon ? world::target_icons::OwnerSeat(widget.object) != seat
+                                                             : false;
         void* canvas = nullptr;
         float color[4]{};
         // Roots only (an overlay canvas at UEndUserWidget+0x230), shown and opaque.
-        if (!IsCursorClass(widget.object) ||
+        if (!hide ||
             !platform::CopyGuarded(&canvas, reinterpret_cast<const std::uint8_t*>(widget.object) + facts::kEndWidgetRootCanvas,
                                    sizeof(canvas)) ||
             canvas == nullptr ||
@@ -131,7 +143,20 @@ catch (...)
     return static_cast<int>(g_hidden.size());
 }
 
-void EndFurtherPass() noexcept
+}  // namespace
+
+int BeginFurtherPass(int seat) noexcept
+{
+    return Begin(seat, true);
+}
+
+int BeginOwnPass() noexcept
+{
+    g_hidden.clear();
+    return world::target_icons::AnySeatIcons() ? Begin(0, false) : 0;
+}
+
+void EndPass() noexcept
 {
     for (auto& hidden : g_hidden)
     {

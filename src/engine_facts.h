@@ -2164,19 +2164,52 @@ inline constexpr std::array<std::uint8_t, 16> kChestOpenBeginEntry{
 inline constexpr platform::SlotFact kChestOpenBegin{L"the chest open's Begin", kChestOpenBeginSlot,
                                                     {L"ActTreasure_Begin_ActorNamedElseLeader", 0x140E16E60, kChestOpenBeginEntry}};
 inline constexpr std::uint32_t kChestRunnerName = 0x6C, kChestRunnerActor = 0x28, kChestRunnerOpenerIsLeader = 0x8C;
-/// The pick's icon writes (one widget per target, shared by every run, drawn in player 1's half): the icon state setter
-/// it alone calls (void(entry, u8 state): SetState on the entry's widget, or Show for a new one; first instructions
-/// push rbx, rbp, rsi; sub rsp,40h, reached only by fall-through), its two direct SetState calls (UI15, widget, state 0:
-/// three arguments, the result unused at both; the first crosses a block) and its hold gauge call (void(UI15, widget,
-/// float ratio in xmm2)).
-inline constexpr std::uintptr_t kTargetIconState = 0x14101B7D0;
-inline constexpr std::array<std::uint8_t, 8> kTargetIconStateFirst{0x40, 0x53, 0x55, 0x56, 0x48, 0x83, 0xEC, 0x40};
-inline constexpr std::uintptr_t kTargetIconSetState     = 0x14142A1B0;  // EndUI15_FieldTargetIcon_SetState
-inline constexpr std::uintptr_t kPickIconOffCall        = 0x14101CF6E;  // not visited this run -> 0 (crosses)
-inline constexpr std::uintptr_t kPickIconOldTargetCall  = 0x14101D025;  // the old target -> 0
-inline constexpr std::uintptr_t kTargetIconHoldGauge    = 0x14142A2A0;  // EndUI15_FieldTargetIcon_SetHoldGauge
-inline constexpr std::uintptr_t kPickHoldGaugeCall      = 0x14101D319;
-/// A command controller's FieldAction prompt row (the pick writes it): shown, and the dirty bit its tick applies.
-inline constexpr std::uint32_t kCommandPromptShown = 0x4B0, kCommandPromptDirty = 0x4B1;
+/// The pool's items as the pick and the target removal read them (item = entry - 0x18): the target name (entry +0x0C),
+/// its state-object name (entry +0x14, the dispatch's SituationTrigger key), the icon widget (entry +0x60), the location
+/// dirty byte (entry +0x92: posted outside the pick, consumed by the first pick that meets it) and the disabled byte
+/// (entry +0x94: the pick's rejection test, next to "in use" +0x90; no icon, never the current target). The active
+/// items are a list from mgr+0xBC50 through item +0x08 (RemoveTargetByName's own walk).
+inline constexpr std::uint32_t kTargetsItemEntry = 0x18, kTargetsItemName = 0x24, kTargetsItemStateName = 0x2C;
+inline constexpr std::uint32_t kTargetsItemWidget = 0x78, kTargetsItemDirty = 0xAA, kTargetsItemDisabled = 0xAC;
+inline constexpr std::uint32_t kTargetsActiveHead = 0xBC50, kTargetsItemNext = 0x08;
+/// The pick's pending write of one entry's disabled byte (the field-action component's start/end posts it): an 8-byte
+/// flag at +0xBD4C, the entry named by +0xBD44 (inside the per-player copy), the value (0 or 1) at +0xBD54. The pick
+/// writes that value into the named entry's byte and clears the flag (the name too when the value is 0).
+inline constexpr std::uint32_t kTargetsPendingEnable = 0xBD4C, kTargetsPendingName = 0xBD44;
+/// The field target icon manager (EndUISystem[15], one for the game's life): its hold gauge's last ratio (+0x54, one
+/// float for every widget: the "gauge full" sound plays when a ratio reaches 1 from below it); its icon map's element
+/// count (+0x08) and free slots (+0x34): the live icons are their difference.
+inline constexpr std::uintptr_t kTargetIconSlotGlobal = 0x1459CA9E8;
+inline constexpr std::uint32_t  kTargetIconGaugeRatio = 0x54;
+inline constexpr std::uint32_t  kTargetIconMapCount = 0x08, kTargetIconMapFree = 0x34;
+/// The icon setter's one Show call (UEndFieldTargetIcon* (UI15, UWorld*, FName name by value, const FVector*, u8 state,
+/// u8 type); fits its block) and, inside the widget creation it makes, the "first local player" call whose answer becomes
+/// the widget's owner (FLocalPlayerContext at widget +0x1E8, weak {index, serial}; every later placement projects
+/// through that player's controller; crosses a block) (research/RE-field-icons-two.md §2.1).
+inline constexpr std::uintptr_t kTargetIconShow         = 0x141429770;  // EndUI15_FieldTargetIcon_Show
+inline constexpr std::uintptr_t kTargetIconShowCall     = 0x14101B85A;  // E8 11 DF 40 00
+inline constexpr std::uintptr_t kWidgetCreateOwnerCall  = 0x1428F842C;  // E8 3F 81 A7 00, to kFirstLocalPlayer
+inline constexpr std::uint32_t  kWidgetOwnerPlayer      = 0x1E8;
+/// The game's destroy of one icon (void(UI15, widget): hidden, removed from the manager's map, then destroyed).
+inline constexpr std::array<std::uint8_t, 16> kTargetIconHideDestroyEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x18, 0x55, 0x56, 0x57, 0x48, 0x83, 0xEC, 0x20, 0x33, 0xED, 0x48, 0x8B};
+inline constexpr platform::FunctionFact kTargetIconHideDestroy{L"EndUI15_FieldTargetIcon_HideDestroy", 0x141429EB0,
+                                                               kTargetIconHideDestroyEntry};
+/// The slot-15 tick (void(UI15)): every icon placed through its own owner's controller into the overlay's host set;
+/// re-runnable per HUD pass with the game mode's HUD step at 0 (the widget clock then only telescopes).
+inline constexpr std::array<std::uint8_t, 16> kTargetIconTickEntry{
+    0x48, 0x89, 0x74, 0x24, 0x20, 0x55, 0x48, 0x8D, 0x6C, 0x24, 0xA9, 0x48, 0x81, 0xEC, 0xA0, 0x00};
+inline constexpr platform::FunctionFact kTargetIconTick{L"EndUISlot15_FieldTargetIcon_Tick", 0x14142B740, kTargetIconTickEntry};
+/// The one path that frees a pool item (void(mgr, const FName*)): destroys the item's live widget, then frees the item.
+/// First instruction mov [rsp+10h], rbx (5 bytes, no RIP-relative operand, aligned): the one relocated, exactly the
+/// jump's length (then push rdi; sub rsp, 30h).
+inline constexpr std::array<std::uint8_t, 16> kRemoveTargetEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x10, 0x57, 0x48, 0x83, 0xEC, 0x30, 0x48, 0x8B, 0x99, 0x50, 0xBC, 0x00};
+inline constexpr platform::FunctionFact kRemoveTarget{L"FieldTargetMgr_RemoveTargetByName", 0x14101DCA0, kRemoveTargetEntry};
+inline constexpr std::size_t           kRemoveTargetFirst = 5;
+/// The game's lookup of an entry by target name (entry* (mgr, const FName*), the item + 0x18; null if none).
+inline constexpr std::array<std::uint8_t, 16> kFindTargetEntryEntry{
+    0x48, 0x8B, 0x81, 0x50, 0xBC, 0x00, 0x00, 0x48, 0x85, 0xC0, 0x74, 0x13, 0x48, 0x8B, 0x0A, 0x90};
+inline constexpr platform::FunctionFact kFindTargetEntry{L"FieldTargetMgr_FindEntryByName", 0x14101DC70, kFindTargetEntryEntry};
 
 }  // namespace lss::facts
