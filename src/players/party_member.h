@@ -68,18 +68,27 @@ struct Choice
 };
 
 /// The member seat `seat` plays now, or why it waits. `taker` is that seat's controller (a member it already
-/// holds counts as free). Logged at Debug when `log` is set.
-Choice Choose(int seat, void* playerOneController, void* taker, bool log) noexcept;
+/// holds counts as free). `standIn`: the type of player 1's former character the seat stands in for since the game's
+/// leader change took its member (facts::kPlayerTypeNone: none); it is the seat's while deployed and not player 1's.
+/// Logged at Debug when `log` is set.
+Choice Choose(int seat, void* playerOneController, void* taker, bool log, std::uint8_t standIn) noexcept;
 
 /// The actor in seat `seat`'s row whatever its state (null without a row or an actor).
-void* RowActor(int seat, void* playerOneController) noexcept;
+void* RowActor(int seat, void* playerOneController, std::uint8_t standIn) noexcept;
 
 /// Every formation member's type, PLAYER slot holder and AI detail, one line each (the `party.ai` reading).
 std::wstring FormationReading(void* playerOneController) noexcept;
 
 /// Why `member` is no longer seat `seat`'s row to play: the row names another type, the member left the deployed
 /// formation, or it became player 1's. Null while it still is. `type` is the member's type as taken.
-const wchar_t* WhyNotInSlot(int seat, void* member, std::uint8_t type, void* playerOneController) noexcept;
+const wchar_t* WhyNotInSlot(int seat, void* member, std::uint8_t type, void* playerOneController, std::uint8_t standIn) noexcept;
+
+/// The field leader's type (the default party leader, player 1's home character) and the game's leader type now
+/// (PM+0x233, player 1's character outside every scope); facts::kPlayerTypeNone when unread.
+std::uint8_t FieldLeaderType() noexcept;
+std::uint8_t GameLeaderType() noexcept;
+/// `character` is the field leader's actor (the game's leader returning to it is player 1 going home).
+bool IsFieldLeader(const void* character) noexcept;
 
 /// Why a held `member` must be with its AI now (a ScriptHold wait: a cutscene or event mode, a script's hold on its
 /// field AI, an animation, a guide lead). Null while it may stay. (The battle mode holds nothing: the battle AI

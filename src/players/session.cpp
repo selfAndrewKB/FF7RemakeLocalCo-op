@@ -68,6 +68,7 @@ constexpr int                  kRejoinFailures = 3;
 /// A refused seat (the funnel did not take the member) is tried again after this many ticks; the party order is
 /// checked under a held member every this many ticks (cheap guarded reads).
 constexpr std::uint32_t kSeatRetryTicks  = 60;
+constexpr std::uint32_t kSwapGraceTicks  = 30;  // after a leader change: the seat's next character may still be held for a moment
 constexpr std::uint32_t kFollowSlotTicks = 10;
 
 UObject* Field(const void* object, std::uint32_t offset) noexcept
@@ -246,7 +247,8 @@ void Session::LeaveForWorldChange(const wchar_t* why) noexcept
     // The highest seat first (any order works: RemoveLocalPlayer takes a player from anywhere in the list).
     for (int index = kSeatsBuilt; index >= 1; --index)
     {
-        Seat& seat = seats_[index];
+        Seat& seat   = seats_[index];
+        seat.standIn = facts::kPlayerTypeNone;  // a new world: every seat back to its own row, out or in
         if (seat.localPlayer == nullptr)
         {
             continue;
@@ -291,6 +293,19 @@ try
         worldChangeStuck_ = false;
     }
     auto* players = LocalPlayers(gameInstance_);  // one lookup a tick, for every seat
+    // Player 1 home (the game's leader is the field leader): no stand-in can hold, whatever event was missed (a retry,
+    // a reload, a leader change not heard). The leader change's own clear is the fast path.
+    const std::uint8_t leaderType = party_member::GameLeaderType();
+    const bool         home       = leaderType != facts::kPlayerTypeNone && leaderType == party_member::FieldLeaderType();
+    for (int index = 1; index <= kSeatsBuilt; ++index)
+    {
+        if (home && seats_[index].standIn != facts::kPlayerTypeNone)
+        {
+            platform::LogDebug(L"{}'s stand-in (type {}) dropped: player 1 is on the field leader", seats_[index].Name(),
+                               seats_[index].standIn);
+            seats_[index].standIn = facts::kPlayerTypeNone;
+        }
+    }
     for (int index = 1; index <= kSeatsBuilt; ++index)
     {
         Seat& seat = seats_[index];
@@ -323,7 +338,7 @@ try
             // After a release (the row changed, or its member left): the row's member now, or out until one is free.
             // An unreadable party is a tick's thing, not a wait.
             party_member::Choice choice;
-            if (!TrySeat(seat, choice) && !Seated(seat.index) && ticks_ >= seat.seatRetryAt &&
+            if (!TrySeat(seat, choice) && !Seated(seat.index) && ticks_ >= seat.seatRetryAt && ticks_ >= seat.seatGraceUntil &&
                 choice.wait != party_member::Wait::Unread)
             {
                 LogWait(seat, choice, L"is in without a member");
@@ -399,7 +414,7 @@ try
             return;  // the seat funnel refused the member last time; not tried again before its retry tick
         }
         const party_member::Choice choice =
-            party_member::Choose(seat.index, Field((*players)[0], facts::kLocalPlayerController), nullptr, false);
+            party_member::Choose(seat.index, Field((*players)[0], facts::kLocalPlayerController), nullptr, false, seat.standIn);
         LogFormation(seat, choice);
         if (choice.member == nullptr)
         {
@@ -475,7 +490,7 @@ void Session::LogWait(Seat& seat, const party_member::Choice& choice, const wcha
         if (players != nullptr && players->Num() >= 1)
         {
             platform::Log(L"  the row's member: {}",
-                          party_member::AiDetail(party_member::RowActor(seat.index, Field((*players)[0], facts::kLocalPlayerController))));
+                          party_member::AiDetail(party_member::RowActor(seat.index, Field((*players)[0], facts::kLocalPlayerController), seat.standIn)));
         }
     }
 }
@@ -497,6 +512,7 @@ void Session::LogFormation(Seat& seat, const party_member::Choice& choice) noexc
 void Session::Forget(Seat& seat) noexcept
 {
     seat.localPlayer = nullptr;
+    seat.standIn     = facts::kPlayerTypeNone;  // out of the game: back to its own row when it joins again
     EndMemberModules(seat);
     scopes::Unbind(seat.index);
     seat_objects::Forget(seat.index);
@@ -567,7 +583,7 @@ try
     gameInstance_ = gameInstance;
     if (seatInstalled_)
     {
-        const party_member::Choice choice = party_member::Choose(seat.index, playerOneController, nullptr, false);
+        const party_member::Choice choice = party_member::Choose(seat.index, playerOneController, nullptr, false, seat.standIn);
         if (choice.member == nullptr)
         {
             seat.awaiting = true;
@@ -741,7 +757,7 @@ try
     }
     UObject* playerOne      = Field((*players)[0], facts::kLocalPlayerController);
     UObject* seatController = Controller(seat);
-    choice                  = party_member::Choose(seat.index, playerOne, seatController, false);
+    choice                  = party_member::Choose(seat.index, playerOne, seatController, false, seat.standIn);
     if (choice.member == nullptr)
     {
         return false;
@@ -844,6 +860,7 @@ try
         DestroyOperator(seat);
         party_seat::Forget(seat.index);
         seat.ResetMember();
+        seat.standIn = facts::kPlayerTypeNone;  // a rebuilt party: its own row again
         return;
     }
     auto* players = LocalPlayers(gameInstance_);
@@ -852,7 +869,7 @@ try
         return;
     }
     if (const wchar_t* why = party_member::WhyNotInSlot(seat.index, member, party_seat::MemberType(seat.index),
-                                                       Field((*players)[0], facts::kLocalPlayerController)))
+                                                       Field((*players)[0], facts::kLocalPlayerController), seat.standIn))
     {
         ReleaseMember(seat, why);
         return;
@@ -902,12 +919,33 @@ catch (...)
 void Session::OnLeaderChanging(void* self, void* character) noexcept
 {
     auto* session = static_cast<Session*>(self);
+    // The game's leader going home (onto the field leader: a battle's end) ends every stand-in: each seat takes its own
+    // row again. Otherwise the seat whose member the change takes plays the character player 1 leaves (the user,
+    // 2026-10-25: the battle leader option; a forced switch alike), so no other seat is moved.
+    const bool         home = party_member::IsFieldLeader(character);
+    const std::uint8_t was  = party_member::GameLeaderType();  // player 1's character before the change
     for (int index = 1; index <= kSeatsBuilt; ++index)
     {
         Seat& seat = session->seats_[index];
+        if (home && seat.standIn != facts::kPlayerTypeNone)
+        {
+            platform::Log(L"{} stood in for player 1's character (type {}): the game's leader goes home, {} takes its own row again",
+                          seat.Name(), seat.standIn, seat.Name());
+            seat.standIn        = facts::kPlayerTypeNone;
+            seat.seatGraceUntil = session->ticks_ + kSwapGraceTicks;  // its row's member may be another seat's for a moment
+        }
         if (character != nullptr && character == party_seat::Member(seat.index))
         {
+            const std::uint8_t own = party_seat::MemberType(seat.index);  // read before the release unseats it
             session->ReleaseMember(seat, L"about to become player 1's leader (the game's leader change)");
+            if (!home && was < facts::kPlayerTypeNone && was != own)
+            {
+                seat.standIn = was;
+                platform::Log(L"{} plays player 1's former character (type {}) until the game's leader goes home", seat.Name(), was);
+            }
+            // The next character is the seat's once the change has let go of it [ASSUMPTION: within the change's call or
+            // a tick after; a longer hold still ends in the wait, as before].
+            seat.seatGraceUntil = session->ticks_ + kSwapGraceTicks;
         }
     }
 }
@@ -1119,7 +1157,7 @@ try
     if (seat.awaiting)
     {
         const party_member::Choice choice =
-            party_member::Choose(seat.index, Field((*players)[0], facts::kLocalPlayerController), nullptr, false);
+            party_member::Choose(seat.index, Field((*players)[0], facts::kLocalPlayerController), nullptr, false, seat.standIn);
         return std::format(L"awaiting: row {} type {}: {}", choice.ordinal, choice.type, party_member::Describe(choice.wait));
     }
     if (seat.localPlayer == nullptr)
@@ -1127,7 +1165,7 @@ try
         return L"waiting (no seat)";
     }
     const party_member::Choice choice =
-        party_member::Choose(seat.index, Field((*players)[0], facts::kLocalPlayerController), Controller(seat), false);
+        party_member::Choose(seat.index, Field((*players)[0], facts::kLocalPlayerController), Controller(seat), false, seat.standIn);
     return std::format(L"waiting: row {} type {}: {}", choice.ordinal, choice.type, party_member::Describe(choice.wait));
 }
 catch (...)

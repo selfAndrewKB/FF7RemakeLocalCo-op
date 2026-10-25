@@ -158,6 +158,12 @@ private:
         std::int32_t         memberWeak[2]  = {-1, 0};  // the seated member, to notice it destroyed
         std::uint32_t        waitLogged     = 0;        // the wait last logged (type, reason, ordinal), 0 none
         std::uint32_t        seatRetryAt    = 0;        // the tick a refused seat is tried again
+        std::uint32_t        seatGraceUntil = 0;        // after a leader change took its member: no leave to wait before this tick
+        std::uint8_t         standIn        = 9;        // player 1's former character's type the seat plays since the game's leader
+                                                        // change took its member (9 = facts::kPlayerTypeNone: none), until the
+                                                        // game's leader goes home (the change's clear, or the tick while player
+                                                        // 1 is on the field leader), a world change or a party rebuild (kept
+                                                        // through a leave to wait)
         std::uint32_t        awaitSince     = 0;        // the tick the wait for a member began (0 none): the wait's length in the join line
         std::uint32_t        formationLogged = 0;       // the formation last logged under the wait (party_member::Choice::formation), 0 none
         int                  lastColumn     = kNoColumn;  // the column held when a world change took it out (the rejoin's order)
