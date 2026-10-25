@@ -7,6 +7,7 @@
 #include "platform/image.h"
 #include "platform/log.h"
 #include "platform/verified_code.h"
+#include "world/traversal_action.h"
 
 #include <array>
 #include <cstdint>
@@ -77,11 +78,13 @@ struct Scene
     bool          skippable = false;  // on/off 12 ShowSkipPauseMenu
     bool          black     = false;  // on/off 39, 40 or 53
     bool          loading   = false;  // on/off 41
+    std::uint32_t mover     = 0;      // the lock bits that are player 1's own crawl, squeeze or grappling hook
 
     bool operator==(const Scene&) const = default;
 
-    /// The scene holds the players: the mirror's reason to run.
-    bool Holds() const noexcept { return playing || lockMask != 0 || lockCount != 0; }
+    /// The scene holds the players: the mirror's reason to run. Player 1's own crawl, squeeze or grappling hook locks only
+    /// player 1 (as the session keeps the seats' members theirs through it): its bits hold no one else.
+    bool Holds() const noexcept { return playing || (lockMask & ~mover) != 0 || lockCount != 0; }
 };
 
 /// The mirror player's manager and its copy of every slot (views/mirror_player.h).
@@ -211,6 +214,7 @@ Scene ReadScene() noexcept
         Read(stateManager + facts::kFieldControlLockMask, now.lockMask) && Read(stateManager + facts::kFieldControlLockCounter, now.lockCount))
     {
         now.valid     = true;
+        now.mover     = world::traversal_action::PlayerOneMoveBitsIn(now.lockMask);
         now.skippable = OnOff(stateManager, 12);
         now.black     = OnOff(stateManager, 39) || OnOff(stateManager, 40) || OnOff(stateManager, 53);
         now.loading   = OnOff(stateManager, 41);
@@ -244,9 +248,10 @@ std::wstring SlotsText(const Slots& slots)
 
 std::wstring SceneText(const Scene& scene)
 {
-    return std::format(L"cutscene {}{}; control lock {:#x} (count {}); skippable scene {}; held black {}; loading screen {}{}",
+    const std::wstring mover = scene.mover != 0 ? std::format(L"{:#x} = player 1's own move; ", scene.mover) : L"";
+    return std::format(L"cutscene {}{}; control lock {:#x} ({}count {}); skippable scene {}; held black {}; loading screen {}{}",
                        !scene.manager ? L"no manager" : scene.playing ? L"playing" : L"not playing", scene.skip ? L" (skipping)" : L"",
-                       scene.lockMask, scene.lockCount, scene.skippable ? L"on" : L"off", scene.black ? L"on" : L"off",
+                       scene.lockMask, mover, scene.lockCount, scene.skippable ? L"on" : L"off", scene.black ? L"on" : L"off",
                        scene.loading ? L"on" : L"off", scene.valid ? L"" : L" (state manager unreadable)");
 }
 

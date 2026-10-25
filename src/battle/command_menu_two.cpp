@@ -12,7 +12,9 @@
 #include "platform/vtable_entry.h"
 #include "players/weak_object.h"
 #include "players/scopes.h"
+#include "players/party_member.h"
 #include "players/seats.h"
+#include "world/traversal_action.h"
 
 #include <array>
 #include <cstdint>
@@ -620,7 +622,13 @@ void Tick(int seat, bool seatPlays) noexcept
             platform::CallGuarded(reinterpret_cast<HudModeFn>(g_hudMode.Original()), s.ctrl, hudMode);
         }
     }
-    // The two bytes the game writes directly on its own controller.
+    // The two bytes the game writes directly on its own controller. A lock of player 1's own crawl, squeeze or grappling
+    // hook alone closes player 1's menu only (it locks only the mover, as the session keeps the seats' members theirs):
+    // not copied while it holds.
+    if (world::traversal_action::PlayerOneMoveHolds(players::party_member::ControlLockMask()))
+    {
+        return;
+    }
     const std::uint8_t allowed = Byte(ctrl1, facts::kCommandCtrlMenuAllowed);
     const std::uint8_t live    = Byte(ctrl1, facts::kCommandCtrlInputLive);
     if (Byte(s.ctrl, facts::kCommandCtrlMenuAllowed) != allowed)

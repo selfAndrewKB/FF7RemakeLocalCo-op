@@ -898,6 +898,10 @@ try
     const party_member::Wait hold = party_member::HoldWait(member);
     if (hold == party_member::Wait::LeaderHanded)
     {
+        if (world::traversal_action::PlayerOneMoveHolds(party_member::ControlLockMask()))
+        {
+            return;  // player 1's own crawl, squeeze or grappling hook only: the member stays its player's (HandWithLeader)
+        }
         // The hand funnel's backstop: the game's leader is with its AI and the seat's member is not (a seat that
         // landed inside the hand, after the funnel fired: seen live 2026-10-21, Tifa taken mid-animation).
         platform::Log(L"the game's leader is with its AI (lock {:#x}) and {}'s member is not: the hand was not heard for it; "
@@ -1006,8 +1010,9 @@ void Session::HandWithLeader(Seat& seat) noexcept
         return;
     }
     // Player 1's crawl, squeeze or grappling hook locks the field for its own leader only (the user, 2026-10-24: a crawl
-    // locks only the mover): the member stays its player's.
-    if (world::traversal_action::MoverLockNow())
+    // locks only the mover): the member stays its player's, unless a story lock stands with it (the first lock's hand
+    // runs before its bits are set: a mask still 0 asks MoverLockNow).
+    if (world::traversal_action::PlayerOneMoveHolds(party_member::ControlLockMask()))
     {
         platform::LogDebug(L"player 1's crawl, squeeze or grappling hook handed only player 1's character to its AI (lock {:#x}); {}'s "
                            L"member stays theirs",

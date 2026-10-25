@@ -39,8 +39,10 @@
 //     leader in place for a seat's member, so a seat's action takes none of them;
 //   - the crawl's, the squeeze's and the grappling hook's field control lock is skipped for a seat's member (it would
 //     hand the scoped leader to its AI and lock the field for player 1);
-//   - player 1's own crawl, squeeze or hookshot lock hands only player 1's character to its AI: the session asks MoverLockNow and
-//     keeps the seats' members theirs; and that action's "no new action" switch is taken away for the seats' start
+//   - player 1's own crawl, squeeze or hookshot lock hands only player 1's character to its AI: the session asks
+//     MoverLockNow and PlayerOneMoveHolds and keeps the seats' members theirs; the scene camera (views/scene_camera_two)
+//     does not count its bits as a scene and the command menu (battle/command_menu_two) does not copy player 1's closed
+//     menu to the seats while it holds; and that action's "no new action" switch is taken away for the seats' start
 //     tests (world/traversal_walkup.h), a script's own hold kept.
 // A seat's member is ticked in its scopes only once the four lock calls are redirected (the frame after the tick is
 // first seen on the game thread): until then it runs as the game's member does. The lock redirects stay in place at an
@@ -50,8 +52,9 @@
 // lock mask, so while player 1 crawls, squeezes or turns to a hook point a seat's action start is refused and its
 // ladder climb runs as the member's version; in the frame or two after a join or a level change, while the tick is
 // still on a worker, player 1's crawl lock comes from its game-thread task (not redirected) and its hookshot lock is
-// not seen as the mover's (its Set runs on the worker), and they hand the seats' members to their AI until the unlock; a story lock taken during player 1's crawl or squeeze is not a first
-// lock, so the seats' members stay playable through it.
+// not seen as the mover's (its Set runs on the worker), and they hand the seats' members to their AI until the unlock; a
+// story lock taken during player 1's crawl, squeeze or grappling-hook turn is not a first lock, so the seats' members are
+// handed by the session's backstop (PlayerOneMoveHolds says no once the mask holds more than the move's bits).
 // The ladder camera's leave at an exit (top, bottom, slide landing, jump off) is asked by the behaviour's phase delegate
 // on the animation side, for the leader's type only: for a seat's member the call is noted (its stub's tail jump) and the
 // game thread runs the same delegate in the seat's Leader and Operator scopes the next tick, so the seat's ladder camera
@@ -71,6 +74,7 @@
 // research/RE-traversal-duct-camera-two.md); in the `traversal.action` reading the tick's thread counts and the time
 // spent inside the component ticks per frame over the last 5 s.
 
+#include <cstdint>
 #include <string>
 
 namespace lss::platform {
@@ -103,9 +107,19 @@ bool OnGameThread() noexcept;
 /// redirected (any thread). Until then a seat's walk-up start would run the game's member version.
 bool Scoping() noexcept;
 
-/// The field control lock being taken now is player 1's own crawl's, squeeze's or grappling hook's (it locks only that
-/// player): inside its crawl lock call, or while its squeeze's or hookshot's queued lock stands. Game thread.
+/// Player 1's own crawl, squeeze or grappling hook holds the field control lock now, or is taking it (it locks only that
+/// player): inside its crawl lock call or while its crawl lock stands, or while its squeeze's or hookshot's queued lock
+/// stands. Game thread.
 bool MoverLockNow() noexcept;
+
+/// Of `mask` (the field control lock mask read now), the bits that are player 1's own crawl, squeeze or grappling hook,
+/// and a bit once seen as the move's kept while it stays set (its queued unlock drops the flag before the bit clears).
+/// Kept up to date by the scene camera's read every frame (views/scene_camera_two). Game thread.
+std::uint32_t PlayerOneMoveBitsIn(std::uint32_t mask) noexcept;
+
+/// The lock `mask` holds nothing but player 1's own move (a mask still 0: MoverLockNow, its lock queued and not yet
+/// processed). Game thread.
+bool PlayerOneMoveHolds(std::uint32_t mask) noexcept;
 
 /// A seat's member may use the grappling hook: its member's actions run in its scopes and the hookshot's lock calls are
 /// redirected (any thread).

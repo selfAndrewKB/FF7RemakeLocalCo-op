@@ -126,6 +126,9 @@ std::atomic<bool> g_locksOk{false};  // all four lock calls redirected: a seat's
 bool           g_crawlLocking = false;  // inside player 1's crawl lock call
 std::atomic<bool> g_squeezeQueued{false};  // player 1's squeeze lock queued and not yet unqueued (any thread)
 std::atomic<bool> g_hookShotQueued{false};  // player 1's hookshot turn lock queued and not yet unqueued (any thread)
+std::atomic<std::uint8_t> g_squeezeBit{0}, g_hookShotBit{1};  // the queued lock bit player 1's squeeze and hookshot took last
+std::atomic<std::uint32_t> g_crawlBits{0};  // the mask player 1's crawl lock holds (0: none; its unlock or its end clears it)
+std::uint32_t  g_moveSeen = 0;  // lock bits seen standing for player 1's own move, kept while each stays set (game thread)
 bool           g_neverMovable = false;  // a FieldActionSystem whose tick never ran on any thread: logged once
 std::uint32_t  g_gameTicks = 0;
 std::int64_t   g_gameTime  = 0;  // performance-counter ticks spent inside component ticks on the game thread
@@ -607,6 +610,10 @@ std::uint64_t CrawlLock(void* stateManager, std::int32_t mask, std::uint64_t rea
     }
     const bool mine = OnGameThreadNow();
     g_crawlLocking  = mine;  // player 1's crawl: the lock's hand of the leader is player 1's alone
+    if (mine)
+    {
+        g_crawlBits.store(static_cast<std::uint32_t>(mask), std::memory_order_relaxed);  // held for the whole crawl
+    }
     const auto result = reinterpret_cast<LockFn>(g_crawlLock.Original())(stateManager, mask, reason);
     g_crawlLocking  = false;
     return result;
@@ -614,7 +621,12 @@ std::uint64_t CrawlLock(void* stateManager, std::int32_t mask, std::uint64_t rea
 
 std::uint64_t CrawlUnlock(void* stateManager, std::int32_t mask, std::uint64_t reason)
 {
-    return SkipLock() ? 0 : reinterpret_cast<LockFn>(g_crawlUnlock.Original())(stateManager, mask, reason);
+    if (SkipLock())
+    {
+        return 0;
+    }
+    g_crawlBits.store(0, std::memory_order_relaxed);
+    return reinterpret_cast<LockFn>(g_crawlUnlock.Original())(stateManager, mask, reason);
 }
 
 void SqueezeLock(std::int8_t bit, std::uint64_t reason)
@@ -623,6 +635,7 @@ void SqueezeLock(std::int8_t bit, std::uint64_t reason)
     {
         if (OnGameThreadNow())
         {
+            g_squeezeBit.store(static_cast<std::uint8_t>(bit), std::memory_order_relaxed);
             g_squeezeQueued.store(true, std::memory_order_relaxed);
         }
         reinterpret_cast<QueueLockFn>(g_squeezeLock.Original())(bit, reason);
@@ -647,6 +660,7 @@ void HookShotLock(std::int8_t bit, std::uint64_t reason)
     {
         if (OnGameThreadNow())
         {
+            g_hookShotBit.store(static_cast<std::uint8_t>(bit), std::memory_order_relaxed);
             g_hookShotQueued.store(true, std::memory_order_relaxed);
         }
         reinterpret_cast<QueueLockFn>(g_hookShotLock.Original())(bit, reason);
@@ -954,6 +968,8 @@ void Place(bool anyIn) noexcept
         g_onGame.store(false, std::memory_order_relaxed);  // a new FieldActionSystem: seen on the game thread again first
         g_squeezeQueued.store(false, std::memory_order_relaxed);
         g_hookShotQueued.store(false, std::memory_order_relaxed);
+        g_crawlBits.store(0, std::memory_order_relaxed);
+        g_moveSeen = 0;
         const std::uint8_t cleared = flags & static_cast<std::uint8_t>(~facts::kTickRunOnAnyThread);
         if (platform::WriteGuarded(fas + facts::kFieldActionTickFlags, &cleared, 1))
         {
@@ -1155,6 +1171,22 @@ std::wstring Report()
                            s.camerasLeft, s.camerasOff, s.locksSkipped);
     }
     return out;
+}
+
+/// The field control lock mask bits player 1's own crawl, squeeze or grappling hook stands for now (0 when none does).
+/// Game thread.
+std::uint32_t MoverBitsNow() noexcept
+{
+    std::uint32_t bits = g_crawlBits.load(std::memory_order_relaxed);
+    if (g_squeezeQueued.load(std::memory_order_relaxed))
+    {
+        bits |= 1u << (g_squeezeBit.load(std::memory_order_relaxed) & 31u);
+    }
+    if (g_hookShotQueued.load(std::memory_order_relaxed))
+    {
+        bits |= 1u << (g_hookShotBit.load(std::memory_order_relaxed) & 31u);
+    }
+    return bits;
 }
 
 }  // namespace
@@ -1429,6 +1461,10 @@ void Tick(bool anyIn) noexcept
     {
         g_hookShotQueued.store(false, std::memory_order_relaxed);  // player 1's hookshot ended without its unlock
     }
+    if (g_crawlBits.load(std::memory_order_relaxed) != 0 && !PlayerOneIn(facts::kFieldActionCrawl))
+    {
+        g_crawlBits.store(0, std::memory_order_relaxed);  // player 1's crawl ended through its unlock task (not redirected)
+    }
 }
 
 void Remove() noexcept
@@ -1473,6 +1509,8 @@ void Remove() noexcept
         }
         g_moved = false;
     }
+    g_crawlBits.store(0, std::memory_order_relaxed);
+    g_moveSeen  = 0;
     g_installed = false;
 }
 
@@ -1483,7 +1521,22 @@ bool OnGameThread() noexcept
 
 bool MoverLockNow() noexcept
 {
-    return g_crawlLocking || g_squeezeQueued.load(std::memory_order_relaxed) || g_hookShotQueued.load(std::memory_order_relaxed);
+    return g_crawlLocking || g_crawlBits.load(std::memory_order_relaxed) != 0 || g_squeezeQueued.load(std::memory_order_relaxed) ||
+           g_hookShotQueued.load(std::memory_order_relaxed);
+}
+
+std::uint32_t PlayerOneMoveBitsIn(std::uint32_t mask) noexcept
+{
+    // A queued unlock drops its flag a frame or more before the processed bit clears: a bit once seen as the move's
+    // stays the move's while it stays set.
+    g_moveSeen = (g_moveSeen | MoverBitsNow()) & mask;
+    return g_moveSeen;
+}
+
+bool PlayerOneMoveHolds(std::uint32_t mask) noexcept
+{
+    const std::uint32_t mine = PlayerOneMoveBitsIn(mask);
+    return mask == 0 ? MoverLockNow() : (mask & ~mine) == 0;
 }
 
 bool HookShotReady() noexcept
