@@ -104,6 +104,7 @@ add_library(LocalSplitScreen SHARED
     src/render/sun_cascades.cpp
     src/views/letterbox_patch.cpp
     src/views/column_layout.cpp
+    src/views/split_scale.cpp
     src/views/display_align.cpp
     src/views/mirror_player.cpp
     src/views/scene_camera_two.cpp
@@ -364,6 +365,13 @@ add_executable(TargetRotationTests
 target_include_directories(TargetRotationTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_compile_features(TargetRotationTests PRIVATE cxx_std_20)
 add_test(NAME target_rotation COMMAND TargetRotationTests)
+
+add_executable(SplitScaleRulesTests
+    tests/split_scale_rules_test.cpp
+)
+target_include_directories(SplitScaleRulesTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(SplitScaleRulesTests PRIVATE cxx_std_20)
+add_test(NAME split_scale_rules COMMAND SplitScaleRulesTests)
 
 add_executable(ColumnRulesTests
     tests/column_rules_test.cpp

@@ -8,8 +8,9 @@
 //   - the replaced bytes are compared against what the research read before anything is written;
 //   - they must lie inside one aligned 16-byte block, swapped in a single atomic store (code_memory.h), so a
 //     thread running that code sees either the old instruction or the new one, never a mix;
-//   - the replacement has the original's length, so every instruction keeps its start: a thread stopped
-//     anywhere in the block resumes on an instruction boundary either way.
+//   - the replacement is ONE instruction of the original's length (pad with a prefix, never a trailing nop), so
+//     both forms have the same instruction starts: a thread stopped anywhere in the block resumes on an
+//     instruction boundary either way, when the patch is applied and when it is put back.
 // The destructor leaves an applied patch in place, as the redirects do; only Restore() removes it.
 
 #include "platform/code_memory.h"
@@ -29,7 +30,7 @@ public:
     InstructionPatch& operator=(const InstructionPatch&) = delete;
 
     /// Replaces `original` at `site` (live address; one instruction, inside one aligned 16-byte block) with
-    /// `replacement` of the same length. Returns false, changing nothing, if any condition fails.
+    /// `replacement`, one instruction of the same length. Returns false, changing nothing, if any condition fails.
     bool Apply(std::uintptr_t site, std::span<const std::uint8_t> original,
                std::span<const std::uint8_t> replacement) noexcept;
 

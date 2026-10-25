@@ -1731,6 +1731,59 @@ inline constexpr platform::FunctionFact kRequestResolutionChange{L"FSystemResolu
 /// GSystemResolution: ResX, ResY +4, WindowMode +8 (0 Fullscreen, 1 WindowedFullscreen = the game's Borderless and
 /// Fullscreen options, 2 Windowed). One writer: FSystemResolution::UpdateSystemResolution.
 inline constexpr std::uintptr_t kSystemResolution           = 0x1453E3AE0;
+/// Dynamic resolution (research/RE-split-upscale.md, S-RMK-UPSCALE; read by the integrator 2026-10-24): each global
+/// holds a pointer, set at the console variable's registration, to its shadowed values (the game thread's at +0, the
+/// render thread's at +4); FDefaultDynResDriver takes fminf(Max / 100, the heuristic) as every view's fraction.
+inline constexpr std::uintptr_t kDynResMaxScreenPercentageRef = 0x145952648;  // r.DynamicRes.MaxScreenPercentage (float)
+inline constexpr std::uintptr_t kDynResPausingDeniedRef       = 0x145958B30;  // r.DynamicRes.PausingDenied (int)
+/// UEngine::GetDynamicResolutionStatus(engine, out): out {status (0 unsupported, 1 disabled, 2 paused, 3 enabled),
+/// the fraction, its upper bound}; reads GEngine itself.
+inline constexpr std::array<std::uint8_t, 16> kGetDynamicResolutionStatusEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x74, 0x24, 0x10, 0x57, 0x48, 0x83, 0xEC, 0x20, 0x48};
+inline constexpr platform::FunctionFact kGetDynamicResolutionStatus{L"UEngine::GetDynamicResolutionStatus", 0x14331B080,
+                                                                    kGetDynamicResolutionStatusEntry};
+inline constexpr std::int32_t kDynamicResolutionEnabled = 3;
+/// The bloom area (FViewInfo +0xA0, research/RE-split-bloom-streaks.md, S-RMK-BLOOMSTREAK): FSceneRenderer::
+/// PrepareViewRectsForRendering (0x1425C70B0) sizes it Ceil(Unscaled size x r.ScreenPercentage), without the dynamic-
+/// resolution fraction that ViewRect's size has (xmm7 = SP x f, xmm8 = SP). Bloom, the glare passes and the narrow
+/// filter draw over it into targets sized from the scene buffer, so in split, with the views in window pixels wider than
+/// the buffer, everything past the buffer's width repeats their last column (light streaks). 0x1425C727F through
+/// 0x1425C72EB as the research read them: xmm7 = SP x f, then the width's and the height's ViewRect and bloom-area
+/// products.
+inline constexpr std::uintptr_t kBloomAreaSizeStart = 0x1425C727F;
+inline constexpr std::uint8_t   kBloomAreaSize[]    = {
+    0x41, 0x0F, 0x28, 0xF8,                          // movaps xmm7, xmm8                 SP
+    0x48, 0x8B, 0x4F, 0x40,                          // mov rcx, [rdi+40h]
+    0xF3, 0x42, 0x0F, 0x59, 0x3C, 0x28,              // mulss xmm7, [rax+r13]             x f (this view's)
+    0x8B, 0x84, 0x2B, 0x88, 0x00, 0x00, 0x00,        // mov eax, [rbx+rbp+88h]            Unscaled.Max.X
+    0x2B, 0x84, 0x2B, 0x80, 0x00, 0x00, 0x00,        // sub eax, [rbx+rbp+80h]            - Unscaled.Min.X
+    0x66, 0x0F, 0x6E, 0xD8,                          // movd xmm3, eax
+    0x0F, 0x5B, 0xDB,                                // cvtdq2ps xmm3, xmm3
+    0x0F, 0x28, 0xCB,                                // movaps xmm1, xmm3
+    0xF3, 0x0F, 0x59, 0xDF,                          // mulss xmm3, xmm7                  ViewRect width
+    0xF3, 0x41, 0x0F, 0x59, 0xC8,                    // mulss xmm1, xmm8                  bloom area width
+    0xF3, 0x0F, 0x58, 0xDB,                          // addss xmm3, xmm3
+    0xF3, 0x0F, 0x58, 0xC9,                          // addss xmm1, xmm1
+    0xF3, 0x0F, 0x5C, 0xC1,                          // subss xmm0, xmm1
+    0xF3, 0x0F, 0x2D, 0xC0,                          // cvtss2si eax, xmm0
+    0x0F, 0x28, 0xC6,                                // movaps xmm0, xmm6
+    0xD1, 0xF8,                                      // sar eax, 1
+    0x89, 0x84, 0x24, 0xA8, 0x00, 0x00, 0x00,        // mov [rsp+0A8h], eax
+    0x8B, 0x84, 0x2B, 0x8C, 0x00, 0x00, 0x00,        // mov eax, [rbx+rbp+8Ch]            Unscaled.Max.Y
+    0x2B, 0x84, 0x2B, 0x84, 0x00, 0x00, 0x00,        // sub eax, [rbx+rbp+84h]            - Unscaled.Min.Y
+    0x66, 0x0F, 0x6E, 0xD0,                          // movd xmm2, eax
+    0x0F, 0x5B, 0xD2,                                // cvtdq2ps xmm2, xmm2
+    0x0F, 0x28, 0xCA,                                // movaps xmm1, xmm2
+    0xF3, 0x0F, 0x59, 0xD7,                          // mulss xmm2, xmm7                  ViewRect height
+    0xF3, 0x41, 0x0F, 0x59, 0xC8,                    // mulss xmm1, xmm8                  bloom area height
+};
+inline constexpr std::uintptr_t kBloomAreaWidthMul  = 0x1425C72A9;  // in the block at 0x1425C72A0
+inline constexpr std::uintptr_t kBloomAreaHeightMul = 0x1425C72E6;  // in the block at 0x1425C72E0
+inline constexpr std::uint8_t   kBloomAreaBySp[]    = {0xF3, 0x41, 0x0F, 0x59, 0xC8};  // mulss xmm1, xmm8
+/// mulss xmm1, xmm7 as ONE instruction of the original's length (an empty REX prefix): a 4-byte form plus a nop would
+/// add an instruction start the original lacks, and a thread stopped on it when the original is put back would resume
+/// inside `mulss xmm1, xmm8` (review 2026-10-24).
+inline constexpr std::uint8_t   kBloomAreaByViewScale[] = {0xF3, 0x40, 0x0F, 0x59, 0xCF};
 inline constexpr std::uint32_t  kSystemResolutionWindowMode = 0x8;
 /// The 321 copies of `cmp dword [GSystemResolution.WindowMode], 1` (83 3D rel32 01): the final tonemap pass's own
 /// and one in each of its 320 pixel-shader setter permutations, each followed by a jnz over the single-view fit.

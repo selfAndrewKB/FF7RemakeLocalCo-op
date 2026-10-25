@@ -72,6 +72,7 @@
 #include "render/history_cut.h"
 #include "render/lighting_volume.h"
 #include "views/column_layout.h"
+#include "views/split_scale.h"
 #include "views/column_rules.h"
 #include "views/letterbox_patch.h"
 #include "views/display_align.h"
@@ -100,7 +101,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.80.0-no-circling";
+constexpr const wchar_t* kVersion = L"0.81.0-split-scale";
 static_assert(lss::views::column_rules::kMaxColumns == lss::hud::overlay_pass::kMaxColumns, "the columns the views and the HUD count");  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
@@ -264,6 +265,7 @@ public:
         lss::views::mirror_player::Clear(L"the mod unloads");
         lss::players::split_render::Remove();  // after the mirrors: the mask back to zero so a reinstall finds it free
         lss::views::column_layout::Remove();
+        lss::views::split_scale::Remove();  // the player's dynamic-resolution values back (on the game thread only)
         lss::views::window_span::Leave(L"the mod unloads");
         lss::views::display_align::Restore();  // the leave's ticks never come: the monitors go back now
         lss::views::scene_camera_two::Remove();
@@ -353,6 +355,8 @@ public:
         lss::views::letterbox_patch::Install(*image);
         lss::views::window_span::Install(*image);
         lss::views::column_layout::Install(*image);     // optional: without it three local players take the stock quadrants
+        // Optional: without it split at a resolution below the window leaves each view's outer part undrawn.
+        lss::views::split_scale::Install(*image, &lss::players::Session::Console);
         lss::views::scene_camera_two::Install(*image);  // readings only; fine without
         // Optional: without it a held span shows one view across the row while player 2 is out.
         if (lss::views::mirror_player::Install(*image))
@@ -459,6 +463,7 @@ private:
         // The layout asks whether the window spans monitors at all (held or entered at a join), not only while held.
         lss::views::column_layout::Tick(viewColumns, playersIn + lss::views::mirror_player::Count(), lss::views::window_span::Columns());
         lss::views::mirror_player::Tick(playersIn, session_.SeatIds(), viewColumns, aloneColumns);
+        lss::views::split_scale::Tick(session_.Count() + lss::views::mirror_player::Count() > 0 && lss::views::letterbox_patch::Applied());
         MapColumns();  // after every join, leave and mirror change of this tick: the HUD and this frame's passes read it
         lss::players::split_render::Tick(session_.Count() + lss::views::mirror_player::Count() > 0);
         lss::views::scene_camera_two::SeatManagers seatManagers{};
