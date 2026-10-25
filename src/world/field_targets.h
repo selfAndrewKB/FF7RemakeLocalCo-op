@@ -1,7 +1,8 @@
 #pragma once
 
-// A further player opens chests, picks up the shining items on the ground and opens doors with their own pad, as player 1
-// does (research/RE-chest-two.md, §8 the pre-build review; Rebirth's player_two/field_pickup was the model).
+// A further player opens chests, picks up the shining items on the ground, opens doors and curtains and fires the
+// grappling hook with their own pad, as player 1 does (research/RE-chest-two.md, §8 the pre-build review;
+// research/RE-hookshot-two.md; Rebirth's player_two/field_pickup was the model).
 //
 // The game keeps one field target manager. Each frame its pick finds the nearest target around the party leader (the
 // prompt row, the icons, the leader's glance), and its press opens the current target on FieldAction. Both are one game
@@ -13,11 +14,12 @@
 //   - The press's FieldAction read is inline in its caller (a tick of thirty systems that cannot run twice), so for a
 //     further player the mod makes it with the game's own gate and getters inside the pad's button scope and writes the
 //     three bytes the game writes (held, pressed, the latch cleared on release): the one rule restated here.
-//   - Only chests and ground items (an ObjectTreasure row), doors (Door_, HeavyDoor_) and the member's own swing
-//     (TarzanJump_ and its tag) are pressed, the last two while the member's field actions run as the player's
-//     (world/traversal_action.h). Talk, events and object events stay player 1's: for the player's pick every other
-//     active target is marked disabled (the entry's own byte, the pick's rejection test; put back after, unless the
-//     run applied the game's own pending write to it), so the game gives the player neither an icon nor a prompt for them.
+//   - Only chests and ground items (an ObjectTreasure row), doors (Door_, HeavyDoor_), curtains (Curtain_, an
+//     experiment), grappling-hook points (HookShot_) and the member's own swing (TarzanJump_ and its tag) are pressed,
+//     all but chests while the member's field actions run as the player's (world/traversal_action.h). Talk, events and
+//     object events stay player 1's: for the player's pick every other active target is marked disabled (the entry's
+//     own byte, the pick's rejection test; put back after, unless the run applied the game's own pending write to it),
+//     so the game gives the player neither an icon nor a prompt for them.
 //   - The press only queues the chest's open; the opener is taken a step later, when the open begins, as the party leader
 //     at that moment. The chests a further player's press queued are noted, and that open's Begin runs in the player's
 //     Leader scope, so the player's member opens it with the game's own animation (otherwise player 1's would walk over).

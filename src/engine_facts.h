@@ -1994,6 +1994,17 @@ inline constexpr std::uint8_t  kFieldActionStep = 9, kFieldActionSlide = 16, kFi
 inline constexpr std::uint8_t  kFieldActionJump = 8, kFieldActionClimb = 21;
 inline constexpr std::uint8_t  kFieldActionBalance = 6, kFieldActionFan = 20, kFieldActionCounterGate = 31, kFieldActionRope = 40;
 inline constexpr std::uint8_t  kFieldActionGapJump = 19, kFieldActionWireFence = 38, kFieldActionPole = 39;
+inline constexpr std::uint8_t  kFieldActionHookShot = 15, kFieldActionCurtain = 26;
+/// The grappling hook's state (15, research/RE-hookshot-two.md §2.5): for the party leader's type its Start queues the
+/// field lock bit 1 (HookShotDisableController: hands the party leader to its AI and holds every controller for the
+/// turn), its sub-state 1 enter clears it after the turn and its Exit clears it again at every end (the only clear on an
+/// abort; the clears are plain bit clears). Three calls of the queued lock (void(int8 bit, u64 reason)), each inside one
+/// 16-byte block. Its camera: flavor 16 (on at sub-state 1 for the party leader, off at the landing by the action's own
+/// delegate).
+inline constexpr std::uintptr_t kHookShotLockCall = 0x141047786;        // E8 95 52 F8 FF, to kQueueLockBitSet
+inline constexpr std::uintptr_t kHookShotUnlockCall = 0x141048614;      // E8 D7 44 F8 FF, to kQueueLockBitClear
+inline constexpr std::uintptr_t kHookShotExitUnlockCall = 0x141047FC6;  // E8 25 4B F8 FF, to kQueueLockBitClear
+inline constexpr std::uint8_t   kFlavorHookShot = 16;
 /// The slide-down state's post-tick (state vtable +0x20, void(state, float dt)): its side steer reads the merged stick.
 /// The engine calls every character's post-tick at the top of the walk-up start loop (game thread), outside the
 /// component tick (research/RE-traversal-slides-two.md §4).

@@ -967,11 +967,12 @@ void Session::HandWithLeader(Seat& seat) noexcept
                            party_member::ControlLockMask(), seat.Name());
         return;
     }
-    // Player 1's crawl or squeeze locks the field for its own leader only (the user, 2026-10-24: a crawl locks only the
-    // mover): the member stays its player's.
+    // Player 1's crawl, squeeze or grappling hook locks the field for its own leader only (the user, 2026-10-24: a crawl
+    // locks only the mover): the member stays its player's.
     if (world::traversal_action::MoverLockNow())
     {
-        platform::LogDebug(L"player 1's crawl or squeeze handed only player 1's character to its AI (lock {:#x}); {}'s member stays theirs",
+        platform::LogDebug(L"player 1's crawl, squeeze or grappling hook handed only player 1's character to its AI (lock {:#x}); {}'s "
+                           L"member stays theirs",
                            party_member::ControlLockMask(), seat.Name());
         return;
     }

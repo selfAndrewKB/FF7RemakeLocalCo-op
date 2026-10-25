@@ -48,8 +48,8 @@ constexpr int         kSeats   = players::scopes::kMaxPlayers;
 constexpr std::size_t kItems   = facts::kTargetsItems;
 constexpr std::size_t kPending = 16;  // chests a further player's press queued that have not begun yet
 
-/// What a target is, by the dispatch's own order (research/RE-chest-two.md §8.1): only chests, ground items, doors and
-/// the player's own swing are pressed for a further player.
+/// What a target is, by the dispatch's own order (research/RE-chest-two.md §8.1): only chests, ground items, doors,
+/// curtains, grappling-hook points and the player's own swing are pressed for a further player.
 enum class Kind : std::uint8_t
 {
     None,
@@ -57,8 +57,10 @@ enum class Kind : std::uint8_t
     Object,  // an ObjectLayout, ObjectActor or ObjectEnemy row: push-button events and state signals (player 1's)
     Chest,   // an ObjectTreasure row: a chest or a shining item on the ground
     Party,   // an ObjectParty row
-    Door,    // Door_ / HeavyDoor_: the member's own door action
-    Swing,   // TarzanJump_ with the member's own tag: its swing's press
+    Door,      // Door_ / HeavyDoor_: the member's own door action
+    Swing,     // TarzanJump_ with the member's own tag: its swing's press
+    HookShot,  // HookShot_: the grappling hook (its target shows only while the member stands in its hook area)
+    Curtain,   // Curtain_: a door-like pass-through (admitted as an experiment)
     Other,
 };
 
@@ -73,16 +75,27 @@ const wchar_t* KindName(Kind kind) noexcept
         case Kind::Party: return L"a party member";
         case Kind::Door: return L"a door";
         case Kind::Swing: return L"a swing";
+        case Kind::HookShot: return L"a grappling-hook point";
+        case Kind::Curtain: return L"a curtain";
         case Kind::Other: return L"another target";
     }
     return L"?";
 }
 
-/// Pressed for a further player now: a chest always; a door or the member's own swing only while the member's field
-/// actions run as its player's (world/traversal_action.h), read at each use (a level change can stop that).
+/// Pressed for a further player now: a chest always; a door, a curtain or the member's own swing only while the member's
+/// field actions run as its player's (world/traversal_action.h), the grappling hook only while its three lock calls are
+/// also redirected (traversal_action::HookShotReady); read at each use (a level change can stop that).
 bool Admitted(Kind kind) noexcept
 {
-    return kind == Kind::Chest || ((kind == Kind::Door || kind == Kind::Swing) && traversal_action::Scoping());
+    switch (kind)
+    {
+        case Kind::Chest: return true;
+        case Kind::Door:
+        case Kind::Swing:
+        case Kind::Curtain: return traversal_action::Scoping();
+        case Kind::HookShot: return traversal_action::HookShotReady();
+        default: return false;
+    }
 }
 
 /// A seat's own copy of the manager's per-player state, and what it last saw.
@@ -326,6 +339,14 @@ Kind Classify(std::uint64_t name, std::uint64_t state, const void* member) noexc
     if (StartsWith(name, "TarzanJump_"))
     {
         return OwnSwing(name, member) ? Kind::Swing : Kind::Other;
+    }
+    if (StartsWith(name, "HookShot_"))
+    {
+        return Kind::HookShot;
+    }
+    if (StartsWith(name, "Curtain_"))
+    {
+        return Kind::Curtain;
     }
     return Kind::Other;
 }

@@ -84,6 +84,8 @@ bool           g_installed = false;
 platform::CallRedirect  g_compTick;
 platform::EntryRedirect g_startEnd;
 platform::CallRedirect  g_crawlLock, g_crawlUnlock, g_squeezeLock, g_squeezeUnlock;
+platform::CallRedirect  g_hookShotLock, g_hookShotUnlock, g_hookShotAbortUnlock;
+bool                    g_hookShotReady = false;  // the three placed: a seat's hookshot takes no field lock
 platform::VTableEntry   g_slideDownPostTick;
 platform::EntryRedirect g_balanceEnd;
 platform::EntryRedirect g_squeezeNearExit;
@@ -123,6 +125,7 @@ bool           g_locksPlaced = false;
 std::atomic<bool> g_locksOk{false};  // all four lock calls redirected: a seat's member may tick in its scopes (read on any thread)
 bool           g_crawlLocking = false;  // inside player 1's crawl lock call
 std::atomic<bool> g_squeezeQueued{false};  // player 1's squeeze lock queued and not yet unqueued (any thread)
+std::atomic<bool> g_hookShotQueued{false};  // player 1's hookshot turn lock queued and not yet unqueued (any thread)
 bool           g_neverMovable = false;  // a FieldActionSystem whose tick never ran on any thread: logged once
 std::uint32_t  g_gameTicks = 0;
 std::int64_t   g_gameTime  = 0;  // performance-counter ticks spent inside component ticks on the game thread
@@ -581,7 +584,8 @@ bool ReplaceStateSlot(const platform::GameImage& image, std::uintptr_t slotFact,
     return slot && fn && entry.Replace(*slot, *fn, reinterpret_cast<std::uintptr_t>(thunk));
 }
 
-/// A crawl's or squeeze's lock call: skipped while a seat's member's component ticks (game thread).
+/// A crawl's, squeeze's or grappling hook's lock or unlock call: skipped while a seat's member's component ticks (game
+/// thread).
 bool SkipLock() noexcept
 {
     const int seat = g_ticking.load(std::memory_order_relaxed);
@@ -590,7 +594,8 @@ bool SkipLock() noexcept
         return false;
     }
     ++g_seats[seat].locksSkipped;
-    platform::LogDebug(L"traversal: {}'s crawl or squeeze takes no field lock (it would hand the party leader to its AI)", players::SeatName(seat));
+    platform::LogDebug(L"traversal: {}'s crawl, squeeze or hookshot lock call skipped (a lock would hand the party leader to its AI, an "
+                       L"unlock would end player 1's)", players::SeatName(seat));
     return true;
 }
 
@@ -633,6 +638,32 @@ void SqueezeUnlock(std::int8_t bit, std::uint64_t reason)
     }
 }
 
+/// The hookshot's turn lock: skipped for a seat's member; player 1's is a lock of the mover only (MoverLockNow). A seat's
+/// Start runs inside the action start under the pause, so its leader-typed Set is normally never reached: the skip that
+/// matters for a seat is its sub-state 1 Clear (scoped), which would clear player 1's turn lock early.
+void HookShotLock(std::int8_t bit, std::uint64_t reason)
+{
+    if (!SkipLock())
+    {
+        if (OnGameThreadNow())
+        {
+            g_hookShotQueued.store(true, std::memory_order_relaxed);
+        }
+        reinterpret_cast<QueueLockFn>(g_hookShotLock.Original())(bit, reason);
+    }
+}
+
+/// Its two unlocks (after the turn, and the Exit's at every end). Both redirects were placed checking the same target,
+/// the queued lock's clear, so this one thunk calls it directly.
+void HookShotUnlock(std::int8_t bit, std::uint64_t reason)
+{
+    if (!SkipLock())
+    {
+        g_hookShotQueued.store(false, std::memory_order_relaxed);
+        reinterpret_cast<QueueLockFn>(g_queueClear)(bit, reason);
+    }
+}
+
 const wchar_t* ActionName(std::uint8_t action) noexcept
 {
     switch (action)
@@ -657,6 +688,8 @@ const wchar_t* ActionName(std::uint8_t action) noexcept
         case facts::kFieldActionGapJump: return L"gap jump";
         case facts::kFieldActionPole: return L"pole slide";
         case facts::kFieldActionWireFence: return L"wire-fence climb";
+        case facts::kFieldActionHookShot: return L"grappling hook";
+        case facts::kFieldActionCurtain: return L"curtain";
         default: return L"field action";
     }
 }
@@ -781,6 +814,23 @@ void LadderLeaveAtExit(int seat, void* state, std::uint8_t phase) noexcept
     }
 }
 
+/// A camera flavor's active byte on an operator (-1 unread).
+int FlavorActive(const void* op, std::uint8_t id) noexcept
+{
+    const void*  flavor = op != nullptr ? ReadPointer(op, facts::kOperatorFlavors + 8u * id) : nullptr;
+    std::uint8_t active = 0;
+    return flavor != nullptr && Read(static_cast<const std::uint8_t*>(flavor) + facts::kFlavorActive, active) ? active : -1;
+}
+
+/// A seat's grappling hook starting or ending: the hookshot camera on its player's operator and on player 1's
+/// (research/RE-hookshot-two.md live check 4: the seat's goes on and off, player 1's stays off).
+void LogHookShotCameras(int seat, const wchar_t* when) noexcept
+{
+    platform::LogDebug(L"traversal: {}'s grappling hook {}: its hookshot camera {}, player 1's {}", players::SeatName(seat), when,
+                       FlavorActive(players::player_two_camera::Operator(seat), facts::kFlavorHookShot),
+                       FlavorActive(players::player_two_camera::OperatorOne(), facts::kFlavorHookShot));
+}
+
 /// After a seat's action ends: the camera flavors its exit left on the seat's operator, switched off by the game.
 void CamerasOffAfter(int seat, std::uint8_t ended) noexcept
 {
@@ -903,6 +953,7 @@ void Place(bool anyIn) noexcept
     {
         g_onGame.store(false, std::memory_order_relaxed);  // a new FieldActionSystem: seen on the game thread again first
         g_squeezeQueued.store(false, std::memory_order_relaxed);
+        g_hookShotQueued.store(false, std::memory_order_relaxed);
         const std::uint8_t cleared = flags & static_cast<std::uint8_t>(~facts::kTickRunOnAnyThread);
         if (platform::WriteGuarded(fas + facts::kFieldActionTickFlags, &cleared, 1))
         {
@@ -1219,6 +1270,20 @@ bool Install(const platform::GameImage& image) noexcept
         platform::LogWarning(L"traversal: the wire fence's start or exit is not as the research read it; a further player on a wire "
                              L"fence keeps the follow camera{}", back ? L"" : L" (a slot could not be put back; it passes through)");
     }
+    // The hookshot's lock calls (each inside one block, so placed here): together, or the hookshot is not admitted.
+    const auto hookLock = image.Rebase(facts::kHookShotLockCall, 5), hookUnlock = image.Rebase(facts::kHookShotUnlockCall, 5);
+    const auto hookAbort = image.Rebase(facts::kHookShotExitUnlockCall, 5);
+    g_hookShotReady = hookLock && hookUnlock && hookAbort &&
+                      g_hookShotLock.Install(*hookLock, *queueSet, reinterpret_cast<std::uintptr_t>(&HookShotLock)) &&
+                      g_hookShotUnlock.Install(*hookUnlock, *queueClear, reinterpret_cast<std::uintptr_t>(&HookShotUnlock)) &&
+                      g_hookShotAbortUnlock.Install(*hookAbort, *queueClear, reinterpret_cast<std::uintptr_t>(&HookShotUnlock));
+    if (!g_hookShotReady)
+    {
+        const bool abortBack = g_hookShotAbortUnlock.Restore(), unlockBack = g_hookShotUnlock.Restore();
+        const bool back      = g_hookShotLock.Restore() && unlockBack && abortBack;
+        platform::LogWarning(L"traversal: the grappling hook's lock calls are not as the research read it; further players do not "
+                             L"use the grappling hook{}", back ? L"" : L" (a call could not be put back; it passes through)");
+    }
     const auto ladderJump  = image.Rebase(facts::kLadderPhaseJump, 5);
     const auto ladderPhase = platform::FindFunction(image, facts::kLadderPhaseDelegate);
     if (const auto leave = platform::FindFunction(image, facts::kLadderLeave))
@@ -1323,6 +1388,10 @@ void TickSeat(int seat, void* member) noexcept
     {
         platform::LogDebug(L"traversal: {}'s member {} a {}", players::SeatName(seat), member != nullptr ? L"ends" : L"left during",
                            ActionName(state.action));
+        if (state.action == facts::kFieldActionHookShot)
+        {
+            LogHookShotCameras(seat, L"ended");
+        }
         if (member != nullptr)
         {
             CamerasOffAfter(seat, state.action);
@@ -1333,6 +1402,10 @@ void TickSeat(int seat, void* member) noexcept
         state.ladderKeepYaw = -1;
         ++state.actions;
         platform::LogDebug(L"traversal: {}'s member starts a {}", players::SeatName(seat), ActionName(action));
+        if (action == facts::kFieldActionHookShot)
+        {
+            LogHookShotCameras(seat, L"started");
+        }
     }
     state.action = action;
 }
@@ -1352,6 +1425,10 @@ void Tick(bool anyIn) noexcept
     {
         g_squeezeQueued.store(false, std::memory_order_relaxed);  // player 1's squeeze ended without its unlock (a load, a change)
     }
+    if (g_hookShotQueued.load(std::memory_order_relaxed) && !PlayerOneIn(facts::kFieldActionHookShot))
+    {
+        g_hookShotQueued.store(false, std::memory_order_relaxed);  // player 1's hookshot ended without its unlock
+    }
 }
 
 void Remove() noexcept
@@ -1362,6 +1439,8 @@ void Remove() noexcept
     g_monkeyBarsExit.Restore();
     g_monkeyBarsStart.Restore();
     g_monkeyBarsBaseExit.Restore();
+    // The hookshot's lock calls stay with the four lock calls (see the header): they pass straight through when no seat's
+    // component ticks.
     g_fenceExit.Restore();
     g_fenceStart.Restore();
     g_fenceBaseStart.Restore();
@@ -1404,7 +1483,12 @@ bool OnGameThread() noexcept
 
 bool MoverLockNow() noexcept
 {
-    return g_crawlLocking || g_squeezeQueued.load(std::memory_order_relaxed);
+    return g_crawlLocking || g_squeezeQueued.load(std::memory_order_relaxed) || g_hookShotQueued.load(std::memory_order_relaxed);
+}
+
+bool HookShotReady() noexcept
+{
+    return g_hookShotReady && Scoping();
 }
 
 bool Scoping() noexcept
