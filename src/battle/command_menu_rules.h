@@ -14,11 +14,19 @@ namespace lss::battle::command_menu_rules {
 /// 1's write starts the frame's least value and each seat's write takes the least of the frame's so far and its
 /// own. A seat's write in a frame where player 1's tick wrote nothing goes as asked and is counted: the game's tick
 /// writes every frame (RE-battle.md §2.7), so the count stays 0 unless that changes.
+/// With the slow switched off (the user's setting, RE-menu-slow.md §7) every write asks for full speed, the value the
+/// game's tick writes while no menu is open, so an open menu no longer slows the world.
 class SlowWrites
 {
 public:
+    static constexpr float kFullSpeed = 1.0f;  // the game's write with no menu open
+
     /// A new engine frame: no menu has written yet.
     void BeginFrame() noexcept { least_.reset(); }
+
+    /// Whether an open menu slows the world (the game's behaviour; on until switched off).
+    void SetSlows(bool slows) noexcept { slows_ = slows; }
+    bool Slows() const noexcept { return slows_; }
 
     /// The value seat `seat`'s tick writes (0: player 1's, the game's) for the `value` its menu asked.
     float Write(int seat, float value) noexcept
@@ -27,7 +35,8 @@ public:
         {
             ++alone_;
         }
-        least_ = seat == 0 || !least_ ? value : std::min(*least_, value);
+        const float asked = slows_ ? value : kFullSpeed;
+        least_            = seat == 0 || !least_ ? asked : std::min(*least_, asked);
         return *least_;
     }
 
@@ -37,6 +46,7 @@ public:
 private:
     std::optional<float> least_;  // the frame's least value so far, once a menu wrote
     std::uint32_t        alone_ = 0;
+    bool                 slows_ = true;
 };
 
 }  // namespace lss::battle::command_menu_rules

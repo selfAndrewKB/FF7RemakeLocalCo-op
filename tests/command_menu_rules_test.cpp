@@ -101,6 +101,31 @@ void EqualValues()
     EXPECT(slow.Alone() == 0);
 }
 
+/// The slow switched off: every menu's write asks for full speed, player 1's and the seats' alike; switched on again,
+/// the next write slows as the game asks, with nothing to put back.
+void SlowSwitchedOff()
+{
+    SlowWrites slow;
+    EXPECT(slow.Slows());                     // the game's behaviour until switched off
+    slow.SetSlows(false);
+    slow.BeginFrame();
+    EXPECT(slow.Write(0, 0.05f) == 1.0f);     // player 1's menu open: full speed
+    EXPECT(slow.Write(1, 0.05f) == 1.0f);     // player 2's too
+    EXPECT(slow.Write(2, 0.02f) == 1.0f);     // any value, e.g. the Hard row's
+    EXPECT(slow.Alone() == 0);
+    slow.BeginFrame();
+    EXPECT(slow.Write(1, 0.05f) == 1.0f);     // a seat's alone write: full speed, still counted
+    EXPECT(slow.Alone() == 1);
+
+    slow.SetSlows(true);                      // switched on mid-menu: the next write slows
+    slow.BeginFrame();
+    EXPECT(slow.Write(0, 0.05f) == 0.05f);
+    EXPECT(slow.Write(1, 1.0f) == 0.05f);
+    slow.SetSlows(false);                     // and off within a frame: the frame's least so far stays until the next
+    EXPECT(slow.Write(2, 0.05f) == 0.05f);    // write of player 1's, which the game makes every frame
+    EXPECT(slow.Write(0, 0.05f) == 1.0f);
+}
+
 }  // namespace
 
 int main()
@@ -110,5 +135,6 @@ int main()
     AloneWrites();
     PlayerOneReplaces();
     EqualValues();
+    SlowSwitchedOff();
     return lss::test::Report();
 }

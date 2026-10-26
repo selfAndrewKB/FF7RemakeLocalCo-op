@@ -16,6 +16,7 @@
 #include <Unreal/Hooks/Hooks.hpp>
 
 #include "battle/command_camera_two.h"
+#include "battle/battle_warps.h"
 #include "battle/command_menu_tick.h"
 #include "battle/command_menu_two.h"
 #include "battle/enemy_coin.h"
@@ -109,7 +110,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.98.0-sound-near-every-player";
+constexpr const wchar_t* kVersion = L"0.99.0-battle-options";
 static_assert(lss::views::column_rules::kMaxColumns == lss::hud::overlay_pass::kMaxColumns, "the columns the views and the HUD count");  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
@@ -307,6 +308,7 @@ public:
         lss::battle::lock_camera_two::Remove();
         lss::battle::targeting_two::Remove();
         lss::battle::party_switch::Remove();
+        lss::battle::battle_warps::Remove();
         lss::battle::command_menu_tick::Remove();
         lss::battle::command_menu_two::Remove();
         lss::world::overlap_fade::Remove();  // any time: its slots pass through and it writes no game state
@@ -384,7 +386,12 @@ public:
         lss::players::pad_presence::Register();      // diagnostics: which XInput users have a pad
         lss::players::lead_gate::Install(*image);    // optional: without it a LEAD on player 2's member stays the player's
         // Player 2's own battle: its command menu, ticked in its scopes, and the switch rules. Each optional.
-        if (lss::players::scopes::Install(*image) && lss::battle::command_menu_two::Install(*image))
+        const bool scopesReady = lss::players::scopes::Install(*image);
+        if (scopesReady)
+        {
+            lss::battle::battle_warps::Install(*image);  // optional: without it the game warps the whole party
+        }
+        if (scopesReady && lss::battle::command_menu_two::Install(*image))
         {
             lss::battle::command_menu_tick::Install(*image);
             lss::battle::party_switch::Install(*image);
@@ -439,7 +446,7 @@ public:
             [this](Hook::TCallbackIterationData<void>&, RC::Unreal::UEngine*, float, bool) { OnEngineTick(); }, options);
         Log(L"ready: every engine check passed. Ctrl+F7 adds player 2 (it takes the 2nd party slot's member), Ctrl+F8 removes player 2, "
             L"Ctrl+Shift+F7 adds player 3 (the 3rd slot's member), Ctrl+Shift+F8 removes player 3, Ctrl+F6 reports, Ctrl+F2 toggles "
-            L"the window span; with window-span.hold on the mirror player fills the empty columns");
+            L"the window span, Ctrl+F9 switches the battle menus' world slow-down; with window-span.hold on the mirror player fills the empty columns");
     }
 
 private:
@@ -468,6 +475,10 @@ private:
         if (Pressed(VK_F2, spanWasDown_))
         {
             lss::views::window_span::Toggle();
+        }
+        if (Pressed(VK_F9, menuSlowWasDown_))
+        {
+            lss::battle::command_menu_tick::SetMenuSlow(!lss::battle::command_menu_tick::MenuSlow(), L"Ctrl+F9");
         }
         // The console's lines (joins and leaves among them) before the session and the column map, as the keys, so
         // this frame's HUD passes never name a player the console just took out.
@@ -693,6 +704,7 @@ private:
     bool                  leaveThreeWasDown_ = false;
     bool                  reportWasDown_ = false;
     bool                  spanWasDown_   = false;
+    bool                  menuSlowWasDown_ = false;
     Hook::GlobalCallbackId tickCallback_ = Hook::ERROR_ID;
 };
 

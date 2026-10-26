@@ -9,6 +9,7 @@
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
+#include "platform/settings.h"
 #include "platform/verified_code.h"
 #include "players/pad_buttons.h"
 #include "players/player_two_camera.h"
@@ -72,6 +73,8 @@ int                                      g_eventSeat   = 0;
 bool                                     g_aloneLogged = false;
 command_menu_rules::SlowWrites           g_slowWrites;
 std::optional<players::scopes::Scope>    g_eventScope;  // the seat's context around one of its pad's key events
+
+void LogMenuSlow(const wchar_t* why) noexcept;  // the slow-down's state, at Info (below)
 
 std::uint8_t* Ctrl1() noexcept
 {
@@ -242,7 +245,8 @@ std::wstring Reading()
                             SeatName(seat), s.ticks, s.slowWrites, s.routing.routed, s.routing.notReady, s.routing.noPath,
                             s.routing.notHeld);
     }
-    return text + std::format(L"; seat writes without player 1's {}", g_slowWrites.Alone());
+    return text + std::format(L"; seat writes without player 1's {}; an open menu {}", g_slowWrites.Alone(),
+                              g_slowWrites.Slows() ? L"slows the world" : L"does not slow the world (switched off)");
 }
 
 }  // namespace
@@ -258,7 +262,8 @@ bool Install(const platform::GameImage& image) noexcept
     const auto gameMode = image.Rebase(facts::kGameModeGlobal, sizeof(void*));
     if (!tickCall || !tick || !slowCall || !slow || !slot || !system || !gameMode)
     {
-        platform::Log(L"command menu 2: the tick's engine checks failed; no seat's menu ever ticks");
+        platform::Log(L"command menu 2: the tick's engine checks failed; no seat's menu ever ticks, and the menu-slow "
+                      L"switch does nothing");
         return false;
     }
     g_tickCall     = *tickCall;
@@ -268,12 +273,33 @@ bool Install(const platform::GameImage& image) noexcept
     g_slot         = *slot;
     g_battleSystem = reinterpret_cast<void**>(*system);
     g_gameMode     = reinterpret_cast<void**>(*gameMode);
+    // The user's setting, set before the redirect is placed (no write reads it yet).
+    const std::wstring slowSetting = platform::settings::Read(L"Battle", L"menu-slow", L"");
+    if (!slowSetting.empty() && slowSetting != L"on" && slowSetting != L"off")
+    {
+        platform::LogWarning(L"battle menus: LocalSplitScreen.ini [Battle] menu-slow = '{}' is not on or off; read as on "
+                             L"(the game's)",
+                             slowSetting);
+    }
+    g_slowWrites.SetSlows(slowSetting != L"off");
     if (!g_slow.Install(g_slowCall, g_slowTarget, reinterpret_cast<std::uintptr_t>(&SetSlot)))
     {
-        platform::Log(L"command menu 2: the time-slow write could not be redirected; no seat's menu ever ticks");
+        platform::Log(L"command menu 2: the time-slow write could not be redirected; no seat's menu ever ticks, and the "
+                      L"menu-slow switch does nothing");
         return false;
     }
+    LogMenuSlow(slowSetting.empty()                              ? L"the default; LocalSplitScreen.ini has no [Battle] menu-slow"
+                : slowSetting == L"on" || slowSetting == L"off" ? L"the settings file"
+                                                                : L"the default; the file's value is not valid");
     players::pad_buttons::SetUiContext({&EnterEventContext, &LeaveEventContext});
+    control::Register({.name = L"menu-slow", .shape = control::Shape::OnOff,
+                       .help = L"on: an open battle command menu slows the world, as the game does; off: the world and "
+                               L"the ATB gauges run on at full speed while a menu is open (also Ctrl+F9)",
+                       .set  = [](const control::Value& v) {
+                           SetMenuSlow(std::get<bool>(v), L"the console");
+                           return control::Outcome{};
+                       },
+                       .get = [] { return control::Value{MenuSlow()}; }});
     control::Register({.name = L"menu-two.route", .shape = control::Shape::Text,
                        .help = L"each command controller's ticks at the game's spot and its world-slow writes; each seat's "
                                L"pad key events routed into the seat's context and those refused (menu not set up, path "
@@ -321,5 +347,41 @@ int EventSeat() noexcept
 {
     return g_eventSeat;
 }
+
+bool MenuSlow() noexcept
+{
+    return g_slowWrites.Slows();
+}
+
+void SetMenuSlow(bool slows, const wchar_t* why) noexcept
+{
+    if (!g_slow.IsInstalled())
+    {
+        platform::LogWarning(L"battle menus: the menu's world-slow write is not redirected (see the install lines); {} "
+                             L"cannot switch the slow-down",
+                             why);
+        return;
+    }
+    g_slowWrites.SetSlows(slows);
+    LogMenuSlow(why);
+}
+
+namespace {
+
+void LogMenuSlow(const wchar_t* why) noexcept
+{
+    if (g_slowWrites.Slows())
+    {
+        platform::Log(L"battle menus: an open command menu slows the world, as the game does ({})", why);
+    }
+    else
+    {
+        platform::Log(L"battle menus: an open command menu no longer slows the world; the world and the ATB gauges run on "
+                      L"at full speed ({})",
+                      why);
+    }
+}
+
+}  // namespace
 
 }  // namespace lss::battle::command_menu_tick

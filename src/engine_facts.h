@@ -1356,6 +1356,24 @@ inline constexpr platform::FunctionFact kSeqCutPrimary{L"PrimaryPCM_SetCameraCut
 inline constexpr std::uintptr_t kCycleLeaderCandidateCall = 0x1409BAC99;
 inline constexpr std::uintptr_t kCanSwitchCandidateCall   = 0x1409BA98C;
 
+// --- The battle warps (RE-battle-warp.md §3) --------------------------------------------------------------------
+// EncountMgr_BattleIn_DefaultLeaderAndTeleport's member loop fetches each present member with
+// PartyManager_GetPlayerActor(PM, 0, type, 0) (E8 7A FB 63 00); a null answer is the game's own "no actor" branch, the
+// next member. The battle end asks EncountMgr_BattleFinish_NeedsWarp_Victory / _Escape(unused, member, leader, groups)
+// whether the member needs the warp back (E8 D3 1E 00 00, E8 55 21 00 00); false is the game's "close enough". Each
+// call lies inside one code block.
+inline constexpr std::uintptr_t kBattleInMemberCall      = 0x140FB0AD1;
+inline constexpr std::uintptr_t kBattleFinishVictoryCall = 0x140FB17D8;
+inline constexpr std::uintptr_t kBattleFinishEscapeCall  = 0x140FB17E6;
+inline constexpr std::array<std::uint8_t, 16> kBattleFinishNeedsWarpVictoryEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x18, 0x48, 0x89, 0x74, 0x24, 0x20, 0x48, 0x89, 0x54, 0x24, 0x10, 0x55};
+inline constexpr platform::FunctionFact kBattleFinishNeedsWarpVictory{L"EncountMgr_BattleFinish_NeedsWarp_Victory",
+                                                                      0x140FB36B0, kBattleFinishNeedsWarpVictoryEntry};
+inline constexpr std::array<std::uint8_t, 16> kBattleFinishNeedsWarpEscapeEntry{
+    0x40, 0x55, 0x53, 0x56, 0x57, 0x41, 0x56, 0x41, 0x57, 0x48, 0x8D, 0xAC, 0x24, 0xD8, 0xFE, 0xFF};
+inline constexpr platform::FunctionFact kBattleFinishNeedsWarpEscape{L"EncountMgr_BattleFinish_NeedsWarp_Escape",
+                                                                     0x140FB3940, kBattleFinishNeedsWarpEscapeEntry};
+
 // --- The party order, a member's AI state and the game's leader funnels (RE-slot-member.md) --------------------
 /// The data singleton (allocated lazily): the field leader's type (DefaultPartyLeaderType) and the eight player
 /// status bytes (EPlayerStatus: 1 PARTY, 5 PARTY_Battle_Support are in the formation; 5 is skipped by the cycle).

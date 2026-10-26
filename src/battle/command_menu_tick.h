@@ -15,6 +15,10 @@
 // The tick's one write of the world's battle-command speed slot (the menu's time slow, written by every tick) is
 // redirected: a seat's tick writes the least of the values the menus asked for so far this frame
 // (battle/command_menu_rules.h; the last write wins, so the frame ends on the least), so any menu slows the world.
+// The user's switch turns the slow off (RE-menu-slow.md): every write then asks for full speed, the game's own value
+// with no menu open, so the world and the ATB gauges run on while a menu is open; the menu's other effects (its
+// screen tint and sound, the rumble mute, the enemies' waits on player 1's menu) stay the game's. Set by
+// LocalSplitScreen.ini [Battle] menu-slow, the console's `menu-slow on|off` and Ctrl+F9; logged at Info.
 // A seat's pad's key events reach the seat's widgets through the seat's own focus context, opened around each
 // event once the seat's menu is up in that context. Nothing of player 1's gates the
 // route: a seat's context holds the seat's widgets alone, and a modal UI (the pause menu, a tutorial) stops every
@@ -42,5 +46,11 @@ bool Ticking() noexcept;
 int  TickingSeat() noexcept;
 /// The seat whose pad's key event runs inside that seat's context now, else 0.
 int EventSeat() noexcept;
+
+/// Whether an open command menu slows the world (the game's behaviour). The settings file's value is set at install,
+/// before the redirect is placed; SetMenuSlow switches it afterwards on the game thread, from the next controller
+/// tick's write (refused, with a warning, when the redirect is not placed). `why` names the source in the log line.
+bool MenuSlow() noexcept;
+void SetMenuSlow(bool slows, const wchar_t* why) noexcept;
 
 }  // namespace lss::battle::command_menu_tick
