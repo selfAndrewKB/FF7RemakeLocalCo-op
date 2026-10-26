@@ -13,9 +13,9 @@
 #include "players/weak_object.h"
 #include "world/actor_place.h"
 #include "world/field_targets.h"
+#include "world/talk_gather_rules.h"
 
 #include <array>
-#include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <format>
@@ -36,9 +36,8 @@ using CamResetFn  = void (*)(void* params);
 using FindRowFn   = void* (*)(const void* tables, std::uint64_t name);
 using FindActorFn = void* (*)(std::uint64_t level, std::uint64_t name);
 
-constexpr float kFarCm    = 800.0f;  // the game's own "far from the leader" (the battle end's warp threshold)
-constexpr float kBesideCm = 120.0f;  // shoulder to shoulder with the presser (the user, 2026-10-26: "Just beside.")
-constexpr float kPi     = 3.14159265358979f;
+using talk_gather_rules::kBesideCm;
+using talk_gather_rules::kFarCm;
 
 using actor_place::Vec3;
 
@@ -247,15 +246,10 @@ void OnLeaderHanded() noexcept
                            SeatName(seat), field_targets::NameOf(object));
         return;
     }
-    // A navmesh point just beside the presser, as near the NPC as the presser stands: to the side of the presser's line
-    // to the NPC that faces where player 1's character stands, else the other side, else behind the presser. Without
-    // the NPC's place: toward player 1's character, else either side of that line.
-    // The NPC's place: where the pressed object stood by its target entry at the press (a talk target carries its state
-    // object's name, which the character lookup by name does not know: none found live 2026-10-26), else that lookup
-    // (the lookup is not tried after a noted place: the entry is the surer source). A place far off (another actor of
-    // the same name, or a party member) would turn the side and facing: only one within the game's own "far" of the
-    // presser counts.
-    const Vec3     toCloud{(at.x - presser.x) / distance, (at.y - presser.y) / distance, 0.0f};
+    // A navmesh point just beside the presser (the rule: world/talk_gather_rules.h). The NPC's place: where the pressed
+    // object stood by its target entry at the press (a talk target carries its state object's name, which the character
+    // lookup by name does not know: none found live 2026-10-26), else that lookup (the lookup is not tried after a noted
+    // place: the entry is the surer source).
     Vec3           npcAt{};
     float          spot[3] = {};
     const wchar_t* npcNote = L"; where the NPC stands is unknown, facing that character";
@@ -270,32 +264,23 @@ void OnLeaderHanded() noexcept
         known   = actor_place::ActorLocation(npc, npcAt);
         npcNote = L", facing the NPC (its place from the actor of its name)";
     }
-    const bool withNpc = known && actor_place::FlatDistance(npcAt, presser) > 1.0f && actor_place::FlatDistance(npcAt, presser) <= kFarCm;
+    const talk_gather_rules::Beside beside  = talk_gather_rules::BesideSpot(presser, at, known ? &npcAt : nullptr);
+    const bool                      withNpc = beside.withNpc;
     if (known && !withNpc)
     {
         npcNote = L"; where the NPC stands is not within 8 m of that character, facing that character";
     }
-    std::array<Vec3, 3> tries{toCloud, Vec3{-toCloud.y, toCloud.x, 0.0f}, Vec3{toCloud.y, -toCloud.x, 0.0f}};
-    if (withNpc)
-    {
-        const float span = actor_place::FlatDistance(npcAt, presser);
-        const Vec3  toNpc{(npcAt.x - presser.x) / span, (npcAt.y - presser.y) / span, 0.0f};
-        const Vec3  left{-toNpc.y, toNpc.x, 0.0f};
-        const bool  cloudLeft = left.x * toCloud.x + left.y * toCloud.y >= 0.0f;
-        const Vec3  nearSide  = cloudLeft ? left : Vec3{-left.x, -left.y, 0.0f};
-        tries                 = {nearSide, Vec3{-nearSide.x, -nearSide.y, 0.0f}, Vec3{-toNpc.x, -toNpc.y, 0.0f}};
-    }
     Vec3        point{};
-    std::size_t used = tries.size();
-    for (std::size_t i = 0; i < tries.size(); ++i)
+    std::size_t used = beside.tries.size();
+    for (std::size_t i = 0; i < beside.tries.size(); ++i)
     {
-        if (NavPoint(presser, tries[i], point))
+        if (NavPoint(presser, beside.tries[i], point))
         {
             used = i;
             break;
         }
     }
-    if (used == tries.size())
+    if (used == beside.tries.size())
     {
         ++g_noPoint;
         field_targets::MarkTalkJudged(object);
@@ -306,9 +291,8 @@ void OnLeaderHanded() noexcept
     }
     field_targets::MarkTalkJudged(object);  // decided: a later act of the talk never moves it again
     // Facing the NPC (else the presser): FRotator (pitch, yaw, roll) in degrees.
-    const Vec3  face        = withNpc ? npcAt : presser;
     const float location[3] = {point.x, point.y, point.z};
-    const float rotation[3] = {0.0f, std::atan2(face.y - point.y, face.x - point.x) * 180.0f / kPi, 0.0f};
+    const float rotation[3] = {0.0f, talk_gather_rules::FacingYaw(point, beside.face), 0.0f};
     if (!platform::CallGuarded(g_warp, cloud, static_cast<const float*>(location), static_cast<const float*>(rotation),
                                static_cast<const float*>(location), true))
     {
@@ -321,11 +305,10 @@ void OnLeaderHanded() noexcept
         platform::LogWarning(L"talk gather: player 1's camera reset raised; its camera may stay where it was");
     }
     ++g_moved;
-    static constexpr const wchar_t* kSpots[2][3] = {{L"toward where it stood", L"to one side", L"to the other side"},
-                                                    {L"on its side", L"on the far side", L"behind"}};
     platform::Log(L"talk gather: {} started a talk with {}; player 1's character was {:.1f} m away and is brought beside {}'s "
                   L"character ({}{})",
-                  SeatName(seat), field_targets::NameOf(object), distance / 100.0f, SeatName(seat), kSpots[withNpc ? 1 : 0][used],
+                  SeatName(seat), field_targets::NameOf(object), distance / 100.0f, SeatName(seat),
+                  talk_gather_rules::SpotName(withNpc, used),
                   npcNote);
     if (platform::Enabled(platform::Level::Debug))
     {

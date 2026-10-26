@@ -2,6 +2,7 @@
 
 #include "battle/command_menu_tick.h"
 #include "battle/command_menu_two.h"
+#include "battle/menu_grey_rules.h"
 #include "control/registry.h"
 #include "engine_facts.h"
 #include "platform/call_redirect.h"
@@ -55,6 +56,12 @@ bool ReadFilter(const std::uint8_t* filters, FilterState& out) noexcept
            Read(filters + facts::kUiFilterCounts, out.count) && Read(filters + facts::kUiFilterSuppressed, out.suppressed);
 }
 
+/// The filter as the rules see it.
+menu_grey_rules::Filter Rules(const FilterState& state) noexcept
+{
+    return {.effectUp = state.handle != -1, .count = state.count, .suppressed = state.suppressed != 0};
+}
+
 void* Filters() noexcept
 {
     void* filters = nullptr;
@@ -100,13 +107,14 @@ bool BattleMenuWaits() noexcept
 /// The wait's spawn of filter 0 (FieldCommandCtrl__WaitModeFilter_LatchRef, the count's 0 -> 1).
 void Open(void* filters, std::uint8_t type, std::uint8_t instant)
 {
-    if (command_menu_tick::MenuSlow())
+    const menu_grey_rules::Act act = menu_grey_rules::AtOpen(command_menu_tick::MenuSlow());
+    if (act == menu_grey_rules::Act::Pass)
     {
         g_activate(filters, type, instant);
         return;
     }
     ++g_opensSkipped;
-    g_debt = true;
+    g_debt = g_debt || menu_grey_rules::Owes(act);
     const int seat = command_menu_tick::Ticking() ? command_menu_tick::TickingSeat() : 0;
     platform::LogDebug(L"menu grey: {}'s battle menu opened; its grey is skipped (the slow-down is switched off)",
                        players::SeatName(seat));
@@ -115,10 +123,14 @@ void Open(void* filters, std::uint8_t type, std::uint8_t instant)
 /// A menu closing over the filters brings each counted one back; filter 0 not while a battle menu waits, switched off.
 void RestoreAfterMenu(void* filters, std::uint8_t type, std::uint8_t instant)
 {
-    if (type == facts::kUiFilterWait && !command_menu_tick::MenuSlow() && BattleMenuWaits())
+    // The wait test only when it can matter (the other filters and the switch on pass whatever it says).
+    const bool                 slows = command_menu_tick::MenuSlow();
+    const bool                 wait  = type == facts::kUiFilterWait;
+    const menu_grey_rules::Act act   = menu_grey_rules::AtRestore(slows, wait, wait && !slows && BattleMenuWaits());
+    if (act == menu_grey_rules::Act::Skip)
     {
         ++g_restoresSkipped;
-        g_debt = true;
+        g_debt = g_debt || menu_grey_rules::Owes(act);
         const auto here = platform::IdaAddress(reinterpret_cast<std::uintptr_t>(_ReturnAddress()));  // as IDA and the research name it
         platform::LogDebug(L"menu grey: a menu closed over a waiting battle menu (the call returning to {:#x}); its grey is "
                            L"not brought back (the slow-down is switched off)",
@@ -138,7 +150,9 @@ void OnSwitched(bool slows) noexcept
     {
         return;
     }
-    if (!slows && state.handle != -1 && BattleMenuWaits())
+    const menu_grey_rules::Filter filter = Rules(state);
+    const menu_grey_rules::Act    act    = menu_grey_rules::AtSwitch(slows, filter, !slows && filter.effectUp && BattleMenuWaits());
+    if (menu_grey_rules::Owes(act))
     {
         g_debt = true;
         if (platform::CallGuarded(g_deactivate, static_cast<void*>(filters), facts::kUiFilterWait))
@@ -151,7 +165,7 @@ void OnSwitched(bool slows) noexcept
             platform::LogWarning(L"menu grey: the game's stop of the grey raised; the grey may stay until the menu closes");
         }
     }
-    else if (slows && state.handle == -1 && state.count > 0 && state.suppressed == 0)
+    else if (menu_grey_rules::Pays(act))
     {
         g_debt = false;  // as the game's own unsuppress brings a counted filter back
         if (platform::CallGuarded(g_activate, static_cast<void*>(filters), facts::kUiFilterWait, std::uint8_t{0}))
@@ -256,8 +270,8 @@ void Tick() noexcept
     g_debt = false;
     auto* const filters = static_cast<std::uint8_t*>(Filters());
     FilterState state;
-    if (command_menu_tick::MenuSlow() || !ReadFilter(filters, state) || state.handle != -1 || state.count <= 0 ||
-        state.suppressed != 0)
+    if (!ReadFilter(filters, state) ||
+        !menu_grey_rules::Pays(menu_grey_rules::AtSettle(command_menu_tick::MenuSlow(), Rules(state))))
     {
         return;  // nothing owed (the switch is on again and settled it, or no other owner counts the filter)
     }

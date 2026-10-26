@@ -16,11 +16,11 @@
 #include "players/scopes.h"
 #include "players/seats.h"
 #include "world/target_icons.h"
+#include "world/talk_presses.h"
 #include "world/traversal_action.h"
 
 #include <Unreal/NameTypes.hpp>
 
-#include <algorithm>
 #include <array>
 #include <bitset>
 #include <cstdint>
@@ -52,8 +52,6 @@ using FindEntryFn  = void* (*)(void* mgr, const std::uint64_t* name);
 constexpr int         kSeats   = players::scopes::kMaxPlayers;
 constexpr std::size_t kItems   = facts::kTargetsItems;
 constexpr std::size_t kPending = 16;  // chests a further player's press queued that have not begun yet
-constexpr std::size_t kTalkPresses = 8;  // further players' NPC presses an act may still claim
-constexpr std::uint64_t kTalkPressMs = 10000;  // how long a press may wait for its act with no field lock held
 
 /// What a target is, by the dispatch's own order (research/RE-chest-two.md §8.1, RE-talk-two.md §2.2): chests, ground
 /// items, NPCs, doors, curtains, grappling-hook points and the player's own swing are pressed for a further player.
@@ -132,17 +130,6 @@ struct Pending
     int           seat = 0;
 };
 
-/// A further player's press of an NPC, until an act of that NPC claims it or it lapses.
-struct TalkPress
-{
-    std::uint64_t name = 0;  // the pressed object (the act channel's object)
-    int           seat = 0;
-    std::uint64_t at   = 0;  // GetTickCount64 at the press, moved on while the field lock holds (a talk is running)
-    bool          judged = false;  // whether to bring player 1's character to this talk was decided (world/talk_gather.h)
-    float         spot[3] = {};    // the pressed object's place from its target entry at the press (world/talk_gather.h)
-    bool          spotKnown = false;
-};
-
 // Set at install, then only read.
 std::uintptr_t g_key = 0;
 std::array<std::uintptr_t, 6> g_tables{};  // situation, layout, actor, enemy, treasure, party
@@ -164,7 +151,7 @@ bool                   g_broken    = false;  // a further player's run raised: t
 // Game thread.
 std::array<SeatState, kSeats> g_seats{};
 std::array<Pending, kPending> g_pending{};
-std::array<TalkPress, kTalkPresses> g_talkPresses{};
+talk_presses::Table           g_talkPresses;  // the further players' NPC presses, the rules in world/talk_presses.h
 std::uint32_t                 g_talkClaims = 0, g_talkLapsed = 0, g_talkDropped = 0;
 std::uint64_t                 g_playerOnePressed = 0;  // player 1's press in this Press call (the seats' runs follow it)
 void*                         g_notesManager     = nullptr;  // the target manager the notes were made under
@@ -588,53 +575,51 @@ bool ReadFieldAction(std::uint8_t* mgr) noexcept
     return true;
 }
 
-/// A further player's NPC press, for the act that the NPC's talk state queues (world/shop_act.h). A newer press of the
-/// same seat replaces its older one.
+/// The presses an operation of the table dropped, each logged at Debug with `why` and counted.
+void LogDropped(const talk_presses::Dropped& dropped, const wchar_t* why) noexcept
+{
+    for (int i = 0; i < dropped.count; ++i)
+    {
+        const talk_presses::Press& press = dropped.presses[static_cast<std::size_t>(i)];
+        platform::LogDebug(L"field targets: {}'s press of {} is dropped ({})", SeatName(press.seat), Name(press.name), why);
+    }
+    g_talkDropped += static_cast<std::uint32_t>(dropped.count);
+}
+
+/// The presses are dropped when the target manager changes (a world change).
+void DropTalkPressesAtWorldChange(void* targets) noexcept
+{
+    if (targets != g_notesManager)
+    {
+        talk_presses::Dropped dropped;
+        g_talkPresses.DropAll(dropped);
+        LogDropped(dropped, L"the world changed");
+        g_notesManager = targets;
+    }
+}
+
+/// A further player's NPC press, for the act that the NPC's talk state queues (world/shop_act.h): rule 1 of the table,
+/// then the pressed object's own place from the game's target entry while it still exists (the object's talk state
+/// removes it at the next state-manager tick): the talk's gather faces player 1's character toward it.
 void NoteTalkPress(int seat, std::uint64_t name) noexcept
 {
     void* const targets = ReadPointer(Root(), facts::kRootFieldTargets);
-    if (targets != g_notesManager)
+    DropTalkPressesAtWorldChange(targets);
+    talk_presses::Dropped dropped;
+    talk_presses::Press*  press = g_talkPresses.Note(seat, name, GetTickCount64(), dropped);
+    LogDropped(dropped, L"the player pressed again");
+    if (press == nullptr)
     {
-        for (TalkPress& press : g_talkPresses)
-        {
-            if (press.name != 0)
-            {
-                platform::LogDebug(L"field targets: {}'s press of {} is dropped (the world changed)", SeatName(press.seat),
-                                   Name(press.name));
-                press = {};
-                ++g_talkDropped;
-            }
-        }
-        g_notesManager = targets;
-    }
-    TalkPress* free = nullptr;
-    for (TalkPress& press : g_talkPresses)
-    {
-        if (press.name != 0 && press.seat == seat)
-        {
-            press = {};
-            ++g_talkDropped;
-        }
-        if (free == nullptr && press.name == 0)
-        {
-            free = &press;
-        }
-    }
-    if (free == nullptr)
-    {
-        platform::LogWarning(L"field targets: more than {} NPC presses wait for their acts; {}'s is not noted", kTalkPresses,
-                             SeatName(seat));
+        platform::LogWarning(L"field targets: more than {} NPC presses wait for their acts; {}'s is not noted",
+                             talk_presses::kCapacity, SeatName(seat));
         return;
     }
-    *free = {name, seat, GetTickCount64(), false};
-    // The pressed object's own place, from the game's target entry while it still exists (the object's talk state
-    // removes it at the next state-manager tick): the talk's gather faces player 1's character toward it.
     void* entry = nullptr;
-    if (targets != nullptr && platform::CallGuarded(g_findEntry, entry, targets, &free->name) && entry != nullptr &&
-        platform::CopyGuarded(free->spot, static_cast<const std::uint8_t*>(entry) + facts::kTargetsEntryLocation,
-                              sizeof(free->spot)))
+    if (targets != nullptr && platform::CallGuarded(g_findEntry, entry, targets, &press->name) && entry != nullptr &&
+        platform::CopyGuarded(press->spot.data(), static_cast<const std::uint8_t*>(entry) + facts::kTargetsEntryLocation,
+                              sizeof(press->spot)))
     {
-        free->spotKnown = true;
+        press->spotKnown = true;
     }
     else
     {
@@ -643,60 +628,34 @@ void NoteTalkPress(int seat, std::uint64_t name) noexcept
     }
 }
 
-/// Player 1 pressed `name`: a further player's press of it is no longer the one its acts answer.
+/// Player 1 pressed `name`: a further player's press of it is no longer the one its acts answer (rule 2).
 void DropTalkPresses(std::uint64_t name) noexcept
 {
-    for (TalkPress& press : g_talkPresses)
-    {
-        if (press.name != 0 && press.name == name)
-        {
-            platform::LogDebug(L"field targets: player 1 pressed {} too; {}'s press of it is dropped", Name(name),
-                               SeatName(press.seat));
-            press = {};
-            ++g_talkDropped;
-        }
-    }
+    talk_presses::Dropped dropped;
+    g_talkPresses.DropOf(name, dropped);
+    LogDropped(dropped, L"player 1 pressed it too");
 }
 
-/// The NPC presses, each tick: dropped at a world change (a new target manager); their wait counts only while no field
-/// lock holds (a running talk or greeting holds it), so a long talk or a choice before the shop never lapses them.
+/// The NPC presses, each tick: dropped at a world change (rule 3); their wait counts only while no field lock holds
+/// (rule 4: a running talk or greeting holds it, so a long talk or a choice before the shop never lapses them).
 void TickTalkPresses() noexcept
 {
-    const bool any = std::any_of(g_talkPresses.begin(), g_talkPresses.end(), [](const TalkPress& press) { return press.name != 0; });
     void* const targets = ReadPointer(Root(), facts::kRootFieldTargets);
-    if (!any)
+    if (!g_talkPresses.Any())
     {
         g_notesManager = targets;
         return;
     }
-    const std::uint64_t now     = GetTickCount64();
-    const bool          locked  = players::field_root::ControlLockMask() != 0;
-    for (TalkPress& press : g_talkPresses)
+    DropTalkPressesAtWorldChange(targets);
+    talk_presses::Dropped lapsed;
+    g_talkPresses.Tick(GetTickCount64(), players::field_root::ControlLockMask() != 0, lapsed);
+    for (int i = 0; i < lapsed.count; ++i)
     {
-        if (press.name == 0)
-        {
-            continue;
-        }
-        if (targets != g_notesManager)
-        {
-            platform::LogDebug(L"field targets: {}'s press of {} is dropped (the world changed)", SeatName(press.seat),
-                               Name(press.name));
-            press = {};
-            ++g_talkDropped;
-        }
-        else if (locked)
-        {
-            press.at = now;
-        }
-        else if (now - press.at > kTalkPressMs)
-        {
-            platform::LogDebug(L"field targets: {}'s press of {} lapsed (no show-menu act on its channel within the wait)",
-                               SeatName(press.seat), Name(press.name));
-            press = {};
-            ++g_talkLapsed;
-        }
+        const talk_presses::Press& press = lapsed.presses[static_cast<std::size_t>(i)];
+        platform::LogDebug(L"field targets: {}'s press of {} lapsed (no show-menu act on its channel within the wait)",
+                           SeatName(press.seat), Name(press.name));
     }
-    g_notesManager = targets;
+    g_talkLapsed += static_cast<std::uint32_t>(lapsed.count);
 }
 
 void NotePending(int seat, std::uint64_t name) noexcept
@@ -1054,16 +1013,9 @@ void TickSeat(int seat, void* localPlayer, void* member) noexcept
         }
         DropCopy(state);  // the next pick starts from the game's empty state
         target_icons::DropSeat(seat);
-        for (TalkPress& press : g_talkPresses)
-        {
-            if (press.name != 0 && press.seat == seat)
-            {
-                platform::LogDebug(L"field targets: {}'s press of {} is dropped (the player left or changed character)",
-                                   SeatName(seat), Name(press.name));
-                press = {};
-                ++g_talkDropped;
-            }
-        }
+        talk_presses::Dropped dropped;
+        g_talkPresses.DropSeat(seat, dropped);
+        LogDropped(dropped, L"the player left or changed character");
     }
     state.localPlayer = localPlayer;
     state.member      = member;
@@ -1108,7 +1060,7 @@ void Remove() noexcept
     g_begin.Restore();
     target_icons::Remove();
     g_pending.fill({});
-    g_talkPresses.fill({});
+    g_talkPresses.Clear();
     for (SeatState& state : g_seats)
     {
         DropCopy(state);
@@ -1118,56 +1070,33 @@ void Remove() noexcept
 
 int PeekTalkPress(std::uint64_t object) noexcept
 {
-    for (const TalkPress& press : g_talkPresses)
-    {
-        if (object != 0 && press.name == object && players::SeatBuilt(press.seat))
-        {
-            return press.seat;
-        }
-    }
-    return 0;
+    return g_talkPresses.Peek(object);
 }
 
 bool TalkJudged(std::uint64_t object) noexcept
 {
-    return std::any_of(g_talkPresses.begin(), g_talkPresses.end(),
-                       [object](const TalkPress& press) { return object != 0 && press.name == object && press.judged; });
+    return g_talkPresses.Judged(object);
 }
 
 bool TalkPressSpot(std::uint64_t object, float (&out)[3]) noexcept
 {
-    for (const TalkPress& press : g_talkPresses)
+    std::array<float, 3> spot{};
+    if (!g_talkPresses.Spot(object, spot))
     {
-        if (object != 0 && press.name == object && press.spotKnown && players::SeatBuilt(press.seat))
-        {
-            std::memcpy(out, press.spot, sizeof(out));  // PeekTalkPress's own choice of record
-            return true;
-        }
+        return false;
     }
-    return false;
+    std::memcpy(out, spot.data(), sizeof(out));
+    return true;
 }
 
 void MarkTalkJudged(std::uint64_t object) noexcept
 {
-    for (TalkPress& press : g_talkPresses)
-    {
-        if (object != 0 && press.name == object)
-        {
-            press.judged = true;
-        }
-    }
+    g_talkPresses.MarkJudged(object);
 }
 
 int ClaimTalkPress(std::uint64_t object) noexcept
 {
-    const int seat = PeekTalkPress(object);
-    for (TalkPress& press : g_talkPresses)
-    {
-        if (object != 0 && press.name == object)
-        {
-            press = {};  // every seat's press of it: one act answers one press
-        }
-    }
+    const int seat = g_talkPresses.Claim(object);
     if (seat != 0)
     {
         ++g_talkClaims;

@@ -1,5 +1,6 @@
 #include "battle/battle_warps.h"
 
+#include "battle/battle_warps_rules.h"
 #include "control/registry.h"
 #include "engine_facts.h"
 #include "platform/call_redirect.h"
@@ -26,12 +27,7 @@ using platform::Read;
 using GetPlayerActorFn = void* (*)(void* partyManager, std::uint8_t variant, std::uint8_t type, bool alternate);
 using NeedsWarpFn      = bool (*)(void* unused, void* member, void* leader, void* groups);
 
-enum class Mode : std::uint8_t
-{
-    PlayersStay,  // every player's own character stays; the others are warped
-    Off,          // nobody is warped
-    Game,         // the game's warps for everyone
-};
+using battle_warps_rules::Mode;
 
 // The words of the setting's row in the table, in the enum's order.
 constexpr auto& kModeWords = platform::settings::kBattleWarpsWords;
@@ -73,10 +69,10 @@ int SeatOf(const void* member, std::uint8_t type) noexcept
     return 0;
 }
 
-/// Whether the setting keeps this member where it is.
+/// Whether the setting keeps this member where it is (battle/battle_warps_rules.h).
 bool Stays(int seat) noexcept
 {
-    return g_mode == Mode::Off || (g_mode == Mode::PlayersStay && seat != 0);
+    return battle_warps_rules::Stays(g_mode, seat);
 }
 
 /// Who the member is, for the log line (with WhoseRest).

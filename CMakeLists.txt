@@ -334,6 +334,34 @@ target_include_directories(TypeAnswerCodeTests PRIVATE "${CMAKE_CURRENT_SOURCE_D
 target_compile_features(TypeAnswerCodeTests PRIVATE cxx_std_20)
 add_test(NAME type_answer_code COMMAND TypeAnswerCodeTests)
 
+add_executable(TalkPressesTests
+    tests/talk_presses_test.cpp
+)
+target_include_directories(TalkPressesTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(TalkPressesTests PRIVATE cxx_std_20)
+add_test(NAME talk_presses COMMAND TalkPressesTests)
+
+add_executable(TalkGatherRulesTests
+    tests/talk_gather_rules_test.cpp
+)
+target_include_directories(TalkGatherRulesTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(TalkGatherRulesTests PRIVATE cxx_std_20)
+add_test(NAME talk_gather_rules COMMAND TalkGatherRulesTests)
+
+add_executable(MenuGreyRulesTests
+    tests/menu_grey_rules_test.cpp
+)
+target_include_directories(MenuGreyRulesTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(MenuGreyRulesTests PRIVATE cxx_std_20)
+add_test(NAME menu_grey_rules COMMAND MenuGreyRulesTests)
+
+add_executable(BattleRulesTests
+    tests/battle_rules_test.cpp
+)
+target_include_directories(BattleRulesTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(BattleRulesTests PRIVATE cxx_std_20)
+add_test(NAME battle_rules COMMAND BattleRulesTests)
+
 add_executable(SettingsTests
     tests/settings_test.cpp
 )

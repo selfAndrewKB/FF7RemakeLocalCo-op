@@ -298,6 +298,12 @@ src/
     shop_act                A shop a further player opens is that player's: its camera zooms on the opener's view, the
                             shopkeeper and the opener's character face each other, and the opener's pad drives it
     talk_gather             Player 1's character is brought to a talk another player starts, when it is far
+    talk_gather_rules.h     Where player 1's character is brought when another player starts a talk (world/talk_gather.h
+                            applies it), as a pure rule: the flat directions to try for a navmesh point beside the
+                            presser, in order, and whom the moved character …
+    talk_presses.h          A further player's NPC presses, waiting for the act the NPC's talk state queues
+                            (world/shop_act, world/talk_gather), as a pure table: the rules without the game
+                            (world/field_targets holds the game side: the press itself, the …
     target_icons            Each further player's own field target icons: the blue talk/examine/chest markers the target
                             pick shows, made, updated and swept by the game for that player and drawn in that player's
                             view only
@@ -332,7 +338,12 @@ src/
     arena_warp              A further player's character brought into the fight on a double click of the left stick (the
                             user, 2026-10-26: "it is sometimes possible to get locked outside of a fight accessible only
                             through a crawlspace, which is disabled in …
+    arena_warp_rules.h      The double click that brings a further player's character into the fight
+                            (battle/arena_warp.h applies it on the Dash press): two presses within kDoubleClickMs are
+                            one double click, and a pair once spent starts afresh
     battle_warps            Which party members the game warps at a battle's start and end
+    battle_warps_rules.h    Who the game warps at a battle's start and end, as the setting decides it without the game
+                            (battle/battle_warps.h applies it at the game's three calls)
     coin_choice.h           Which human an enemy counts as "the player" for one decision
     coin_table.h            The coins enemies hold (battle/enemy_coin.h): a lock-free table keyed by the enemy's battle
                             AI controller, each coin the player it names (1..4) and when it was tossed, plus one mark
@@ -353,6 +364,9 @@ src/
     member_rates            Each further player's member at the player's rates (RE-battle-member-two.md §2, L1;
                             Rebirth's player_two/player_hits)
     menu_grey               The open battle menu's grey follows the menu slow-down switch
+    menu_grey_rules.h       The open battle menu's grey under the slow-down switch (battle/menu_grey.h applies it), as
+                            pure rules over what the game's UI filter 0 shows: at the wait's spawn, at a menu-close
+                            restore, at a flip of the switch and at the tick …
     party_switch            Neither player switches onto a member the other human plays
     sequence_camera_two     The battle sequence cameras (abilities, enemy specials, summons) on each player's own camera
     target_cursor_two       Each seat's own battle target cursor: the game's cursor driver run again per seat
@@ -364,5 +378,5 @@ src/
                             (tests/listener_rules_test.cpp)
     listeners               Every player hears the sounds near them: each SEAD sound is measured from the nearest
                             player's listener
-tests/                      40 host-side test programs (ctest), one per pure header or code stub; run without the game
+tests/                      44 host-side test programs (ctest), one per pure header or code stub; run without the game
 ```

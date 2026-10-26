@@ -1,5 +1,6 @@
 #include "battle/arena_warp.h"
 
+#include "battle/arena_warp_rules.h"
 #include "control/registry.h"
 #include "engine_facts.h"
 #include "platform/guarded.h"
@@ -34,8 +35,6 @@ using WarpFn    = bool (*)(void* component, float distance);
 using InsideFn  = bool (*)(void* battleSystem, void* character);
 using FindRowFn = void* (*)(void* table, std::uint64_t name);
 
-constexpr std::uint64_t kDoubleClickMs = 400;
-
 // Set at install, then only read.
 std::uintptr_t                 g_dashKey = 0, g_distanceName = 0, g_gameParams = 0;
 players::action_key::Getter    g_pressed = nullptr;
@@ -45,8 +44,8 @@ InsideFn                       g_inside  = nullptr;
 // Game thread. Index = seat ([0] unused).
 struct Seat
 {
-    std::uint64_t lastPress = 0;      // GetTickCount64 at the last Dash press in a battle (0: none waiting)
-    bool          asked     = false;  // a double click waits for the next engine tick
+    arena_warp_rules::DoubleClick click;          // the Dash presses in a battle (battle/arena_warp_rules.h)
+    bool                          asked = false;  // a double click waits for the next engine tick
 };
 std::array<Seat, players::scopes::kMaxPlayers> g_seats;
 std::uint32_t g_presses = 0, g_warps = 0, g_alreadyInside = 0, g_refused = 0, g_noPoint = 0;
@@ -226,15 +225,11 @@ void ReadPress(int seat) noexcept
         return;
     }
     ++g_presses;  // one click adds one: a press seen once per click
-    Seat&               s   = g_seats[seat];
-    const std::uint64_t now = GetTickCount64();
-    if (s.lastPress != 0 && now - s.lastPress <= kDoubleClickMs)
+    Seat& s = g_seats[seat];
+    if (s.click.Press(GetTickCount64()))
     {
-        s.lastPress = 0;
-        s.asked     = true;
-        return;
+        s.asked = true;
     }
-    s.lastPress = now;
 }
 
 void Tick() noexcept

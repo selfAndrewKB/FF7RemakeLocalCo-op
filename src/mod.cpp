@@ -115,7 +115,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.104.3-ida-address";
+constexpr const wchar_t* kVersion = L"0.105.0-talk-presses-and-rules";
 static_assert(lss::views::column_rules::kMaxColumns == lss::hud::overlay_pass::kMaxColumns, "the columns the views and the HUD count");  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
