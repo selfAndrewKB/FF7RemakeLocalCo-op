@@ -13,9 +13,10 @@
 //     not a shop (a show-menu act is the opener's alone), and player 1's character stands more than 8 m (flat) from the
 //     player who pressed and runs no field action (a ladder, a crawl, the hook): a navmesh point 1.2 m beside the
 //     presser, as near the NPC as the presser (the user, 2026-10-26: "Just beside."), on the side of the presser's line
-//     to the NPC that faces player 1's character, else the other side, else behind (the NPC found by name with the
-//     game's own lookup; without it, toward player 1's character or either side; the game's own navmesh query, with
-//     the shape the game's catch-up teleport uses), then the game's battle-warp move on player 1's character (stops its
+//     to the NPC that faces player 1's character, else the other side, else behind (where the NPC stands: the game's
+//     target entry of the pressed object, noted at the press, else the game's lookup of an actor by name; without
+//     either, toward player 1's character or either side; the game's own navmesh query, with the shape the game's
+//     catch-up teleport uses), then the game's battle-warp move on player 1's character (stops its
 //     AI move, the party teleport that syncs its trigger, nav area and environment, a short fade-in), facing the NPC, then the
 //     game's field camera reset behind the leader (player 1's view snaps behind it before the talk camera blends in).
 //     Decided once per press (moved, near, busy or no point): a later act of the same talk never moves it. (The research measured player 1's character

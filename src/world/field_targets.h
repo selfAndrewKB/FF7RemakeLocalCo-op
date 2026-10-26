@@ -74,6 +74,9 @@ int ClaimTalkPress(std::uint64_t object) noexcept;
 /// Whether to bring player 1's character to the talk of this press was decided (once per press: world/talk_gather.h).
 bool TalkJudged(std::uint64_t object) noexcept;
 void MarkTalkJudged(std::uint64_t object) noexcept;
+/// Where the pressed object stood, as the game's target entry held it at the press (false: no press noted, or the entry
+/// was already gone).
+bool TalkPressSpot(std::uint64_t object, float (&out)[3]) noexcept;
 
 /// An FName's text for a log line (the name's number when it cannot be read).
 std::wstring NameOf(std::uint64_t name) noexcept;

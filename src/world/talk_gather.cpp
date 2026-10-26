@@ -269,14 +269,32 @@ void OnLeaderHanded() noexcept
     }
     // A navmesh point just beside the presser, as near the NPC as the presser stands: to the side of the presser's line
     // to the NPC that faces where player 1's character stands, else the other side, else behind the presser. Without
-    // the NPC (not found by name): toward player 1's character, else either side of that line.
-    const Vec3 toCloud{(at.x - presser.x) / distance, (at.y - presser.y) / distance, 0.0f};
-    Vec3       npcAt{};
-    void* const npc     = FindNpc(object);
-    // Another actor of the same name far off (or a party member) would turn the side and facing: only an NPC within
-    // the game's own "far" of the presser counts.
-    const bool withNpc = npc != nullptr && npc != cloud && npc != member && Location(npc, npcAt) &&
-                         Flat(npcAt, presser) > 1.0f && Flat(npcAt, presser) <= kFarCm;
+    // the NPC's place: toward player 1's character, else either side of that line.
+    // The NPC's place: where the pressed object stood by its target entry at the press (a talk target carries its state
+    // object's name, which the character lookup by name does not know: none found live 2026-10-26), else that lookup
+    // (the lookup is not tried after a noted place: the entry is the surer source). A place far off (another actor of
+    // the same name, or a party member) would turn the side and facing: only one within the game's own "far" of the
+    // presser counts.
+    const Vec3     toCloud{(at.x - presser.x) / distance, (at.y - presser.y) / distance, 0.0f};
+    Vec3           npcAt{};
+    float          spot[3] = {};
+    const wchar_t* npcNote = L"; where the NPC stands is unknown, facing that character";
+    bool           known   = field_targets::TalkPressSpot(object, spot);
+    if (known)
+    {
+        npcAt   = {spot[0], spot[1], spot[2]};
+        npcNote = L", facing the NPC (its place from the game's marker of the pressed object)";
+    }
+    else if (void* const npc = FindNpc(object); npc != nullptr && npc != cloud && npc != member)
+    {
+        known   = Location(npc, npcAt);
+        npcNote = L", facing the NPC (its place from the actor of its name)";
+    }
+    const bool withNpc = known && Flat(npcAt, presser) > 1.0f && Flat(npcAt, presser) <= kFarCm;
+    if (known && !withNpc)
+    {
+        npcNote = L"; where the NPC stands is not within 8 m of that character, facing that character";
+    }
     std::array<Vec3, 3> tries{toCloud, Vec3{-toCloud.y, toCloud.x, 0.0f}, Vec3{toCloud.y, -toCloud.x, 0.0f}};
     if (withNpc)
     {
@@ -328,7 +346,7 @@ void OnLeaderHanded() noexcept
     platform::Log(L"talk gather: {} started a talk with {}; player 1's character was {:.1f} m away and is brought beside {}'s "
                   L"character ({}{})",
                   SeatName(seat), field_targets::NameOf(object), distance / 100.0f, SeatName(seat), kSpots[withNpc ? 1 : 0][used],
-                  withNpc ? L", facing the NPC" : L"; the NPC was not found by name or not near, facing that character");
+                  npcNote);
     if (platform::Enabled(platform::Level::Debug))
     {
         // The move ran inside the game's lock set (RE-talk-far.md §6): the lock and the channel's step after it.

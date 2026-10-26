@@ -2474,6 +2474,12 @@ inline constexpr std::uint32_t kChestRunnerName = 0x6C, kChestRunnerActor = 0x28
 inline constexpr std::uint32_t kTargetsItemEntry = 0x18, kTargetsItemName = 0x24, kTargetsItemStateName = 0x2C;
 inline constexpr std::uint32_t kTargetsItemWidget = 0x78, kTargetsItemDirty = 0xAA, kTargetsItemDisabled = 0xAC;
 inline constexpr std::uint32_t kTargetsActiveHead = 0xBC50, kTargetsItemNext = 0x08;
+/// The entry's place (an FVector at entry +0x24 = item +0x3C; entry +0x3C is its row A: AddTarget's location argument,
+/// RE-talk-far.md §4.1), the
+/// pressed object's own spot. A talk target carries its state object's name (an ObjectActor row, "oba030_..."), which
+/// the character registry's lookup by name does not know (none found live, 2026-10-26): the entry is the game's own
+/// record of where the talked-to object stands, read while it exists (the talk state removes it a tick later).
+inline constexpr std::uint32_t kTargetsEntryLocation = 0x24;
 /// The pick's pending write of one entry's disabled byte (the field-action component's start/end posts it): an 8-byte
 /// flag at +0xBD4C, the entry named by +0xBD44 (inside the per-player copy), the value (0 or 1) at +0xBD54. The pick
 /// writes that value into the named entry's byte and clears the flag (the name too when the value is 0).

@@ -46,6 +46,7 @@ using KeyTestFn    = bool (*)(void* key);
 using FindRowFn    = void* (*)(const void* tables, std::uint64_t name);
 using StartsWithFn = bool (*)(const std::uint64_t* name, const char* prefix);
 using FreeFn       = void (*)(void* block);
+using FindEntryFn  = void* (*)(void* mgr, const std::uint64_t* name);
 
 constexpr int         kSeats   = players::scopes::kMaxPlayers;
 constexpr std::size_t kItems   = facts::kTargetsItems;
@@ -137,6 +138,8 @@ struct TalkPress
     int           seat = 0;
     std::uint64_t at   = 0;  // GetTickCount64 at the press, moved on while the field lock holds (a talk is running)
     bool          judged = false;  // whether to bring player 1's character to this talk was decided (world/talk_gather.h)
+    float         spot[3] = {};    // the pressed object's place from its target entry at the press (world/talk_gather.h)
+    bool          spotKnown = false;
 };
 
 // Set at install, then only read.
@@ -148,6 +151,7 @@ KeyTestFn    g_pressed    = nullptr;
 FindRowFn    g_findRow    = nullptr;
 StartsWithFn g_startsWith = nullptr;
 FreeFn       g_free       = nullptr;
+FindEntryFn  g_findEntry  = nullptr;
 std::uintptr_t g_pickSite = 0, g_pickTarget = 0, g_screenSite = 0, g_screenTarget = 0;
 
 platform::CallRedirect g_pick, g_press, g_screen;
@@ -622,6 +626,20 @@ void NoteTalkPress(int seat, std::uint64_t name) noexcept
         return;
     }
     *free = {name, seat, GetTickCount64(), false};
+    // The pressed object's own place, from the game's target entry while it still exists (the object's talk state
+    // removes it at the next state-manager tick): the talk's gather faces player 1's character toward it.
+    void* entry = nullptr;
+    if (targets != nullptr && platform::CallGuarded(g_findEntry, entry, targets, &free->name) && entry != nullptr &&
+        platform::CopyGuarded(free->spot, static_cast<const std::uint8_t*>(entry) + facts::kTargetsEntryLocation,
+                              sizeof(free->spot)))
+    {
+        free->spotKnown = true;
+    }
+    else
+    {
+        platform::LogDebug(L"field targets: {}'s press of {} finds no target entry now; where it stands is not noted",
+                           SeatName(seat), Name(name));
+    }
 }
 
 /// Player 1 pressed `name`: a further player's press of it is no longer the one its acts answer.
@@ -974,12 +992,13 @@ bool Install(const platform::GameImage& image) noexcept
     const auto findRow    = platform::FindFunction(image, facts::kFindRowInTables);
     const auto startsWith = platform::FindFunction(image, facts::kNameStartsWith);
     const auto freeFn     = platform::FindFunction(image, facts::kGameFree);
+    const auto findEntry  = platform::FindFunction(image, facts::kFindTargetEntry);
     if (!target_icons::Install(image))
     {
         return fail(L"the pick's icon calls");
     }
     if (!root || !key || !pickSite || !pick || !pressSite || !press || !screenSite || !screen || !gate || !held || !pressed || !findRow ||
-        !startsWith || !freeFn)
+        !startsWith || !freeFn || !findEntry)
     {
         return fail(L"a function, call site or global");
     }
@@ -1001,6 +1020,7 @@ bool Install(const platform::GameImage& image) noexcept
     g_findRow    = reinterpret_cast<FindRowFn>(*findRow);
     g_startsWith = reinterpret_cast<StartsWithFn>(*startsWith);
     g_free       = reinterpret_cast<FreeFn>(*freeFn);
+    g_findEntry  = reinterpret_cast<FindEntryFn>(*findEntry);
     g_pickSite = *pickSite, g_pickTarget = *pick, g_screenSite = *screenSite, g_screenTarget = *screen;
     if (!platform::ReplaceSlot(image, facts::kChestOpenBegin, reinterpret_cast<std::uintptr_t>(&Begin), g_begin))
     {
@@ -1114,6 +1134,19 @@ bool TalkJudged(std::uint64_t object) noexcept
 {
     return std::any_of(g_talkPresses.begin(), g_talkPresses.end(),
                        [object](const TalkPress& press) { return object != 0 && press.name == object && press.judged; });
+}
+
+bool TalkPressSpot(std::uint64_t object, float (&out)[3]) noexcept
+{
+    for (const TalkPress& press : g_talkPresses)
+    {
+        if (object != 0 && press.name == object && press.spotKnown && players::SeatBuilt(press.seat))
+        {
+            std::memcpy(out, press.spot, sizeof(out));  // PeekTalkPress's own choice of record
+            return true;
+        }
+    }
+    return false;
 }
 
 void MarkTalkJudged(std::uint64_t object) noexcept
