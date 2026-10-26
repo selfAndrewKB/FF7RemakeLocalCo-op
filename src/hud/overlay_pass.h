@@ -1,6 +1,7 @@
 #pragma once
 
-// The HUD passes by column (plan/seats.md step 4). A column is a view slot across the window: column 0 is player 1's,
+// The HUD passes by column (plan/seats.md step 4). A column is a view's place in the engine's list (where it shows on
+// screen is the column order's, views/column_rules.h; each module reads a view's own rectangle): column 0 is player 1's,
 // the game's own render of the overlay, run last in the frame; the further columns (1..) are the seats' (a seat's
 // column is its place in the engine's list: Seats below, set each tick) and get the mod's extra renders before it,
 // highest first (hud/second_image.h runs them). The

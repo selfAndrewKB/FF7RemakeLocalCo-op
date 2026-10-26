@@ -10,6 +10,7 @@
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
+#include "platform/settings.h"
 #include "views/column_rules.h"
 
 #include <cstdint>
@@ -20,6 +21,9 @@ namespace lss::views::column_layout {
 namespace {
 
 using column_rules::Action;
+using column_rules::ListSeats;
+using column_rules::Order;
+using column_rules::Records;
 using column_rules::kStockFavorTop;
 using column_rules::kThreeColumns;
 using column_rules::kThreePlayerRecords;
@@ -41,7 +45,10 @@ bool           g_installed    = false;
 int            g_override       = 0;        // the console's columns, 0 for none
 int            g_columns        = 0;        // wanted at the last tick
 int            g_localPlayers   = 0;        // the engine's local players at the last tick (the mod's count)
-bool           g_written        = false;    // the entry holds the mod's columns
+bool           g_written        = false;    // the entry holds one of the mod's entries (columns, or arranged)
+Order          g_order{};                   // the column order (the setting, the console)
+Records        g_wanted{};                  // the entry the last Apply wanted
+ListSeats      g_seats{0, -1, -1};          // whose view each place of the engine's list held at the last tick
 bool           g_reached        = false;    // the entry was read once (the first reconcile is done)
 bool           g_foreign        = false;    // the entry holds neither the stock records nor the mod's (logged once)
 std::uint8_t*  g_settingByte    = nullptr;  // the three-player layout setting, while held
@@ -104,7 +111,33 @@ std::wstring RecordsText(const Record (&records)[kThreePlayerRecords])
     return text;
 }
 
-/// The three-player layout setting held at FavorTop (the entry the mod writes) while the columns are in, and put
+std::wstring OrderText(const Order& order)
+{
+    return std::format(L"{} {} {}", order.player[0], order.player[1], order.player[2]);
+}
+
+/// The screens left to right as the wanted entry shows them: "player 1, player 3, the mirror".
+std::wstring ScreensText(const Records& wanted, const Record (&base)[kThreePlayerRecords])
+{
+    std::wstring text;
+    for (int slot = 0; slot < kThreePlayerRecords; ++slot)
+    {
+        for (int place = 0; place < kThreePlayerRecords; ++place)
+        {
+            if (wanted.record[place] == base[slot])
+            {
+                const int seat = g_seats[static_cast<std::size_t>(place)];
+                text += (slot == 0 ? L"" : L", ") +
+                        (seat >= 0                          ? std::format(L"player {}", seat + 1)
+                         : place < g_localPlayers           ? std::wstring(L"the mirror")
+                                                            : std::wstring(L"an empty screen"));
+            }
+        }
+    }
+    return text;
+}
+
+/// The three-player layout setting held at FavorTop (the entry the mod writes) while the mod's records are in, and put
 /// back when they leave if it still holds the mod's value. The engine re-reads it every layout pass.
 void HoldSetting(bool hold) noexcept
 {
@@ -175,9 +208,12 @@ void HoldSetting(bool hold) noexcept
     }
 }
 
-/// The entry as it should be for the columns wanted: written, restored, or left alone (logged).
-void Apply(bool threeWanted) noexcept
+/// The entry as it should be: `wanted` written, the stock one restored, or left alone (logged).
+void Apply(const Records& wanted) noexcept
 {
+    g_wanted                  = wanted;
+    const bool  ours          = !column_rules::Same(wanted.record, kStockFavorTop);
+    const bool  columns       = column_rules::ArrangementOf(wanted.record, kThreeColumns);
     const wchar_t* why     = L"";
     std::uint8_t*  records = FindRecords(&why);
     if (records == nullptr)
@@ -197,25 +233,28 @@ void Apply(bool threeWanted) noexcept
         Fault(L"the engine's three-player layout could not be read; tried again twice a second");
         return;
     }
-    const Action action = column_rules::Decide(entry, threeWanted);
+    const Action action = column_rules::Decide(entry, wanted.record);
     if (action != Action::Foreign && g_foreign)
     {
         g_foreign = false;
-        platform::Log(L"column layout: the engine's three-player layout is {} again", action == Action::Restore || (action == Action::Nothing && threeWanted) ? L"the mod's three columns" : L"the stock one");
+        platform::Log(L"column layout: the engine's three-player layout is {} again",
+                      column_rules::Same(entry, kStockFavorTop) ? L"the stock one" : L"one of the mod's");
     }
     switch (action)
     {
         case Action::Write:
-            if (platform::WriteGuarded(records, kThreeColumns, sizeof(kThreeColumns)))
+            if (platform::WriteGuarded(records, wanted.record, sizeof(wanted.record)))
             {
                 g_written = true;
                 g_fault   = nullptr;
                 ++g_writes;
                 HoldSetting(true);
-                platform::Log(L"column layout: the engine's three-player layout now shows three equal columns side by side (was "
-                              L"player 1 on top, two below); the engine lays three local players out from it on the next redraw "
-                              L"(write {})",
-                              g_writes);
+                platform::Log(L"column layout: the engine's three-player layout now shows {}, screens {}: {} (was {}); the engine "
+                              L"lays three local players out from it on the next redraw (write {})",
+                              columns ? L"three equal columns side by side" : L"player 1 on top, two below",
+                              columns ? L"left to right" : L"top, bottom left, bottom right",
+                              ScreensText(wanted, columns ? kThreeColumns : kStockFavorTop),
+                              column_rules::Same(entry, kStockFavorTop) ? L"the stock one" : L"another of the mod's", g_writes);
             }
             else
             {
@@ -235,7 +274,7 @@ void Apply(bool threeWanted) noexcept
             }
             else
             {
-                Fault(L"the engine's three-player layout could not be put back; it keeps the three columns; tried again twice a second");
+                Fault(L"the engine's three-player layout could not be put back; it keeps the mod's records; tried again twice a second");
             }
             break;
         case Action::Foreign:
@@ -243,8 +282,8 @@ void Apply(bool threeWanted) noexcept
             if (!g_foreign)
             {
                 g_foreign = true;
-                platform::LogWarning(L"column layout: the engine's three-player layout holds neither its stock values nor the mod's "
-                                     L"three columns ({}); left alone{}",
+                platform::LogWarning(L"column layout: the engine's three-player layout holds neither its stock values nor one of the "
+                                     L"mod's ({}); left alone{}",
                                      RecordsText(entry), g_written ? L"; the mod's columns were replaced, the setting released" : L"");
                 if (g_written)
                 {
@@ -254,9 +293,9 @@ void Apply(bool threeWanted) noexcept
             }
             break;
         case Action::Nothing:
-            g_written = threeWanted;  // ours already, or the stock one with fewer wanted
+            g_written = ours;  // the mod's already, or the stock one wanted
             g_fault   = nullptr;
-            HoldSetting(threeWanted);
+            HoldSetting(ours);
             break;
     }
 }
@@ -273,6 +312,16 @@ bool Install(const platform::GameImage& image) noexcept
     }
     g_engineGlobal = *engineGlobal;
     g_installed    = true;
+    g_wanted       = Records{{kStockFavorTop[0], kStockFavorTop[1], kStockFavorTop[2]}};
+    const std::wstring setting = platform::settings::Read(L"Views", L"column-order", L"1 2 3");
+    if (const auto order = column_rules::ParseOrder(setting))
+    {
+        g_order = *order;
+    }
+    else
+    {
+        platform::LogWarning(L"column layout: the setting column-order = {} is not 1 2 3 or 1 3 2; the join order is used", setting);
+    }
     using control::Register;
     using control::Shape;
     using control::Value;
@@ -289,15 +338,34 @@ bool Install(const platform::GameImage& image) noexcept
                   return control::Outcome{};
               },
               .get = [] { return Value{static_cast<std::int64_t>(g_override)}; }});
+    Register({.name  = L"column-order",
+              .shape = Shape::Word,
+              .words = {L"123", L"132"},
+              .help  = L"which screen players 2 and 3 take when three views show: 123 the join order (the default), 132 player 2 "
+                       L"on the right and player 3 in the middle (in one window: bottom right and bottom left); player 1 keeps the "
+                       L"left. The settings file's column-order sets it at the start",
+              .set   = [](const Value& v) {
+                  const auto order = column_rules::ParseOrder(std::get<std::wstring>(v));
+                  if (!order)
+                  {
+                      return control::Outcome{false, L"the order must be 123 or 132"};
+                  }
+                  g_order = *order;
+                  platform::Log(L"column layout: the column order is {} now", OrderText(g_order));
+                  return control::Outcome{};
+              },
+              .get = [] { return Value{std::format(L"{}{}{}", g_order.player[0], g_order.player[1], g_order.player[2])}; }});
     Register({.name = L"column-layout.state", .shape = Shape::Text,
-              .help = L"the columns wanted, the engine's three-player layout entry (stock, or the mod's three columns) and the setting",
+              .help = L"the columns wanted, the column order, the engine's three-player layout entry (stock, the mod's three columns, "
+                      L"or the stock records arranged) and the setting",
               .get  = [] { return Value{Reading()}; }});
     platform::Log(L"column layout: ready (three columns through the engine's own layout table while three are wanted; "
-                  L"view-columns 0..3)");
+                  L"view-columns 0..3; column order {}{})",
+                  OrderText(g_order), g_order == column_rules::kJoinOrder ? L", the join order" : L"");
     return true;
 }
 
-void Tick(int columns, int localPlayers, int spanColumns) noexcept
+void Tick(int columns, int localPlayers, int spanColumns, const ListSeats& seats) noexcept
 {
     if (!g_installed)
     {
@@ -306,14 +374,19 @@ void Tick(int columns, int localPlayers, int spanColumns) noexcept
     ++g_ticks;
     g_columns      = columns;
     g_localPlayers = localPlayers;
-    // Columns on a span or by the console; in one window the engine's own entry (column_rules::ThreeColumns).
-    const bool threeWanted = column_rules::ThreeColumns(columns, localPlayers, spanColumns, g_override);
-    const bool change      = threeWanted != g_written && !g_foreign && g_fault == nullptr;
-    const bool cadence     = g_ticks % kCheckTicks == 0 &&
-                         (g_written || g_foreign || g_fault != nullptr || threeWanted || g_settingByte != nullptr);
+    g_seats        = seats;
+    // Columns on a span or by the console; in one window the engine's own entry (column_rules::ThreeColumns); either
+    // arranged by the column order while three views exist.
+    const bool    threeWanted = column_rules::ThreeColumns(columns, localPlayers, spanColumns, g_override);
+    const bool    threeViews  = columns >= kThreePlayerRecords || localPlayers >= kThreePlayerRecords;
+    const Records wanted      = column_rules::EntryWanted(threeWanted, threeViews, g_order, seats);
+    const bool    ours        = !column_rules::Same(wanted.record, kStockFavorTop);
+    const bool    change      = !column_rules::Same(wanted.record, g_wanted.record) && !g_foreign && g_fault == nullptr;
+    const bool    cadence     = g_ticks % kCheckTicks == 0 &&
+                         (g_written || g_foreign || g_fault != nullptr || ours || g_settingByte != nullptr);
     if (change || cadence || !g_reached)
     {
-        Apply(threeWanted);
+        Apply(wanted);
     }
     if (g_written && g_ticks % kStatusTicks == 0 && platform::Enabled(platform::Level::Debug))
     {
@@ -330,7 +403,7 @@ void Remove() noexcept
 {
     if (g_installed)
     {
-        Apply(false);  // whatever the record says: the restore needs the exact mod's columns in the entry
+        Apply(Records{{kStockFavorTop[0], kStockFavorTop[1], kStockFavorTop[2]}});  // the restore needs one of the mod's entries in it
     }
     HoldSetting(false);
 }
@@ -343,13 +416,18 @@ std::wstring Reading()
     std::wstring   table = L"unread";
     if (records != nullptr && platform::CopyGuarded(entry, records, sizeof(entry)))
     {
-        table = column_rules::Same(entry, kThreeColumns)  ? L"the mod's three columns"
-                : column_rules::Same(entry, kStockFavorTop) ? L"stock (player 1 on top, two quadrants)"
-                                                            : std::format(L"other: {}", RecordsText(entry));
+        table = column_rules::Same(entry, kStockFavorTop)            ? std::wstring(L"stock (player 1 on top, two quadrants)")
+                : column_rules::ArrangementOf(entry, kThreeColumns)  ? L"the mod's three columns (screens left to right: " +
+                                                                           ScreensText({{entry[0], entry[1], entry[2]}}, kThreeColumns) + L")"
+                : column_rules::ArrangementOf(entry, kStockFavorTop) ? L"player 1 on top, two below, arranged (top, bottom left, "
+                                                                       L"bottom right: " +
+                                                                           ScreensText({{entry[0], entry[1], entry[2]}}, kStockFavorTop) + L")"
+                                                                     : std::format(L"other: {}", RecordsText(entry));
     }
-    return std::format(L"{} column(s) wanted{}, {} local player(s); the engine's three-player layout: {}{}; its setting held at player 1 "
-                       L"on top: {}; writes {}, restores {}{}",
-                       g_columns, g_override != 0 ? std::format(L" (view-columns {})", g_override) : L"", g_localPlayers, table,
+    return std::format(L"{} column(s) wanted{}, {} local player(s); column order {}; the engine's three-player layout: {}{}; its "
+                       L"setting held at player 1 on top: {}; writes {}, restores {}{}",
+                       g_columns, g_override != 0 ? std::format(L" (view-columns {})", g_override) : L"", g_localPlayers,
+                       OrderText(g_order), table,
                        records == nullptr && g_installed ? std::format(L" ({})", why) : L"", g_settingByte != nullptr ? L"yes" : L"no",
                        g_writes, g_restores, g_fault != nullptr ? std::format(L"; fault: {}", g_fault) : L"");
 }

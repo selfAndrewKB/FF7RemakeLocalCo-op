@@ -10,8 +10,9 @@
 // distance clip and, for rustle and swing sounds, its range compare, both measured from that listener.
 //
 // Every hook calls the game's own function first and changes nothing; it then counts:
-//   - game thread, each tick: the engine's game-thread listeners, each seat's column (its view's place, which is its
-//     listener's index if the engine numbers views as the mod numbers columns) and its controller's own listener
+//   - game thread, each tick: the engine's game-thread listeners, each seat's column (its view's place in the engine's
+//     list, which is its listener's index if the engine numbers listeners as its views; not its screen, which the
+//     column order may move) and its controller's own listener
 //     position (the call Draw makes) against that entry, and each mirror column's entry against player 1's;
 //   - audio thread, the device's push: the engine's audio-thread listeners and the position the push sent SEAD (and
 //     whether it sent an override instead of the engine's first listener);

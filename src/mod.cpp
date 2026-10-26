@@ -109,7 +109,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.95.0-sound-watch";
+constexpr const wchar_t* kVersion = L"0.96.0-screen-order";
 static_assert(lss::views::column_rules::kMaxColumns == lss::hud::overlay_pass::kMaxColumns, "the columns the views and the HUD count");  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
@@ -484,7 +484,8 @@ private:
         const int viewColumns  = lss::views::column_rules::Wanted(playersIn, heldColumns, lss::views::column_layout::Override());
         const int aloneColumns = lss::views::column_rules::Wanted(1, heldColumns, lss::views::column_layout::Override());
         // The layout asks whether the window spans monitors at all (held or entered at a join), not only while held.
-        lss::views::column_layout::Tick(viewColumns, playersIn + lss::views::mirror_player::Count(), lss::views::window_span::Columns());
+        lss::views::column_layout::Tick(viewColumns, playersIn + lss::views::mirror_player::Count(), lss::views::window_span::Columns(),
+                                        SeatsByPlace());
         lss::views::mirror_player::Tick(playersIn, session_.SeatIds(), viewColumns, aloneColumns);
         // Whenever the letterbox patch is on the views are in window pixels, one view included (the span's hold keeps it on
         // with player 2 awaiting a member: seen 2026-10-24 on the ultrawide, player 1's view streaked past the resolution).
@@ -515,6 +516,25 @@ private:
         lss::battle::sequence_camera_two::Tick();
         TickWorld();
         TickHud();
+    }
+
+    /// Whose view each place of the engine's local-player list holds now (player 1's first, then the seats in join
+    /// order, then the mirrors: -1), for the column order (views/column_rules.h).
+    lss::views::column_rules::ListSeats SeatsByPlace() const noexcept
+    {
+        lss::views::column_rules::ListSeats seats{0, -1, -1};
+        for (int place = 1; place < lss::views::column_rules::kThreePlayerRecords; ++place)
+        {
+            auto* player = session_.LocalPlayer(place);
+            for (int seat = 1; player != nullptr && seat <= lss::players::kSeatsBuilt; ++seat)
+            {
+                if (session_.SeatPlayer(seat) == player)
+                {
+                    seats[static_cast<std::size_t>(place)] = seat;
+                }
+            }
+        }
+        return seats;
     }
 
     /// A local player's view share (ULocalPlayer Origin and Size), read under a guard.
@@ -562,17 +582,14 @@ private:
     /// for every module that runs per column (hud/overlay_pass.h).
     void MapColumns() noexcept
     {
+        static_assert(lss::hud::overlay_pass::kNoSeat == -1 &&
+                          lss::hud::overlay_pass::kMaxColumns == lss::views::column_rules::kThreePlayerRecords,
+                      "a place with no seat reads the same in both tables");
+        const auto                    places = SeatsByPlace();
         lss::hud::overlay_pass::Seats seats;
         for (int column = 1; column < lss::hud::overlay_pass::kMaxColumns; ++column)
         {
-            auto* player = session_.LocalPlayer(column);
-            for (int seat = 1; player != nullptr && seat <= lss::players::kSeatsBuilt; ++seat)
-            {
-                if (session_.SeatPlayer(seat) == player)
-                {
-                    seats.seat[column] = seat;
-                }
-            }
+            seats.seat[column] = places[static_cast<std::size_t>(column)];
         }
         lss::hud::overlay_pass::SetSeats(seats);
     }

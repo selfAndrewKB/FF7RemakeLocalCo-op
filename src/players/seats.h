@@ -3,9 +3,10 @@
 // The seats: the further human players the mod adds (plan/seats.md). Seat 0 is player 1, the game's own player;
 // seat 1 is player 2, seat 2 player 3. A seat's number is at once the scopes' player (players/scopes.h), its
 // controller id and its row of the party order after the field leader's; its pad is XInput user `seat`. Its column
-// (its view's place on screen) is its local player's index in the engine's list, which a join appends to: player 2
-// and player 3 in that order take columns 1 and 2, but with player 2 out player 3 takes column 1 (the HUD asks
-// overlay_pass::ColumnOf, never assumes the seat). Pure constants and names, no game.
+// is its local player's index in the engine's list, which a join appends to: player 2 and player 3 in that order take
+// columns 1 and 2, but with player 2 out player 3 takes column 1 (the HUD asks overlay_pass::ColumnOf, never assumes
+// the seat). Where a column shows on screen is the column order's (views/column_rules.h, `column-order`): by default
+// the join order, the list's (column 2 the right-hand screen); `1 3 2` puts player 2's on the right whatever its column. Pure constants and names, no game.
 
 #include "players/scopes.h"
 

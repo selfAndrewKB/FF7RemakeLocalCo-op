@@ -58,7 +58,7 @@ void ColumnsOrStock()
 }
 
 /// The layout records: the stock entry and the mod's columns are distinct, the columns tile the width exactly.
-void Records()
+void LayoutRecords()
 {
     EXPECT(!Same(kStockFavorTop, kThreeColumns));
     EXPECT(Same(kThreeColumns, kThreeColumns));
@@ -73,31 +73,85 @@ void Records()
     EXPECT(kStockFavorTop[0].sizeX == 1.0f && kStockFavorTop[2].originX == 0.5f && kStockFavorTop[2].originY == 0.5f);
 }
 
-/// What the module does with the entry it read.
+/// What the module does with the entry it read, given the entry wanted.
 void Decisions()
 {
-    EXPECT(Decide(kStockFavorTop, true) == Action::Write);
-    EXPECT(Decide(kStockFavorTop, false) == Action::Nothing);
-    EXPECT(Decide(kThreeColumns, true) == Action::Nothing);
-    EXPECT(Decide(kThreeColumns, false) == Action::Restore);
+    EXPECT(Decide(kStockFavorTop, kThreeColumns) == Action::Write);
+    EXPECT(Decide(kStockFavorTop, kStockFavorTop) == Action::Nothing);
+    EXPECT(Decide(kThreeColumns, kThreeColumns) == Action::Nothing);
+    EXPECT(Decide(kThreeColumns, kStockFavorTop) == Action::Restore);
     Record foreign[kThreePlayerRecords] = {{0.5f, 1.0f, 0.0f, 0.0f}, {0.5f, 1.0f, 0.5f, 0.0f}, {1.0f, 1.0f, 0.0f, 0.0f}};
-    EXPECT(Decide(foreign, true) == Action::Foreign);
-    EXPECT(Decide(foreign, false) == Action::Foreign);
+    EXPECT(Decide(foreign, kThreeColumns) == Action::Foreign);
+    EXPECT(Decide(foreign, kStockFavorTop) == Action::Foreign);
     Record zero[kThreePlayerRecords] = {};
-    EXPECT(Decide(zero, true) == Action::Foreign);
+    EXPECT(Decide(zero, kThreeColumns) == Action::Foreign);
     // Partly the mod's (two records written, the third stock): foreign, never "restored" over.
     Record partly[kThreePlayerRecords] = {kThreeColumns[0], kThreeColumns[1], kStockFavorTop[2]};
-    EXPECT(Decide(partly, false) == Action::Foreign);
-    EXPECT(Decide(partly, true) == Action::Foreign);
+    EXPECT(Decide(partly, kStockFavorTop) == Action::Foreign);
+    EXPECT(Decide(partly, kThreeColumns) == Action::Foreign);
+    // A record twice is no arrangement: foreign.
+    Record twice[kThreePlayerRecords] = {kThreeColumns[0], kThreeColumns[1], kThreeColumns[1]};
+    EXPECT(Decide(twice, kThreeColumns) == Action::Foreign);
     // The FavorBottom entry's records in the FavorTop slot: foreign.
     Record favorBottom[kThreePlayerRecords] = {{0.5f, 0.5f, 0.0f, 0.0f}, {0.5f, 0.5f, 0.5f, 0.0f}, {1.0f, 0.5f, 0.0f, 0.5f}};
-    EXPECT(Decide(favorBottom, true) == Action::Foreign);
+    EXPECT(Decide(favorBottom, kThreeColumns) == Action::Foreign);
     // A NaN never equals anything: foreign, left alone.
     Record nan[kThreePlayerRecords] = {kStockFavorTop[0], kStockFavorTop[1], {0.5f, 0.5f, 0.5f, std::numeric_limits<float>::quiet_NaN()}};
-    EXPECT(Decide(nan, true) == Action::Foreign);
+    EXPECT(Decide(nan, kThreeColumns) == Action::Foreign);
     // Negative zero equals zero: still the stock entry.
     Record negativeZero[kThreePlayerRecords] = {{1.0f, 0.5f, -0.0f, -0.0f}, kStockFavorTop[1], kStockFavorTop[2]};
-    EXPECT(Decide(negativeZero, true) == Action::Write);
+    EXPECT(Decide(negativeZero, kThreeColumns) == Action::Write);
+    // An arranged entry of the mod's: written over by another arrangement, restored to the stock one.
+    Record swapped[kThreePlayerRecords] = {kThreeColumns[0], kThreeColumns[2], kThreeColumns[1]};
+    EXPECT(Decide(swapped, kThreeColumns) == Action::Write);
+    EXPECT(Decide(swapped, kStockFavorTop) == Action::Restore);
+    EXPECT(Decide(swapped, swapped) == Action::Nothing);
+    Record swappedTop[kThreePlayerRecords] = {kStockFavorTop[0], kStockFavorTop[2], kStockFavorTop[1]};
+    EXPECT(Decide(swappedTop, kStockFavorTop) == Action::Restore);
+    EXPECT(Decide(kStockFavorTop, swappedTop) == Action::Write);
+}
+
+/// The column order from the settings file or the console: player 1 first, then 2 and 3 in either order.
+void Orders()
+{
+    EXPECT(ParseOrder(L"1 2 3") == kJoinOrder);
+    EXPECT(ParseOrder(L"123") == kJoinOrder);
+    EXPECT((ParseOrder(L"1, 3, 2") == Order{{1, 3, 2}}));
+    EXPECT((ParseOrder(L" 132 ") == Order{{1, 3, 2}}));
+    EXPECT(!ParseOrder(L"213"));    // player 1 keeps the first screen
+    EXPECT(!ParseOrder(L"12"));
+    EXPECT(!ParseOrder(L"1233"));
+    EXPECT(!ParseOrder(L"122"));
+    EXPECT(!ParseOrder(L""));
+    EXPECT(!ParseOrder(L"one two"));
+}
+
+/// Each view's slot: a player's from the order, the mirrors' the ones left over in list order.
+void SlotsAndEntries()
+{
+    using Slots3 = std::array<int, kThreePlayerRecords>;
+    const Order swap{{1, 3, 2}};
+    EXPECT((Slots(kJoinOrder, {0, 1, 2}) == Slots3{0, 1, 2}));
+    EXPECT((Slots(swap, {0, 1, 2}) == Slots3{0, 2, 1}));   // player 2 joined first: right; player 3 middle
+    EXPECT((Slots(swap, {0, 2, 1}) == Slots3{0, 1, 2}));   // player 3 joined first: already in the middle
+    EXPECT((Slots(swap, {0, 1, -1}) == Slots3{0, 2, 1}));  // player 2 and the mirror: the mirror in the middle
+    EXPECT((Slots(kJoinOrder, {0, 2, -1}) == Slots3{0, 2, 1}));  // Slots alone (EntryWanted does not arrange under the join order)
+    EXPECT((Slots(kJoinOrder, {0, -1, -1}) == Slots3{0, 1, 2}));  // two mirrors in list order
+    EXPECT((Slots(swap, {0, -1, -1}) == Slots3{0, 1, 2}));
+    // Three views on a span: the columns arranged; the join order and the stock entry: nothing to write in one window.
+    const Records span = EntryWanted(true, true, swap, {0, 1, 2});
+    EXPECT(span.record[0] == kThreeColumns[0] && span.record[1] == kThreeColumns[2] && span.record[2] == kThreeColumns[1]);
+    EXPECT(Same(EntryWanted(false, true, kJoinOrder, {0, 1, 2}).record, kStockFavorTop));
+    const Records window = EntryWanted(false, true, swap, {0, 1, 2});
+    EXPECT(window.record[1] == kStockFavorTop[2] && window.record[2] == kStockFavorTop[1]);
+    EXPECT(Same(EntryWanted(false, false, swap, {0, 1, -1}).record, kStockFavorTop));  // two views: the entry is unused
+    EXPECT(Same(EntryWanted(true, true, kJoinOrder, {0, 1, 2}).record, kThreeColumns));
+    // The join order arranges nothing: whoever joined first keeps the middle (bottom left), as before the setting.
+    EXPECT(Same(EntryWanted(true, true, kJoinOrder, {0, 2, -1}).record, kThreeColumns));
+    EXPECT(Same(EntryWanted(true, true, kJoinOrder, {0, 2, 1}).record, kThreeColumns));
+    EXPECT(Same(EntryWanted(false, true, kJoinOrder, {0, 2, 1}).record, kStockFavorTop));
+    // 1 3 2 with player 3 alone beside a mirror: player 3 keeps the middle, the mirror the right.
+    EXPECT(Same(EntryWanted(true, true, swap, {0, 2, -1}).record, kThreeColumns));
 }
 
 }  // namespace
@@ -106,8 +160,10 @@ int main()
 {
     WantedColumns();
     ColumnsOrStock();
-    Records();
+    LayoutRecords();
     Decisions();
+    Orders();
+    SlotsAndEntries();
     std::printf(g_failures == 0 ? "column_rules: all passed\n" : "column_rules: %d failure(s)\n", g_failures);
     return g_failures == 0 ? 0 : 1;
 }
