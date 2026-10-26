@@ -109,6 +109,7 @@ add_library(LocalSplitScreen SHARED
     src/render/sun_cascades.cpp
     src/views/letterbox_patch.cpp
     src/views/column_layout.cpp
+    src/views/column_source.cpp
     src/views/split_scale.cpp
     src/views/display_align.cpp
     src/views/mirror_player.cpp
@@ -361,6 +362,22 @@ add_executable(BattleRulesTests
 target_include_directories(BattleRulesTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_compile_features(BattleRulesTests PRIVATE cxx_std_20)
 add_test(NAME battle_rules COMMAND BattleRulesTests)
+
+add_executable(ColumnsTests
+    tests/columns_test.cpp
+)
+target_include_directories(ColumnsTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(ColumnsTests PRIVATE cxx_std_20)
+add_test(NAME columns COMMAND ColumnsTests)
+
+add_executable(ColumnSourceTests
+    tests/column_source_test.cpp
+    src/views/column_source.cpp
+    src/control/registry.cpp
+)
+target_include_directories(ColumnSourceTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(ColumnSourceTests PRIVATE cxx_std_20)
+add_test(NAME column_source COMMAND ColumnSourceTests)
 
 add_executable(SettingsTests
     tests/settings_test.cpp

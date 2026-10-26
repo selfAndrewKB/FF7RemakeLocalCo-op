@@ -459,6 +459,18 @@ void FillAtLeave(const wchar_t* why, std::int32_t playersIn, std::uint32_t seatI
     }
 }
 
+bool InColumn(std::int32_t column) noexcept
+{
+    for (std::int32_t i = 0; i < g_count; ++i)
+    {
+        if (g_mirrors[i].column == column)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
 void Clear(const wchar_t* why) noexcept
 {
     FollowList();

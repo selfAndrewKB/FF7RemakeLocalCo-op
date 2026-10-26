@@ -3,8 +3,8 @@
 namespace lss::hud::overlay_pass {
 
 namespace {
-int   g_column = kSingle;  // game thread only
-Seats g_seats;             // game thread only
+int                 g_column = kSingle;  // game thread only
+views::columns::Map g_map;               // game thread only
 }
 
 int Column() noexcept
@@ -27,19 +27,21 @@ bool Further() noexcept
     return g_column >= 1;
 }
 
-void SetSeats(const Seats& seats) noexcept
+void SetMap(const views::columns::Map& map) noexcept
 {
-    g_seats = seats;
+    g_map = map;
 }
 
 int SeatOf(int column) noexcept
 {
-    return g_seats.SeatOf(column);
+    static_assert(kNoSeat == views::columns::kUnknown, "no seat reads the same in both");
+    const int seat = g_map.SeatOf(column);
+    return column == 0 ? 0 : seat >= 0 ? seat : kNoSeat;  // column 0 is player 1's, listed or not
 }
 
 int ColumnOf(int seat) noexcept
 {
-    return g_seats.ColumnOf(seat);
+    return g_map.ColumnOf(seat);
 }
 
 }  // namespace lss::hud::overlay_pass

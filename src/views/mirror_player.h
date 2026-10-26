@@ -61,6 +61,8 @@ void Clear(const wchar_t* why) noexcept;
 
 /// How many mirrors are in the engine's list.
 std::int32_t Count() noexcept;
+/// A mirror's view is at that place of the engine's list (as of this tick's Tick or FillAtLeave).
+bool InColumn(std::int32_t column) noexcept;
 
 std::wstring Reading();
 

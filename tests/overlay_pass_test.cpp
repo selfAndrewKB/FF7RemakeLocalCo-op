@@ -79,28 +79,6 @@ void DrawGate()
     EXPECT(DrawSkipped(1, 2, false));
 }
 
-/// The seat-to-column map (players/seats.h): a seat's column is its place in the engine's list.
-void SeatMap()
-{
-    Seats none;  // player 1 alone
-    EXPECT(none.SeatOf(0) == 0 && none.SeatOf(1) == kNoSeat && none.SeatOf(2) == kNoSeat);
-    EXPECT(none.ColumnOf(0) == 0 && none.ColumnOf(1) == -1 && none.ColumnOf(2) == -1);
-    Seats inOrder;  // players 2 and 3 joined in that order
-    inOrder.seat[1] = 1;
-    inOrder.seat[2] = 2;
-    EXPECT(inOrder.ColumnOf(1) == 1 && inOrder.ColumnOf(2) == 2 && inOrder.SeatOf(2) == 2);
-    Seats threeFirst;  // player 3 in with player 2 out, a mirror in the third column
-    threeFirst.seat[1] = 2;
-    EXPECT(threeFirst.ColumnOf(2) == 1 && threeFirst.ColumnOf(1) == -1 && threeFirst.SeatOf(2) == kNoSeat);
-    Seats swapped;  // player 3 joined first, player 2 after
-    swapped.seat[1] = 2;
-    swapped.seat[2] = 1;
-    EXPECT(swapped.ColumnOf(1) == 2 && swapped.ColumnOf(2) == 1 && swapped.SeatOf(1) == 2);
-    // Out of range and no seat.
-    EXPECT(swapped.SeatOf(-1) == kNoSeat && swapped.SeatOf(kMaxColumns) == kNoSeat);
-    EXPECT(swapped.ColumnOf(kNoSeat) == -1 && swapped.ColumnOf(3) == -1);
-}
-
 }  // namespace
 
 int main()
@@ -110,6 +88,5 @@ int main()
     EntryNames();
     AcquireRule();
     DrawGate();
-    SeatMap();
     return lss::test::Report();
 }

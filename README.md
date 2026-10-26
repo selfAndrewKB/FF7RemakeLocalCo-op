@@ -318,6 +318,9 @@ src/
     column_layout           Three equal columns through the engine's own layout table (plan/seats.md step 5;
                             research/RE-three-views.md)
     column_rules.h          The pure rules of the view columns (plan/seats.md step 5: three columns)
+    column_source           Where each column's view comes from, decided in one place each tick
+    columns.h               The view columns: how many views the screen shows and whose each one is, read once per tick
+                            from the engine's local-player list
     display_align           A monitor of the row lined up with the row's top through Windows' display-configuration API
                             (the one Display settings itself uses), for this Windows session only, and put back at the
                             leave
@@ -378,5 +381,5 @@ src/
                             (tests/listener_rules_test.cpp)
     listeners               Every player hears the sounds near them: each SEAD sound is measured from the nearest
                             player's listener
-tests/                      44 host-side test programs (ctest), one per pure header or code stub; run without the game
+tests/                      46 host-side test programs (ctest), one per pure header or code stub; run without the game
 ```

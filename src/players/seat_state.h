@@ -42,6 +42,12 @@ constexpr SeatState StateOf(const SeatFlags& f) noexcept
     return f.handedToAi ? SeatState::Handed : SeatState::Playing;
 }
 
+/// The seat's player is in the game (its local player listed): in, playing or handed.
+constexpr bool InGame(SeatState state) noexcept
+{
+    return state == SeatState::In || state == SeatState::Playing || state == SeatState::Handed;
+}
+
 /// The reading's word.
 constexpr const wchar_t* StateName(SeatState state) noexcept
 {

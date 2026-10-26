@@ -78,6 +78,8 @@
 #include "views/column_layout.h"
 #include "views/split_scale.h"
 #include "views/column_rules.h"
+#include "views/column_source.h"
+#include "views/columns.h"
 #include "views/letterbox_patch.h"
 #include "views/display_align.h"
 #include "views/mirror_player.h"
@@ -104,6 +106,8 @@
 #include <cstdint>
 #include <format>
 #include <optional>
+#include <span>
+#include <tuple>
 #include <string>
 
 #ifndef WIN32_LEAN_AND_MEAN
@@ -115,7 +119,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.105.0-talk-presses-and-rules";
+constexpr const wchar_t* kVersion = L"0.106.0-column-source";
 static_assert(lss::views::column_rules::kMaxColumns == lss::hud::overlay_pass::kMaxColumns, "the columns the views and the HUD count");  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
@@ -455,6 +459,7 @@ public:
             }
         }
         RegisterSessionCommands(session_);
+        lss::views::column_source::RegisterCommands(singleViewChoice_);
         remote_.Open();
         const Hook::FCallbackOptions options{false, false, STR("LocalSplitScreen"), STR("player intent")};
         tickCallback_ = Hook::RegisterEngineTickPreCallback(
@@ -506,19 +511,45 @@ private:
         lss::views::letterbox_patch::Tick(playersIn > 1 || lss::views::window_span::Held());
         lss::views::window_span::Tick(playersIn > 1);
         // The columns this frame shows (views/column_rules.h): the players, the span's while held, or the console's.
-        const int heldColumns  = lss::views::window_span::Held() ? lss::views::window_span::Columns() : 0;
-        const int viewColumns  = lss::views::column_rules::Wanted(playersIn, heldColumns, lss::views::column_layout::Override());
-        const int aloneColumns = lss::views::column_rules::Wanted(1, heldColumns, lss::views::column_layout::Override());
+        const int  heldColumns  = lss::views::window_span::Held() ? lss::views::window_span::Columns() : 0;
+        const int  viewColumns  = lss::views::column_rules::Wanted(playersIn, heldColumns, lss::views::column_layout::Override());
+        const int  aloneColumns = lss::views::column_rules::Wanted(1, heldColumns, lss::views::column_layout::Override());
+        const bool columnsHeld  = heldColumns > 0 || lss::views::column_layout::Override() > 0;  // beyond the players
         // The layout asks whether the window spans monitors at all (held or entered at a join), not only while held.
         lss::views::column_layout::Tick(viewColumns, playersIn + lss::views::mirror_player::Count(), lss::views::window_span::Columns(),
-                                        SeatsByPlace());
+                                        ListSeatsOf(MapOfList()));
         lss::views::mirror_player::Tick(playersIn, session_.SeatIds(), viewColumns, aloneColumns);
         // Whenever the letterbox patch is on the views are in window pixels, one view included (the span's hold keeps it on
         // with player 2 awaiting a member: seen 2026-10-24 on the ultrawide, player 1's view streaked past the resolution).
         lss::views::split_scale::Tick(lss::views::letterbox_patch::Applied());
-        MapColumns();  // after every join, leave and mirror change of this tick: the HUD and this frame's passes read it
-        lss::players::split_render::Tick(session_.Count() + lss::views::mirror_player::Count() > 0);
-        lss::render::area_blend::Tick(session_.Count() + lss::views::mirror_player::Count() > 0);  // before this frame's views
+        // The engine's list as columns, after every join, leave and mirror change of this tick (views/columns.h): the one
+        // map every module that runs per column reads (the HUD passes, the listeners, this frame's passes).
+        columns_ = MapOfList();
+        lss::hud::overlay_pass::SetMap(columns_);
+        // Where each column's view comes from this tick (views/column_source.h decides; this is the one place that
+        // applies it): a seat on player 1's picture gets the every-slot camera copy and no HUD pass of its own.
+        lss::views::column_source::Moment moment;
+        moment.columnsHeld = columnsHeld;
+        moment.choice      = singleViewChoice_;
+        moment.map         = columns_;
+        moment.sceneHolds  = lss::views::scene_camera_two::SceneHolds();
+        for (int seat = 1; seat <= lss::players::kSeatsBuilt; ++seat)
+        {
+            moment.seats[static_cast<std::size_t>(seat)]   = session_.State(seat);
+            moment.ownShop[static_cast<std::size_t>(seat)] = lss::world::shop_act::OwnsScene(seat);
+        }
+        // The engine's single view in one window is not built (plan/next-phase.md §7, the user's call): the decision
+        // gives every further column player 1's picture instead, never a split with a menu over it; said once.
+        if (moment.choice == lss::views::column_source::Override::Single && !columnsHeld && !singleViewUnbuiltLogged_ &&
+            session_.Count() > 0)
+        {
+            singleViewUnbuiltLogged_ = true;
+            Log(L"column source: the engine's single view is asked for but not built; every further column shows player 1's "
+                L"picture instead (the mirror look)");
+        }
+        FollowShown(lss::views::column_source::Decide(moment));
+        lss::players::split_render::Tick(columns_.count > 1);
+        lss::render::area_blend::Tick(columns_.count > 1);  // before this frame's views
         lss::views::scene_camera_two::SeatManagers seatManagers{};
         for (int seat = 1; seat <= lss::players::kSeatsBuilt; ++seat)
         {
@@ -547,23 +578,64 @@ private:
         TickHud();
     }
 
-    /// Whose view each place of the engine's local-player list holds now (player 1's first, then the seats in join
-    /// order, then the mirrors: -1), for the column order (views/column_rules.h).
-    lss::views::column_rules::ListSeats SeatsByPlace() const noexcept
+    /// The engine's local-player list as columns (views/columns.h): each listed place's seat (0 player 1, then the
+    /// seats by the player each holds), a mirror's (views/mirror_player.h) or unknown; as many as are listed.
+    lss::views::columns::Map MapOfList() const noexcept
     {
-        lss::views::column_rules::ListSeats seats{0, -1, -1};
-        for (int place = 1; place < lss::views::column_rules::kThreePlayerRecords; ++place)
+        namespace columns = lss::views::columns;
+        std::array<int, columns::kMaxColumns> places{};
+        int                                   listed = 0;
+        for (int place = 0; place < columns::kMaxColumns; ++place)
         {
             auto* player = session_.LocalPlayer(place);
-            for (int seat = 1; player != nullptr && seat <= lss::players::kSeatsBuilt; ++seat)
+            if (player == nullptr)
             {
-                if (session_.SeatPlayer(seat) == player)
-                {
-                    seats[static_cast<std::size_t>(place)] = seat;
-                }
+                break;  // the list ends here (the engine closes it up at a removal)
             }
+            listed   = place + 1;
+            int seat = place == 0 ? 0 : columns::kUnknown;
+            for (int s = 1; seat == columns::kUnknown && s <= lss::players::kSeatsBuilt; ++s)
+            {
+                seat = session_.SeatPlayer(s) == player ? s : seat;
+            }
+            if (seat == columns::kUnknown && lss::views::mirror_player::InColumn(place))
+            {
+                seat = columns::kMirror;
+            }
+            places[static_cast<std::size_t>(place)] = seat;
+        }
+        return columns::MapOf(std::span<const int>(places.data(), static_cast<std::size_t>(listed)));
+    }
+
+    /// The map's places as the column order's rule takes them (views/column_rules.h: a seat, or -1 for no seat).
+    static lss::views::column_rules::ListSeats ListSeatsOf(const lss::views::columns::Map& map) noexcept
+    {
+        static_assert(std::tuple_size_v<lss::views::column_rules::ListSeats> <= lss::views::columns::kMaxColumns,
+                      "the layout's places are columns");
+        lss::views::column_rules::ListSeats seats{0, -1, -1};  // place 0 is player 1's, listed or not
+        for (std::size_t place = 1; place < seats.size(); ++place)
+        {
+            seats[place] = map.seatAt[place] >= 0 ? map.seatAt[place] : -1;
         }
         return seats;
+    }
+
+    /// Applies this tick's decision (views/column_source.h): each seat's change logged once with its reason, and the
+    /// scene camera module told which seats' managers take player 1's every slot.
+    void FollowShown(const lss::views::column_source::Shown& shown) noexcept
+    {
+        for (int seat = 1; seat <= lss::players::kSeatsBuilt; ++seat)
+        {
+            const auto at  = static_cast<std::size_t>(seat);
+            const auto now = shown.seatIn[at] ? shown.seats[at] : lss::views::column_source::SeatSource{};
+            const auto was = shown_.seatIn[at] ? shown_.seats[at] : lss::views::column_source::SeatSource{};
+            if (const std::wstring text = lss::views::column_source::Describe(seat, was, now); !text.empty() && shown.seatIn[at])
+            {
+                Log(L"column source: {}", text);  // a seat in the game; a leave says nothing here (the session logs it)
+            }
+            lss::views::scene_camera_two::SetSource(seat, shown.OnPlayerOne(seat), ManagerOfSeat(seat));
+        }
+        shown_ = shown;
     }
 
     /// A local player's view share (ULocalPlayer Origin and Size), read under a guard.
@@ -607,22 +679,6 @@ private:
         return lss::platform::ReadPointer(ControllerOfSeat(seat), lss::facts::kControllerCameraManager);
     }
 
-    /// Which seat fills each column, from the engine's list (a seat's column is its place there: players/seats.h),
-    /// for every module that runs per column (hud/overlay_pass.h).
-    void MapColumns() noexcept
-    {
-        static_assert(lss::hud::overlay_pass::kNoSeat == -1 &&
-                          lss::hud::overlay_pass::kMaxColumns == lss::views::column_rules::kThreePlayerRecords,
-                      "a place with no seat reads the same in both tables");
-        const auto                    places = SeatsByPlace();
-        lss::hud::overlay_pass::Seats seats;
-        for (int column = 1; column < lss::hud::overlay_pass::kMaxColumns; ++column)
-        {
-            seats.seat[column] = places[static_cast<std::size_t>(column)];
-        }
-        lss::hud::overlay_pass::SetSeats(seats);
-    }
-
     /// The world around the views (world/): party members kept visible near a camera, characters animated by the
     /// camera that sees them best, the NPCs near every further player kept awake and spawned around them too, and
     /// able to see them.
@@ -660,22 +716,24 @@ private:
         lss::world::npc_senses::Tick(anyIn ? PawnOf(0) : nullptr);
         lss::world::npc_detail::Tick(anyIn ? CameraManagerOf(0) : nullptr);
         lss::world::env_sets_two::Tick();
-        lss::audio::listeners::Tick(std::min(1 + session_.Count() + lss::views::mirror_player::Count(),
-                                                  lss::hud::overlay_pass::kMaxColumns));
+        lss::audio::listeners::Tick(columns_.count);
     }
 
-    /// The HUD layout follows the split and each column's view (hud/overlay_pass.h: column 0 is player 1's, the seats'
-    /// follow in the engine list's order, then the mirrors'). With the mirror player in and no seat in, the HUD is laid
-    /// out for player 1's
-    /// column and every view samples that one image: the further passes and the per-view targets stay off, since only
-    /// a further pass would draw into a second target, leaving the mirror's view empty.
+    /// The HUD layout follows the columns (views/columns.h) and what each shows (views/column_source.h: column 0 is
+    /// player 1's, the seats' follow in the engine list's order, then the mirrors'). While no further column shows its
+    /// own view (the mirror players alone beside player 1, or every seat on player 1's picture), the HUD is laid out
+    /// for player 1's column and every view samples that one image: the further passes and the per-view targets stay
+    /// off, since only a further pass would draw into a second target, leaving those views empty. Known gap [dev
+    /// override only]: under `single-view on` with three players, a seat in its own shop keeps the split while the
+    /// other seat shows player 1's picture, and that seat still gets a HUD pass of its own (the passes cannot skip a
+    /// middle column today): its own HUD over player 1's camera.
     void TickHud() noexcept
     {
         namespace op = lss::hud::overlay_pass;
         lss::hud::second_image::Columns columns;
-        columns.count = std::min(1 + session_.Count(), op::kMaxColumns);  // the columns real players fill
-        const bool mirror      = session_.Count() == 0 && lss::views::mirror_player::Count() > 0;
-        const int  viewColumns = std::min(columns.count + lss::views::mirror_player::Count(), op::kMaxColumns);
+        columns.count = shown_.SplitShown() ? std::min(1 + session_.Count(), op::kMaxColumns) : 1;  // the columns with a pass
+        const bool mirror      = !shown_.SplitShown() && columns_.count > 1;
+        const int  viewColumns = std::min(columns_.count, op::kMaxColumns);
         lss::hud::overlay_layout::ViewShares shares{};
         int                                  read = 0;  // the columns whose views were read, from the first
         for (int column = 0; column < viewColumns && ReadView(column, shares[column]); ++column)
@@ -689,14 +747,14 @@ private:
         if (mirror && lss::hud::ui_targets::Enabled())
         {
             lss::hud::ui_targets::SetEnabled(false);
-            Log(L"HUD targets: off while the mirror player is in and player 2 is out (each column samples player 1's HUD image; "
-                L"player 2's image turns them on again at its join)");
+            Log(L"HUD targets: off while every further column shows player 1's picture (each column samples player 1's HUD "
+                L"image; a further player's own view turns them on again)");
         }
         for (int column = 0; split && column < columns.count; ++column)
         {
             columns.localPlayer[column] = session_.LocalPlayer(column);
             columns.controller[column]  = ControllerOf(column);
-            // A further column's seat from the map (MapColumns): its member.
+            // A further column's seat from the map: its member.
             const int seat         = op::SeatOf(column);
             columns.member[column] = seat >= 1 ? lss::players::scopes::Member(seat) : nullptr;
         }
@@ -716,6 +774,10 @@ private:
     lss::players::Session          session_;
     ModHolds                       holds_{session_};
     lss::control::Remote           remote_{holds_};
+    lss::views::columns::Map                 columns_;  // this tick's map (set before the modules that read it)
+    lss::views::column_source::Shown         shown_;    // this tick's decision
+    lss::views::column_source::Override      singleViewChoice_ = lss::views::column_source::Override::Auto;
+    bool                                     singleViewUnbuiltLogged_ = false;
     bool                  installed_     = false;
     bool                  joinWasDown_   = false;
     bool                  leaveWasDown_  = false;

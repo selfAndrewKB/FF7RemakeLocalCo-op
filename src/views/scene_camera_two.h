@@ -32,7 +32,10 @@
 // A mirror player's manager (views/mirror_player, v0.42.0; up to two mirrors since the seats plan's step 5) takes the
 // same copy for EVERY slot, the field camera's 24 included, every frame, so its view is player 1's: a blend seeded as
 // player 1's was (player 1's slot at the switch-on), the cut raised, the end reset run on it too. One source for
-// every copy; a mirror needs no scene to run. Each mirror has its own copy record, by the mirror module's slot.
+// every copy; a mirror needs no scene to run. Each mirror has its own copy record, by the mirror module's slot. A seat
+// whose column shows player 1's picture (views/column_source.h Source::PlayerOne, SetSource) takes that every-slot
+// copy too, scene or not, whatever the `scene-camera-two` switch (that switch is the scene on further views); the two
+// copies are one loop (CopySlots), the slot set and the blend seed its parameters.
 // Readings `scene.*`, `camera-slots.*`, `scene-camera-two.state`; the switch `scene-camera-two on|off` (on). Game thread.
 
 #include "players/seats.h"
@@ -61,9 +64,22 @@ using SeatManagers = std::array<void*, players::scopes::kMaxPlayers>;
 void Tick(void* managerOne, const SeatManagers& seatManagers) noexcept;
 
 /// Right before a camera manager's UpdateCamera. Player 1's (`seat` 0): its cut bit is noted for this frame. A
-/// seat's (`manager` its own): the scene slots are mirrored onto it; the caller holds the seat's primary scope (the
-/// game's primary-scoped setters then reach the seat's manager).
+/// seat's (`manager` its own): the scene slots are mirrored onto it (or every slot, while its column shows player
+/// 1's picture); the caller holds the seat's primary scope (the game's primary-scoped setters then reach the seat's
+/// manager).
 void BeforeUpdateCamera(void* managerOne, int seat, void* manager) noexcept;
+
+/// Where the seat's column's view comes from this tick (views/column_source.h, from mod.cpp): `playerOne` true gives
+/// the seat's manager the every-slot copy of player 1's, as a mirror's [ASSUMPTION, not played: a seat's own operator,
+/// lock camera and sequence cameras write its slots too, and a slot active on the seat alone is not switched off by
+/// the copy, so the picture may differ from a mirror's until the play check]; false its own view (the scene slots
+/// while a scene holds). A change back to its own releases the copied slots on `manager`, the seat's camera manager
+/// now (null when the seat is out: nothing is touched; its own field camera slot stays on either way).
+void SetSource(int seat, bool playerOne, void* manager) noexcept;
+
+/// The scene holds the players as last read (the cutscene manager playing, or the field control lock outside player
+/// 1's own move): the Self mechanism's reason, for the column source's moment.
+bool SceneHolds() noexcept;
 
 /// The mirror players' copies (views/mirror_player), one per mirror slot 0..kMirrorSlots-1.
 inline constexpr int kMirrorSlots = 2;
