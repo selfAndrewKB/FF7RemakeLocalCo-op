@@ -48,7 +48,8 @@ member. A virtual pad 2 for unattended tests: `python ../tools/pad2.py serve`, t
 
 In the field each further player opens chests, picks up items, opens doors, uses the grappling hook and talks to NPCs
 (quest NPCs and shopkeepers included) with their own pad and prompt. A talk plays as the game scripts it (on every
-view, the whole game held). A shop a further player opens zooms on that player's view and faces that player's
+view, the whole game held; player 1's character, when more than 8 m away, is brought next to the player who started
+it). A shop a further player opens zooms on that player's view and faces that player's
 character; while any shop is up every pad drives it, as in the pause menu. Examine points and object events stay
 player 1's.
 
@@ -149,6 +150,8 @@ src/
     env_set_view.h        player 2's set kept and paced, the list edit (pure, host-tested)
     shop_act              a shop a further player opens is theirs: the show-menu act's start, update, finish and end
                           in the opener's scopes (one call redirect, three vtable slots); its camera on the opener's view
+    talk_gather           player 1's character brought to a talk another player starts when more than 8 m away (the
+                          game's navmesh query, battle-warp move and field camera reset; two act tick call redirects)
   views/
     window_span           the game window across a row of equal monitors, one full view per player: the game's own
                           resolution request for the row, then the engine's window reshape; held, put back at the leave;

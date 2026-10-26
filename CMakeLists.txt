@@ -121,6 +121,7 @@ add_library(LocalSplitScreen SHARED
     src/world/forced_walk.cpp
     src/world/search_arrows.cpp
     src/world/shop_act.cpp
+    src/world/talk_gather.cpp
     src/render/area_blend.cpp
     src/world/field_targets.cpp
     src/world/target_icons.cpp

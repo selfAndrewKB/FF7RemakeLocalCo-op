@@ -71,6 +71,9 @@ std::wstring Reading() noexcept;
 /// Claim takes every note of that object. Game thread.
 int PeekTalkPress(std::uint64_t object) noexcept;
 int ClaimTalkPress(std::uint64_t object) noexcept;
+/// Whether to bring player 1's character to the talk of this press was decided (once per press: world/talk_gather.h).
+bool TalkJudged(std::uint64_t object) noexcept;
+void MarkTalkJudged(std::uint64_t object) noexcept;
 
 /// An FName's text for a log line (the name's number when it cannot be read).
 std::wstring NameOf(std::uint64_t name) noexcept;

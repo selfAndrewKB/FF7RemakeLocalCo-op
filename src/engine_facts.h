@@ -2441,6 +2441,39 @@ inline constexpr std::uintptr_t kTableAction       = 0x145839B80;  // g_DT_Actio
 inline constexpr std::uint32_t  kActionRowIntegers = 0xD8;         // FEndDataTableAction::IntegerArgumentList (TArray<int32>)
 inline constexpr std::uintptr_t kShopSlotGlobal    = 0x1459CAAD0;  // EndUISystem[44] (kEndUISystemSlots + 44 * 8)
 inline constexpr std::uint32_t  kShopUp            = 0x370;        // the shop UI's "a shop is up" byte
+
+// --- A further player's talk: player 1's character brought over (RE-talk-far.md §3, §4, §6) ----------------------
+// The act tick ActSequence_TickSteps(channel, float dt, u8* out), called at two sites of the state manager's tick
+// (E8, each inside its block). The game's navmesh query Nav_FindPointAlongDirInAreas(FVector* out, origin, dir, float
+// distance, agent props (a 32-byte default at kNavAgentDefault), 0, 0, 0, 0) -> found, as its catch-up teleport calls
+// it; the battle-warp move EndCharacter_BattleTeleport_FadeIn(char, loc, FRotator*, direct, fade) (stops the AI move,
+// Party_TeleportCharacterTo, a 0.5 s fade-in); the field camera reset FieldCamera_ResetBehindLeader(params, 32 bytes,
+// all zero as the game's own init).
+inline constexpr std::array<std::uint8_t, 16> kActTickEntry{
+    0x4C, 0x89, 0x44, 0x24, 0x18, 0x41, 0x55, 0x41, 0x56, 0x48, 0x81, 0xEC, 0xC8, 0x00, 0x00, 0x00};
+inline constexpr platform::FunctionFact kActTick{L"ActSequence_TickSteps", 0x140FB64B0, kActTickEntry};
+inline constexpr std::array<std::uintptr_t, 2> kActTickCalls{0x14113D3F7, 0x14113D457};
+inline constexpr std::array<std::uint8_t, 16> kNavPointAlongDirEntry{
+    0x40, 0x53, 0x57, 0x41, 0x54, 0x41, 0x55, 0x41, 0x56, 0x48, 0x81, 0xEC, 0xE0, 0x00, 0x00, 0x00};
+inline constexpr platform::FunctionFact kNavPointAlongDir{L"Nav_FindPointAlongDirInAreas", 0x1415C3790, kNavPointAlongDirEntry};
+inline constexpr std::array<std::uint8_t, 16> kBattleTeleportFadeInEntry{
+    0x48, 0x85, 0xC9, 0x0F, 0x84, 0x2A, 0x01, 0x00, 0x00, 0x48, 0x89, 0x6C, 0x24, 0x18, 0x56, 0x41};
+inline constexpr platform::FunctionFact kBattleTeleportFadeIn{L"EndCharacter_BattleTeleport_FadeIn", 0x140A029E0,
+                                                              kBattleTeleportFadeInEntry};
+inline constexpr std::array<std::uint8_t, 16> kFieldCameraResetBehindLeaderEntry{
+    0x48, 0x8B, 0x05, 0x19, 0xB7, 0x81, 0x04, 0x4C, 0x8B, 0xC9, 0x44, 0x8B, 0x80, 0xB4, 0x09, 0x00};
+inline constexpr platform::FunctionFact kFieldCameraResetBehindLeader{L"FieldCamera_ResetBehindLeader", 0x140FCE2B0,
+                                                                      kFieldCameraResetBehindLeaderEntry};
+/// An act channel's act id (FName, +0x10); an action row's type (+0xC; 43 = the show-menu act).
+inline constexpr std::uint32_t  kActChannelAct         = 0x10;
+inline constexpr std::uint32_t  kActChannelStep        = 0x135;  // the channel's step byte (2: the lock taken)
+inline constexpr std::uint32_t  kActionRowType         = 0xC;
+inline constexpr std::int32_t   kActionTypeShowMenu    = 43;
+/// The field-action component's "an action runs" byte (component +0x15C, RE-shop-two.md §2.1, RE-talk-far.md §6).
+inline constexpr std::uint32_t  kFieldActionRunning    = 0x15C;
+inline constexpr std::uintptr_t kNavAgentDefault       = 0x1453ABA90;
+inline constexpr std::size_t    kNavAgentSize          = 32;
+inline constexpr std::size_t    kCameraResetParamsSize = 32;
 /// The field target icon manager (EndUISystem[15], one for the game's life): its hold gauge's last ratio (+0x54, one
 /// float for every widget: the "gauge full" sound plays when a ratio reaches 1 from below it); its icon map's element
 /// count (+0x08) and free slots (+0x34): the live icons are their difference.

@@ -30,6 +30,7 @@
 #include "battle/command_menu_two.h"
 #include "battle/targeting_two.h"
 #include "battle/lock_camera_two.h"
+#include "world/talk_gather.h"
 #include "world/traversal_action.h"
 #include "players/pad_buttons.h"
 #include "players/scopes.h"
@@ -988,6 +989,7 @@ void Session::OnStreamFinished(void* self) noexcept
 void Session::OnLeaderHandedToAi(void* self) noexcept
 {
     auto* session = static_cast<Session*>(self);
+    world::talk_gather::OnLeaderHanded();  // a further player's talk: player 1's character brought over when far
     for (int index = 1; index <= kSeatsBuilt; ++index)
     {
         session->HandWithLeader(session->seats_[index]);

@@ -135,6 +135,7 @@ struct TalkPress
     std::uint64_t name = 0;  // the pressed object (the act channel's object)
     int           seat = 0;
     std::uint64_t at   = 0;  // GetTickCount64 at the press, moved on while the field lock holds (a talk is running)
+    bool          judged = false;  // whether to bring player 1's character to this talk was decided (world/talk_gather.h)
 };
 
 // Set at install, then only read.
@@ -644,7 +645,7 @@ void NoteTalkPress(int seat, std::uint64_t name) noexcept
                              SeatName(seat));
         return;
     }
-    *free = {name, seat, GetTickCount64()};
+    *free = {name, seat, GetTickCount64(), false};
 }
 
 /// Player 1 pressed `name`: a further player's press of it is no longer the one its acts answer.
@@ -1131,6 +1132,23 @@ int PeekTalkPress(std::uint64_t object) noexcept
         }
     }
     return 0;
+}
+
+bool TalkJudged(std::uint64_t object) noexcept
+{
+    return std::any_of(g_talkPresses.begin(), g_talkPresses.end(),
+                       [object](const TalkPress& press) { return object != 0 && press.name == object && press.judged; });
+}
+
+void MarkTalkJudged(std::uint64_t object) noexcept
+{
+    for (TalkPress& press : g_talkPresses)
+    {
+        if (object != 0 && press.name == object)
+        {
+            press.judged = true;
+        }
+    }
 }
 
 int ClaimTalkPress(std::uint64_t object) noexcept
