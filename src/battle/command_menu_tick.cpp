@@ -74,7 +74,6 @@ int                                      g_eventSeat   = 0;
 bool                                     g_aloneLogged = false;
 command_menu_rules::SlowWrites           g_slowWrites;
 std::optional<players::scopes::Scope>    g_eventScope;  // the seat's context around one of its pad's key events
-void (*g_switchListener)(bool slows) noexcept = nullptr;
 
 void LogMenuSlow(const wchar_t* why) noexcept;  // the slow-down's state, at Info (below)
 
@@ -279,34 +278,23 @@ bool Install(const platform::GameImage& image) noexcept
     g_slot         = *slot;
     g_battleSystem = reinterpret_cast<void**>(*system);
     g_gameMode     = reinterpret_cast<void**>(*gameMode);
-    // The user's setting, set before the redirect is placed (no write reads it yet).
-    const std::wstring slowSetting = platform::settings::Read(L"Battle", L"menu-slow", L"");
-    if (!slowSetting.empty() && slowSetting != L"on" && slowSetting != L"off")
-    {
-        platform::LogWarning(L"battle menus: LocalSplitScreen.ini [Battle] menu-slow = '{}' is not on or off; read as on "
-                             L"(the game's)",
-                             slowSetting);
-    }
-    g_slowWrites.SetSlows(slowSetting != L"off");
+    // The user's setting (one of the table's words), set before the redirect is placed: no write reads it yet.
+    g_slowWrites.SetSlows(platform::settings::Of(platform::settings::kMenuSlow).word == L"on");
     if (!g_slow.Install(g_slowCall, g_slowTarget, reinterpret_cast<std::uintptr_t>(&SetSlot)))
     {
         platform::Log(L"command menu 2: the time-slow write could not be redirected; no seat's menu ever ticks, and the "
                       L"menu-slow switch does nothing");
         return false;
     }
-    LogMenuSlow(slowSetting.empty()                              ? L"the default; LocalSplitScreen.ini has no [Battle] menu-slow"
-                : slowSetting == L"on" || slowSetting == L"off" ? L"the settings file"
-                                                                : L"the default; the file's value is not valid");
+    LogMenuSlow(platform::settings::Why(platform::settings::kMenuSlow).c_str());
     players::pad_buttons::SetUiContext({&EnterEventContext, &LeaveEventContext});
-    control::Register({.name = L"menu-slow", .shape = control::Shape::OnOff,
-                       .help = L"on: an open battle command menu slows the world and greys the screen, as the game does; "
-                               L"off: no grey, and the world and the ATB gauges run on at full speed while a menu is open "
-                               L"(also Ctrl+F9)",
-                       .set  = [](const control::Value& v) {
-                           SetMenuSlow(std::get<bool>(v), L"the console");
-                           return control::Outcome{};
-                       },
-                       .get = [] { return control::Value{MenuSlow()}; }});
+    control::RegisterOption(
+        platform::settings::kMenuSlow,
+        [](const std::wstring& word) {
+            SetMenuSlow(word == L"on", L"the console");
+            return control::Outcome{};
+        },
+        [] { return std::wstring(MenuSlow() ? L"on" : L"off"); });
     control::Register({.name = L"menu-two.route", .shape = control::Shape::Text,
                        .help = L"each command controller's ticks at the game's spot and its world-slow writes; each seat's "
                                L"pad key events routed into the seat's context and those refused (menu not set up, path "
@@ -370,16 +358,7 @@ void SetMenuSlow(bool slows, const wchar_t* why) noexcept
         return;
     }
     g_slowWrites.SetSlows(slows);
-    LogMenuSlow(why);
-    if (g_switchListener != nullptr)
-    {
-        g_switchListener(slows);  // a waiting menu's grey follows at once (battle/menu_grey)
-    }
-}
-
-void SetSwitchListener(void (*listener)(bool slows) noexcept) noexcept
-{
-    g_switchListener = listener;
+    LogMenuSlow(why);  // a waiting menu's grey follows at the grey's tick, later in the same engine tick (battle/menu_grey)
 }
 
 namespace {

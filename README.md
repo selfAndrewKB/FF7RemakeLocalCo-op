@@ -27,7 +27,7 @@ python ../tools/game.py status | launch | quit | relaunch --deploy --label v0.8.
 
 Every module registers its own commands (`src/control/registry.h`), so `help` on the running build is the list.
 Today: `join`, `leave`, `console <command>`, `report`, `quit`, `showflags <hex>`, `ao-origin on|off`,
-`bloom-origin on|off`, `distortion-apply on|off`, `pad-buttons on|off`, `menu-two on|off`, `menu-slow on|off` (off: an open battle command menu no longer slows the world or greys the screen), `menu-grey` (reading), `battle-warps players-stay|off|game` (who the game warps at a battle's start and end), `targeting-two on|off`, `rates-two on|off`, `menu-two.leader`, `menu-two.route`, `window-span on|off`, `window-span.hold on|off` (the span with any player count, kept through loading screens), `mirror-player on|off` (an extra local player in every column no player fills shows player 1's picture, up to two; reading `mirror-player.state`), `view-columns 0..3` (the columns the window shows, side by side; 0 = as the span and the players decide; reading `column-layout.state`), `lock-camera-two.requests`, `lock-camera-two.restore`, `camera-override-two`, `enemy-leader`, `sequence-camera-two`, `target-cursor-two`, `party-events`, `log-level error|warning|info|debug|trace` (Debug by default; Trace holds the per-frame lines), `hud.dump roots|shown|all [<text>]`, `hud-band on|off`, `hud-image on|off`, `hud-targets on|off`, `hud-targets-log <renders>`, `movie-frame on|off` (a pre-rendered movie in every view; reading `movie-frame.state`); readings `p2.in`, `p2.member`, `p2.state` (out|awaiting|rejoining|in|playing|handed),
+`bloom-origin on|off`, `distortion-apply on|off`, `pad-buttons on|off`, `menu-two on|off`, `menu-slow on|off` (off: an open battle command menu no longer slows the world or greys the screen), `menu-grey` (reading), `battle-warps players-stay|off|game` (who the game warps at a battle's start and end), `multi-monitor auto|on|off` and `column-order 123|132` (the settings file's options, switched in play; every option of `LocalSplitScreen.ini` is one row of the table in `src/platform/settings.h`, and its console command is built from that row), `targeting-two on|off`, `rates-two on|off`, `menu-two.leader`, `menu-two.route`, `window-span on|off`, `window-span.hold on|off` (the span with any player count, kept through loading screens), `mirror-player on|off` (an extra local player in every column no player fills shows player 1's picture, up to two; reading `mirror-player.state`), `view-columns 0..3` (the columns the window shows, side by side; 0 = as the span and the players decide; reading `column-layout.state`), `lock-camera-two.requests`, `lock-camera-two.restore`, `camera-override-two`, `enemy-leader`, `sequence-camera-two`, `target-cursor-two`, `party-events`, `log-level error|warning|info|debug|trace` (Debug by default; Trace holds the per-frame lines), `hud.dump roots|shown|all [<text>]`, `hud-band on|off`, `hud-image on|off`, `hud-targets on|off`, `hud-targets-log <renders>`, `movie-frame on|off` (a pre-rendered movie in every view; reading `movie-frame.state`); readings `p2.in`, `p2.member`, `p2.state` (out|awaiting|rejoining|in|playing|handed),
 `game.state` (title|loading|play|pause|menu|leaving|…), `game.paused`, `game.menu-kind`, `game.location`,
 `field.step` (13 = steady field), `field.running`, `hud.overlay`, `hud.layout`, `pad.events`, `pads` (the XInput users with a pad), `lead.gate` (the last LEAD on player 2's member judged), `menu-two.state`, `targeting-two.runs`, `targeting-two.lock`, `tick`, `version`. The language's own verbs (`src/control/script.h`): `get <name>`, `status`, `help [<name>]`,
 `wait <ticks>`, `wait-until <name> <op> <value> [<ticks>]`, `hold <player> stick <lx> <ly> <rx> <ry> <ticks>`,
@@ -76,8 +76,10 @@ until a player joins); `auto` (the default) spans while player 2 is in; `off` le
 `[Views] column-order = 1 2 3 | 1 3 2` picks which screen players 2 and 3 take. `[Battle] menu-slow = on | off`: off,
 an open battle command menu no longer slows the world or greys the screen (Ctrl+F9 switches it in play). `[Battle] battle-warps =
 players-stay | off | game`: who the game warps at a battle's start and end (players-stay, the default: every player's
-own character stays where it is). The install never replaces an existing `LocalSplitScreen.ini`: add a new section by
-hand from the repository's copy; a key the file lacks takes its default.
+own character stays where it is). The file is read once at the game's start (the log's `settings:` line lists every
+option's word and where it came from; a word the file gets wrong is a warning and the default); a value's case and
+spaces and commas do not matter. The install never replaces an existing `LocalSplitScreen.ini`: add a new section by hand from
+the repository's copy; a key the file lacks takes its default.
 
 ## Layout
 
@@ -356,5 +358,5 @@ src/
                             (tests/listener_rules_test.cpp)
     listeners               Every player hears the sounds near them: each SEAD sound is measured from the nearest
                             player's listener
-tests/                      39 host-side test programs (ctest), one per pure header or code stub; run without the game
+tests/                      40 host-side test programs (ctest), one per pure header or code stub; run without the game
 ```

@@ -10,6 +10,7 @@
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
+#include "platform/settings.h"
 #include "platform/verified_code.h"
 #include "players/game_state.h"
 #include "views/column_rules.h"
@@ -84,8 +85,15 @@ bool                g_auto         = true;     // enter on player 2's join
 bool                g_autoTried    = false;    // one try per join
 bool                g_held         = false;    // the hold: the span with any player count, kept when player 2 leaves
 bool                g_holdTried    = false;    // one try per switch-on (the preset's waits for the game's first steady frame)
-bool                g_holdPreset   = false;    // the hold came from the settings file: its try waits for the window and the play state
+bool                g_holdPreset   = false;    // the hold came from the preset: its try waits for the window and the play state
 bool                g_playerTwoIn  = false;
+
+/// The preset's word as the live state reads: `on` while the hold is on, `off` while neither the hold nor the join
+/// rule is, else `auto`.
+std::wstring Preset() noexcept
+{
+    return g_held ? L"on" : !g_auto ? L"off" : L"auto";
+}
 
 Step          g_step = Step::Out;
 std::uint32_t g_stepTicks = 0;
@@ -509,6 +517,14 @@ bool Install(const platform::GameImage& image) noexcept
     control::Register({.name = L"window-span.state", .shape = control::Shape::Text,
                        .help = L"the span's step, the window and the resolution",
                        .get  = [] { return control::Value{Reading()}; }});
+    control::RegisterOption(
+        platform::settings::kMultiMonitor,
+        [](const std::wstring& word) {
+            SetPreset(word, L"the console");
+            return control::Outcome{};
+        },
+        [] { return Preset(); });
+    SetPreset(platform::settings::Of(platform::settings::kMultiMonitor).word, platform::settings::Why(platform::settings::kMultiMonitor).c_str());
     const auto res = ReadResolution();
     platform::Log(L"window span: ready (on by default: with player 2 in, the window spans a row of equal monitors through "
                   L"the game's resolution request and the engine's window reshape; Ctrl+F2 toggles; window-span.hold on "
@@ -657,28 +673,44 @@ std::int32_t Columns() noexcept
     return In() ? g_columns : 0;
 }
 
-void SetPreset(const std::wstring& preset, const std::wstring& file) noexcept
+void SetPreset(const std::wstring& preset, const wchar_t* why) noexcept
 {
     if (preset == L"on")
     {
+        g_auto       = true;
         g_held       = true;
         g_holdPreset = true;
-        platform::Log(L"window span: the preset multi-monitor = on ({}): the span is held from the game's first steady frame, with "
-                      L"any player count; the mirror player fills the empty column",
-                      file);
+        g_holdTried  = In();  // out: one try at the game's next steady frame (the tick waits for the window and the play
+                              // state); in or entering: nothing to try, and no re-entry after a later Ctrl+F2
+        platform::Log(L"window span: multi-monitor = on ({}): the span is held {}, with any player count; the mirror player "
+                      L"fills every empty column",
+                      why, In() ? L"now" : L"from the game's next steady frame");
     }
     else if (preset == L"off")
     {
-        g_auto = false;
-        platform::Log(L"window span: the preset multi-monitor = off ({}): no span until window-span on, window-span.hold on or Ctrl+F2", file);
+        g_auto       = false;
+        g_held       = false;
+        g_holdPreset = false;
+        platform::Log(L"window span: multi-monitor = off ({}): no span until window-span on, window-span.hold on or Ctrl+F2", why);
+        if (In())
+        {
+            Leave(L"multi-monitor off");
+        }
     }
     else if (preset == L"auto")
     {
-        platform::Log(L"window span: the preset multi-monitor = auto ({}): the span with player 2", file);
+        g_auto       = true;
+        g_held       = false;
+        g_holdPreset = false;
+        platform::Log(L"window span: multi-monitor = auto ({}): the span while a further player is in", why);
+        if (In() && !g_playerTwoIn)
+        {
+            Leave(L"multi-monitor auto with no further player in");
+        }
     }
     else
     {
-        platform::LogWarning(L"window span: the preset multi-monitor = '{}' ({}) is not off, on or auto; read as auto", preset, file);
+        platform::LogWarning(L"window span: multi-monitor = '{}' ({}) is not a word of the table; nothing changes", preset, why);
     }
 }
 

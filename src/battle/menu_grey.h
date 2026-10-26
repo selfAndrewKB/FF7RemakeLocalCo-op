@@ -14,8 +14,10 @@
 //   - the four calls that bring a counted filter back after a menu closes over it (the top/pause menu, menu widgets A
 //     and B, and EndUIFilter__Unsuppress for the others) skip type 0 while a battle menu waits (a controller's wait
 //     state opening or open), so no grey returns there;
-//   - switched off while a battle menu waits, the effect stops at once; switched on, a counted, unsuppressed filter
-//     with no effect up is started again as the game's own unsuppress does.
+//   - switched off while a battle menu waits, the effect stops later in the same engine tick (the keys and the
+//     console run first; this module follows MenuSlow() at its tick, so no callback between the two modules);
+//     switched on, a counted, unsuppressed filter with no effect up is started again as the game's own unsuppress
+//     does.
 // The filter's count is shared with other owners (a minigame's wait, a Blueprint's show): a skip or a stop can leave
 // their count with no effect. Each skip or stop leaves a debt; once no battle menu waits, the engine tick settles it
 // the game's unsuppress way (counted, unsuppressed, none up: started). With the switch on, every call is the game's.

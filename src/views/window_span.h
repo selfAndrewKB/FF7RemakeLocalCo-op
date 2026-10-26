@@ -72,9 +72,14 @@ bool Held() noexcept;
 /// The columns the span is in with (0 when out): one per real player, the rest the mirror player's.
 std::int32_t Columns() noexcept;
 
-/// The preset from the settings file (`off`, `on`, `auto`; anything else reads as `auto` with a warning), applied
-/// before the first tick: `on` holds the span from the game's first steady frame, `off` turns the join rule off.
-void SetPreset(const std::wstring& preset, const std::wstring& file) noexcept;
+/// The preset (`[Views] multi-monitor`, platform/settings.h; the console's `multi-monitor`), one of its words:
+/// `auto` the span while a further player is in, `on` the span held with any player count (from the game's next
+/// steady frame when out), `off` neither until `window-span on`, `window-span.hold on` or Ctrl+F2. Applied at
+/// install from the file, and at any time from the console: `off` leaves now, `auto` leaves when no further player
+/// is in, `on` keeps a span that is in. `why` names the source in the log line. The reading answers the live state
+/// (`on` while held, `off` while neither held nor on the join rule, else `auto`), so Ctrl+F2 and the window-span
+/// switches show in it.
+void SetPreset(const std::wstring& preset, const wchar_t* why) noexcept;
 
 /// The `window-span.state` reading.
 std::wstring Reading() noexcept;

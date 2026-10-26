@@ -332,6 +332,13 @@ target_include_directories(TypeAnswerCodeTests PRIVATE "${CMAKE_CURRENT_SOURCE_D
 target_compile_features(TypeAnswerCodeTests PRIVATE cxx_std_20)
 add_test(NAME type_answer_code COMMAND TypeAnswerCodeTests)
 
+add_executable(SettingsTests
+    tests/settings_test.cpp
+)
+target_include_directories(SettingsTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(SettingsTests PRIVATE cxx_std_20)
+add_test(NAME settings COMMAND SettingsTests)
+
 add_executable(SeatsTests
     tests/seats_test.cpp
 )

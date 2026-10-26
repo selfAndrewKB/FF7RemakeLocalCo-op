@@ -42,6 +42,7 @@ std::array<platform::CallRedirect, facts::kUiFilterRestoreCalls.size()> g_restor
 std::uint32_t g_opensSkipped = 0, g_restoresSkipped = 0, g_flipStops = 0, g_flipStarts = 0, g_settled = 0;
 void*         g_playerOne = nullptr;  // player 1's command controller, noted at the engine tick (outside every scope)
 bool          g_debt      = false;    // a skip or a stop may have left another owner's count with no effect
+bool          g_slows     = true;     // the slow-down switch as last seen at the tick
 
 /// Filter 0's effect handle (-1: none), shared count and suppressed byte.
 struct FilterState
@@ -129,7 +130,8 @@ void RestoreAfterMenu(void* filters, std::uint8_t type, std::uint8_t instant)
     g_activate(filters, type, instant);
 }
 
-/// The slow-down was just switched (game thread, outside every scope): a waiting battle menu's grey follows at once.
+/// The slow-down was switched since the last tick (game thread, outside every scope): a waiting battle menu's grey
+/// follows.
 void OnSwitched(bool slows) noexcept
 {
     auto* const filters = static_cast<std::uint8_t*>(Filters());
@@ -209,7 +211,7 @@ bool Install(const platform::GameImage& image) noexcept
         const auto site = image.Rebase(facts::kUiFilterRestoreCalls[i], 5);
         restores += site && g_restores[i].Install(*site, *activate, reinterpret_cast<std::uintptr_t>(&RestoreAfterMenu)) ? 1 : 0;
     }
-    command_menu_tick::SetSwitchListener(&OnSwitched);
+    g_slows = command_menu_tick::MenuSlow();
     control::Register({.name  = L"menu-grey",
                        .shape = control::Shape::Text,
                        .help  = L"an open battle menu's grey: skipped while the slow-down is off; skips, switch-time stops "
@@ -230,7 +232,6 @@ bool Install(const platform::GameImage& image) noexcept
 
 void Remove() noexcept
 {
-    command_menu_tick::SetSwitchListener(nullptr);
     for (auto& call : g_restores)
     {
         call.Restore();
@@ -245,6 +246,11 @@ void Tick() noexcept
         return;
     }
     Read(reinterpret_cast<const void*>(g_commandGlobal), g_playerOne);  // outside every scope: player 1's own
+    if (const bool slows = command_menu_tick::MenuSlow(); slows != g_slows)
+    {
+        g_slows = slows;
+        OnSwitched(slows);
+    }
     if (!g_debt || BattleMenuWaits())
     {
         return;

@@ -16,6 +16,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>
 
 namespace lss::battle::battle_warps {
 
@@ -33,7 +34,12 @@ enum class Mode : std::uint8_t
     Game,         // the game's warps for everyone
 };
 
-constexpr std::array<const wchar_t*, 3> kModeWords{L"players-stay", L"off", L"game"};
+// The words of the setting's row in the table, in the enum's order.
+constexpr auto& kModeWords = platform::settings::kBattleWarpsWords;
+static_assert(kModeWords.size() == 3 && std::wstring_view(kModeWords[static_cast<std::size_t>(Mode::PlayersStay)]) == L"players-stay" &&
+                  std::wstring_view(kModeWords[static_cast<std::size_t>(Mode::Off)]) == L"off" &&
+                  std::wstring_view(kModeWords[static_cast<std::size_t>(Mode::Game)]) == L"game",
+              "the table's words name the modes in the enum's order");
 
 // Set once at install.
 std::uintptr_t         g_getActor  = 0;
@@ -203,15 +209,8 @@ bool Install(const platform::GameImage& image) noexcept
     g_victory  = *victory;
     g_escape   = *escape;
 
-    const std::wstring setting = platform::settings::Read(L"Battle", L"battle-warps", L"");
-    const auto         mode    = ModeOf(setting);
-    if (!setting.empty() && !mode)
-    {
-        platform::LogWarning(L"battle warps: LocalSplitScreen.ini [Battle] battle-warps = '{}' is not game, players-stay or "
-                             L"off; read as players-stay",
-                             setting);
-    }
-    g_mode = mode.value_or(Mode::PlayersStay);  // set before the redirects are placed
+    // The file's word is one of the table's (platform/settings.h); set before the redirects are placed.
+    g_mode = ModeOf(platform::settings::Of(platform::settings::kBattleWarps).word).value_or(Mode::PlayersStay);
 
     // All three calls lie inside one code block each (RE §3.1-§3.2).
     if (!g_startCall.Install(*startCall, g_getActor, reinterpret_cast<std::uintptr_t>(&StartMember)) ||
@@ -225,22 +224,17 @@ bool Install(const platform::GameImage& image) noexcept
                       L"end");
         return false;
     }
-    SetMode(g_mode, mode             ? L"the settings file"
-                    : setting.empty() ? L"the default; LocalSplitScreen.ini has no [Battle] battle-warps"
-                                      : L"the default; the file's value is not valid");
-    control::Register({.name  = L"battle-warps",
-                       .shape = control::Shape::Word,
-                       .words = {kModeWords.begin(), kModeWords.end()},
-                       .help  = L"who the game warps at a battle's start and end: players-stay (every player's own character "
-                                L"stays where it is; the default), off (nobody is warped), game (the whole party)",
-                       .set   = [](const control::Value& v) {
-                           if (const auto mode = ModeOf(std::get<std::wstring>(v)))
-                           {
-                               SetMode(*mode, L"the console");
-                           }
-                           return control::Outcome{};
-                       },
-                       .get = [] { return control::Value{std::wstring(ModeWord(g_mode))}; }});
+    SetMode(g_mode, platform::settings::Why(platform::settings::kBattleWarps).c_str());
+    control::RegisterOption(
+        platform::settings::kBattleWarps,
+        [](const std::wstring& word) {
+            if (const auto mode = ModeOf(word))
+            {
+                SetMode(*mode, L"the console");
+            }
+            return control::Outcome{};
+        },
+        [] { return std::wstring(ModeWord(g_mode)); });
     return true;
 }
 

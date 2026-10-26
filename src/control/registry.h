@@ -21,6 +21,10 @@
 #include <variant>
 #include <vector>
 
+namespace lss::platform::settings {
+struct Option;
+}
+
 namespace lss::control {
 
 /// What a command did; `detail` says why when it failed, and may add a fact when it succeeded.
@@ -101,5 +105,13 @@ Registry& Global() noexcept;
 
 /// `Global().Add(entry)`; a refusal is kept in Rejected().
 inline void Register(Entry entry) { Global().Add(std::move(entry)); }
+
+/// A command for one option of the settings file, built from its row of the table (platform/settings.h): the
+/// option's key as the name, its words as a Word shape (exactly on|off: an OnOff, so scripts write `menu-slow off`
+/// and read a bool), its help with the default appended. `set` takes one of the option's words and says what
+/// happened; `get` answers the current word. The option's owner calls this at install beside the setter the file
+/// and the keys call too.
+void RegisterOption(const platform::settings::Option& option, std::function<Outcome(const std::wstring& word)> set,
+                    std::function<std::wstring()> get);
 
 }  // namespace lss::control

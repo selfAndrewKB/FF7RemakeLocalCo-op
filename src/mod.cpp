@@ -114,7 +114,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.103.1-talk-spot";
+constexpr const wchar_t* kVersion = L"0.104.0-settings-table";
 static_assert(lss::views::column_rules::kMaxColumns == lss::hud::overlay_pass::kMaxColumns, "the columns the views and the HUD count");  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
@@ -344,6 +344,7 @@ public:
     auto on_unreal_init() -> void override
     {
         Log(L"v{} starting", kVersion);
+        lss::platform::settings::Load();  // the settings file, read once; each option's owner applies its word at install
         const auto image = lss::platform::GameImage::Locate();
         if (image)
         {
@@ -451,9 +452,6 @@ public:
                 lss::hud::outside_icons::Install(*image);
             }
         }
-        // The settings file: the one preset today, applied before the first tick.
-        lss::views::window_span::SetPreset(lss::platform::settings::Read(L"Views", L"multi-monitor", L"auto"),
-                                           lss::platform::settings::Path());
         RegisterSessionCommands(session_);
         remote_.Open();
         const Hook::FCallbackOptions options{false, false, STR("LocalSplitScreen"), STR("player intent")};

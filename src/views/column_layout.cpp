@@ -111,6 +111,16 @@ std::wstring RecordsText(const Record (&records)[kThreePlayerRecords])
     return text;
 }
 
+std::wstring OrderText(const Order& order);
+
+/// The one setter of the column order: the file at install, the console after (`why` names which).
+void SetOrder(const Order& order, const wchar_t* why)
+{
+    g_order = order;
+    platform::Log(L"column layout: the column order is {}{} ({})", OrderText(g_order),
+                  g_order == column_rules::kJoinOrder ? L", the join order" : L"", why);
+}
+
 std::wstring OrderText(const Order& order)
 {
     return std::format(L"{} {} {}", order.player[0], order.player[1], order.player[2]);
@@ -313,15 +323,9 @@ bool Install(const platform::GameImage& image) noexcept
     g_engineGlobal = *engineGlobal;
     g_installed    = true;
     g_wanted       = Records{{kStockFavorTop[0], kStockFavorTop[1], kStockFavorTop[2]}};
-    const std::wstring setting = platform::settings::Read(L"Views", L"column-order", L"1 2 3");
-    if (const auto order = column_rules::ParseOrder(setting))
-    {
-        g_order = *order;
-    }
-    else
-    {
-        platform::LogWarning(L"column layout: the setting column-order = {} is not 1 2 3 or 1 3 2; the join order is used", setting);
-    }
+    // The file's word is one of the table's, so it parses.
+    SetOrder(column_rules::ParseOrder(platform::settings::Of(platform::settings::kColumnOrder).word).value_or(column_rules::kJoinOrder),
+             platform::settings::Why(platform::settings::kColumnOrder).c_str());
     using control::Register;
     using control::Shape;
     using control::Value;
@@ -338,30 +342,25 @@ bool Install(const platform::GameImage& image) noexcept
                   return control::Outcome{};
               },
               .get = [] { return Value{static_cast<std::int64_t>(g_override)}; }});
-    Register({.name  = L"column-order",
-              .shape = Shape::Word,
-              .words = {L"123", L"132"},
-              .help  = L"which screen players 2 and 3 take when three views show: 123 the join order (the default), 132 player 2 "
-                       L"on the right and player 3 in the middle (in one window: bottom right and bottom left); player 1 keeps the "
-                       L"left. The settings file's column-order sets it at the start",
-              .set   = [](const Value& v) {
-                  const auto order = column_rules::ParseOrder(std::get<std::wstring>(v));
-                  if (!order)
-                  {
-                      return control::Outcome{false, L"the order must be 123 or 132"};
-                  }
-                  g_order = *order;
-                  platform::Log(L"column layout: the column order is {} now", OrderText(g_order));
-                  return control::Outcome{};
-              },
-              .get = [] { return Value{std::format(L"{}{}{}", g_order.player[0], g_order.player[1], g_order.player[2])}; }});
+    control::RegisterOption(
+        platform::settings::kColumnOrder,
+        [](const std::wstring& word) {
+            const auto order = column_rules::ParseOrder(word);
+            if (!order)
+            {
+                return control::Outcome{false, L"the order must be 123 or 132"};  // unreachable: the shape checks the words
+            }
+            SetOrder(*order, L"the console");
+            return control::Outcome{};
+        },
+        [] { return std::format(L"{}{}{}", g_order.player[0], g_order.player[1], g_order.player[2]); });
     Register({.name = L"column-layout.state", .shape = Shape::Text,
               .help = L"the columns wanted, the column order, the engine's three-player layout entry (stock, the mod's three columns, "
                       L"or the stock records arranged) and the setting",
               .get  = [] { return Value{Reading()}; }});
     platform::Log(L"column layout: ready (three columns through the engine's own layout table while three are wanted; "
-                  L"view-columns 0..3; column order {}{})",
-                  OrderText(g_order), g_order == column_rules::kJoinOrder ? L", the join order" : L"");
+                  L"view-columns 0..3; column order {})",
+                  OrderText(g_order));
     return true;
 }
 

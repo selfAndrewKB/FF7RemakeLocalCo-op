@@ -1,5 +1,7 @@
 #include "control/registry.h"
 
+#include "platform/settings.h"
+
 #include <cmath>
 #include <cwchar>
 #include <format>
@@ -146,6 +148,28 @@ const Entry* Registry::Find(std::wstring_view name) const noexcept
         }
     }
     return nullptr;
+}
+
+void RegisterOption(const platform::settings::Option& option, std::function<Outcome(const std::wstring& word)> set,
+                    std::function<std::wstring()> get)
+{
+    const bool onOff = option.words.size() == 2 && std::wstring_view(option.words[0]) == L"on" &&
+                       std::wstring_view(option.words[1]) == L"off";
+    Entry entry{.name  = option.key,
+                .shape = onOff ? Shape::OnOff : Shape::Word,
+                .help  = std::wstring(option.help) + L" (default: " + option.fallback + L")"};
+    if (!onOff)
+    {
+        entry.words.assign(option.words.begin(), option.words.end());
+    }
+    entry.set = [set = std::move(set), onOff](const Value& v) {
+        return set(onOff ? std::wstring(std::get<bool>(v) ? L"on" : L"off") : std::get<std::wstring>(v));
+    };
+    entry.get = [get = std::move(get), onOff]() -> Value {
+        const std::wstring word = get();
+        return onOff ? Value{word == L"on"} : Value{word};
+    };
+    Register(std::move(entry));
 }
 
 Registry& Global() noexcept
