@@ -17,7 +17,9 @@
 
 #include "battle/command_camera_two.h"
 #include "battle/battle_warps.h"
+#include "battle/arena_warp.h"
 #include "battle/command_menu_tick.h"
+#include "battle/menu_grey.h"
 #include "battle/command_menu_two.h"
 #include "battle/enemy_coin.h"
 #include "battle/enemy_leader.h"
@@ -112,7 +114,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.102.0-own-rooms";
+constexpr const wchar_t* kVersion = L"0.103.0-battle-grey-and-arena";
 static_assert(lss::views::column_rules::kMaxColumns == lss::hud::overlay_pass::kMaxColumns, "the columns the views and the HUD count");  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
@@ -311,6 +313,7 @@ public:
         lss::battle::targeting_two::Remove();
         lss::battle::party_switch::Remove();
         lss::battle::battle_warps::Remove();
+        lss::battle::menu_grey::Remove();
         lss::battle::command_menu_tick::Remove();
         lss::battle::command_menu_two::Remove();
         lss::world::overlap_fade::Remove();  // any time: its slots pass through and it writes no game state
@@ -397,7 +400,11 @@ public:
         }
         if (scopesReady && lss::battle::command_menu_two::Install(*image))
         {
-            lss::battle::command_menu_tick::Install(*image);
+            if (lss::battle::command_menu_tick::Install(*image))
+            {
+                lss::battle::menu_grey::Install(*image);  // optional: without it an open menu greys the screen with the slow-down off
+                lss::battle::arena_warp::Install(*image);  // optional: without it a player locked outside a fight stays there
+            }
             lss::battle::party_switch::Install(*image);
             if (lss::battle::targeting_two::Install(*image))
             {
@@ -454,7 +461,7 @@ public:
             [this](Hook::TCallbackIterationData<void>&, RC::Unreal::UEngine*, float, bool) { OnEngineTick(); }, options);
         Log(L"ready: every engine check passed. Ctrl+F7 adds player 2 (it takes the 2nd party slot's member), Ctrl+F8 removes player 2, "
             L"Ctrl+Shift+F7 adds player 3 (the 3rd slot's member), Ctrl+Shift+F8 removes player 3, Ctrl+F6 reports, Ctrl+F2 toggles "
-            L"the window span, Ctrl+F9 switches the battle menus' world slow-down; with window-span.hold on the mirror player fills the empty columns");
+            L"the window span, Ctrl+F9 switches the battle menus' world slow-down and grey; with window-span.hold on the mirror player fills the empty columns");
     }
 
 private:
@@ -524,6 +531,8 @@ private:
         }
         lss::battle::command_menu_tick::Tick();
         lss::players::nav_area_two::Tick();
+        lss::battle::arena_warp::Tick();
+        lss::battle::menu_grey::Tick();
         lss::battle::party_switch::Tick();
         lss::players::operator_battle_mode::Tick();
         lss::battle::targeting_two::Tick();

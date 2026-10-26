@@ -53,4 +53,7 @@ int EventSeat() noexcept;
 bool MenuSlow() noexcept;
 void SetMenuSlow(bool slows, const wchar_t* why) noexcept;
 
+/// Told after each SetMenuSlow switch (game thread); null: none. One listener (battle/menu_grey).
+void SetSwitchListener(void (*listener)(bool slows) noexcept) noexcept;
+
 }  // namespace lss::battle::command_menu_tick

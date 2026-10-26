@@ -670,6 +670,18 @@ void OnLeave(int seat) noexcept
         players::scopes::Scope scope(seat, kResetScopes);
         if (scope.Held())
         {
+            // A menu left open: ResetAll keeps the wait's tint latch (the seat's copy, dropped with the binding below)
+            // and the filter's shared count, so the grey's count would stay up for good. The game's own end of the
+            // wait first: its input-live switch off releases the latch and the count (stopping the grey at 1 -> 0),
+            // ends the wait's sound and widget, and zeroes the wait state.
+            std::int32_t wait = 0;
+            if (Read(static_cast<const std::uint8_t*>(s.ctrl) + facts::kCommandCtrlWaitState, wait) && wait != 0)
+            {
+                platform::CallGuarded(g_setInputLive, s.ctrl, std::uint8_t{0}, std::uint64_t{0});
+                platform::LogDebug(L"command menu 2: {}'s menu was open at the leave (wait {}); the game's end of the wait "
+                                   L"released it",
+                                   SeatName(seat), wait);
+            }
             platform::CallGuarded(g_resetAll, s.ctrl);
         }
     }

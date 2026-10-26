@@ -27,6 +27,7 @@
 #include "players/player_two_camera.h"
 #include "players/seat_objects.h"
 #include "players/weak_object.h"
+#include "battle/arena_warp.h"
 #include "battle/command_menu_two.h"
 #include "battle/targeting_two.h"
 #include "battle/lock_camera_two.h"
@@ -734,6 +735,7 @@ try
     seat.ResetMember();
     scopes::Unbind(seat.index);
     seat_objects::Forget(seat.index);
+    battle::arena_warp::Forget(seat.index);  // a double click waiting for the next tick is not run for nobody
     const auto gone = local_player_list::DestroyLeftovers(leftovers);
     platform::Log(L"leave: {} removed{}; leftovers destroyed: camera actor {}, battle-talk actor {}", seat.Name(),
                   raised ? L" (the call raised an exception after removing it)" : L"", gone.camera ? L"yes" : L"no",

@@ -831,7 +831,7 @@ inline constexpr std::uint32_t kCommandCtrlFieldMenuWeak = 0x2F8;  // Status_C (
 inline constexpr std::uint32_t kCommandCtrlMenuWeak      = 0x300;  // Command_C weak pair
 inline constexpr std::uint32_t kCommandCtrlBattleHudMode = 0x348;  // u8: 1 in battle
 inline constexpr std::uint32_t kCommandCtrlMenuAllowed   = 0x3D5;  // u8, written directly by events on the game's controller
-inline constexpr std::uint32_t kCommandCtrlWaitState     = 0x418;  // u8: the menu's wait (time slow, tint)
+inline constexpr std::uint32_t kCommandCtrlWaitState     = 0x418;  // i32 (low byte read): the menu's wait (slow, tint)
 inline constexpr std::uint32_t kCommandCtrlInputLive     = 0x420;  // u8, written on the game's controller
 inline constexpr std::uint32_t kCommandCtrlSetupPending  = 0x541;  // u8: the tick re-runs Setup
 inline constexpr std::uint32_t kCommandCtrlSetUp         = 0x543;  // u8: Setup ran (cleared by ResetAll)
@@ -902,6 +902,28 @@ inline constexpr platform::SlotFact kCommandMenuNativeTick{
 /// GameState_SetGameSpeedSlot(u8 slot, float value): the tick's one write of slot 2 (the menu's time slow).
 inline constexpr platform::FunctionFact kSetGameSpeedSlot{L"GameState_SetGameSpeedSlot", 0x14099EFA0, kSetGameSpeedSlotEntry};
 inline constexpr std::uintptr_t         kCommandCtrlSlowCall = 0x141418D03;
+/// The wait state's values (FieldCommandCtrl__WaitModeFilter_LatchRef 0x141419C20: 0 -> 1 -> 5 -> 4 -> 0).
+inline constexpr std::uint8_t kCommandWaitOpening = 1;
+inline constexpr std::uint8_t kCommandWaitOpen    = 5;
+
+// --- The open battle menu's grey: UI filter 0, the wait tint (research/RE-menu-grey.md) -----------------------------
+// The UI filter manager EndUISystem[37] (`EUI+0x128`, kUiFilterSlotGlobal; its counts and suppressed bytes above): effect handle per type at +0x00 (i32, -1 = none), the latch
+// at +0x18 (u8 per type), suppressed at +0x1E (u8 per type), the shared count at +0x24 (i32 per type). Type 0 = the
+// wait tint (FX_R_WaitFilter_01). EndUIFilter__ActivateType(fm, u8 type, u8 instant), EndUIFilter__DeactivateType(fm,
+// u8 type) (returns at once when the type's handle is -1). The wait's spawn call (count 0 -> 1, not suppressed), and
+// the four calls that bring a counted filter back after a menu closes over it (the top/pause menu, menu widgets A and
+// B, EndUIFilter__Unsuppress); every one an E8 inside one 16-byte block.
+inline constexpr std::uint32_t  kUiFilterHandles    = 0x00;
+inline constexpr std::uint8_t   kUiFilterWait       = 0;
+inline constexpr std::array<std::uint8_t, 16> kUiFilterActivateEntry{
+    0x4C, 0x8B, 0xDC, 0x55, 0x53, 0x56, 0x57, 0x41, 0x57, 0x49, 0x8D, 0xAB, 0x08, 0xFF, 0xFF, 0xFF};
+inline constexpr platform::FunctionFact kUiFilterActivate{L"EndUIFilter__ActivateType", 0x1414BF920, kUiFilterActivateEntry};
+inline constexpr std::array<std::uint8_t, 16> kUiFilterDeactivateEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x18, 0x48, 0x89, 0x74, 0x24, 0x20, 0x57, 0x48, 0x83, 0xEC, 0x20, 0x48};
+inline constexpr platform::FunctionFact kUiFilterDeactivate{L"EndUIFilter__DeactivateType", 0x1414BFE30,
+                                                            kUiFilterDeactivateEntry};
+inline constexpr std::uintptr_t                kUiFilterWaitOpenCall = 0x14141A074;
+inline constexpr std::array<std::uintptr_t, 4> kUiFilterRestoreCalls{0x1411A6F17, 0x1412C0643, 0x1412AA469, 0x1414C0395};
 
 // --- The battle system and the leader's input buffer (RE-battle.md, RE-battle-member-two.md §2.6) -------------------
 inline constexpr std::uintptr_t kBattleSystemGlobal       = 0x1457E9720;  // the battle system (`sys`), null outside battle
@@ -1672,6 +1694,41 @@ inline constexpr std::uint32_t kCharaPopEvaluatorScore   = 0x08;     // the dist
 // map makes (EndInterMgr_BuildBattleHeat 0x1406B73A0): [[g_EndGameRoot+0x170]+0xE2A9] == 2.
 inline constexpr std::uint32_t kRootFieldBattleState = 0xE2A9;  // u8 on kEndGameRootCharaOwner's object: 2 in battle
 inline constexpr std::uint8_t  kFieldBattleStateBattle = 2;
+
+// --- A player's character brought into the fight (research/RE-arena-warp.md) ----------------------------------------
+// BattleChar_WarpInFrontOfPartyLeader(comp, float dist) -> moved: the game's in-battle recovery warp of one member (its
+// revive and its leader switch call it for a character outside the battle area): a navmesh point `dist` along the party
+// leader's facing, then EndCharacter_BattleTeleport_FadeIn; false (nothing moved) for the party leader itself or no
+// point. BattleCycleLeader_IsCharInsideBattleArea(sys, char): the leader switch's "inside" test (the character's nav
+// area in a battle area of an active encounter group). The leader switch's gates: the battle system's no-recovery byte
+// (+0x3E8) clear, its +0xDF18 non-zero, the component's action state (+0x611) not KO (13), and after the warp a running
+// field action (char+0xE58 -> +0x159) cut short. The mod adds two stricter guards of its own: no running field action
+// (refused rather than cut short) and the leader switch's "may the leader be left" rule (RE-battle-switch.md: state 2
+// only with flags +0x168 & 0x81), so a member mid-action is not pulled out of it.
+// The distance: the GameParam row BattleTeleportNavDistanceChangeCharacter (its FName cached by the game at
+// 0x1459C5278 once the leader switch first ran; the three GameParam tables at 0x145843650, each looked up through the
+// table's vt+0x250 as the game does; ParamFloat at row +0xC), else the game's default 300.
+inline constexpr std::array<std::uint8_t, 16> kArenaWarpEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x08, 0x57, 0x48, 0x81, 0xEC, 0xD0, 0x00, 0x00, 0x00, 0x48, 0x8B, 0x01};
+inline constexpr platform::FunctionFact kArenaWarp{L"BattleChar_WarpInFrontOfPartyLeader", 0x1408A76D0, kArenaWarpEntry};
+inline constexpr std::array<std::uint8_t, 16> kInsideBattleAreaEntry{
+    0x40, 0x55, 0x53, 0x41, 0x55, 0x41, 0x57, 0x48, 0x8D, 0xAC, 0x24, 0x48, 0xEB, 0xFF, 0xFF, 0xB8};
+inline constexpr platform::FunctionFact kInsideBattleArea{L"BattleCycleLeader_IsCharInsideBattleArea", 0x1409C0030,
+                                                          kInsideBattleAreaEntry};
+inline constexpr std::uint32_t  kBattleNoRecovery       = 0x3E8;   // u8 on the battle system: the game warps no member
+inline constexpr std::uint32_t  kBattleRecoveryReady    = 0xDF18;  // u32 on the battle system: non-zero for the warp
+inline constexpr std::uint32_t  kBattleCompFlags        = 0x168;   // the battle component's flags (0x81: may leave)
+inline constexpr std::uint8_t   kBattleActionKo         = 13;
+inline constexpr std::uint8_t   kBattleActionLocked     = 2;     // RE-battle-switch.md: the leader may not be left
+inline constexpr std::uint8_t   kBattleCompMayLeave     = 0x81;  //   ... unless these flags are set
+inline constexpr std::uint32_t  kFieldActionBusy        = 0x159;   // u8 on the field-action component: an action runs
+inline constexpr std::uintptr_t kNameWarpDistanceCache  = 0x1459C5278;  // FName BattleTeleportNavDistanceChangeCharacter
+inline constexpr std::uintptr_t kTableGameParam         = 0x145843650;  // three UDataTable*
+inline constexpr std::uint32_t  kTableFindRowSlot       = 0x250;
+inline constexpr std::uint32_t  kGameParamFloat         = 0xC;
+inline constexpr float          kArenaWarpDefaultCm     = 300.0f;
+/// Dash (L3 on a pad): the action key the game's field move polls for the sprint; in battle it does nothing.
+inline constexpr std::uintptr_t kDashKey = 0x145903BA8;
 /// EndAIIntentionCuriosity_Update(intention, context): an NPC's look at the most interesting character it sees within
 /// its reach; slot 6 of the Curiosity intention's vtable 0x144B24508.
 inline constexpr std::array<std::uint8_t, 16> kCuriosityUpdateEntry{

@@ -29,9 +29,11 @@ add_library(LocalSplitScreen SHARED
     src/control/script.cpp
     src/control/server.cpp
     src/battle/command_camera_two.cpp
+    src/battle/arena_warp.cpp
     src/battle/battle_warps.cpp
     src/battle/command_menu_tick.cpp
     src/battle/command_menu_two.cpp
+    src/battle/menu_grey.cpp
     src/battle/enemy_coin.cpp
     src/battle/enemy_leader.cpp
     src/battle/enemy_watch.cpp
@@ -74,6 +76,7 @@ add_library(LocalSplitScreen SHARED
     src/players/lead_gate.cpp
     src/players/local_player_list.cpp
     src/players/own_controller.cpp
+    src/players/action_key.cpp
     src/players/pad_buttons.cpp
     src/players/pad_presence.cpp
     src/players/party_events.cpp

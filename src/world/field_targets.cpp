@@ -10,6 +10,7 @@
 #include "platform/log.h"
 #include "platform/verified_code.h"
 #include "platform/vtable_entry.h"
+#include "players/action_key.h"
 #include "players/pad_buttons.h"
 #include "players/scopes.h"
 #include "players/seats.h"
@@ -567,34 +568,9 @@ bool ReadFieldAction(std::uint8_t* mgr) noexcept
     }
     if (open)
     {
-        for (int pass = 0; pass < 2; ++pass)
+        if (!players::action_key::Test(g_held, g_key, held) || !players::action_key::Test(g_pressed, g_key, pressed))
         {
-            alignas(16) std::array<std::uint8_t, 24> key{};
-            if (!platform::CopyGuarded(key.data(), reinterpret_cast<const void*>(g_key), key.size()))
-            {
-                return false;
-            }
-            void* controller = nullptr;
-            std::memcpy(&controller, key.data() + 16, sizeof(controller));
-            if (controller != nullptr)
-            {
-                // The copy's reference, which the getter releases (the game's own ++ on the shared reference count).
-                std::int32_t count = 0;
-                if (!Read(static_cast<std::uint8_t*>(controller) + 8, count))
-                {
-                    return false;
-                }
-                ++count;
-                if (!platform::WriteGuarded(static_cast<std::uint8_t*>(controller) + 8, &count, sizeof(count)))
-                {
-                    return false;  // without the reference the getter would release one it never got
-                }
-            }
-            bool& out = pass == 0 ? held : pressed;
-            if (!platform::CallGuarded(pass == 0 ? g_held : g_pressed, out, static_cast<void*>(key.data())))
-            {
-                return false;
-            }
+            return false;
         }
     }
     const std::uint8_t bytes[2] = {static_cast<std::uint8_t>(held), static_cast<std::uint8_t>(pressed)};

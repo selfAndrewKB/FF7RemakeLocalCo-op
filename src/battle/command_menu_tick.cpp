@@ -1,5 +1,6 @@
 #include "battle/command_menu_tick.h"
 
+#include "battle/arena_warp.h"
 #include "battle/command_menu_rules.h"
 #include "battle/command_menu_two.h"
 #include "battle/targeting_two.h"
@@ -73,6 +74,7 @@ int                                      g_eventSeat   = 0;
 bool                                     g_aloneLogged = false;
 command_menu_rules::SlowWrites           g_slowWrites;
 std::optional<players::scopes::Scope>    g_eventScope;  // the seat's context around one of its pad's key events
+void (*g_switchListener)(bool slows) noexcept = nullptr;
 
 void LogMenuSlow(const wchar_t* why) noexcept;  // the slow-down's state, at Info (below)
 
@@ -138,6 +140,10 @@ void TickSeat(int seat, float deltaTime)
     g_tickingSeat = seat;
     reinterpret_cast<TickFn>(g_tickTarget)(ctrl, deltaTime);
     RunInputBuffer(seat, deltaTime);
+    if (buttons.Held())
+    {
+        arena_warp::ReadPress(seat);  // its own pad's Dash (L3): a double click asks for the warp (never player 1's pad)
+    }
     g_ticking     = false;
     g_tickingSeat = 0;
 }
@@ -293,8 +299,9 @@ bool Install(const platform::GameImage& image) noexcept
                                                                 : L"the default; the file's value is not valid");
     players::pad_buttons::SetUiContext({&EnterEventContext, &LeaveEventContext});
     control::Register({.name = L"menu-slow", .shape = control::Shape::OnOff,
-                       .help = L"on: an open battle command menu slows the world, as the game does; off: the world and "
-                               L"the ATB gauges run on at full speed while a menu is open (also Ctrl+F9)",
+                       .help = L"on: an open battle command menu slows the world and greys the screen, as the game does; "
+                               L"off: no grey, and the world and the ATB gauges run on at full speed while a menu is open "
+                               L"(also Ctrl+F9)",
                        .set  = [](const control::Value& v) {
                            SetMenuSlow(std::get<bool>(v), L"the console");
                            return control::Outcome{};
@@ -364,6 +371,15 @@ void SetMenuSlow(bool slows, const wchar_t* why) noexcept
     }
     g_slowWrites.SetSlows(slows);
     LogMenuSlow(why);
+    if (g_switchListener != nullptr)
+    {
+        g_switchListener(slows);  // a waiting menu's grey follows at once (battle/menu_grey)
+    }
+}
+
+void SetSwitchListener(void (*listener)(bool slows) noexcept) noexcept
+{
+    g_switchListener = listener;
 }
 
 namespace {
@@ -376,8 +392,8 @@ void LogMenuSlow(const wchar_t* why) noexcept
     }
     else
     {
-        platform::Log(L"battle menus: an open command menu no longer slows the world; the world and the ATB gauges run on "
-                      L"at full speed ({})",
+        platform::Log(L"battle menus: an open command menu no longer slows the world or greys the screen; the world and the "
+                      L"ATB gauges run on at full speed ({})",
                       why);
     }
 }
