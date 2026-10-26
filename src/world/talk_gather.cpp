@@ -9,6 +9,7 @@
 #include "platform/verified_code.h"
 #include "players/scopes.h"
 #include "players/seats.h"
+#include "players/weak_object.h"
 #include "world/field_targets.h"
 
 #include <array>
@@ -32,9 +33,10 @@ using NavPointFn  = bool (*)(float* out, const float* origin, const float* dir, 
 using WarpFn      = void (*)(void* character, const float* location, const float* rotation, const float* direct, bool fade);
 using CamResetFn  = void (*)(void* params);
 using FindRowFn   = void* (*)(const void* tables, std::uint64_t name);
+using FindActorFn = void* (*)(std::uint64_t level, std::uint64_t name);
 
-constexpr float kFarCm  = 800.0f;  // the game's own "far from the leader" (the battle end's warp threshold)
-constexpr float kNearCm = 300.0f;  // the game's catch-up teleport's distance behind the leader
+constexpr float kFarCm    = 800.0f;  // the game's own "far from the leader" (the battle end's warp threshold)
+constexpr float kBesideCm = 120.0f;  // shoulder to shoulder with the presser (the user, 2026-10-26: "Just beside.")
 constexpr float kPi     = 3.14159265358979f;
 
 struct Vec3
@@ -43,8 +45,9 @@ struct Vec3
 };
 
 // Set at install, then only read.
-std::uintptr_t         g_tick = 0, g_agent = 0, g_actions = 0, g_root = 0;
+std::uintptr_t         g_tick = 0, g_agent = 0, g_actions = 0, g_root = 0, g_namedLevel = 0;
 FindRowFn              g_findRow  = nullptr;
+FindActorFn            g_findActor = nullptr;
 LeaderFn               g_leader   = nullptr;
 NavPointFn             g_navPoint = nullptr;
 WarpFn                 g_warp     = nullptr;
@@ -95,7 +98,20 @@ bool InFieldAction(void* character) noexcept
            running != 0;
 }
 
-/// A navmesh point `kNearCm` from `origin` along the flat `dir` (the game's own query, its catch-up teleport's shape).
+/// The talked-to NPC, found by name as the game's own field-target dispatch finds it; null when not found (or the
+/// lookup is off) or a dying object.
+void* FindNpc(std::uint64_t name) noexcept
+{
+    std::uint64_t level = 0;
+    void*         actor = nullptr;
+    return g_findActor != nullptr && Read(reinterpret_cast<const void*>(g_namedLevel), level) &&
+                   platform::CallGuarded(g_findActor, actor, level, name) && actor != nullptr &&
+                   players::weak_object::Live(actor)
+               ? actor
+               : nullptr;
+}
+
+/// A navmesh point `kBesideCm` from `origin` along the flat `dir` (the game's own query, its catch-up teleport's shape).
 bool NavPoint(const Vec3& origin, const Vec3& dir, Vec3& out) noexcept
 {
     alignas(16) std::array<std::uint8_t, facts::kNavAgentSize> agent{};
@@ -104,7 +120,7 @@ bool NavPoint(const Vec3& origin, const Vec3& dir, Vec3& out) noexcept
     const float       toward[3] = {dir.x, dir.y, 0.0f};
     bool              found     = false;
     if (!platform::CopyGuarded(agent.data(), reinterpret_cast<const void*>(g_agent), agent.size()) ||
-        !platform::CallGuarded(g_navPoint, found, point, from, toward, kNearCm, static_cast<const void*>(agent.data()),
+        !platform::CallGuarded(g_navPoint, found, point, from, toward, kBesideCm, static_cast<const void*>(agent.data()),
                                std::uint64_t{0}, std::uint8_t{0}, std::uint32_t{0}, std::uint64_t{0}) ||
         !found || (point[0] == 0.0f && point[1] == 0.0f && point[2] == 0.0f))
     {
@@ -136,6 +152,8 @@ bool Install(const platform::GameImage& image) noexcept
     const auto actions  = image.Rebase(facts::kTableAction, 24);
     const auto findRow  = platform::FindFunction(image, facts::kFindRowInTables);
     const auto root     = image.Rebase(facts::kEndGameRootGlobal, 8);
+    const auto findNpc  = platform::FindFunction(image, facts::kFindActorByName);  // optional: without it, toward
+    const auto named    = image.Rebase(facts::kNamedActorLevel, 8);                 // player 1's character, as before
     if (!tick || !leader || !navPoint || !warp || !camReset || !agent || !actions || !findRow || !root)
     {
         platform::Log(L"talk gather: an engine check failed; player 1's character stays where it is when another player "
@@ -151,6 +169,16 @@ bool Install(const platform::GameImage& image) noexcept
     g_actions  = *actions;
     g_root     = *root;
     g_findRow  = reinterpret_cast<FindRowFn>(*findRow);
+    if (findNpc && named)
+    {
+        g_findActor  = reinterpret_cast<FindActorFn>(*findNpc);
+        g_namedLevel = *named;
+    }
+    else
+    {
+        platform::Log(L"talk gather: the NPC lookup by name failed its check; player 1's character is brought 1.2 m from the "
+                      L"presser toward where it stood, facing the presser, instead of beside the presser facing the NPC");
+    }
     for (std::size_t i = 0; i < g_tickCalls.size(); ++i)
     {
         const auto site = image.Rebase(facts::kActTickCalls[i], 5);
@@ -239,33 +267,50 @@ void OnLeaderHanded() noexcept
                            SeatName(seat), field_targets::NameOf(object));
         return;
     }
-    // A navmesh point 3 m from the presser: toward where player 1's character stands (the side it would walk up
-    // from), else to either side of that line.
-    const Vec3 toward{(at.x - presser.x) / distance, (at.y - presser.y) / distance, 0.0f};
-    const Vec3 tries[] = {toward, {-toward.y, toward.x, 0.0f}, {toward.y, -toward.x, 0.0f}};
-    Vec3       point{};
-    bool       found = false;
-    for (const Vec3& dir : tries)
+    // A navmesh point just beside the presser, as near the NPC as the presser stands: to the side of the presser's line
+    // to the NPC that faces where player 1's character stands, else the other side, else behind the presser. Without
+    // the NPC (not found by name): toward player 1's character, else either side of that line.
+    const Vec3 toCloud{(at.x - presser.x) / distance, (at.y - presser.y) / distance, 0.0f};
+    Vec3       npcAt{};
+    void* const npc     = FindNpc(object);
+    // Another actor of the same name far off (or a party member) would turn the side and facing: only an NPC within
+    // the game's own "far" of the presser counts.
+    const bool withNpc = npc != nullptr && npc != cloud && npc != member && Location(npc, npcAt) &&
+                         Flat(npcAt, presser) > 1.0f && Flat(npcAt, presser) <= kFarCm;
+    std::array<Vec3, 3> tries{toCloud, Vec3{-toCloud.y, toCloud.x, 0.0f}, Vec3{toCloud.y, -toCloud.x, 0.0f}};
+    if (withNpc)
     {
-        if (NavPoint(presser, dir, point))
+        const float span = Flat(npcAt, presser);
+        const Vec3  toNpc{(npcAt.x - presser.x) / span, (npcAt.y - presser.y) / span, 0.0f};
+        const Vec3  left{-toNpc.y, toNpc.x, 0.0f};
+        const bool  cloudLeft = left.x * toCloud.x + left.y * toCloud.y >= 0.0f;
+        const Vec3  nearSide  = cloudLeft ? left : Vec3{-left.x, -left.y, 0.0f};
+        tries                 = {nearSide, Vec3{-nearSide.x, -nearSide.y, 0.0f}, Vec3{-toNpc.x, -toNpc.y, 0.0f}};
+    }
+    Vec3        point{};
+    std::size_t used = tries.size();
+    for (std::size_t i = 0; i < tries.size(); ++i)
+    {
+        if (NavPoint(presser, tries[i], point))
         {
-            found = true;
+            used = i;
             break;
         }
     }
-    if (!found)
+    if (used == tries.size())
     {
         ++g_noPoint;
         field_targets::MarkTalkJudged(object);
         platform::LogDebug(L"talk gather: {} started a talk with {}; player 1's character is {:.1f} m away, but no navmesh "
-                           L"point was found near {}: not moved",
+                           L"point was found beside {}: not moved",
                            SeatName(seat), field_targets::NameOf(object), distance / 100.0f, SeatName(seat));
         return;
     }
     field_targets::MarkTalkJudged(object);  // decided: a later act of the talk never moves it again
-    // Facing the presser: FRotator (pitch, yaw, roll) in degrees.
+    // Facing the NPC (else the presser): FRotator (pitch, yaw, roll) in degrees.
+    const Vec3  face        = withNpc ? npcAt : presser;
     const float location[3] = {point.x, point.y, point.z};
-    const float rotation[3] = {0.0f, std::atan2(presser.y - point.y, presser.x - point.x) * 180.0f / kPi, 0.0f};
+    const float rotation[3] = {0.0f, std::atan2(face.y - point.y, face.x - point.x) * 180.0f / kPi, 0.0f};
     if (!platform::CallGuarded(g_warp, cloud, static_cast<const float*>(location), static_cast<const float*>(rotation),
                                static_cast<const float*>(location), true))
     {
@@ -278,9 +323,12 @@ void OnLeaderHanded() noexcept
         platform::LogWarning(L"talk gather: player 1's camera reset raised; its camera may stay where it was");
     }
     ++g_moved;
-    platform::Log(L"talk gather: {} started a talk with {}; player 1's character was {:.1f} m away and is brought next to {}'s "
-                  L"character",
-                  SeatName(seat), field_targets::NameOf(object), distance / 100.0f, SeatName(seat));
+    static constexpr const wchar_t* kSpots[2][3] = {{L"toward where it stood", L"to one side", L"to the other side"},
+                                                    {L"on its side", L"on the far side", L"behind"}};
+    platform::Log(L"talk gather: {} started a talk with {}; player 1's character was {:.1f} m away and is brought beside {}'s "
+                  L"character ({}{})",
+                  SeatName(seat), field_targets::NameOf(object), distance / 100.0f, SeatName(seat), kSpots[withNpc ? 1 : 0][used],
+                  withNpc ? L", facing the NPC" : L"; the NPC was not found by name or not near, facing that character");
     if (platform::Enabled(platform::Level::Debug))
     {
         // The move ran inside the game's lock set (RE-talk-far.md §6): the lock and the channel's step after it.

@@ -48,8 +48,8 @@ member. A virtual pad 2 for unattended tests: `python ../tools/pad2.py serve`, t
 
 In the field each further player opens chests, picks up items, opens doors, uses the grappling hook and talks to NPCs
 (quest NPCs and shopkeepers included) with their own pad and prompt. A talk plays as the game scripts it (on every
-view, the whole game held; player 1's character, when more than 8 m away, is brought next to the player who started
-it). A shop a further player opens zooms on that player's view and faces that player's
+view, the whole game held; player 1's character, when more than 8 m away, is brought beside the player who started
+it, facing the NPC). Each player walks only in the rooms (shops, homes) their own character stands in. A shop a further player opens zooms on that player's view and faces that player's
 character; while any shop is up every pad drives it, as in the pause menu. Examine points and object events stay
 player 1's.
 

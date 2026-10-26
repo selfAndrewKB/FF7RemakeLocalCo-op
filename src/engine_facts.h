@@ -1083,6 +1083,15 @@ inline constexpr platform::SlotFact kNavAreaComponentTick{
     {L"EndPlayerExistNavAreaComponent::TickComponent", 0x1415F9F80, kNavAreaComponentTickEntry}};
 inline constexpr std::uint32_t kNavAreaComponentController = 0xF8;  // the owning End player controller, set at BeginPlay
 inline constexpr std::uint32_t kControllerNavAreaComponent = 0x6F0;  // AEndPlayerController.PlayerExistNavAreaComponent
+/// The End player controller's own field character: what its nav-area component's diff projects onto the navmesh and
+/// what its field move reads the walk caps from (research/RE-room-walk-limit.md §1).
+inline constexpr std::uint32_t kControllerFieldCharacter   = 0x6F8;
+/// The InDoor volume's Enter, Stay and Leave each write the room's walk limit (cap layer 6) onto
+/// PartyManager_GetPartyLeader(PM, 1), the default leader, whichever controller's component runs them
+/// (research/RE-room-walk-limit.md §5.2): the three `mov dl,1; call` sites. Enter and Stay each lie inside their own
+/// 16-byte block; Leave crosses into the next (placed from the game thread, the only thread that runs the handlers).
+inline constexpr std::array<std::uintptr_t, 3> kRoomLeaderCalls{0x1415E2232, 0x1415E29B5, 0x1415E2D9D};
+inline constexpr std::uint8_t                  kCapLayerRoom = 6;
 // The component's map of entered volumes, TMap<FName, AActor*> keyed by the volume's Tags[0]
 // (RE-nav-area-reenter.md §4). The diff is its only writer; nothing in the game forgets it short of a new component.
 inline constexpr std::uint32_t kNavAreaEnteredMap        = 0x100;  // elements of 24 bytes: key, actor, two hash links
@@ -2474,6 +2483,10 @@ inline constexpr std::uint32_t  kFieldActionRunning    = 0x15C;
 inline constexpr std::uintptr_t kNavAgentDefault       = 0x1453ABA90;
 inline constexpr std::size_t    kNavAgentSize          = 32;
 inline constexpr std::size_t    kCameraResetParamsSize = 32;
+/// The FName the game passes as CharaRegistry_FindActorByName's level when its field-target dispatch and its named-point
+/// resolver look up an NPC by name (research/.ida-mcp/cats-ch3: FieldTarget_OnPressed_DispatchByKind_LeaderBased,
+/// ResolveNamedPointTransform): read at the call, as the game does.
+inline constexpr std::uintptr_t kNamedActorLevel       = 0x145879EE8;
 /// The field target icon manager (EndUISystem[15], one for the game's life): its hold gauge's last ratio (+0x54, one
 /// float for every widget: the "gauge full" sound plays when a ratio reaches 1 from below it); its icon map's element
 /// count (+0x08) and free slots (+0x34): the live icons are their difference.

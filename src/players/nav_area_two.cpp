@@ -2,6 +2,7 @@
 
 #include "control/registry.h"
 #include "engine_facts.h"
+#include "platform/call_redirect.h"
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
@@ -10,6 +11,7 @@
 #include "players/scopes.h"
 #include "players/seat_objects.h"
 #include "players/seats.h"
+#include "players/weak_object.h"
 
 #include <array>
 #include <cstddef>
@@ -28,6 +30,7 @@ using platform::Read;
 using TickFn      = void (*)(void* component, float deltaTime, int tickType, void* tickFunction);
 using RefreshFn   = void (*)(void* component, float deltaTime);   // the diff the tick tail-jumps to
 using RemoveKeyFn = std::uint64_t (*)(void* map, std::uint64_t key);  // the entered map's own Remove, 1 if removed
+using LeaderFn    = void* (*)(void* partyManager, std::uint8_t selector);
 
 constexpr std::size_t kMaxEntered = 32;  // a leader stands in at most 16 nav areas
 
@@ -39,6 +42,39 @@ TickFn                g_tick      = nullptr;
 RefreshFn             g_refresh   = nullptr;  // null: the re-enter at a spawn is off
 RemoveKeyFn           g_removeKey = nullptr;
 platform::VTableEntry g_slot;
+LeaderFn              g_leader = nullptr;               // PartyManager_GetPartyLeader
+std::array<std::uintptr_t, facts::kRoomLeaderCalls.size()> g_roomSites{};  // live sites; 0: the room redirects are off
+
+// Game thread.
+std::array<platform::CallRedirect, facts::kRoomLeaderCalls.size()> g_roomCalls;  // Enter, Stay, Leave
+bool g_roomPlaced = false;  // the placing was tried (once, from the game thread)
+
+/// While a seat's component runs the game's diff: that seat (0 = none) and its controller's own field character.
+struct RoomRun
+{
+    int   seat      = 0;
+    void* character = nullptr;
+};
+RoomRun g_roomRun;
+
+/// Marks a seat's diff for the room handlers' leader calls, the outer value kept (game thread).
+class RoomRunScope
+{
+public:
+    RoomRunScope(int seat, void* controller) noexcept : outer_(g_roomRun)
+    {
+        void* character = nullptr;
+        Read(static_cast<std::uint8_t*>(controller) + facts::kControllerFieldCharacter, character);
+        g_roomRun = {seat, character};
+    }
+    ~RoomRunScope() { g_roomRun = outer_; }
+
+    RoomRunScope(const RoomRunScope&)            = delete;
+    RoomRunScope& operator=(const RoomRunScope&) = delete;
+
+private:
+    RoomRun outer_;
+};
 
 // Game thread. Index = seat ([0] unused).
 struct Counts
@@ -49,8 +85,111 @@ struct Counts
     std::uint32_t rowOnly   = 0;  // the three not held (a scene holds the member), the seat's row held
     std::uint32_t spawns    = 0;  // operator spawns the re-enter ran at
     std::uint32_t reentered = 0;  // volumes forgotten and entered again over them
+    std::uint32_t roomEnters = 0, roomStays = 0, roomLeaves = 0;  // room limits written on the seat's own character
+    std::uint32_t roomNone   = 0;  // room handler calls with no character read (nothing written)
+    std::uint32_t roomClears = 0;  // a member taken or given back: its room limit cleared for the diff to set again
 };
 std::array<Counts, scopes::kMaxPlayers> g_counts;
+std::array<players::weak_object::Weak, scopes::kMaxPlayers> g_seatMember;  // the member each seat's room limit was on
+
+enum class RoomEvent
+{
+    Enter,
+    Stay,
+    Leave
+};
+
+int SeatOf(const void* controller) noexcept;  // below
+
+/// The diff now running with no mark: the game's camera reset, the only other caller of the diff, runs it on the
+/// primary controller's component (`*(PM+0)`, swapped by a seat's Primary scope: any game code the mod runs in a seat's
+/// scopes, such as a shop act or a field action, would reset that seat's camera). Its seat and character, else none.
+RoomRun UnmarkedRun(void* partyManager) noexcept
+{
+    void* controller = nullptr;
+    if (partyManager == nullptr || !Read(partyManager, controller) || controller == nullptr)
+    {
+        return {};
+    }
+    const int seat = SeatOf(controller);
+    if (seat == 0)
+    {
+        return {};
+    }
+    void* character = nullptr;
+    Read(static_cast<std::uint8_t*>(controller) + facts::kControllerFieldCharacter, character);
+    return {seat, character};
+}
+
+/// The room handlers' "default leader": in a seat's diff (its tick or spawn re-enter, marked; or the camera reset on
+/// that seat's controller), that seat's own character (null: the handler writes nothing), so a room limit lands on the
+/// character the diff found in the room; else the game's answer.
+void* RoomLeader(void* partyManager, std::uint8_t selector, RoomEvent event) noexcept
+{
+    if (selector != facts::kLeaderDefault)
+    {
+        return g_leader(partyManager, selector);
+    }
+    const RoomRun run = g_roomRun.seat != 0 ? g_roomRun : UnmarkedRun(partyManager);
+    if (run.seat == 0)
+    {
+        return g_leader(partyManager, selector);
+    }
+    Counts& c = g_counts[run.seat];
+    if (run.character == nullptr)
+    {
+        ++c.roomNone;
+        return nullptr;
+    }
+    switch (event)
+    {
+    case RoomEvent::Enter:
+        ++c.roomEnters;
+        platform::LogDebug(L"nav area 2: {} entered a room; its walk limit goes on {}'s own character", SeatName(run.seat),
+                           SeatName(run.seat));
+        break;
+    case RoomEvent::Stay:
+        ++c.roomStays;
+        platform::LogTrace(L"nav area 2: {} stays in a room; its walk limit on its own character", SeatName(run.seat));
+        break;
+    case RoomEvent::Leave:
+        ++c.roomLeaves;
+        platform::LogDebug(L"nav area 2: {} left a room; its walk limit comes off {}'s own character (or the next room's)",
+                           SeatName(run.seat), SeatName(run.seat));
+        break;
+    }
+    return run.character;
+}
+
+void* RoomEnterLeader(void* partyManager, std::uint8_t selector) { return RoomLeader(partyManager, selector, RoomEvent::Enter); }
+void* RoomStayLeader(void* partyManager, std::uint8_t selector) { return RoomLeader(partyManager, selector, RoomEvent::Stay); }
+void* RoomLeaveLeader(void* partyManager, std::uint8_t selector) { return RoomLeader(partyManager, selector, RoomEvent::Leave); }
+
+/// The room limit (cap layer 6) back to none on `character`: the value the game's own Leave writes with no room left.
+bool ClearRoomLimit(void* character) noexcept
+{
+    auto*        bytes = static_cast<std::uint8_t*>(character);
+    std::uint8_t move = 0, dash = 0;
+    if (!Read(bytes + facts::kCharacterMoveCaps + facts::kCapLayerRoom, move) ||
+        !Read(bytes + facts::kCharacterDashCaps + facts::kCapLayerRoom, dash) ||
+        (move == facts::kMoveCapNone && dash == facts::kDashCapNone))
+    {
+        return false;
+    }
+    const std::uint8_t none[2] = {facts::kMoveCapNone, facts::kDashCapNone};
+    return platform::WriteGuarded(bytes + facts::kCharacterMoveCaps + facts::kCapLayerRoom, &none[0], 1) &&
+           platform::WriteGuarded(bytes + facts::kCharacterDashCaps + facts::kCapLayerRoom, &none[1], 1);
+}
+
+/// Player 1's room character: the default leader, the game's answer (its own component's diff keeps it right).
+void* RoomPlayerOne() noexcept
+{
+    void* const manager = reinterpret_cast<void*>(scopes::PartyManagerAddress());
+    void*       leader  = nullptr;
+    return manager != nullptr && g_leader != nullptr && platform::CallGuarded(g_leader, leader, manager, facts::kLeaderDefault)
+               ? leader
+               : nullptr;
+}
 
 /// The seat whose controller owns `controller`, else 0 (the registry's liveness-checked answer).
 int SeatOf(const void* controller) noexcept
@@ -103,6 +242,7 @@ void TickComponent(void* component, float deltaTime, int tickType, void* tickFun
         return;
     }
     ++g_counts[seat].ticks;
+    const RoomRunScope  room(seat, controller);  // keyed on the component's owner: held or not, rooms limit the seat's own
     const scopes::Scope scope(seat, kSeatScopes);
     // A hook area's prompt row: the seat's own. Declared after `scope` so it closes first, as one four-context scope would.
     const scopes::Scope row(seat, scopes::UiSlot);
@@ -127,9 +267,12 @@ std::wstring Reading()
     for (int seat = 1; seat <= kSeatsBuilt; ++seat)
     {
         const Counts& c = g_counts[seat];
-        text += std::format(L"{}{}: ticks {}, scoped {}, own row {}, own row only {}, spawns {}, re-entered {}", seat == 1 ? L"" : L"; ",
-                            SeatName(seat), c.ticks, c.scoped, c.ownRow, c.rowOnly, c.spawns, c.reentered);
+        text += std::format(L"{}{}: ticks {}, scoped {}, own row {}, own row only {}, spawns {}, re-entered {}; room limits on its own "
+                            L"character: enters {}, stays {}, leaves {}, none read {}, cleared at a take or give-back {}",
+                            seat == 1 ? L"" : L"; ", SeatName(seat), c.ticks, c.scoped, c.ownRow, c.rowOnly, c.spawns,
+                            c.reentered, c.roomEnters, c.roomStays, c.roomLeaves, c.roomNone, c.roomClears);
     }
+    text += std::format(L"; rooms per player {}", g_roomCalls[0].IsInstalled() ? L"on" : L"off");
     return text;
 }
 
@@ -160,8 +303,26 @@ bool Install(const platform::GameImage& image) noexcept
     {
         platform::Log(L"nav area 2: the component's diff or its map's Remove differs; a respawned operator keeps missing the InDoor setting pushed before it");
     }
+    const auto leader = platform::FindFunction(image, facts::kGetPartyLeader);
+    bool       sites  = leader.has_value();
+    for (std::size_t i = 0; sites && i < g_roomSites.size(); ++i)
+    {
+        const auto site = image.Rebase(facts::kRoomLeaderCalls[i], 5);
+        sites           = site.has_value();
+        g_roomSites[i]  = site ? *site : 0;
+    }
+    if (sites)
+    {
+        g_leader = reinterpret_cast<LeaderFn>(*leader);
+    }
+    else
+    {
+        g_roomSites = {};
+        platform::Log(L"nav area 2: the room handlers' leader calls could not be checked; a further player's room limits player 1's "
+                      L"character");
+    }
     control::Register({.name = L"nav-area-two", .shape = control::Shape::Text,
-                       .help = L"each seat's controller's nav-area component ticks: all, of them in the seat's scopes, of those with its own command row, with its row alone; operator spawns re-entered at, volumes entered again",
+                       .help = L"each seat's controller's nav-area component ticks: all, of them in the seat's scopes, of those with its own command row, with its row alone; operator spawns re-entered at, volumes entered again; room walk limits written on the seat's own character (enters, stays, leaves, none read) and cleared at a take or give-back",
                        .get  = [] { return control::Value{Reading()}; }});
     platform::Log(L"nav area 2: each seat's nav-area component ticks in that seat's scopes{}",
                   g_refresh != nullptr ? L"; its volumes enter again at each operator spawn" : L"");
@@ -183,6 +344,7 @@ void OnOperatorStarted(int seat, void* seatController) noexcept
         platform::LogDebug(L"nav area 2: {}'s component has not begun play at the operator spawn; its first tick enters", name);
         return;
     }
+    const RoomRunScope  room(seat, seatController);
     const scopes::Scope scope(seat, kSeatScopes);
     if (!scope.Held())
     {
@@ -218,8 +380,87 @@ void OnOperatorStarted(int seat, void* seatController) noexcept
                   name, listed, removed);
 }
 
+void Tick() noexcept
+{
+    if (g_roomPlaced || g_roomSites[0] == 0)
+    {
+        return;
+    }
+    g_roomPlaced = true;  // once, whatever the outcome
+    const auto target = reinterpret_cast<std::uintptr_t>(g_leader);
+    static_assert(facts::kRoomLeaderCalls.size() == 3, "Enter, Stay, Leave");
+    const std::array<std::uintptr_t, 3> replacements{reinterpret_cast<std::uintptr_t>(&RoomEnterLeader),
+                                                     reinterpret_cast<std::uintptr_t>(&RoomStayLeader),
+                                                     reinterpret_cast<std::uintptr_t>(&RoomLeaveLeader)};
+    // All three or none: an Enter or Stay on the seat's character without its Leave would never be cleared.
+    bool placed = true;
+    for (std::size_t i = 0; placed && i < g_roomCalls.size(); ++i)
+    {
+        placed = g_roomCalls[i].InstallFromOwnThread(g_roomSites[i], target, replacements[i]);
+    }
+    if (!placed)
+    {
+        for (auto& call : g_roomCalls)
+        {
+            call.Restore();
+        }
+        platform::Log(L"nav area 2: a room handler's leader call could not be redirected; a further player's room limits player 1's "
+                      L"character");
+        return;
+    }
+    platform::Log(L"nav area 2: rooms per player: a room a further player walks in limits that player's own character");
+}
+
+void TickSeat(int seat, void* member) noexcept
+{
+    if (!SeatBuilt(seat) || !g_roomCalls[0].IsInstalled())
+    {
+        return;
+    }
+    if (member != nullptr && !weak_object::Live(member))
+    {
+        return;  // a stale pointer for a tick after a level change
+    }
+    weak_object::Weak& held = g_seatMember[seat];
+    void* const        was  = weak_object::Resolve(held);
+    if (member == was)
+    {
+        return;
+    }
+    // A member taken or given back keeps the room limit its last component wrote: a seat's controller ends with no
+    // Leave, and running the game's Leave instead would pop records the next diff still needs (RE-room-walk-limit.md
+    // §8). Cleared to the game's own "no room" value; a component holding it in a room writes it again on its next
+    // diff (a new controller's Enters, a kept one's Stay). Player 1's room character is left to its own component.
+    void* const one = RoomPlayerOne();
+    const auto  otherSeats = [seat](const void* character) {
+        for (int other = 1; other <= kSeatsBuilt; ++other)
+        {
+            if (other != seat && scopes::Member(other) == character)
+            {
+                return true;  // another seat's: its own component keeps it right
+            }
+        }
+        return false;
+    };
+    for (void* character : {was, member})
+    {
+        if (character != nullptr && character != one && !otherSeats(character) && ClearRoomLimit(character))
+        {
+            ++g_counts[seat].roomClears;
+            platform::LogDebug(L"nav area 2: {}'s {} member has its room walk limit cleared (its room check sets it again if "
+                               L"it stands in one)",
+                               SeatName(seat), character == member ? L"new" : L"former");
+        }
+    }
+    held = member != nullptr ? weak_object::MakeWeak(member) : weak_object::Weak{};
+}
+
 void Remove() noexcept
 {
+    for (auto& call : g_roomCalls)
+    {
+        call.Restore();
+    }
     g_slot.Restore();
 }
 

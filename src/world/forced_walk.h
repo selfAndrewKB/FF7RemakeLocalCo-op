@@ -16,8 +16,8 @@
 // goes onto every further player's member whichever character the game cleared (player 1 may have switched members
 // since). A member taken by a player gets player 1's current layers at once (a join in the middle of a walk), and a
 // member given back (a leave) has the three layers cleared, unless it is player 1's own now or another seat's. The
-// indoor rooms' limit (layer 6) is not copied: each room writes its own player's, and a copy would have nothing to
-// clear it. Nothing is followed while a seat's Leader scope is open (never expected around an act). Switch
+// indoor rooms' limit (layer 6) is not copied: each room writes its own player's (players/nav_area_two.h), and a copy
+// would have nothing to clear it. Nothing is followed while a seat's Leader scope is open (never expected around an act). Switch
 // `forced-walk` (on: further players follow player 1's story walk limits; off: their copies cleared, they run free).
 // At unload the slots go back and the members keep the limits last copied (the next take after a reload repairs them).
 // Logged: Info at install and at the switch; Debug when a member's limit changes and when an act wrote another

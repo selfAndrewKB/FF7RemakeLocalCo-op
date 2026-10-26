@@ -112,7 +112,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.101.0-talk-gather";
+constexpr const wchar_t* kVersion = L"0.102.0-own-rooms";
 static_assert(lss::views::column_rules::kMaxColumns == lss::hud::overlay_pass::kMaxColumns, "the columns the views and the HUD count");  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
@@ -523,6 +523,7 @@ private:
             lss::battle::command_menu_two::Tick(seat, session_.Seated(seat));
         }
         lss::battle::command_menu_tick::Tick();
+        lss::players::nav_area_two::Tick();
         lss::battle::party_switch::Tick();
         lss::players::operator_battle_mode::Tick();
         lss::battle::targeting_two::Tick();
@@ -637,6 +638,7 @@ private:
             lss::world::traversal_walkup::TickSeat(seat, seatIn ? ControllerOfSeat(seat) : nullptr, member);
             lss::world::traversal_action::TickSeat(seat, member);
             lss::world::forced_walk::TickSeat(seat, member);
+            lss::players::nav_area_two::TickSeat(seat, member);
             lss::world::field_targets::TickSeat(seat, seatIn ? session_.SeatPlayer(seat) : nullptr, member);
             lss::world::search_arrows::TickSeat(seat, seatIn ? session_.SeatPlayer(seat) : nullptr);
             lss::audio::listeners::TickSeat(seat, seatIn ? ControllerOfSeat(seat) : nullptr);

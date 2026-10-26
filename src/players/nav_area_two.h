@@ -27,6 +27,18 @@
 // and leader, not the command controller), and the tick runs either way. Known edge: a seat that stands in a hook area
 // before its command controller is bound (the first frame of a join) writes the row on player 1's menu, and the later
 // leave, then the seat's, does not clear it there.
+//
+// Rooms per player (research/RE-room-walk-limit.md; the user's report of 2026-10-26: player 2 in the item shop left
+// player 1 walking everywhere, player 2 never capped). An InDoor volume's Enter, Stay (every frame) and Leave write the
+// room's walk limit onto the default party leader, whichever controller's component runs them, so a seat's room capped
+// player 1's character and never the seat's. The three handlers' leader calls are redirected: while a seat's component
+// runs the game's diff (its tick, the spawn re-enter), keyed on the component's owner rather than the scopes, or the
+// game's camera reset diffs the primary controller's component while a seat's Primary scope makes it the seat's (any
+// game code run in the seat's scopes), they get that controller's own field character (the one the
+// diff projected into the room; none read: nothing written); otherwise the game's answer. The game's handlers write the game's values. A member taken or given back has its room
+// limit cleared to the game's "no room" value (a seat's controller ends with no Leave); its component writes it again
+// while it stands in a room. Placed once from the game thread (Tick; the Leave call crosses a block), all three or
+// none. Logged: Info at the placing, Debug at each Enter and Leave and each clear, Trace per Stay; the reading counts.
 
 #include <cstdint>
 
@@ -43,5 +55,11 @@ void Remove() noexcept;
 /// The seat's operator was just spawned, owned and bound in its scopes: the volumes its controller's component
 /// already lists enter again on the new operator.
 void OnOperatorStarted(int seat, void* seatController) noexcept;
+
+/// Game thread, each engine tick: places the room handlers' leader calls once.
+void Tick() noexcept;
+
+/// Game thread, each engine tick: the seat's member while its player is in (null otherwise).
+void TickSeat(int seat, void* member) noexcept;
 
 }  // namespace lss::players::nav_area_two
