@@ -337,10 +337,16 @@ void OperatorTick(void* self, float deltaSeconds)
     const int  seat    = seatsIn ? SeatOfOperator(self) : 0;
     if (seat == 0)
     {
+        const bool one = seatsIn && self == PlayerOneOperator();
+        if (one)
+        {
+            battle::lock_camera_two::BeforePlayerOneOperatorTick();
+        }
         g_operatorTick(self, deltaSeconds);
-        if (seatsIn && self == PlayerOneOperator())
+        if (one)
         {
             battle::sequence_camera_two::AfterOperatorTick(0);  // player 1's operator
+            battle::lock_camera_two::AfterPlayerOneOperatorTick(self, deltaSeconds);
         }
         return;
     }
@@ -360,7 +366,7 @@ void OperatorTick(void* self, float deltaSeconds)
     g_tickingSeat = seat;
     battle::lock_camera_two::BeforeOperatorTick(seat, self, controller);
     g_operatorTick(self, deltaSeconds);
-    battle::lock_camera_two::AfterOperatorTick(seat, self);
+    battle::lock_camera_two::AfterOperatorTick(seat, self, deltaSeconds, targets.Held());
     g_tickingSeat = 0;
     battle::sequence_camera_two::AfterOperatorTick(seat);
     // The owner's camera-override route follows the owner (the tick may have changed it: the LeaderChange flavor).

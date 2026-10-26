@@ -57,6 +57,38 @@ bool g_placed = false;
 // Set at install, then only read.
 std::uint64_t* g_frameStamp = nullptr;  // the operators' write-back frame stamp (one global)
 void**         g_gameMode   = nullptr;
+void**         g_system     = nullptr;  // the battle system global (null outside battle)
+
+/// One player's camera between its operator's ticks, for the jump lines (a tick that turned or moved the camera far
+/// faster than a stick, a follow or a dodge does: lock_camera_rules::IsJump). Game thread. Index = seat; [0] = player 1's.
+struct JumpWatch
+{
+    bool                 have        = false;
+    const void*          watched     = nullptr;  // the operator the pose is from (another one starts the comparison over)
+    std::uint64_t        seenFrame   = 0;        // the frame of its last tick (a gap starts the comparison over)
+    float                pitch       = 0.0f;
+    float                yaw         = 0.0f;
+    std::array<float, 3> location{};
+    std::uint8_t         lock        = 0;
+    void*                target      = nullptr;  // the displayed (lock-camera) target, compared only
+    std::uint64_t        lockFrame   = 0;        // the frame its lock last changed (0: not seen)
+    std::uint64_t        targetFrame = 0;        // the frame its target last changed (0: not seen)
+    std::uint64_t        jumpFrame   = 0;        // the frame of its last jump (0: none)
+    bool                 requestTick = false;    // a battle camera request re-aimed its lock camera in this tick
+    std::uint32_t        bursts      = 0;        // bursts of jumps (lock_camera_rules::BurstClosed)
+    bool                 inBurst     = false;
+    std::uint64_t        burstFrame  = 0;        // the frame the current burst opened
+    std::uint32_t        burstJumps  = 0;        // jumping ticks in the current burst
+    float                burstTurn   = 0.0f;     // the current burst's largest turn (deg) and move (cm)
+    float                burstMove   = 0.0f;
+    float                turnMax     = 0.0f;     // the largest jump so far
+    float                moveMax     = 0.0f;
+};
+std::array<JumpWatch, players::scopes::kMaxPlayers> g_jumps;
+bool g_oneTicking = false;  // player 1's operator is ticking (a request found then is player 1's, not another operator's)
+
+/// Within this many frames a change reads as "just before" a jump.
+constexpr std::uint64_t kNearFrames = 120;
 
 /// A seat's operator tick, read around it (RE-lock-camera-ledger.md L1, L2, L5; nothing is changed).
 struct FrameReadings
@@ -103,6 +135,10 @@ char FindRotation(void* requests, float* outRotation, void* owner, void* view, v
         const int seat = players::player_two_camera::TickingSeat();
         Seat&     s    = g_seats[seat];
         ++s.requestHits;
+        if (seat != 0 || g_oneTicking)
+        {
+            g_jumps[seat].requestTick = true;
+        }
         if (seat != 0 && !s.requestLogged)
         {
             s.requestLogged = true;
@@ -225,6 +261,171 @@ std::wstring RestoreReading()
     return text;
 }
 
+std::uint64_t Frame() noexcept
+{
+    void*         gameMode = nullptr;
+    std::uint64_t frame    = 0;
+    return g_gameMode != nullptr && Read(g_gameMode, gameMode) && gameMode != nullptr &&
+                   Read(static_cast<std::uint8_t*>(gameMode) + facts::kGameModeFrameCounter, frame)
+               ? frame
+               : 0;
+}
+
+void* BattleSystem() noexcept
+{
+    void* system = nullptr;
+    return g_system != nullptr && Read(g_system, system) ? system : nullptr;
+}
+
+/// "this frame", "N frames ago", or "not in the last 120 frames" for a remembered frame (0: never).
+std::wstring Ago(std::uint64_t then, std::uint64_t now)
+{
+    if (then == 0 || now == 0 || then > now || now - then > kNearFrames)
+    {
+        return std::format(L"not in the last {} frames", kNearFrames);
+    }
+    return now == then ? std::wstring(L"this frame") : std::format(L"{} frame(s) ago", now - then);
+}
+
+/// The operator's active flavors by type (the camera behaviours on: follow, reset, command, ...), e.g. "2 8 9 14".
+std::wstring ActiveFlavors(void* cameraOperator)
+{
+    std::wstring text;
+    for (std::uint32_t type = 0; type < facts::kOperatorFlavorTypes; ++type)
+    {
+        void*        flavor = nullptr;
+        std::uint8_t active = 0;
+        if (Read(static_cast<std::uint8_t*>(cameraOperator) + facts::kOperatorFlavors + 8 * type, flavor) && flavor != nullptr &&
+            Read(static_cast<std::uint8_t*>(flavor) + facts::kFlavorActive, active) && active != 0)
+        {
+            text += std::format(L"{}{}", text.empty() ? L"" : L" ", type);
+        }
+    }
+    return text.empty() ? std::wstring(L"none") : text;
+}
+
+/// The line at a burst's first jump: the jump and what surrounded it (the player's lock and target, a battle camera
+/// request, the camera behaviours on, every other watched player's lock, target and last jump).
+void LogBurstStart(int index, void* cameraOperator, float turn, float move, float deltaSeconds, std::uint64_t frame)
+{
+    const JumpWatch& w = g_jumps[index];
+    std::wstring     others;
+    for (int other = 0; other < players::scopes::kMaxPlayers; ++other)
+    {
+        const JumpWatch& o = g_jumps[other];
+        if (other != index && o.have)
+        {
+            others += std::format(L"; {}: lock {} (changed {}), target changed {}, camera jumped {}", SeatName(other), o.lock != 0 ? L"on" : L"off",
+                                  Ago(o.lockFrame, frame), Ago(o.targetFrame, frame), Ago(o.jumpFrame, frame));
+        }
+    }
+    platform::LogDebug(L"camera jump: {}'s camera turned {:.1f} deg and moved {:.2f} m in one tick ({:.1f} ms; in battle {}; its lock {} (changed "
+                       L"{}), its target changed {}; a battle camera request re-aimed it this tick: {}; camera behaviours on: {}{})",
+                       SeatName(index), turn, move / 100.0f, deltaSeconds * 1000.0f, BattleSystem() != nullptr ? L"yes" : L"no",
+                       w.lock != 0 ? L"on" : L"off", Ago(w.lockFrame, frame), Ago(w.targetFrame, frame), w.requestTick ? L"yes" : L"no",
+                       ActiveFlavors(cameraOperator), others);
+}
+
+/// The burst ends: a line when it held more than one jump, and its counts start over.
+void EndBurst(int index)
+{
+    JumpWatch& w = g_jumps[index];
+    if (w.inBurst && w.burstJumps > 1)
+    {
+        platform::LogDebug(L"camera jump: {}'s camera jumped on {} ticks within {} frames (largest turn {:.1f} deg, largest move {:.2f} m)",
+                           SeatName(index), w.burstJumps, w.jumpFrame >= w.burstFrame ? w.jumpFrame - w.burstFrame + 1 : 0, w.burstTurn,
+                           w.burstMove / 100.0f);
+    }
+    w.inBurst    = false;
+    w.burstJumps = 0;
+    w.burstTurn  = 0.0f;
+    w.burstMove  = 0.0f;
+}
+
+/// After an operator's tick: its camera's step since the last tick; a burst of jumps is a Debug line at its first
+/// jump and one at its end (lock_camera_rules::BurstClosed). `haveTargets`: `lock`/`target` are the player's own, read
+/// in its tick (else the last ones are kept).
+void WatchJump(int index, void* cameraOperator, float deltaSeconds, bool haveTargets, std::uint8_t lock, void* target)
+{
+    JumpWatch&           w     = g_jumps[index];
+    const std::uint64_t  frame = Frame();
+    std::array<float, 2> rotation{};
+    std::array<float, 3> location{};
+    if (!Read(static_cast<std::uint8_t*>(cameraOperator) + facts::kOperatorFinalRotation, rotation) ||
+        !Read(static_cast<std::uint8_t*>(cameraOperator) + facts::kOperatorCameraLocation, location))
+    {
+        w.requestTick = false;
+        return;
+    }
+    // Another operator, or a gap of ticks (a pause, player 1's camera while no seat was in): the old pose is no step's start.
+    if (w.have && (cameraOperator != w.watched || frame == 0 || w.seenFrame == 0 || frame < w.seenFrame || frame - w.seenFrame > 2))
+    {
+        EndBurst(index);
+        w.have = false;
+    }
+    if (haveTargets)
+    {
+        if (w.have && lock != w.lock)
+        {
+            w.lockFrame = frame;
+        }
+        if (w.have && target != w.target)
+        {
+            w.targetFrame = frame;
+        }
+        w.lock   = lock;
+        w.target = target;
+    }
+    if (w.have)
+    {
+        const float turn = std::max(std::fabs(WrapDegrees(rotation[1] - w.yaw)), std::fabs(WrapDegrees(rotation[0] - w.pitch)));
+        const float dx = location[0] - w.location[0], dy = location[1] - w.location[1], dz = location[2] - w.location[2];
+        const float move = std::sqrt(dx * dx + dy * dy + dz * dz);
+        if (lock_camera_rules::IsJump(turn, move, deltaSeconds))
+        {
+            if (!w.inBurst)
+            {
+                ++w.bursts;
+                w.inBurst    = true;
+                w.burstFrame = frame;
+                LogBurstStart(index, cameraOperator, turn, move, deltaSeconds, frame);
+            }
+            ++w.burstJumps;
+            w.burstTurn = std::max(w.burstTurn, turn);
+            w.burstMove = std::max(w.burstMove, move);
+            w.turnMax   = std::max(w.turnMax, turn);
+            w.moveMax   = std::max(w.moveMax, move);
+            w.jumpFrame = frame;
+        }
+        else if (w.inBurst && lock_camera_rules::BurstClosed(w.jumpFrame, frame))
+        {
+            EndBurst(index);
+        }
+    }
+    w.have        = true;
+    w.watched     = cameraOperator;
+    w.seenFrame   = frame;
+    w.pitch       = rotation[0];
+    w.yaw         = rotation[1];
+    w.location    = location;
+    w.requestTick = false;
+}
+
+std::wstring JumpsReading()
+{
+    std::wstring text;
+    for (int index = 0; index < players::scopes::kMaxPlayers; ++index)
+    {
+        const JumpWatch& w = g_jumps[index];
+        if (w.have)
+        {
+            text += std::format(L"{}{}: {} burst(s) of jumps, largest turn {:.1f} deg, largest move {:.2f} m", text.empty() ? L"" : L"; ",
+                                SeatName(index), w.bursts, w.turnMax, w.moveMax / 100.0f);
+        }
+    }
+    return text.empty() ? std::wstring(L"no camera watched yet") : text;
+}
+
 }  // namespace
 
 bool Install(const platform::GameImage& image) noexcept
@@ -276,6 +477,15 @@ bool Install(const platform::GameImage& image) noexcept
     {
         g_gameMode = reinterpret_cast<void**>(*mode);
     }
+    if (const auto system = image.Rebase(facts::kBattleSystemGlobal, sizeof(void*)))
+    {
+        g_system = reinterpret_cast<void**>(*system);
+    }
+    control::Register({.name = L"lock-camera-two.jumps", .shape = control::Shape::Text,
+                       .help = L"each player's camera (player 1's while a further player is in): the bursts of jumps (a tick turning over 10 "
+                               L"deg at over 720 deg/s, or moving over 1 m at over 25 m/s; a Debug line at a burst's start with the locks, "
+                               L"targets and camera behaviours around it, one at its end) and the largest jump",
+                       .get  = [] { return control::Value{JumpsReading()}; }});
     control::Register({.name = L"lock-camera-two.frames", .shape = control::Shape::Text,
                        .help = L"each seat's operator tick read around it: ticks, yaw moves (max deg), reversals, control yaw rewritten between "
                                L"ticks (max deg), write-back skipped, the character under another controller, stick input while locked",
@@ -308,11 +518,9 @@ void BeforeOperatorTick(int seat, void* seatOperator, void* seatController) noex
     }
     FrameReadings& f = g_seats[seat].frames;
     ++f.ticks;
-    std::uint64_t stamp    = 0;
-    std::uint64_t frame    = 0;
-    void*         gameMode = nullptr;
-    if (g_frameStamp != nullptr && g_gameMode != nullptr && Read(g_frameStamp, stamp) && Read(g_gameMode, gameMode) && gameMode != nullptr &&
-        Read(static_cast<std::uint8_t*>(gameMode) + facts::kGameModeFrameCounter, frame) && stamp + 1 >= frame)
+    std::uint64_t       stamp = 0;
+    const std::uint64_t frame = Frame();
+    if (g_frameStamp != nullptr && frame != 0 && Read(g_frameStamp, stamp) && stamp + 1 >= frame)
     {
         ++f.writeBackSkipped;
     }
@@ -336,11 +544,25 @@ void BeforeOperatorTick(int seat, void* seatOperator, void* seatController) noex
     }
 }
 
-void AfterOperatorTick(int seat, void* seatOperator) noexcept
+void AfterOperatorTick(int seat, void* seatOperator, float deltaSeconds, bool ownTargets) noexcept
 {
     if (!SeatBuilt(seat))
     {
         return;
+    }
+    // In the tick's scopes the battle system's target fields are the seat's own copy (when `ownTargets`), read live:
+    // the tick may have changed them. Outside a battle the seat has no lock and no target; in one without its copy
+    // in, the fields are player 1's and the seat's last are kept.
+    void* const system = BattleSystem();
+    if (system == nullptr)
+    {
+        WatchJump(seat, seatOperator, deltaSeconds, true, 0, nullptr);
+    }
+    else
+    {
+        std::uint8_t lock = 0;
+        const bool   own  = ownTargets && Read(static_cast<std::uint8_t*>(system) + facts::kBattleSysLock, lock);
+        WatchJump(seat, seatOperator, deltaSeconds, own, lock, own ? platform::ReadPointer(system, facts::kBattleSysDisplayedTarget) : nullptr);
     }
     FrameReadings&       f = g_seats[seat].frames;
     std::array<float, 2> final{};
@@ -380,11 +602,33 @@ void AfterOperatorTick(int seat, void* seatOperator) noexcept
     f.lastFinalYaw = final[1];
 }
 
+void BeforePlayerOneOperatorTick() noexcept
+{
+    g_oneTicking = true;
+}
+
+void AfterPlayerOneOperatorTick(void* cameraOperator, float deltaSeconds) noexcept
+{
+    g_oneTicking = false;
+    // Outside every seat's scope the battle system's target fields are player 1's.
+    void*        system = BattleSystem();
+    std::uint8_t lock   = 0;
+    if (system != nullptr)
+    {
+        Read(static_cast<std::uint8_t*>(system) + facts::kBattleSysLock, lock);
+    }
+    WatchJump(0, cameraOperator, deltaSeconds, true, lock, system != nullptr ? platform::ReadPointer(system, facts::kBattleSysDisplayedTarget) : nullptr);
+}
+
 void OnLeave(int seat) noexcept
 {
     if (SeatBuilt(seat))
     {
         g_seats[seat].frames = FrameReadings{};  // the next player's ticks start their own readings
+        EndBurst(seat);
+        g_jumps[seat] = JumpWatch{};
+        EndBurst(0);  // player 1's camera may stop being watched now (no seat left): its burst ends with the leave
+
     }
 }
 

@@ -109,7 +109,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.96.0-screen-order";
+constexpr const wchar_t* kVersion = L"0.97.0-camera-jumps";
 static_assert(lss::views::column_rules::kMaxColumns == lss::hud::overlay_pass::kMaxColumns, "the columns the views and the HUD count");  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;

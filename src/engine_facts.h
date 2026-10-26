@@ -117,6 +117,7 @@ inline constexpr std::uint32_t  kObjectIndex          = 0x0C;         // UObject
 inline constexpr std::uint32_t  kOperatorOwnerChara   = 0x5D0;        // AEndFieldCameraOperator's owner character
 inline constexpr std::uint32_t  kOperatorControlYaw   = 0x42C;        // the control yaw the tick read from its controller (+0x428 pitch)
 inline constexpr std::uint32_t  kOperatorFinalRotation = 0x4D8;       // the tick's final pitch/yaw (the Lock clamp's output, written back to the controller)
+inline constexpr std::uint32_t  kOperatorCameraLocation = 0x410;      // FVector: the tick's camera location (RE-lock-camera-ledger.md §12, §13, read live)
 inline constexpr std::uint32_t  kGameModeFrameCounter = 0x770;        // AEndGameMode: the engine frame counter, copied at world-tick phase 100
 inline constexpr std::uint32_t  kOperatorObjectFlags  = 0x48;         // the game's spawn flags for the operator
 inline constexpr std::uint32_t  kSpawnParamsTemplate  = 0x08;         // FActorSpawnParameters::Template (RE-player-trigger.md §4.2)
@@ -915,6 +916,7 @@ inline constexpr std::uint32_t  kBattleCompInputBufferSlot = 0xE0;        // com
 inline constexpr std::uint32_t kBattleSysTargetFields      = 0x370;
 inline constexpr std::uint32_t kBattleSysTargetFieldsBytes = 0x78;
 inline constexpr std::uint32_t kBattleSysLock              = 0x388;
+inline constexpr std::uint32_t kBattleSysDisplayedTarget   = 0x390;  // the displayed (lock-camera) target's object (+0x398 its refcount block)
 inline constexpr std::uint32_t kBattleSysDummyLatch        = 0x3E3;  // the lock setter derives it from +0x3E2 and the lock
 inline constexpr std::array<std::uint8_t, 16> kBattleTargetPreTickEntry{
     0x48, 0x89, 0x5C, 0x24, 0x08, 0x57, 0x48, 0x83, 0xEC, 0x50, 0x48, 0x8B, 0xF9, 0xE8, 0xAE, 0x71};
@@ -1043,7 +1045,8 @@ inline constexpr std::uint32_t kOperatorSettingBattle       = 0x600;  // FEndCam
 inline constexpr std::uint32_t kOperatorSettingTown    = 0x5E8;  // FEndCameraSetting: the Town setting (nav-area volumes, type 0)
 inline constexpr std::uint32_t kOperatorSettingInDoor  = 0x5F0;  // FEndCameraSetting: the InDoor setting (nav-area volumes, types 1, 2)
 inline constexpr std::uint32_t kOperatorSettingRequests     = 0x28;   // a setting's request count (+0x30 its active byte)
-inline constexpr std::uint32_t kOperatorFlavors             = 0x6C0;  // 29 flavor objects, 8 bytes each, by type
+inline constexpr std::uint32_t kOperatorFlavors             = 0x6C0;  // kOperatorFlavorTypes flavor objects, 8 bytes each, by type
+inline constexpr std::uint32_t kOperatorFlavorTypes         = 29;
 inline constexpr std::uint32_t kFlavorActive                = 0x38;   // a flavor object's active byte
 inline constexpr std::uint32_t kFlavorMoveFollow            = 2;
 inline constexpr std::uint32_t kFlavorSpaceOffset           = 3;
