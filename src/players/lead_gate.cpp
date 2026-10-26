@@ -6,6 +6,7 @@
 #include "platform/image.h"
 #include "platform/log.h"
 #include "platform/verified_code.h"
+#include "players/field_root.h"
 
 #include <Unreal/NameTypes.hpp>
 
@@ -29,7 +30,6 @@ constexpr std::uint32_t kCensusEveryTicks = 60;  // a staging lead's waiters rea
 constexpr std::uint32_t kMaxIconRecords   = 64;
 constexpr std::size_t   kMaxNameChars     = 96;
 
-std::uint8_t**   g_root           = nullptr;
 std::uintptr_t   g_triggerTables  = 0;
 StoryFlagIsSetFn g_storyFlagIsSet = nullptr;
 
@@ -369,15 +369,13 @@ catch (...)
 
 bool Install(const platform::GameImage& image) noexcept
 {
-    const auto root   = image.Rebase(facts::kEndGameRootGlobal, sizeof(void*));
     const auto tables = image.Rebase(facts::kStateTriggerTablesGlobal, 3 * sizeof(void*));
     const auto flag   = platform::FindFunction(image, facts::kStoryFlagIsSet);
-    if (!root || !tables || !flag)
+    if (!field_root::Installed() || !tables || !flag)
     {
         platform::Log(L"lead gate: an engine check failed; a LEAD on a further player's member stays the player's");
         return false;
     }
-    g_root           = reinterpret_cast<std::uint8_t**>(*root);
     g_triggerTables  = *tables;
     g_storyFlagIsSet = reinterpret_cast<StoryFlagIsSetFn>(*flag);
     control::Register({.name = L"lead.gate", .shape = control::Shape::Text,
@@ -392,7 +390,7 @@ bool Install(const platform::GameImage& image) noexcept
 bool Guide(const void* member, const void* fieldAi) noexcept
 try
 {
-    if (g_root == nullptr)
+    if (g_storyFlagIsSet == nullptr)  // not installed
     {
         return false;
     }
@@ -414,9 +412,9 @@ try
     {
         return true;  // judged a guide: holds until the lead ends
     }
-    std::uint8_t* root = nullptr;
-    std::uint8_t* sm   = nullptr;
-    if (!Read(g_root, root) || root == nullptr || !Read(root + facts::kRootStateManager, sm) || sm == nullptr)
+    std::uint8_t* root = field_root::Root();
+    std::uint8_t* sm   = field_root::StateManager();
+    if (root == nullptr || sm == nullptr)
     {
         return false;
     }

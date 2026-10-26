@@ -8,6 +8,7 @@
 #include "platform/log.h"
 #include "platform/verified_code.h"
 #include "platform/vtable_entry.h"
+#include "players/field_root.h"
 #include "players/player_trigger.h"
 #include "players/player_two_camera.h"
 #include "players/scopes.h"
@@ -83,7 +84,6 @@ MgrGetFn     g_fieldActionMgr  = nullptr;
 NameFindFn   g_nameFind        = nullptr;
 std::uintptr_t g_pendingNames  = 0;
 std::uint64_t  g_playerTrigger = 0;
-std::uintptr_t g_root          = 0;
 std::uintptr_t g_partyManager  = 0;
 bool           g_installed     = false;
 
@@ -530,7 +530,7 @@ void TryStartFor(int seat, void* actor, std::size_t cls, float dt, TryStartFn or
     }
     auto*       base   = static_cast<std::uint8_t*>(actor);
     const auto& spot = facts::kWalkUpClasses[cls];
-    auto*       root   = static_cast<std::uint8_t*>(ReadPointer(reinterpret_cast<const void*>(g_root), 0));
+    auto*       root   = players::field_root::Root();
     auto*       comp   = static_cast<std::uint8_t*>(ReadPointer(state.member, facts::kCharacterFieldAction));
     if (comp == nullptr)
     {
@@ -679,10 +679,9 @@ bool Install(const platform::GameImage& image) noexcept
     const auto naviRem   = platform::FindFunction(image, facts::kNaviListRemove);
     const auto pending   = image.Rebase(facts::kPendingOverlapNames, 16);
     const auto name      = image.Rebase(facts::kFNamePlayerTrigger, 8);
-    const auto root      = image.Rebase(facts::kEndGameRootGlobal, 8);
     const auto party     = image.Rebase(facts::kPartyManagerGlobal, 8);
     if (!sweepSlot || !sweep || !pmGet || !mgrGet || !find || !begin || !end || !naviEnter || !naviLeave || !naviRem || !pending ||
-        !name || !root || !party)
+        !name || !players::field_root::Installed() || !party)
     {
         return fail(L"a function or global");
     }
@@ -726,7 +725,6 @@ bool Install(const platform::GameImage& image) noexcept
     g_nameFind        = reinterpret_cast<NameFindFn>(*find);
     g_pendingNames    = *pending;
     g_playerTrigger   = playerTrigger;
-    g_root            = *root;
     g_partyManager    = *party;
     g_sweepOriginal   = reinterpret_cast<SweepFn>(*sweep);
 

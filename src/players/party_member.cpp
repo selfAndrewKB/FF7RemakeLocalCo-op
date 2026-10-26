@@ -6,6 +6,7 @@
 #include "platform/log.h"
 #include "platform/verified_code.h"
 #include "players/field_hold.h"
+#include "players/field_root.h"
 #include "players/lead_gate.h"
 
 #include <cstdint>
@@ -20,7 +21,6 @@ using platform::Read;
 using platform::ReadPointer;
 
 using GetPlayerActorFn = void* (*)(void* partyManager, std::uint8_t variant, std::uint8_t type, bool alternate);
-using GetPartyLeaderFn = void* (*)(void* partyManager, std::uint8_t variant);
 using ReconcileFn      = std::int64_t (*)(void* character800);
 using SetActorTypeFn   = void (*)(void* character800, std::uint8_t type);
 
@@ -29,12 +29,10 @@ constexpr std::uint8_t  kStatusSlots      = 8;      // the player types with a p
 constexpr std::uint32_t kControllerLeader = 0x6F8;  // AEndPlayerController::LeaderCharacter
 
 GetPlayerActorFn g_getPlayerActor = nullptr;
-GetPartyLeaderFn g_getPartyLeader = nullptr;
 ReconcileFn      g_reconcile      = nullptr;
 SetActorTypeFn   g_setActorType   = nullptr;
 void**           g_partyManager   = nullptr;
 std::uint8_t**   g_data           = nullptr;
-std::uint8_t**   g_root           = nullptr;
 
 /// The formation as the game keeps it, the field leader (the anchor), the statuses, and player 1's character.
 struct Party
@@ -167,23 +165,19 @@ std::uint8_t ActorMode(const void* member) noexcept
 bool Install(const platform::GameImage& image) noexcept
 {
     const auto find      = platform::FindFunction(image, facts::kGetPlayerActor);
-    const auto leader    = platform::FindFunction(image, facts::kGetPartyLeader);
     const auto reconcile = platform::FindFunction(image, facts::kReconcileController);
     const auto setType   = platform::FindFunction(image, facts::kSetActorType);
     const auto party     = image.Rebase(facts::kPartyManagerGlobal, sizeof(void*));
     const auto data      = image.Rebase(facts::kDataSingletonGlobal, sizeof(void*));
-    const auto root      = image.Rebase(facts::kEndGameRootGlobal, sizeof(void*));
-    if (!find || !leader || !reconcile || !setType || !party || !data || !root)
+    if (!find || !reconcile || !setType || !party || !data || !field_root::Installed())
     {
         return false;
     }
     g_getPlayerActor = reinterpret_cast<GetPlayerActorFn>(*find);
-    g_getPartyLeader = reinterpret_cast<GetPartyLeaderFn>(*leader);
     g_reconcile      = reinterpret_cast<ReconcileFn>(*reconcile);
     g_setActorType   = reinterpret_cast<SetActorTypeFn>(*setType);
     g_partyManager   = reinterpret_cast<void**>(*party);
     g_data           = reinterpret_cast<std::uint8_t**>(*data);
-    g_root           = reinterpret_cast<std::uint8_t**>(*root);
     return true;
 }
 
@@ -392,13 +386,7 @@ bool InFormation(std::uint8_t type) noexcept
 
 std::uint32_t ControlLockMask() noexcept
 {
-    std::uint8_t* root = nullptr;
-    std::uint8_t* sm   = nullptr;
-    std::uint32_t lock = 0;
-    return Read(g_root, root) && root != nullptr && Read(root + facts::kRootStateManager, sm) && sm != nullptr &&
-                   Read(sm + facts::kStateManagerControlLock, lock)
-               ? lock
-               : 0;
+    return field_root::ControlLockMask();
 }
 
 bool EventLocked() noexcept
@@ -408,11 +396,8 @@ bool EventLocked() noexcept
 
 bool LeaderWithPlayer() noexcept
 {
-    void* manager = nullptr;
-    void* leader  = nullptr;
-    return g_getPartyLeader != nullptr && Read(g_partyManager, manager) && manager != nullptr &&
-           platform::CallGuarded(g_getPartyLeader, leader, manager, std::uint8_t{0}) && leader != nullptr &&
-           ReadPointer(leader, facts::kCharacterPlayerSlot) != nullptr;
+    void* leader = field_root::PartyLeader(facts::kLeaderCurrent);
+    return leader != nullptr && ReadPointer(leader, facts::kCharacterPlayerSlot) != nullptr;
 }
 
 bool HandToAi(void* member) noexcept

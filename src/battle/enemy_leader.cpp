@@ -7,6 +7,7 @@
 #include "platform/image.h"
 #include "platform/log.h"
 #include "platform/verified_code.h"
+#include "players/field_root.h"
 #include "players/weak_object.h"
 #include "players/scopes.h"
 
@@ -47,13 +48,11 @@ constexpr std::size_t kEntryBytes       = 40;
 constexpr std::uint8_t kCategoryBattle  = 2;
 
 // Set at install, then only read.
-std::uint8_t**         g_root        = nullptr;
 std::uintptr_t         g_getLeader   = 0;
 IterBeginFn            g_iterBegin   = nullptr;
 IterNextFn             g_iterNext    = nullptr;
 SetTargetFn            g_setTarget   = nullptr;
 FreeFn                 g_free        = nullptr;
-void**                 g_system      = nullptr;
 platform::CallRedirect g_leaderCall;
 
 // Game thread.
@@ -95,9 +94,8 @@ void* GameLeader() noexcept
 /// The game's re-target tail of a forced leader change, with `member` as the new leader. The enemies re-targeted.
 std::uint32_t Retarget(void* member) noexcept
 {
-    std::uint8_t* registryOwner = nullptr;
-    if (g_root == nullptr || !Read(g_root, registryOwner) || registryOwner == nullptr ||
-        !Read(registryOwner + facts::kEndGameRootCharaOwner, registryOwner) || registryOwner == nullptr)
+    std::uint8_t* registryOwner = players::field_root::CharaOwner();
+    if (registryOwner == nullptr)
     {
         return 0;
     }
@@ -196,21 +194,17 @@ const wchar_t* Describe(int seat) noexcept
 
 bool Install(const platform::GameImage& image) noexcept
 {
-    const auto root      = image.Rebase(facts::kEndGameRootGlobal);
-    const auto system    = image.Rebase(facts::kBattleSystemGlobal);
     const auto getLeader = platform::FindFunction(image, facts::kGetPartyLeader);
     const auto site      = image.Rebase(facts::kBattleAITickLeaderCall, 5);
     const auto iterBegin = platform::FindFunction(image, facts::kCharaRegistryIterBegin);
     const auto iterNext  = platform::FindFunction(image, facts::kCharaRegistryIterNext);
     const auto setTarget = platform::FindFunction(image, facts::kBattleCompSetTargetChar);
     const auto free      = platform::FindFunction(image, facts::kGameFree);
-    if (!root || !system || !getLeader || !site || !iterBegin || !iterNext || !setTarget || !free)
+    if (!players::field_root::Installed() || !getLeader || !site || !iterBegin || !iterNext || !setTarget || !free)
     {
         platform::Log(L"enemy leader: an engine check failed; enemies keep following a downed leader");
         return false;
     }
-    g_root      = reinterpret_cast<std::uint8_t**>(*root);
-    g_system    = reinterpret_cast<void**>(*system);
     g_getLeader = *getLeader;
     g_iterBegin = reinterpret_cast<IterBeginFn>(*iterBegin);
     g_iterNext  = reinterpret_cast<IterNextFn>(*iterNext);
@@ -238,8 +232,7 @@ void Remove() noexcept
 void Tick() noexcept
 {
     g_thread = GetCurrentThreadId();
-    void* system = nullptr;
-    if (g_system == nullptr || !Read(g_system, system) || system == nullptr)
+    if (g_iterBegin == nullptr || players::field_root::BattleSystem() == nullptr)  // not installed, or no battle
     {
         g_leader = g_enemyLeader = nullptr;
         g_enemySeat = 0;

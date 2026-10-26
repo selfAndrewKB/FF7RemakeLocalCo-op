@@ -9,6 +9,7 @@
 #include "platform/log.h"
 #include "platform/verified_code.h"
 #include "platform/vtable_entry.h"
+#include "players/field_root.h"
 #include "players/pad_buttons.h"
 #include "players/player_two_camera.h"
 #include "players/scopes.h"
@@ -73,7 +74,6 @@ struct SeatState
 
 // Set at install, then only read.
 std::uintptr_t g_fasGlobal = 0;
-std::uintptr_t g_root      = 0;
 std::uintptr_t g_party     = 0;
 DeactivateFn   g_deactivate = nullptr;
 FlavorLeaveFn  g_ductLeave  = nullptr;
@@ -221,7 +221,7 @@ void RunAsSeat(int seat, Call&& call)
         {
             const players::player_two_camera::StickScope stick(static_cast<std::uint32_t>(seat), true);
             const players::pad_buttons::ButtonScope      buttons(static_cast<unsigned>(seat));
-            auto*                                        root = static_cast<std::uint8_t*>(ReadPointer(reinterpret_cast<const void*>(g_root), 0));
+            auto*                                        root = players::field_root::Root();
             const KeptByte latch(root != nullptr ? root + facts::kRootStickLatch : nullptr, 0);  // player 1's camera-cut latch
             call();
         }
@@ -1256,7 +1256,6 @@ bool Install(const platform::GameImage& image) noexcept
         return false;
     };
     const auto fas        = image.Rebase(facts::kFieldActionSystemGlobal, 8);
-    const auto root       = image.Rebase(facts::kEndGameRootGlobal, 8);
     const auto party      = image.Rebase(facts::kPartyManagerGlobal, 8);
     const auto compTick   = platform::FindFunction(image, facts::kFieldActionCompTick);
     const auto tickCall   = image.Rebase(facts::kFieldActionCompTickCall, 5);
@@ -1266,14 +1265,13 @@ bool Install(const platform::GameImage& image) noexcept
     const auto queueSet   = image.Rebase(facts::kQueueLockBitSet), queueClear = image.Rebase(facts::kQueueLockBitClear);
     const auto crawlLock  = image.Rebase(facts::kCrawlLockCall, 5), crawlUnlock = image.Rebase(facts::kCrawlUnlockCall, 5);
     const auto sqLock     = image.Rebase(facts::kSqueezeLockCall, 5), sqUnlock = image.Rebase(facts::kSqueezeUnlockCall, 5);
-    if (!fas || !root || !party || !compTick || !tickCall || !startEnd || !deactivate || !lockSet || !lockClear || !queueSet ||
+    if (!fas || !players::field_root::Installed() || !party || !compTick || !tickCall || !startEnd || !deactivate || !lockSet || !lockClear || !queueSet ||
         !queueClear || !crawlLock || !crawlUnlock || !sqLock || !sqUnlock ||
         !image.BytesMatch(facts::kFieldCameraDeactivateFlavor, facts::kFieldCameraDeactivateFlavorEntry))
     {
         return fail(L"a function, call site or global");
     }
     g_fasGlobal  = *fas;
-    g_root       = *root;
     g_party      = *party;
     g_deactivate = reinterpret_cast<DeactivateFn>(*deactivate);
     if (const auto leave = platform::FindFunction(image, platform::FunctionFact{L"FEndCameraFlavorDuct_BeginLeave", facts::kDuctFlavorLeave,
@@ -1633,8 +1631,7 @@ NoActionScope::NoActionScope(int seat, bool withoutPlayerOne) noexcept
     {
         return;
     }
-    const auto* root    = ReadPointer(reinterpret_cast<const void*>(g_root), 0);
-    auto*       sm      = static_cast<std::uint8_t*>(ReadPointer(root, facts::kRootStateManager));
+    auto*       sm      = players::field_root::StateManager();
     auto*       counter = sm != nullptr ? reinterpret_cast<std::int32_t*>(sm + facts::kOnOffTable + 4 * facts::kOnOffDisableFieldAction) : nullptr;
     std::int32_t on     = 0;
     if (counter == nullptr || !Read(counter, on))

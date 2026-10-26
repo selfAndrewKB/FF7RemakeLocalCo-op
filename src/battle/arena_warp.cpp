@@ -7,6 +7,7 @@
 #include "platform/log.h"
 #include "platform/verified_code.h"
 #include "players/action_key.h"
+#include "players/field_root.h"
 #include "players/game_state.h"
 #include "players/party_member.h"
 #include "players/scopes.h"
@@ -36,7 +37,7 @@ using FindRowFn = void* (*)(void* table, std::uint64_t name);
 constexpr std::uint64_t kDoubleClickMs = 400;
 
 // Set at install, then only read.
-std::uintptr_t                 g_dashKey = 0, g_battleSystem = 0, g_root = 0, g_distanceName = 0, g_gameParams = 0;
+std::uintptr_t                 g_dashKey = 0, g_distanceName = 0, g_gameParams = 0;
 players::action_key::Getter    g_pressed = nullptr;
 WarpFn                         g_warp    = nullptr;
 InsideFn                       g_inside  = nullptr;
@@ -50,18 +51,8 @@ struct Seat
 std::array<Seat, players::scopes::kMaxPlayers> g_seats;
 std::uint32_t g_presses = 0, g_warps = 0, g_alreadyInside = 0, g_refused = 0, g_noPoint = 0;
 
-void* BattleSystem() noexcept
-{
-    return ReadPointer(reinterpret_cast<const void*>(g_battleSystem), 0);
-}
-
-bool InBattle() noexcept
-{
-    std::uint8_t state = 0;
-    void*        owner = ReadPointer(ReadPointer(reinterpret_cast<const void*>(g_root), 0), facts::kEndGameRootCharaOwner);
-    return owner != nullptr && Read(static_cast<const std::uint8_t*>(owner) + facts::kRootFieldBattleState, state) &&
-           state == facts::kFieldBattleStateBattle;
-}
+using players::field_root::BattleSystem;
+using players::field_root::InBattle;
 
 /// The game's warp distance: its GameParam row, looked up as its leader switch does, else its default.
 float Distance() noexcept
@@ -197,11 +188,9 @@ bool Install(const platform::GameImage& image) noexcept
     const auto pressed  = platform::FindFunction(image, facts::kActionPressedByKey);
     const auto warp     = platform::FindFunction(image, facts::kArenaWarp);
     const auto inside   = platform::FindFunction(image, facts::kInsideBattleArea);
-    const auto system   = image.Rebase(facts::kBattleSystemGlobal, sizeof(void*));
-    const auto root     = image.Rebase(facts::kEndGameRootGlobal, sizeof(void*));
     const auto name     = image.Rebase(facts::kNameWarpDistanceCache, sizeof(std::uint64_t));
     const auto params   = image.Rebase(facts::kTableGameParam, 3 * sizeof(void*));
-    if (!dash || !pressed || !warp || !inside || !system || !root || !name || !params)
+    if (!dash || !pressed || !warp || !inside || !players::field_root::Installed() || !name || !params)
     {
         platform::Log(L"arena warp: an engine check failed; a double click of the left stick does not bring a character into "
                       L"the fight");
@@ -210,8 +199,6 @@ bool Install(const platform::GameImage& image) noexcept
     g_dashKey      = *dash;
     g_pressed      = reinterpret_cast<players::action_key::Getter>(*pressed);
     g_inside       = reinterpret_cast<InsideFn>(*inside);
-    g_battleSystem = *system;
-    g_root         = *root;
     g_distanceName = *name;
     g_gameParams   = *params;
     g_warp         = reinterpret_cast<WarpFn>(*warp);  // last: Tick and ReadPress test it

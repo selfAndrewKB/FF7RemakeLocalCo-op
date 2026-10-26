@@ -6,6 +6,7 @@
 #include "platform/image.h"
 #include "platform/log.h"
 #include "platform/verified_code.h"
+#include "players/field_root.h"
 #include "players/seats.h"
 #include "world/anim_choice.h"
 #include "world/charapop_rule.h"
@@ -70,7 +71,6 @@ struct SeatViews
 };
 
 SetMinLevelFn   g_setMinLevel = nullptr;
-std::uint8_t**  g_root        = nullptr;
 bool            g_enabled     = true;
 std::array<void*, kMaxPlayers> g_cameras{};  // each seat's camera manager while its player is in; [0] unused
 
@@ -324,8 +324,7 @@ void HandleCandidate(std::uint8_t* record, std::uint8_t level, const charapop::L
 
 void Pass(void* cameraOne) noexcept
 {
-    std::uint8_t* root    = nullptr;
-    std::uint8_t* manager = Read(g_root, root) ? static_cast<std::uint8_t*>(ReadPointer(root, facts::kRootCharaPop)) : nullptr;
+    std::uint8_t* manager = static_cast<std::uint8_t*>(ReadPointer(players::field_root::Root(), facts::kRootCharaPop));
     if (manager != g_manager)
     {
         if (g_raisedCount > 0)
@@ -450,14 +449,12 @@ void Summarise() noexcept
 bool Install(const platform::GameImage& image) noexcept
 {
     const auto set  = platform::FindFunction(image, facts::kCharaPopSetMinLevel);
-    const auto root = image.Rebase(facts::kEndGameRootGlobal, sizeof(void*));
-    if (!set || !root)
+    if (!set || !players::field_root::Installed())
     {
         platform::LogWarning(L"npc detail: a check failed; NPCs near a further player keep the detail player 1's camera gives them");
         return false;
     }
     g_setMinLevel = reinterpret_cast<SetMinLevelFn>(*set);
-    g_root        = reinterpret_cast<std::uint8_t**>(*root);
     control::Register({.name  = L"npc-detail",
                        .shape = control::Shape::OnOff,
                        .help  = L"NPCs near a further player keep the detail that player's camera would give them (world/npc_detail.h; on)",

@@ -8,6 +8,7 @@
 #include "platform/log.h"
 #include "platform/verified_code.h"
 #include "platform/vtable_entry.h"
+#include "players/field_root.h"
 #include "players/scopes.h"
 #include "players/seats.h"
 #include "world/npc_senses_code.h"
@@ -84,7 +85,6 @@ platform::CodeRedirect        g_centreCode;
 alignas(16) code::CentreState g_centre;  // read by the grid code (game thread)
 platform::VTableEntry         g_lookSlot;
 UpdateFn                      g_update = nullptr;
-std::uint8_t**                g_root   = nullptr;  // &g_EndGameRoot
 
 // Written by the game thread; the look reads them on the AI's worker threads (research/RE-npc-reactions.md §10.5).
 std::atomic<bool>  g_enabled{true};
@@ -130,13 +130,7 @@ bool Location(void* character, float (&out)[3]) noexcept
     return root != nullptr && Read(static_cast<const std::uint8_t*>(root) + facts::kComponentWorldLocation, out);
 }
 
-bool InBattle() noexcept
-{
-    std::uint8_t state = 0;
-    void*        owner = ReadPointer(g_root != nullptr ? *g_root : nullptr, facts::kEndGameRootCharaOwner);
-    return owner != nullptr && Read(static_cast<const std::uint8_t*>(owner) + facts::kRootFieldBattleState, state) &&
-           state == facts::kFieldBattleStateBattle;
-}
+using players::field_root::InBattle;  // asked at the tick, on the game thread
 
 /// The grid's state for this tick, and the centre to write when it moved; each seat's fit kept for the reading.
 Grid Decide(code::Cell& centre) noexcept
@@ -370,13 +364,11 @@ catch (...)
 
 bool Install(const platform::GameImage& image) noexcept
 {
-    const auto root     = image.Rebase(facts::kEndGameRootGlobal, sizeof(void*));
     const auto site     = image.Rebase(code::kCentreSite, sizeof(code::kCentreLoad));
     const auto resume   = image.Rebase(code::kCentreResume);
     const auto cellSize = image.Rebase(code::kCellSizeGlobal, sizeof(float));
-    g_root              = root ? reinterpret_cast<std::uint8_t**>(*root) : nullptr;
     bool grid           = false;
-    if (!root || !site || !resume || !cellSize || !image.BytesMatch(code::kCentreCheckStart, code::kCentreBytes))
+    if (!players::field_root::Installed() || !site || !resume || !cellSize || !image.BytesMatch(code::kCentreCheckStart, code::kCentreBytes))
     {
         platform::LogWarning(L"npc senses: the grid build is not what the research read; NPCs sense around player 1 only");
     }

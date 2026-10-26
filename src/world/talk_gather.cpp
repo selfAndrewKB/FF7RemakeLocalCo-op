@@ -7,6 +7,7 @@
 #include "platform/image.h"
 #include "platform/log.h"
 #include "platform/verified_code.h"
+#include "players/field_root.h"
 #include "players/scopes.h"
 #include "players/seats.h"
 #include "players/weak_object.h"
@@ -27,7 +28,6 @@ using platform::Read;
 using players::SeatName;
 
 using TickFn      = void* (*)(void* channel, float dt, std::uint8_t* out);
-using LeaderFn    = void* (*)(void* partyManager, std::uint8_t variant);
 using NavPointFn  = bool (*)(float* out, const float* origin, const float* dir, float distance, const void* agent,
                             std::uint64_t, std::uint8_t, std::uint32_t, std::uint64_t);
 using WarpFn      = void (*)(void* character, const float* location, const float* rotation, const float* direct, bool fade);
@@ -45,10 +45,9 @@ struct Vec3
 };
 
 // Set at install, then only read.
-std::uintptr_t         g_tick = 0, g_agent = 0, g_actions = 0, g_root = 0, g_namedLevel = 0;
+std::uintptr_t         g_tick = 0, g_agent = 0, g_actions = 0, g_namedLevel = 0;
 FindRowFn              g_findRow  = nullptr;
 FindActorFn            g_findActor = nullptr;
-LeaderFn               g_leader   = nullptr;
 NavPointFn             g_navPoint = nullptr;
 WarpFn                 g_warp     = nullptr;
 CamResetFn             g_camReset = nullptr;
@@ -144,17 +143,15 @@ std::wstring Report()
 bool Install(const platform::GameImage& image) noexcept
 {
     const auto tick     = platform::FindFunction(image, facts::kActTick);
-    const auto leader   = platform::FindFunction(image, facts::kGetPartyLeader);
     const auto navPoint = platform::FindFunction(image, facts::kNavPointAlongDir);
     const auto warp     = platform::FindFunction(image, facts::kBattleTeleportFadeIn);
     const auto camReset = platform::FindFunction(image, facts::kFieldCameraResetBehindLeader);
     const auto agent    = image.Rebase(facts::kNavAgentDefault, facts::kNavAgentSize);
     const auto actions  = image.Rebase(facts::kTableAction, 24);
     const auto findRow  = platform::FindFunction(image, facts::kFindRowInTables);
-    const auto root     = image.Rebase(facts::kEndGameRootGlobal, 8);
     const auto findNpc  = platform::FindFunction(image, facts::kFindActorByName);  // optional: without it, toward
     const auto named    = image.Rebase(facts::kNamedActorLevel, 8);                 // player 1's character, as before
-    if (!tick || !leader || !navPoint || !warp || !camReset || !agent || !actions || !findRow || !root)
+    if (!tick || !players::field_root::Installed() || !navPoint || !warp || !camReset || !agent || !actions || !findRow)
     {
         platform::Log(L"talk gather: an engine check failed; player 1's character stays where it is when another player "
                       L"starts a talk");
@@ -162,12 +159,10 @@ bool Install(const platform::GameImage& image) noexcept
     }
     g_tick     = *tick;
     g_agent    = *agent;
-    g_leader   = reinterpret_cast<LeaderFn>(*leader);
     g_navPoint = reinterpret_cast<NavPointFn>(*navPoint);
     g_warp     = reinterpret_cast<WarpFn>(*warp);
     g_camReset = reinterpret_cast<CamResetFn>(*camReset);
     g_actions  = *actions;
-    g_root     = *root;
     g_findRow  = reinterpret_cast<FindRowFn>(*findRow);
     if (findNpc && named)
     {
@@ -240,12 +235,10 @@ void OnLeaderHanded() noexcept
                            SeatName(seat));
         return;
     }
-    void* const partyManager = reinterpret_cast<void*>(PartyManagerAddress());
-    void* const member       = Member(seat);
-    void*       cloud        = nullptr;
+    void* const member = Member(seat);
+    void* const cloud  = member != nullptr ? players::field_root::PartyLeader(facts::kLeaderCurrent) : nullptr;
     Vec3        at{}, presser{};
-    if (partyManager == nullptr || member == nullptr ||
-        !platform::CallGuarded(g_leader, cloud, partyManager, facts::kLeaderCurrent) || cloud == nullptr || cloud == member ||
+    if (member == nullptr || cloud == nullptr || cloud == member ||
         !Location(cloud, at) || !Location(member, presser))
     {
         return;
@@ -350,14 +343,8 @@ void OnLeaderHanded() noexcept
     if (platform::Enabled(platform::Level::Debug))
     {
         // The move ran inside the game's lock set (RE-talk-far.md §6): the lock and the channel's step after it.
-        std::uint32_t lock = 0;
-        std::uint8_t  step = 0;
-        const auto*   stateManager = static_cast<const std::uint8_t*>(
-            platform::ReadPointer(platform::ReadPointer(reinterpret_cast<const void*>(g_root), 0), facts::kRootStateManager));
-        if (stateManager != nullptr)
-        {
-            Read(stateManager + facts::kFieldControlLockMask, lock);
-        }
+        const std::uint32_t lock = players::field_root::ControlLockMask();
+        std::uint8_t        step = 0;
         Read(static_cast<const std::uint8_t*>(g_channel) + facts::kActChannelStep, step);
         platform::LogDebug(L"talk gather: after the move the field lock is {:#x}, the act's step {}", lock, step);
     }

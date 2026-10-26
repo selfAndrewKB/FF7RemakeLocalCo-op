@@ -18,6 +18,7 @@
 #include "platform/image.h"
 #include "platform/log.h"
 #include "platform/verified_code.h"
+#include "players/field_root.h"
 #include "players/scopes.h"
 #include "players/seats.h"
 #include "players/unreal_call.h"
@@ -46,7 +47,6 @@ using SysFn      = void (*)(void* system);
 using SetColorFn = void (*)(void* widget, const float* color);
 
 // Set once at install.
-void**         g_system   = nullptr;
 std::uint8_t** g_barSlot  = nullptr;  // EndUISystem[27]
 std::uint8_t** g_iconSlot = nullptr;  // EndUISystem[38]
 SysFn          g_driver   = nullptr;
@@ -88,8 +88,7 @@ int                                              g_hiddenCount = 0;
 
 void* System() noexcept
 {
-    void* system = nullptr;
-    return Read(g_system, system) ? system : nullptr;
+    return g_setColor != nullptr ? players::field_root::BattleSystem() : nullptr;  // null until this module installed
 }
 
 void* CopyWidget(const Seat& s) noexcept
@@ -269,19 +268,17 @@ bool FindInto(const platform::GameImage& image, const platform::FunctionFact& fa
 
 bool Install(const platform::GameImage& image) noexcept
 {
-    const auto system   = image.Rebase(facts::kBattleSystemGlobal, sizeof(void*));
     const auto bar      = image.Rebase(facts::kEnemyBarSlotGlobal, sizeof(void*));
     const auto icon     = image.Rebase(facts::kOutsideIconSlotGlobal, sizeof(void*));
     const auto los      = platform::FindFunction(image, facts::kCursorLineOfSight);
     const auto losCall  = image.Rebase(facts::kCursorLineOfSightCall, 5);
     const auto suspend  = platform::FindFunction(image, facts::kBattleSuspend);
     const auto setColor = image.Rebase(facts::kSetColorAndOpacity);
-    if (!system || !bar || !icon || !los || !losCall || !suspend || !setColor || !FindInto(image, facts::kCursorDriver, g_driver))
+    if (!players::field_root::Installed() || !bar || !icon || !los || !losCall || !suspend || !setColor || !FindInto(image, facts::kCursorDriver, g_driver))
     {
         platform::Log(L"target cursor 2: an engine check failed; no seat has a cursor of its own");
         return false;
     }
-    g_system          = reinterpret_cast<void**>(*system);
     g_barSlot         = reinterpret_cast<std::uint8_t**>(*bar);
     g_iconSlot        = reinterpret_cast<std::uint8_t**>(*icon);
     g_lineOfSight     = *los;

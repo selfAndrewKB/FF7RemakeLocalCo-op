@@ -72,6 +72,7 @@ add_library(LocalSplitScreen SHARED
     src/platform/verified_code.cpp
     src/platform/vtable_entry.cpp
     src/players/field_exit.cpp
+    src/players/field_root.cpp
     src/players/game_state.cpp
     src/players/lead_gate.cpp
     src/players/local_player_list.cpp

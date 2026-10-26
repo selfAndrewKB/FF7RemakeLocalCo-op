@@ -5,6 +5,7 @@
 #include "platform/guarded.h"
 #include "platform/verified_code.h"
 #include "platform/log.h"
+#include "players/field_root.h"
 
 #include <Unreal/NameTypes.hpp>
 
@@ -17,7 +18,6 @@ namespace lss::players::game_state {
 namespace {
 
 const std::uint8_t* const* g_gameMode = nullptr;  // AEndGameMode**
-const std::uint8_t* const* g_root     = nullptr;  // the field root**
 void (*g_pauseMenuClosed)(void* context, void* frame, std::uint8_t* result) = nullptr;  // the game's own test
 const std::uint8_t* const* g_shopSlot = nullptr;  // EndUISystem[44], the shop UI (its "a shop is up" byte)
 Snapshot                   g_last;
@@ -56,8 +56,8 @@ Snapshot Read() noexcept
                     ReadAt(gameState, facts::kGameStatePause, pause) && now.state < 32;  // EGameState_MAX
         now.paused = pause != 0;
     }
-    const std::uint8_t* root = nullptr;
-    if (platform::CopyGuarded(&root, g_root, sizeof(root)) && root != nullptr)
+    const std::uint8_t* root = field_root::Root();
+    if (root != nullptr)
     {
         std::uint8_t running = 0;
         now.hasRoot = ReadAt(root, facts::kFieldRootStep, now.step) && ReadAt(root, facts::kFieldRootRunning, running);
@@ -102,14 +102,12 @@ Snapshot Current() noexcept
 bool Install(const platform::GameImage& image) noexcept
 {
     const auto gameMode = image.Rebase(facts::kGameModeGlobal, sizeof(void*));
-    const auto root     = image.Rebase(facts::kEndGameRootGlobal, sizeof(void*));
-    if (!gameMode || !root)
+    if (!gameMode || !field_root::Installed())
     {
         platform::Log(L"game state: a global is outside the image; no game.state reading");
         return false;
     }
     g_gameMode = reinterpret_cast<const std::uint8_t* const*>(*gameMode);
-    g_root     = reinterpret_cast<const std::uint8_t* const*>(*root);
     if (const auto shop = image.Rebase(facts::kShopSlotGlobal, sizeof(void*)))
     {
         g_shopSlot = reinterpret_cast<const std::uint8_t* const*>(*shop);

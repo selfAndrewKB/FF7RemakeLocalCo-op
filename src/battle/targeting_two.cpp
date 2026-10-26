@@ -9,6 +9,7 @@
 #include "platform/image.h"
 #include "platform/log.h"
 #include "platform/verified_code.h"
+#include "players/field_root.h"
 #include "players/pad_buttons.h"
 #include "players/player_two_camera.h"
 #include "players/scopes.h"
@@ -40,7 +41,6 @@ constexpr std::uint32_t kLockAt  = facts::kBattleSysLock - facts::kBattleSysTarg
 constexpr std::uint32_t kLatchAt = facts::kBattleSysDummyLatch - facts::kBattleSysTargetFields;
 
 // Set once at install.
-void**         g_system      = nullptr;  // the battle system global
 std::uintptr_t g_slot        = 0;        // EndUISystem[19]
 std::uintptr_t g_normalCall  = 0;
 std::uintptr_t g_target      = 0;        // BattleSystem_TickTargeting
@@ -65,8 +65,7 @@ bool                                           g_inBattle = false;
 
 void* System() noexcept
 {
-    void* system = nullptr;
-    return Read(g_system, system) ? system : nullptr;
+    return players::field_root::BattleSystem();
 }
 
 std::uint8_t Byte(const void* object, std::uint32_t offset) noexcept
@@ -220,18 +219,16 @@ bool FindInto(const platform::GameImage& image, const platform::FunctionFact& fa
 
 bool Install(const platform::GameImage& image) noexcept
 {
-    const auto system     = image.Rebase(facts::kBattleSystemGlobal, sizeof(void*));
     const auto slot       = image.Rebase(facts::kCommandCtrlSlotGlobal, sizeof(void*));
     const auto target     = platform::FindFunction(image, facts::kBattleTickTargeting);
     const auto pausedCall = image.Rebase(facts::kTargetingCallPaused, 5);
     const auto normalCall = image.Rebase(facts::kTargetingCallNormal, 5);
-    if (!system || !slot || !target || !pausedCall || !normalCall || !FindInto(image, facts::kBattleTargetPreTick, g_preTick) ||
+    if (!players::field_root::Installed() || !slot || !target || !pausedCall || !normalCall || !FindInto(image, facts::kBattleTargetPreTick, g_preTick) ||
         !FindInto(image, facts::kBattleSetLockOn, g_setLock) || !FindInto(image, facts::kBattleClearLockAndTarget, g_clear))
     {
         platform::Log(L"targeting 2: an engine check failed; no seat has targeting or lock-on");
         return false;
     }
-    g_system     = reinterpret_cast<void**>(*system);
     g_slot       = *slot;
     g_target     = *target;
     g_normalCall = *normalCall;

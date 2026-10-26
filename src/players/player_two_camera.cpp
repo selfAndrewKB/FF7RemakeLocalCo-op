@@ -7,6 +7,7 @@
 #include "platform/verified_code.h"
 #include "platform/vtable_entry.h"
 #include "players/camera_override_two.h"
+#include "players/field_root.h"
 #include "players/nav_area_two.h"
 #include "players/operator_battle_mode.h"
 #include "players/pad_buttons.h"
@@ -49,7 +50,6 @@ constexpr int kPlayers = scopes::kMaxPlayers;  // index 0 = player 1, index s = 
 
 // Set once at install, then only read.
 void**           g_partyManager   = nullptr;  // the global holding the party manager pointer
-std::uint8_t**   g_root           = nullptr;
 void**           g_gameMode       = nullptr;
 std::uint64_t*   g_frameStamp     = nullptr;
 std::uint8_t*    g_corrections    = nullptr;
@@ -175,9 +175,8 @@ namespace {
 
 std::int32_t* OperatorPair() noexcept
 {
-    std::uint8_t* root = nullptr;
-    return Read(g_root, root) && root != nullptr ? reinterpret_cast<std::int32_t*>(root + facts::kRootOperatorWeak)
-                                                 : nullptr;
+    std::uint8_t* root = field_root::Root();
+    return root != nullptr ? reinterpret_cast<std::int32_t*>(root + facts::kRootOperatorWeak) : nullptr;
 }
 
 void* PlayerOneOperator() noexcept
@@ -561,7 +560,7 @@ bool Install(const platform::GameImage& image) noexcept
     {
         return false;  // already installed: a second install must not undo the first
     }
-    if (!weak_object::Installed() || !Global(image, facts::kPartyManagerGlobal, g_partyManager) || !Global(image, facts::kEndGameRootGlobal, g_root) ||
+    if (!weak_object::Installed() || !Global(image, facts::kPartyManagerGlobal, g_partyManager) || !field_root::Installed() ||
         !Global(image, facts::kGameModeGlobal, g_gameMode) || !Global(image, facts::kOperatorFrameStamp, g_frameStamp) ||
         !Global(image, facts::kOperatorCorrections, g_corrections) || !Global(image, facts::kNameNoneIndex, g_nameNone) ||
         !Global(image, facts::kSquareInputOwnerGlobal, g_squareInput) ||

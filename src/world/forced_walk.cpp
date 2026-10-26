@@ -7,6 +7,7 @@
 #include "platform/log.h"
 #include "platform/verified_code.h"
 #include "platform/vtable_entry.h"
+#include "players/field_root.h"
 #include "players/scopes.h"
 #include "players/seats.h"
 #include "players/weak_object.h"
@@ -27,7 +28,6 @@ using platform::Read;
 
 using BeginEndFn       = std::uintptr_t (*)(void* runner);
 using TickFn           = char (*)(void* runner, float dt);
-using GetPartyLeaderFn = void* (*)(void* partyManager, std::uint8_t selector);
 
 /// One story act that limits the leader's walk: its layer and which leader it writes.
 struct Act
@@ -51,8 +51,6 @@ constexpr std::array<Act, kActCount> kActs{{
 constexpr std::array<std::uint8_t, 3> kCopiedLayers{facts::kCapLayerScript, facts::kCapLayerAfterScene, facts::kCapLayerGuide};
 
 platform::VTableEntry g_scriptTick, g_scriptEnd, g_guideTick, g_guideEnd, g_afterBegin, g_afterTick, g_afterEnd;
-GetPartyLeaderFn      g_getPartyLeader = nullptr;
-void**                g_partyManager   = nullptr;
 std::atomic<bool>     g_installed{false};       // all seven slots placed
 bool                  g_enabled        = true;   // switch forced-walk
 std::atomic<DWORD>    g_gameThread{0};
@@ -72,18 +70,10 @@ std::array<Counts, kActCount> g_counts{};
 std::uint64_t                 g_joinCopies = 0, g_leaveClears = 0;
 std::array<bool, kActCount>   g_wroteOther{};  // the last call of the act wrote another character (logged once)
 
-void* PartyManager() noexcept
-{
-    void* manager = nullptr;
-    return Read(g_partyManager, manager) ? manager : nullptr;
-}
-
 /// Player 1's character: the party's current leader, read outside every scope (the acts run there too).
 void* PlayerOne() noexcept
 {
-    void* manager = PartyManager();
-    void* leader  = nullptr;
-    return manager != nullptr && platform::CallGuarded(g_getPartyLeader, leader, manager, facts::kLeaderCurrent) ? leader : nullptr;
+    return players::field_root::PartyLeader(facts::kLeaderCurrent);
 }
 
 /// A seat's Leader scope is open: the party leader reads as that seat's member (never expected around an act; if it
@@ -203,11 +193,9 @@ void Follow(ActIndex act) noexcept
     {
         return;
     }
-    void* manager = PartyManager();
     void* one     = PlayerOne();
-    void* written = nullptr;
-    if (manager == nullptr || one == nullptr ||
-        !platform::CallGuarded(g_getPartyLeader, written, manager, kActs[act].selector) || written != one)
+    void* written = players::field_root::PartyLeader(kActs[act].selector);
+    if (one == nullptr || written != one)
     {
         ++counts.notMine;
         if (!g_wroteOther[act])
@@ -367,15 +355,11 @@ void SetEnabled(bool on) noexcept
 
 bool Install(const platform::GameImage& image) noexcept
 {
-    const auto leader  = platform::FindFunction(image, facts::kGetPartyLeader);
-    const auto manager = image.Rebase(facts::kPartyManagerGlobal, sizeof(void*));
-    if (!leader || !manager || !players::weak_object::Installed())
+    if (!players::field_root::Installed() || !players::weak_object::Installed())
     {
         platform::LogWarning(L"forced walk: a check failed; further players run free in a story walk");
         return false;
     }
-    g_getPartyLeader = reinterpret_cast<GetPartyLeaderFn>(*leader);
-    g_partyManager   = reinterpret_cast<void**>(*manager);
     struct Place
     {
         const platform::SlotFact& fact;

@@ -1442,7 +1442,6 @@ inline constexpr std::uint32_t  kFieldAiLayers         = 15;
 /// 0x100000 while an event holds the field; research/RE-script-release.md §3). The first bit set hands the game's
 /// leader to its AI, the last bit cleared returns it.
 inline constexpr std::uint32_t  kRootStateManager      = 0x138;
-inline constexpr std::uint32_t  kStateManagerControlLock = 0x11062B0;
 inline constexpr std::uint32_t  kControlLockEvent      = 0x100000;
 /// The leader funnels: every path that seats player 1 on a character passes PartyManager_SetPartyLeader(PM, actor,
 /// input, force) or its toad twin (PM, actor) before any party-manager write; both open with pushes.

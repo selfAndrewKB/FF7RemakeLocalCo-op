@@ -166,6 +166,9 @@ src/
                             (Remake/Documentation/research/RE-lifecycle-world.md §3, §8)
     field_hold.h            When a party member's field AI state leaves it a further player's to hold, and when a script
                             needs it back
+    field_root              The field root and what the modules read off it, in one place: the game's field root object
+                            (facts::kEndGameRootGlobal), its state manager (the field control lock's mask and counter
+                            live there, as does the on/off table), the …
     game_state              The game's own state, read for the console and the log: Square Enix's EGameState byte on
                             AEndGameState (title, loading, play, pause, menu, leaving), its menu kind and pause flag,
                             and the field step machine on the field root (13 = …

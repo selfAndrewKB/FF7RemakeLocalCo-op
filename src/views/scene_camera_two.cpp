@@ -7,6 +7,7 @@
 #include "platform/image.h"
 #include "platform/log.h"
 #include "platform/verified_code.h"
+#include "players/field_root.h"
 #include "world/shop_act.h"
 #include "world/traversal_action.h"
 
@@ -43,7 +44,6 @@ constexpr bool SeededFromField(std::uint32_t slot) noexcept
 
 // Set at install, then only read.
 void* const*           g_cutsceneManager = nullptr;  // the global holding the manager's pointer
-void* const*           g_root            = nullptr;  // the field root**
 IsPlayingFn            g_isPlaying       = nullptr;
 SetSlotFn              g_setSlot         = nullptr;
 SetSlotBlendFn         g_setSlotBlend    = nullptr;
@@ -210,10 +210,8 @@ Scene ReadScene() noexcept
             now.playing = playing;
         }
     }
-    void* root = nullptr;
-    const std::uint8_t* stateManager = nullptr;
-    if (Read(g_root, root) && root != nullptr && Read(Bytes(root) + facts::kRootStateManager, stateManager) && stateManager != nullptr &&
-        Read(stateManager + facts::kFieldControlLockMask, now.lockMask) && Read(stateManager + facts::kFieldControlLockCounter, now.lockCount))
+    const std::uint8_t* stateManager = players::field_root::StateManager();
+    if (stateManager != nullptr && players::field_root::ControlLock(now.lockMask, now.lockCount))
     {
         now.valid     = true;
         now.mover     = world::traversal_action::PlayerOneMoveBitsIn(now.lockMask);
@@ -534,15 +532,13 @@ std::int64_t ResetSlots(void* manager)
 bool Install(const platform::GameImage& image) noexcept
 {
     const auto manager   = image.Rebase(facts::kCutsceneManagerGlobal, sizeof(void*));
-    const auto root      = image.Rebase(facts::kEndGameRootGlobal, sizeof(void*));
     const auto isPlaying = platform::FindFunction(image, facts::kCutsceneIsPlaying);
-    if (!manager || !root || !isPlaying)
+    if (!manager || !players::field_root::Installed() || !isPlaying)
     {
         platform::Log(L"scene camera: an engine check failed; the scene readings stay unknown and the mirror is stood aside");
         return false;
     }
     g_cutsceneManager = reinterpret_cast<void* const*>(*manager);
-    g_root            = reinterpret_cast<void* const*>(*root);
     g_isPlaying       = reinterpret_cast<IsPlayingFn>(*isPlaying);
 
     const auto setSlot      = platform::FindFunction(image, facts::kCameraManagerSetSlot);

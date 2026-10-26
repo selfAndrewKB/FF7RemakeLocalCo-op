@@ -11,6 +11,7 @@
 #include "platform/log.h"
 #include "platform/verified_code.h"
 #include "platform/vtable_entry.h"
+#include "players/field_root.h"
 #include "players/player_two_camera.h"
 #include "players/scopes.h"
 #include "players/seats.h"
@@ -57,7 +58,6 @@ bool g_placed = false;
 // Set at install, then only read.
 std::uint64_t* g_frameStamp = nullptr;  // the operators' write-back frame stamp (one global)
 void**         g_gameMode   = nullptr;
-void**         g_system     = nullptr;  // the battle system global (null outside battle)
 
 /// One player's camera between its operator's ticks, for the jump lines (a tick that turned or moved the camera far
 /// faster than a stick, a follow or a dodge does: lock_camera_rules::IsJump). Game thread. Index = seat; [0] = player 1's.
@@ -271,11 +271,7 @@ std::uint64_t Frame() noexcept
                : 0;
 }
 
-void* BattleSystem() noexcept
-{
-    void* system = nullptr;
-    return g_system != nullptr && Read(g_system, system) ? system : nullptr;
-}
+using players::field_root::BattleSystem;
 
 /// "this frame", "N frames ago", or "not in the last 120 frames" for a remembered frame (0: never).
 std::wstring Ago(std::uint64_t then, std::uint64_t now)
@@ -476,10 +472,6 @@ bool Install(const platform::GameImage& image) noexcept
     if (const auto mode = image.Rebase(facts::kGameModeGlobal, sizeof(void*)))
     {
         g_gameMode = reinterpret_cast<void**>(*mode);
-    }
-    if (const auto system = image.Rebase(facts::kBattleSystemGlobal, sizeof(void*)))
-    {
-        g_system = reinterpret_cast<void**>(*system);
     }
     control::Register({.name = L"lock-camera-two.jumps", .shape = control::Shape::Text,
                        .help = L"each player's camera (player 1's while a further player is in): the bursts of jumps (a tick turning over 10 "

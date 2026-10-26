@@ -7,6 +7,7 @@
 #include "platform/image.h"
 #include "platform/log.h"
 #include "platform/verified_code.h"
+#include "players/field_root.h"
 #include "players/player_two_camera.h"
 #include "players/weak_object.h"
 #include "players/scopes.h"
@@ -56,8 +57,8 @@ struct Active
 };
 
 // Set at install, then only read.
-void**                 g_system       = nullptr;
 std::uintptr_t         g_apply        = 0;
+bool                   g_installed    = false;  // every check passed and every redirect placed
 std::uintptr_t         g_eval         = 0;
 std::uintptr_t         g_cutChange    = 0;
 std::uintptr_t         g_jumpToCut    = 0;
@@ -318,9 +319,9 @@ std::int64_t Cut()
 template <class Fn>
 void ForEachEntry(Fn&& fn) noexcept
 {
-    std::uint8_t* system = nullptr;
+    auto*         system = static_cast<std::uint8_t*>(players::field_root::BattleSystem());
     std::uint8_t* lists  = nullptr;
-    if (g_system == nullptr || !Read(g_system, system) || system == nullptr || !Read(system + facts::kBattleSysCamRequests, lists) || lists == nullptr)
+    if (system == nullptr || !Read(system + facts::kBattleSysCamRequests, lists) || lists == nullptr)
     {
         return;
     }
@@ -356,7 +357,6 @@ std::wstring Reading()
 
 bool Install(const platform::GameImage& image) noexcept
 {
-    const auto system     = image.Rebase(facts::kBattleSystemGlobal);
     const auto apply      = platform::FindFunction(image, facts::kSeqApply);
     const auto applySite  = image.Rebase(facts::kSeqApplyCall, 5);
     const auto eval       = platform::FindFunction(image, facts::kSeqEval);
@@ -368,12 +368,11 @@ bool Install(const platform::GameImage& image) noexcept
     const auto cut        = platform::FindFunction(image, facts::kSeqCutFirstPlayer);
     const auto cutRaise   = image.Rebase(facts::kSeqCutRaiseCall, 5);
     const auto primaryCut = platform::FindFunction(image, facts::kSeqCutPrimary);
-    if (!system || !apply || !applySite || !eval || !evalSite || !cutChange || !cutSite || !jump || !jumpSite || !cut || !cutRaise || !primaryCut)
+    if (!players::field_root::Installed() || !apply || !applySite || !eval || !evalSite || !cutChange || !cutSite || !jump || !jumpSite || !cut || !cutRaise || !primaryCut)
     {
         platform::Log(L"sequence camera 2: an engine check failed; sequence cameras keep one state for every view");
         return false;
     }
-    g_system     = reinterpret_cast<void**>(*system);
     g_apply      = *apply;
     g_eval       = *eval;
     g_cutChange  = *cutChange;
@@ -396,6 +395,7 @@ bool Install(const platform::GameImage& image) noexcept
                                L"world-state seeds and active-byte unions",
                        .get  = [] { return control::Value{Reading()}; }});
     platform::Log(L"sequence camera 2: installed; each seat's operator evaluates sequence cameras on its own copy of their state");
+    g_installed = true;
     return true;
 }
 
@@ -424,7 +424,7 @@ void Tick() noexcept
 
 void AfterOperatorTick(int seat) noexcept
 {
-    if (seat < 0 || seat >= kMaxPlayers)
+    if (!g_installed || seat < 0 || seat >= kMaxPlayers)  // not installed: the game keeps its one state
     {
         return;
     }

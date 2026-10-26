@@ -12,6 +12,7 @@
 #include "platform/log.h"
 #include "platform/settings.h"
 #include "platform/verified_code.h"
+#include "players/field_root.h"
 #include "players/pad_buttons.h"
 #include "players/player_two_camera.h"
 #include "players/scopes.h"
@@ -42,7 +43,6 @@ std::uintptr_t g_tickTarget   = 0;
 std::uintptr_t g_slowCall     = 0;
 std::uintptr_t g_slowTarget   = 0;
 std::uintptr_t g_slot         = 0;  // EndUISystem[19]
-void**         g_battleSystem = nullptr;
 void**         g_gameMode     = nullptr;
 
 platform::CallRedirect g_tick;  // placed on the game thread (the call crosses a block)
@@ -87,7 +87,7 @@ std::uint8_t* Ctrl1() noexcept
 /// exists, the game state's pause counter is 0).
 void RunInputBuffer(int seat, float deltaTime) noexcept
 {
-    void*         system    = nullptr;
+    void*         system    = players::field_root::BattleSystem();
     void*         gameMode  = nullptr;
     std::uint8_t* state     = nullptr;
     std::int32_t  paused    = 0;
@@ -95,7 +95,7 @@ void RunInputBuffer(int seat, float deltaTime) noexcept
     std::uint8_t* component = nullptr;
     void**        vtable    = nullptr;
     InputBufferFn buffer    = nullptr;
-    if (!Read(g_battleSystem, system) || system == nullptr || !Read(g_gameMode, gameMode) || gameMode == nullptr ||
+    if (system == nullptr || !Read(g_gameMode, gameMode) || gameMode == nullptr ||
         !Read(static_cast<std::uint8_t*>(gameMode) + facts::kGameModeGameState, state) || state == nullptr ||
         !Read(state + facts::kGameStatePauseCounter, paused) || paused != 0 || member == nullptr ||
         !Read(static_cast<std::uint8_t*>(member) + facts::kCharacterBattleComponent, component) || component == nullptr ||
@@ -263,9 +263,8 @@ bool Install(const platform::GameImage& image) noexcept
     const auto slowCall = image.Rebase(facts::kCommandCtrlSlowCall, 5);
     const auto slow     = platform::FindFunction(image, facts::kSetGameSpeedSlot);
     const auto slot     = image.Rebase(facts::kCommandCtrlSlotGlobal, sizeof(void*));
-    const auto system   = image.Rebase(facts::kBattleSystemGlobal, sizeof(void*));
     const auto gameMode = image.Rebase(facts::kGameModeGlobal, sizeof(void*));
-    if (!tickCall || !tick || !slowCall || !slow || !slot || !system || !gameMode)
+    if (!tickCall || !tick || !slowCall || !slow || !slot || !players::field_root::Installed() || !gameMode)
     {
         platform::Log(L"command menu 2: the tick's engine checks failed; no seat's menu ever ticks, and the menu-slow "
                       L"switch does nothing");
@@ -276,7 +275,6 @@ bool Install(const platform::GameImage& image) noexcept
     g_slowCall     = *slowCall;
     g_slowTarget   = *slow;
     g_slot         = *slot;
-    g_battleSystem = reinterpret_cast<void**>(*system);
     g_gameMode     = reinterpret_cast<void**>(*gameMode);
     // The user's setting (one of the table's words), set before the redirect is placed: no write reads it yet.
     g_slowWrites.SetSlows(platform::settings::Of(platform::settings::kMenuSlow).word == L"on");

@@ -5,6 +5,7 @@
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
+#include "players/field_root.h"
 #include "players/weak_object.h"
 
 #include <array>
@@ -23,7 +24,6 @@ constexpr std::uint8_t kTypeNone = facts::kPlayerTypeNone;
 
 // Set once at install (live addresses).
 void**         g_partyManager = nullptr;
-std::uint8_t** g_root         = nullptr;
 std::uint8_t** g_input        = nullptr;  // the SquareInput owner
 std::uint8_t** g_uiFilters    = nullptr;  // EndUISystem[37]
 std::uintptr_t g_commandSlot  = 0;        // EndUISystem[19]
@@ -111,17 +111,15 @@ void DefineLatches(ByteContext& context) noexcept
 bool Install(const platform::GameImage& image) noexcept
 {
     const auto party   = image.Rebase(facts::kPartyManagerGlobal, sizeof(void*));
-    const auto root    = image.Rebase(facts::kEndGameRootGlobal, sizeof(void*));
     const auto input   = image.Rebase(facts::kSquareInputOwnerGlobal, sizeof(void*));
     const auto filters = image.Rebase(facts::kUiFilterSlotGlobal, sizeof(void*));
     const auto slot    = image.Rebase(facts::kCommandCtrlSlotGlobal, sizeof(void*));
-    if (!party || !root || !input || !filters || !slot)
+    if (!party || !field_root::Installed() || !input || !filters || !slot)
     {
         platform::Log(L"scopes: a global is outside the image; nothing of player 2's can run in its own scopes");
         return false;
     }
     g_partyManager = reinterpret_cast<void**>(*party);
-    g_root         = reinterpret_cast<std::uint8_t**>(*root);
     g_input        = reinterpret_cast<std::uint8_t**>(*input);
     g_uiFilters    = reinterpret_cast<std::uint8_t**>(*filters);
     g_commandSlot  = *slot;
@@ -151,7 +149,7 @@ void BindOperator(int player, const std::int32_t (&weak)[2]) noexcept
         return;
     }
     Player&        p    = g_players[player];
-    const auto     root = Object(g_root);
+    const auto     root = g_partyManager != nullptr ? reinterpret_cast<std::uintptr_t>(field_root::Root()) : 0;  // 0 until installed
     if (weak[1] == 0 || root == 0)
     {
         p.cameraOperator.Clear();

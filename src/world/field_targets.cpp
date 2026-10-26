@@ -11,6 +11,7 @@
 #include "platform/verified_code.h"
 #include "platform/vtable_entry.h"
 #include "players/action_key.h"
+#include "players/field_root.h"
 #include "players/pad_buttons.h"
 #include "players/scopes.h"
 #include "players/seats.h"
@@ -143,7 +144,7 @@ struct TalkPress
 };
 
 // Set at install, then only read.
-std::uintptr_t g_root = 0, g_key = 0;
+std::uintptr_t g_key = 0;
 std::array<std::uintptr_t, 6> g_tables{};  // situation, layout, actor, enemy, treasure, party
 GateFn       g_gate       = nullptr;
 KeyTestFn    g_held       = nullptr;
@@ -199,13 +200,13 @@ std::wstring Name(std::uint64_t bits) noexcept
 
 std::uint8_t* Root() noexcept
 {
-    return static_cast<std::uint8_t*>(ReadPointer(reinterpret_cast<const void*>(g_root), 0));
+    return players::field_root::Root();
 }
 
 /// The chests waiting for their open: {data, count} of the state manager's list.
 bool ChestQueue(const std::uint64_t*& data, std::int32_t& count) noexcept
 {
-    const void* list = ReadPointer(ReadPointer(Root(), facts::kRootStateManager), facts::kStateChestQueue);
+    const void* list = ReadPointer(players::field_root::StateManager(), facts::kStateChestQueue);
     data             = static_cast<const std::uint64_t*>(ReadPointer(list, 0));
     count            = 0;
     return list != nullptr && Read(static_cast<const std::uint8_t*>(list) + 8, count) && count >= 0 && (count == 0 || data != nullptr);
@@ -669,9 +670,7 @@ void TickTalkPresses() noexcept
         return;
     }
     const std::uint64_t now     = GetTickCount64();
-    const auto*         manager = static_cast<const std::uint8_t*>(ReadPointer(Root(), facts::kRootStateManager));
-    std::uint32_t       lock    = 0;
-    const bool          locked  = manager != nullptr && Read(manager + facts::kFieldControlLockMask, lock) && lock != 0;
+    const bool          locked  = players::field_root::ControlLockMask() != 0;
     for (TalkPress& press : g_talkPresses)
     {
         if (press.name == 0)
@@ -978,7 +977,6 @@ bool Install(const platform::GameImage& image) noexcept
         platform::LogWarning(L"field targets: {} is not as the research read it; further players cannot open chests or doors", what);
         return false;
     };
-    const auto root       = image.Rebase(facts::kEndGameRootGlobal, 8);
     const auto key        = image.Rebase(facts::kFieldActionKey, 24);
     const auto pickSite   = image.Rebase(facts::kFieldTargetPickCall, 5);
     const auto pick       = image.Rebase(facts::kFieldTargetPick);
@@ -997,7 +995,7 @@ bool Install(const platform::GameImage& image) noexcept
     {
         return fail(L"the pick's icon calls");
     }
-    if (!root || !key || !pickSite || !pick || !pressSite || !press || !screenSite || !screen || !gate || !held || !pressed || !findRow ||
+    if (!players::field_root::Installed() || !key || !pickSite || !pick || !pressSite || !press || !screenSite || !screen || !gate || !held || !pressed || !findRow ||
         !startsWith || !freeFn || !findEntry)
     {
         return fail(L"a function, call site or global");
@@ -1013,7 +1011,7 @@ bool Install(const platform::GameImage& image) noexcept
         }
         g_tables[i] = *live;
     }
-    g_root = *root, g_key = *key;
+    g_key = *key;
     g_gate       = reinterpret_cast<GateFn>(*gate);
     g_held       = reinterpret_cast<KeyTestFn>(*held);
     g_pressed    = reinterpret_cast<KeyTestFn>(*pressed);

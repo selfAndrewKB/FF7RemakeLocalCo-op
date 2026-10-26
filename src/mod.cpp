@@ -47,6 +47,7 @@
 #include "platform/image.h"
 #include "platform/log.h"
 #include "platform/settings.h"
+#include "players/field_root.h"
 #include "players/own_controller.h"
 #include "players/pad_buttons.h"
 #include "players/pad_presence.h"
@@ -114,7 +115,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.104.0-settings-table";
+constexpr const wchar_t* kVersion = L"0.104.1-field-root";
 static_assert(lss::views::column_rules::kMaxColumns == lss::hud::overlay_pass::kMaxColumns, "the columns the views and the HUD count");  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
@@ -349,6 +350,7 @@ public:
         if (image)
         {
             lss::players::weak_object::Install(*image);  // first: every module that keeps a game object between ticks uses it
+            lss::players::field_root::Install(*image);   // second: the field root, the battle system and the party leader, read by most
         }
         if (!image || !session_.Install(*image))
         {

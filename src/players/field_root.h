@@ -1,0 +1,57 @@
+#pragma once
+
+// The field root and what the modules read off it, in one place (research/RE-lifecycle-world.md §3 and §8,
+// RE-script-release.md): the game's field root object (facts::kEndGameRootGlobal), its state manager (the field
+// control lock's mask and counter live there, as does the on/off table), the root's object that holds the character
+// registry and the field battle state, the battle system global (null outside battle), the party manager and the
+// game's own party leader getter. Before this header each module rebased the same globals and walked the same
+// pointers itself (fourteen copies of the root, seven of the battle system, two of InBattle; cleanup step 3,
+// plan/code-alignment.md B1). Rebased and verified once at install, which runs right after weak_object's and before
+// every module that reads them; a module that needs them checks Installed() at its own install. Every read is
+// guarded and answers null or 0 while the game has no root (the boot, the title's first frames) or no battle; a
+// module keeps gating its own readers and ticks on its own install, as before (this module says nothing about
+// those). The globals are the game's own fixed addresses, so any thread may call these; what they point at belongs
+// to the game thread, as before.
+
+#include <cstdint>
+
+namespace lss::platform {
+class GameImage;
+}
+
+namespace lss::players::field_root {
+
+/// Rebases the globals and finds the leader getter. False (logged) when one is outside the image or not as the
+/// research read it; the readers then answer null and the modules that need them at install refuse theirs.
+bool Install(const platform::GameImage& image) noexcept;
+bool Installed() noexcept;
+
+/// The field root object, or null.
+std::uint8_t* Root() noexcept;
+
+/// The root's state manager (facts::kRootStateManager), or null.
+std::uint8_t* StateManager() noexcept;
+
+/// The field control lock's mask and counter on the state manager; false (outputs untouched) when unread.
+bool ControlLock(std::uint32_t& mask, std::uint32_t& counter) noexcept;
+/// The mask alone (one read): 0 when free or unread.
+std::uint32_t ControlLockMask() noexcept;
+
+/// The root's object holding the character registry and the field battle state (facts::kEndGameRootCharaOwner),
+/// or null.
+std::uint8_t* CharaOwner() noexcept;
+
+/// The field battle state on that object says a battle is on.
+bool InBattle() noexcept;
+
+/// The battle system (`sys`), null outside battle or unread.
+void* BattleSystem() noexcept;
+
+/// PartyManager_GetPartyLeader on the party manager with the game's selector (facts::kLeaderCurrent, kLeaderDefault
+/// or a Blueprint act's own), guarded; null without a manager, when the call raises, or when the game answers none.
+/// (The modules that redirect the game's own calls of the getter keep their own FindFunction: the redirect needs
+/// the expected target. The party manager global itself is still rebased by the modules that read other things
+/// off it, scopes::PartyManagerAddress among them: a later dedup, not B1's.)
+void* PartyLeader(std::uint8_t selector) noexcept;
+
+}  // namespace lss::players::field_root
