@@ -11,6 +11,7 @@
 #include "players/field_root.h"
 #include "players/scopes.h"
 #include "players/seats.h"
+#include "world/actor_place.h"
 #include "world/npc_senses_code.h"
 
 #include <Unreal/NameTypes.hpp>
@@ -126,8 +127,7 @@ std::wstring ObjectName(const void* object) noexcept
 
 bool Location(void* character, float (&out)[3]) noexcept
 {
-    void* root = ReadPointer(character, facts::kActorRootComponent);
-    return root != nullptr && Read(static_cast<const std::uint8_t*>(root) + facts::kComponentWorldLocation, out);
+    return actor_place::ActorLocation(character, out);  // the grid code takes arrays (world/npc_senses_code.h)
 }
 
 using players::field_root::InBattle;  // asked at the tick, on the game thread

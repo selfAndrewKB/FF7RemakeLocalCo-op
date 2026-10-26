@@ -1,0 +1,35 @@
+#include "world/actor_place.h"
+
+#include "engine_facts.h"
+#include "platform/guarded.h"
+
+#include <algorithm>
+#include <cstdint>
+#include <iterator>
+
+namespace lss::world::actor_place {
+
+bool ActorLocation(const void* actor, float (&out)[3]) noexcept
+{
+    const void* root = platform::ReadPointer(actor, facts::kActorRootComponent);
+    float       at[3]{};  // read apart from `out`, so a fault partway leaves `out` untouched
+    if (root == nullptr || !platform::Read(static_cast<const std::uint8_t*>(root) + facts::kComponentWorldLocation, at))
+    {
+        return false;
+    }
+    std::copy(std::begin(at), std::end(at), out);
+    return true;
+}
+
+bool ActorLocation(const void* actor, Vec3& out) noexcept
+{
+    float at[3]{};
+    if (!ActorLocation(actor, at))
+    {
+        return false;
+    }
+    out = {at[0], at[1], at[2]};
+    return true;
+}
+
+}  // namespace lss::world::actor_place

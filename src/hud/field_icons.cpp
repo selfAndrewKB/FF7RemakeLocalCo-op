@@ -8,6 +8,7 @@
 #include "platform/image.h"
 #include "platform/log.h"
 #include "players/weak_object.h"
+#include "world/actor_place.h"
 
 #include <array>
 #include <cstdint>
@@ -269,8 +270,13 @@ std::uint8_t* SlotOf(void* canvas, void* widget) noexcept
 /// The character's root component's world location (the icons' range gate for that character's column).
 bool MemberLocation(void* member, Vector3& out) noexcept
 {
-    void* root = platform::ReadPointer(member, facts::kActorRootComponent);
-    return root != nullptr && Read(static_cast<const std::uint8_t*>(root) + facts::kComponentWorldLocation, out);
+    float at[3]{};
+    if (!world::actor_place::ActorLocation(member, at))
+    {
+        return false;
+    }
+    out = {at[0], at[1], at[2]};
+    return true;
 }
 
 Known* KnownOf(const Call& call) noexcept

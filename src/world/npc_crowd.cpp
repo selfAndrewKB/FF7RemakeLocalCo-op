@@ -8,6 +8,7 @@
 #include "platform/verified_code.h"
 #include "platform/vtable_entry.h"
 #include "players/seats.h"
+#include "world/actor_place.h"
 
 #include <algorithm>
 #include <array>
@@ -60,8 +61,7 @@ bool AnyMember() noexcept
 
 bool MemberLocation(void* member, float (&out)[3]) noexcept
 {
-    void* root = ReadPointer(member, facts::kActorRootComponent);
-    return root != nullptr && Read(static_cast<const std::uint8_t*>(root) + facts::kComponentWorldLocation, out);
+    return actor_place::ActorLocation(member, out);
 }
 
 enum class From

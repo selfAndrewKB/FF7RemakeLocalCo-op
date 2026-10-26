@@ -8,6 +8,7 @@
 #include "platform/log.h"
 #include "platform/verified_code.h"
 #include "players/seats.h"
+#include "world/actor_place.h"
 #include "world/env_set_view.h"
 
 #include <Unreal/NameTypes.hpp>
@@ -201,8 +202,7 @@ char Issue(void* unused, const TraceArg* arg, std::uint64_t r8, std::uint64_t r9
         }
         TraceArg      own{};
         std::int32_t  tags = 0;
-        auto* const   root = static_cast<std::uint8_t*>(ReadPointer(s.member, facts::kActorRootComponent));
-        if (root == nullptr || !Read(root + facts::kComponentWorldLocation, own.location))
+        if (!actor_place::ActorLocation(s.member, own.location))
         {
             s.handle = 0;  // no place to trace from (the game would trace from the origin; the mod skips it)
             continue;

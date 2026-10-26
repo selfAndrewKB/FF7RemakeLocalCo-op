@@ -10,9 +10,8 @@
 #include "platform/verified_code.h"
 #include "players/scopes.h"
 #include "players/seats.h"
+#include "world/actor_place.h"
 
-#include <array>
-#include <cmath>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -94,17 +93,12 @@ const wchar_t* WhoseRest(int seat) noexcept
 /// either cannot be read.
 float FlatMetres(void* a, void* b) noexcept
 {
-    std::array<float, 3> at{}, bt{};
-    void*                aRoot = a != nullptr ? platform::ReadPointer(a, facts::kActorRootComponent) : nullptr;
-    void*                bRoot = b != nullptr ? platform::ReadPointer(b, facts::kActorRootComponent) : nullptr;
-    if (aRoot == nullptr || bRoot == nullptr ||
-        !Read(static_cast<const std::uint8_t*>(aRoot) + facts::kComponentWorldLocation, at) ||
-        !Read(static_cast<const std::uint8_t*>(bRoot) + facts::kComponentWorldLocation, bt))
+    world::actor_place::Vec3 at, bt;
+    if (!world::actor_place::ActorLocation(a, at) || !world::actor_place::ActorLocation(b, bt))
     {
         return -1.0f;
     }
-    const float dx = at[0] - bt[0], dy = at[1] - bt[1];
-    return std::sqrt(dx * dx + dy * dy) / 100.0f;
+    return world::actor_place::FlatDistance(at, bt) / 100.0f;
 }
 
 /// The battle start's member loop, at its fetch of member `type`: null keeps the member where it is (the game's own

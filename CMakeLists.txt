@@ -115,6 +115,7 @@ add_library(LocalSplitScreen SHARED
     src/views/scene_camera_two.cpp
     src/views/monitor_row.cpp
     src/views/window_span.cpp
+    src/world/actor_place.cpp
     src/world/anim_two_views.cpp
     src/world/env_sets_two.cpp
     src/world/npc_crowd.cpp

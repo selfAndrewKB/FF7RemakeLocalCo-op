@@ -14,6 +14,7 @@
 #include "players/scopes.h"
 #include "players/seats.h"
 #include "players/weak_object.h"
+#include "world/actor_place.h"
 #include "world/traversal_action.h"
 
 #include <array>
@@ -596,8 +597,7 @@ void TryStart(void* actor, float dt)
 
 bool LocationOf(const void* actor, float (&out)[3]) noexcept
 {
-    const void* root = ReadPointer(actor, facts::kActorRootComponent);
-    return root != nullptr && platform::CopyGuarded(out, static_cast<const std::uint8_t*>(root) + facts::kComponentWorldLocation, sizeof(out));
+    return actor_place::ActorLocation(actor, out);  // the markers' arithmetic takes arrays
 }
 
 template <std::size_t Cls>

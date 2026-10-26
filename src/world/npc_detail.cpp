@@ -8,6 +8,7 @@
 #include "platform/verified_code.h"
 #include "players/field_root.h"
 #include "players/seats.h"
+#include "world/actor_place.h"
 #include "world/anim_choice.h"
 #include "world/charapop_rule.h"
 
@@ -378,14 +379,12 @@ void Pass(void* cameraOne) noexcept
         {
             continue;
         }
-        void*            actor = ReadPointer(record, facts::kCharaPopRecordActor);
-        void*            rootComponent = ReadPointer(actor, facts::kActorRootComponent);
-        anim_choice::Vec at;
-        if (rootComponent == nullptr ||
-            !Read(static_cast<const std::uint8_t*>(rootComponent) + facts::kComponentWorldLocation, at))
+        float at3[3]{};
+        if (!actor_place::ActorLocation(ReadPointer(record, facts::kCharaPopRecordActor), at3))
         {
             continue;
         }
+        const anim_choice::Vec at{at3[0], at3[1], at3[2]};
         const int          index    = Find(record);
         const std::uint8_t level    = index >= 0 ? g_raised[static_cast<std::size_t>(index)].baseLevel
                                                  : Field<std::uint8_t>(record, facts::kCharaPopRecordLevel);

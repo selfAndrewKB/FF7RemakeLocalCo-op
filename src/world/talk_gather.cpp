@@ -11,6 +11,7 @@
 #include "players/scopes.h"
 #include "players/seats.h"
 #include "players/weak_object.h"
+#include "world/actor_place.h"
 #include "world/field_targets.h"
 
 #include <array>
@@ -39,10 +40,7 @@ constexpr float kFarCm    = 800.0f;  // the game's own "far from the leader" (th
 constexpr float kBesideCm = 120.0f;  // shoulder to shoulder with the presser (the user, 2026-10-26: "Just beside.")
 constexpr float kPi     = 3.14159265358979f;
 
-struct Vec3
-{
-    float x = 0, y = 0, z = 0;
-};
+using actor_place::Vec3;
 
 // Set at install, then only read.
 std::uintptr_t         g_tick = 0, g_agent = 0, g_actions = 0, g_namedLevel = 0;
@@ -64,17 +62,6 @@ void* TickSteps(void* channel, float dt, std::uint8_t* out)
     void* const result = reinterpret_cast<TickFn>(g_tick)(channel, dt, out);
     g_channel          = outer;
     return result;
-}
-
-bool Location(void* actor, Vec3& out) noexcept
-{
-    void* root = actor != nullptr ? platform::ReadPointer(actor, facts::kActorRootComponent) : nullptr;
-    return root != nullptr && Read(static_cast<const std::uint8_t*>(root) + facts::kComponentWorldLocation, out);
-}
-
-float Flat(const Vec3& a, const Vec3& b) noexcept
-{
-    return std::hypot(a.x - b.x, a.y - b.y);
 }
 
 /// The channel's act is the show-menu act (a shop: the opener's alone, world/shop_act.h); false when unread.
@@ -239,11 +226,11 @@ void OnLeaderHanded() noexcept
     void* const cloud  = member != nullptr ? players::field_root::PartyLeader(facts::kLeaderCurrent) : nullptr;
     Vec3        at{}, presser{};
     if (member == nullptr || cloud == nullptr || cloud == member ||
-        !Location(cloud, at) || !Location(member, presser))
+        !actor_place::ActorLocation(cloud, at) || !actor_place::ActorLocation(member, presser))
     {
         return;
     }
-    const float distance = Flat(at, presser);
+    const float distance = actor_place::FlatDistance(at, presser);
     if (distance <= kFarCm)
     {
         ++g_near;
@@ -280,10 +267,10 @@ void OnLeaderHanded() noexcept
     }
     else if (void* const npc = FindNpc(object); npc != nullptr && npc != cloud && npc != member)
     {
-        known   = Location(npc, npcAt);
+        known   = actor_place::ActorLocation(npc, npcAt);
         npcNote = L", facing the NPC (its place from the actor of its name)";
     }
-    const bool withNpc = known && Flat(npcAt, presser) > 1.0f && Flat(npcAt, presser) <= kFarCm;
+    const bool withNpc = known && actor_place::FlatDistance(npcAt, presser) > 1.0f && actor_place::FlatDistance(npcAt, presser) <= kFarCm;
     if (known && !withNpc)
     {
         npcNote = L"; where the NPC stands is not within 8 m of that character, facing that character";
@@ -291,7 +278,7 @@ void OnLeaderHanded() noexcept
     std::array<Vec3, 3> tries{toCloud, Vec3{-toCloud.y, toCloud.x, 0.0f}, Vec3{toCloud.y, -toCloud.x, 0.0f}};
     if (withNpc)
     {
-        const float span = Flat(npcAt, presser);
+        const float span = actor_place::FlatDistance(npcAt, presser);
         const Vec3  toNpc{(npcAt.x - presser.x) / span, (npcAt.y - presser.y) / span, 0.0f};
         const Vec3  left{-toNpc.y, toNpc.x, 0.0f};
         const bool  cloudLeft = left.x * toCloud.x + left.y * toCloud.y >= 0.0f;

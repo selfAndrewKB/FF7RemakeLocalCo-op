@@ -8,6 +8,7 @@
 #include "platform/verified_code.h"
 #include "platform/vtable_entry.h"
 #include "players/seats.h"
+#include "world/actor_place.h"
 #include "world/anim_choice.h"
 
 #include <array>
@@ -67,9 +68,13 @@ std::wstring      g_summary      = L"no summary yet";
 /// The mesh owner's world location (the judge's own fallback measure point).
 bool OwnerLocation(void* mesh, Vec& out) noexcept
 {
-    void* owner = ReadPointer(mesh, facts::kComponentOwner);
-    void* root  = ReadPointer(owner, facts::kActorRootComponent);
-    return root != nullptr && Read(static_cast<const std::uint8_t*>(root) + facts::kComponentWorldLocation, out);
+    float at[3]{};
+    if (!actor_place::ActorLocation(ReadPointer(mesh, facts::kComponentOwner), at))
+    {
+        return false;
+    }
+    out = {at[0], at[1], at[2]};
+    return true;
 }
 
 /// The camera a further player's character was judged from, for the log (`from`: 1 player 1's, seat + 1).

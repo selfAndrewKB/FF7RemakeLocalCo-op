@@ -267,6 +267,8 @@ src/
                             them (0x1425C4F10)
   world/                    the world around every player: fades, animation, NPCs, hiding, the field targets, walk-up
                             moves, talks, shops
+    actor_place             Where an actor stands, read the one way: its root component's world location, guarded (null
+                            actor, null root or a faulting read answer false, `out` untouched)
     anim_choice.h           Which camera the game's animation judge reads for one mesh, and a further player's camera
                             snapshot in the game's own form
     anim_two_views          Characters near any player animate as the game animates them near player 1
