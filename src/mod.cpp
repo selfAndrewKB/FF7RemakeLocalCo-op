@@ -77,6 +77,7 @@
 #include "views/letterbox_patch.h"
 #include "views/display_align.h"
 #include "views/mirror_player.h"
+#include "audio/listener_watch.h"
 #include "views/scene_camera_two.h"
 #include "views/window_span.h"
 #include "world/anim_two_views.h"
@@ -108,7 +109,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.94.0-hook-second-press";
+constexpr const wchar_t* kVersion = L"0.95.0-sound-watch";
 static_assert(lss::views::column_rules::kMaxColumns == lss::hud::overlay_pass::kMaxColumns, "the columns the views and the HUD count");  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
@@ -311,6 +312,7 @@ public:
         lss::world::overlap_fade::Remove();  // any time: its slots pass through and it writes no game state
         lss::world::forced_walk::Remove();   // any time: its slots call the game's first; the members keep the caps last copied
         lss::world::search_arrows::Remove();  // the seats' arrows cleared on the game thread
+        lss::audio::listener_watch::Remove();  // any time: its hooks call the game's first and write no game state
         if (installed_)
         {
             session_.Remove();  // the field-exit calls go back whether or not player 2 is in
@@ -413,6 +415,7 @@ public:
         lss::world::traversal_action::Install(*image);  // optional: without it further players' members take ladders by themselves
         lss::world::traversal_walkup::Install(*image);  // optional: without it further players cannot use walk-up spots
         lss::world::field_targets::Install(*image);  // optional: without it further players cannot open chests or doors
+        lss::audio::listener_watch::Install(*image);  // logging only; fine without
         lss::hud::hud_probe::Install(*image);       // logging only; fine without
         lss::hud::overlay_layout::Install(*image);  // optional: without it each half shows the middle of the HUD
         lss::hud::ui_targets::Install(*image);      // optional: without it both halves sample one UI image
@@ -600,6 +603,7 @@ private:
             lss::world::forced_walk::TickSeat(seat, member);
             lss::world::field_targets::TickSeat(seat, seatIn ? session_.SeatPlayer(seat) : nullptr, member);
             lss::world::search_arrows::TickSeat(seat, seatIn ? session_.SeatPlayer(seat) : nullptr);
+            lss::audio::listener_watch::TickSeat(seat, seatIn ? ControllerOfSeat(seat) : nullptr);
         }
         lss::world::traversal_action::Tick(anyIn);
         lss::world::field_targets::Tick();
@@ -609,6 +613,8 @@ private:
         lss::world::npc_senses::Tick(anyIn ? PawnOf(0) : nullptr);
         lss::world::npc_detail::Tick(anyIn ? CameraManagerOf(0) : nullptr);
         lss::world::env_sets_two::Tick();
+        lss::audio::listener_watch::Tick(std::min(1 + session_.Count() + lss::views::mirror_player::Count(),
+                                                  lss::hud::overlay_pass::kMaxColumns));
     }
 
     /// The HUD layout follows the split and each column's view (hud/overlay_pass.h: column 0 is player 1's, the seats'

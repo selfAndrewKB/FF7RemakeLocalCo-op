@@ -124,6 +124,7 @@ add_library(LocalSplitScreen SHARED
     src/world/target_icons.cpp
     src/world/traversal_action.cpp
     src/world/traversal_walkup.cpp
+    src/audio/listener_watch.cpp
 )
 
 # Includes are rooted at src/ so every #include names its module ("platform/log.h").
@@ -401,6 +402,13 @@ add_executable(ArrowTimersTests
 target_include_directories(ArrowTimersTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_compile_features(ArrowTimersTests PRIVATE cxx_std_20)
 add_test(NAME arrow_timers COMMAND ArrowTimersTests)
+
+add_executable(ListenerRulesTests
+    tests/listener_rules_test.cpp
+)
+target_include_directories(ListenerRulesTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(ListenerRulesTests PRIVATE cxx_std_20)
+add_test(NAME listener_rules COMMAND ListenerRulesTests)
 
 add_executable(ShadowCodeTests
     tests/shadow_code_test.cpp
