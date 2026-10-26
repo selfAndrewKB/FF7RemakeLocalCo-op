@@ -46,6 +46,12 @@ on its own view, and its member fills ATB and staggers at the player's rates; ne
 member. A virtual pad 2 for unattended tests: `python ../tools/pad2.py serve`, then `press A`, `hold RB --ms 2000`,
 `stick L 0 1`.
 
+In the field each further player opens chests, picks up items, opens doors, uses the grappling hook and talks to NPCs
+(quest NPCs and shopkeepers included) with their own pad and prompt. A talk plays as the game scripts it (on every
+view, the whole game held). A shop a further player opens zooms on that player's view and faces that player's
+character; while any shop is up every pad drives it, as in the pause menu. Examine points and object events stay
+player 1's.
+
 ## Building
 
 Its own CMake root; builds RE-UE4SS from `../../Rebirth/_tools/UE4SS_CppMods/RE-UE4SS` (override with `-DUE4SS_ROOT`).
@@ -141,6 +147,8 @@ src/
     env_sets_two          player 2's view hides what the area hides under player 2 (the game's area trace and read
                           run again for player 2; the engine's per-player hidden list); the world stays player 1's
     env_set_view.h        player 2's set kept and paced, the list edit (pure, host-tested)
+    shop_act              a shop a further player opens is theirs: the show-menu act's start, update, finish and end
+                          in the opener's scopes (one call redirect, three vtable slots); its camera on the opener's view
   views/
     window_span           the game window across a row of equal monitors, one full view per player: the game's own
                           resolution request for the row, then the engine's window reshape; held, put back at the leave;
@@ -161,6 +169,9 @@ src/
                           picture (its camera manager takes every slot of player 1's before each update); a mirror's
                           column is its place in the engine's list, its controller id the lowest free one; player 2's
                           join takes a column, the mirrors stay through loading screens
+  battle/
+    battle_warps          who the game warps at a battle's start and end ([Battle] battle-warps; the game's own "no
+                          actor" and "close enough" answers at three calls)
   battle/ (the coin)
     enemy_coin            enemies share their attention between the humans: a coin per enemy decision at the game's
                           own decision gate, the script natives answered from it, both humans "the player" for the

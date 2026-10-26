@@ -19,6 +19,7 @@ namespace {
 const std::uint8_t* const* g_gameMode = nullptr;  // AEndGameMode**
 const std::uint8_t* const* g_root     = nullptr;  // the field root**
 void (*g_pauseMenuClosed)(void* context, void* frame, std::uint8_t* result) = nullptr;  // the game's own test
+const std::uint8_t* const* g_shopSlot = nullptr;  // EndUISystem[44], the shop UI (its "a shop is up" byte)
 Snapshot                   g_last;
 bool                       g_logged = false;
 
@@ -109,6 +110,10 @@ bool Install(const platform::GameImage& image) noexcept
     }
     g_gameMode = reinterpret_cast<const std::uint8_t* const*>(*gameMode);
     g_root     = reinterpret_cast<const std::uint8_t* const*>(*root);
+    if (const auto shop = image.Rebase(facts::kShopSlotGlobal, sizeof(void*)))
+    {
+        g_shopSlot = reinterpret_cast<const std::uint8_t* const*>(*shop);
+    }
     if (const auto closed = platform::FindFunction(image, facts::kIsPauseMenuClosed))
     {
         g_pauseMenuClosed = reinterpret_cast<decltype(g_pauseMenuClosed)>(*closed);
@@ -201,6 +206,14 @@ bool MenuOwnsInput() noexcept
     if (g_gameMode != nullptr && platform::CopyGuarded(&gameMode, g_gameMode, sizeof(gameMode)) &&
         ReadAt(gameMode, facts::kGameModeGameState, gameState) && ReadAt(gameState, facts::kGameStateState, state) &&
         (state == 7 || state == 8 || state == 10))
+    {
+        return true;
+    }
+    // A shop runs in the field state (6): its UI's own "a shop is up" byte (RE-shop-two.md §3).
+    const std::uint8_t* shop = nullptr;
+    std::uint8_t        up   = 0;
+    if (g_shopSlot != nullptr && platform::CopyGuarded(&shop, g_shopSlot, sizeof(shop)) && shop != nullptr &&
+        ReadAt(shop, facts::kShopUp, up) && up != 0)
     {
         return true;
     }

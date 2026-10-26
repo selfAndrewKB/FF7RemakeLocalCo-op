@@ -7,6 +7,7 @@
 #include "platform/image.h"
 #include "platform/log.h"
 #include "platform/verified_code.h"
+#include "world/shop_act.h"
 #include "world/traversal_action.h"
 
 #include <array>
@@ -104,6 +105,7 @@ struct SeatCopy
     std::uint32_t mirrored  = 0;        // bit i = slot i of the seat's manager set by the copy
     bool          engaged   = false;
     bool          cutBitStuck = false;  // the seat's manager still carried the bit at its next update (logged once)
+    bool          ownScene    = false;  // the seat's own shop camera runs (world/shop_act.h): no copy
     std::uint32_t edgesOn = 0, edgesOff = 0, poses = 0, cuts = 0, resets = 0, releases = 0;
 };
 
@@ -695,6 +697,26 @@ void BeforeUpdateCamera(void* managerOne, int seat, void* manager) noexcept
         return;
     }
     SeatCopy& s = g_seats[static_cast<std::size_t>(seat)];
+    if (world::shop_act::OwnsScene(seat))
+    {
+        // The seat's own shop: its act sets the shop camera on the seat's manager (world/shop_act.h); player 1's slots
+        // are not copied over it.
+        if (!s.ownScene)
+        {
+            s.ownScene = true;
+            platform::LogDebug(L"scene camera: {}'s own shop camera; player 1's scene slots are not copied to its view",
+                               players::SeatName(seat));
+        }
+        // The shop's own camera slot (14, written by its act every frame and switched off by its finish) is the act's
+        // on this manager now: never switched off as a mirrored one. Any other mirrored slot is released.
+        s.mirrored &= ~(1u << 14);
+        if (s.mirrored != 0)
+        {
+            Release(s, manager);
+        }
+        return;
+    }
+    s.ownScene = false;
     if (!s.cutBitStuck && s.mirrored != 0 && Read(Bytes(manager) + facts::kCameraManagerCutFlags, flags) &&
         (flags & facts::kCameraManagerCutBit) != 0 && !g_cutNoted)
     {

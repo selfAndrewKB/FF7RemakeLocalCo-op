@@ -14,12 +14,18 @@
 //   - The press's FieldAction read is inline in its caller (a tick of thirty systems that cannot run twice), so for a
 //     further player the mod makes it with the game's own gate and getters inside the pad's button scope and writes the
 //     three bytes the game writes (held, pressed, the latch cleared on release): the one rule restated here.
-//   - Only chests and ground items (an ObjectTreasure row), doors (Door_, HeavyDoor_), curtains (Curtain_, an
-//     experiment), grappling-hook points (HookShot_) and the member's own swing (TarzanJump_ and its tag) are pressed,
-//     all but chests while the member's field actions run as the player's (world/traversal_action.h). Talk, events and
-//     object events stay player 1's: for the player's pick every other active target is marked disabled (the entry's
-//     own byte, the pick's rejection test; put back after, unless the run applied the game's own pending write to it),
-//     so the game gives the player neither an icon nor a prompt for them.
+//   - Only chests and ground items (an ObjectTreasure row), NPCs (an ObjectActor row: quest NPCs, shopkeepers; their
+//     talk state's trigger, research/RE-talk-two.md), doors (Door_, HeavyDoor_), curtains (Curtain_, an experiment),
+//     grappling-hook points (HookShot_) and the member's own swing (TarzanJump_ and its tag) are pressed, the doors,
+//     curtains, hooks and swings while the member's field actions run as the player's (world/traversal_action.h).
+//     Situations, examine points, push-button and battle-start objects, enemy and party objects stay player 1's: for
+//     the player's pick every other active target is marked disabled (the entry's own byte, the pick's rejection test;
+//     put back after, unless the run applied the game's own pending write to it), so the game gives the player neither
+//     an icon nor a prompt for them.
+//   - An NPC's talk then runs as the game scripts it (its speaker, its camera on every view, the field lock and hand).
+//     The press is noted (the seat and the NPC) for the acts the NPC's talk state queues: a shop act claims it
+//     (world/shop_act.h). A note no act claims lapses after 10 s with no field lock held (a running talk holds it);
+//     player 1's own press of the same NPC (also in the same frame), the player's leave and a world change drop it.
 //   - While the player's member runs a field action, the player's pick sees the game's "no new action" switch on as the
 //     game's leader's action sets it (world/traversal_action.h NoActionScope): every target dimmed, nothing to press, so
 //     a second press cannot restart the running action (a restarted grappling hook loses its animations). Player 1's own
@@ -60,5 +66,13 @@ void Remove() noexcept;
 
 /// The `field.targets` reading.
 std::wstring Reading() noexcept;
+
+/// The seat whose NPC press named `object` (an act channel's object); 0 if none (player 1's, or the note lapsed).
+/// Claim takes every note of that object. Game thread.
+int PeekTalkPress(std::uint64_t object) noexcept;
+int ClaimTalkPress(std::uint64_t object) noexcept;
+
+/// An FName's text for a log line (the name's number when it cannot be read).
+std::wstring NameOf(std::uint64_t name) noexcept;
 
 }  // namespace lss::world::field_targets

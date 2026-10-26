@@ -92,6 +92,7 @@
 #include "world/overlap_fade.h"
 #include "world/party_fade.h"
 #include "world/field_targets.h"
+#include "world/shop_act.h"
 #include "world/traversal_action.h"
 #include "world/traversal_walkup.h"
 
@@ -110,7 +111,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.99.0-battle-options";
+constexpr const wchar_t* kVersion = L"0.100.0-talk-and-shops";
 static_assert(lss::views::column_rules::kMaxColumns == lss::hud::overlay_pass::kMaxColumns, "the columns the views and the HUD count");  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
@@ -324,6 +325,7 @@ public:
         if (installed_ && session_.Count() == 0)
         {
             lss::players::player_two_camera::RemoveInputTick();
+            lss::world::shop_act::Remove();       // the consumer of the presses first
             lss::world::field_targets::Remove();  // further players' presses and chest opens back to the game's
             lss::world::traversal_walkup::Remove();  // the seats' triggers no longer reach the dispatcher
             lss::world::traversal_action::Remove();  // the field-action tick back on any thread
@@ -421,7 +423,10 @@ public:
         lss::world::env_sets_two::Install(*image);    // optional: without it only player 1's ground hides the area's actors
         lss::world::traversal_action::Install(*image);  // optional: without it further players' members take ladders by themselves
         lss::world::traversal_walkup::Install(*image);  // optional: without it further players cannot use walk-up spots
-        lss::world::field_targets::Install(*image);  // optional: without it further players cannot open chests or doors
+        if (lss::world::field_targets::Install(*image))  // optional: without it further players cannot open chests or doors
+        {
+            lss::world::shop_act::Install(*image);  // optional: without it a further player's shop is player 1's (camera, facing)
+        }
         lss::audio::listeners::Install(*image);  // optional: without it, every sound is player 1's
         lss::hud::hud_probe::Install(*image);       // logging only; fine without
         lss::hud::overlay_layout::Install(*image);  // optional: without it each half shows the middle of the HUD

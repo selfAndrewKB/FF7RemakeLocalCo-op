@@ -2412,6 +2412,35 @@ inline constexpr std::uint32_t kTargetsActiveHead = 0xBC50, kTargetsItemNext = 0
 /// flag at +0xBD4C, the entry named by +0xBD44 (inside the per-player copy), the value (0 or 1) at +0xBD54. The pick
 /// writes that value into the named entry's byte and clears the flag (the name too when the value is 0).
 inline constexpr std::uint32_t kTargetsPendingEnable = 0xBD4C, kTargetsPendingName = 0xBD44;
+
+// --- The show-menu act (type 43) and the shop UI (RE-shop-two.md §2.1, §8) ----------------------------------------
+// The act factory creates it with FEndActionPERelativeCamera__Ctor(runner, &act id, type, channel, flag) at one call
+// (E8, inside block 0x140DABED0), which runs its Begin; its vtable (this act's alone) holds the dtor (+0x00,
+// (runner, free)), OnFinish (+0x10, (runner)) and Update (+0x20, (runner, float dt)). The act row's kind is its
+// IntegerArgumentList[0] (row +0xD8 data, +0xE0 count): 1 = a shop. The action rows: g_DT_Action, a set of three
+// tables (DataTableSet3_FindRowByName). EndUISystem[44] is the shop UI; its byte +0x370 is "a shop is up" (the act's
+// own end test).
+inline constexpr std::uintptr_t kShowMenuActCtorCall = 0x140DABED3;
+inline constexpr std::array<std::uint8_t, 16> kShowMenuActCtorEntry{
+    0x40, 0x53, 0x48, 0x83, 0xEC, 0x30, 0x0F, 0xB6, 0x44, 0x24, 0x60, 0x48, 0x8B, 0xD9, 0x88, 0x44};
+inline constexpr platform::FunctionFact kShowMenuActCtor{L"FEndActionPERelativeCamera__Ctor", 0x140DF5E40, kShowMenuActCtorEntry};
+inline constexpr std::array<std::uint8_t, 16> kShowMenuActDtorEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x08, 0x57, 0x48, 0x83, 0xEC, 0x20, 0x48, 0x8D, 0x05, 0x0F, 0xBB, 0xD9};
+inline constexpr std::array<std::uint8_t, 16> kShowMenuActFinishEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x20, 0x56, 0x57, 0x41, 0x56, 0x48, 0x83, 0xEC, 0x20, 0x4C, 0x8B, 0xF1};
+inline constexpr std::array<std::uint8_t, 16> kShowMenuActUpdateEntry{
+    0x48, 0x8B, 0xC4, 0x48, 0x89, 0x58, 0x18, 0x48, 0x89, 0x70, 0x20, 0x55, 0x57, 0x41, 0x54, 0x41};
+inline constexpr std::uintptr_t kShowMenuActVtable = 0x144B919C0;
+inline constexpr platform::SlotFact kShowMenuActDtor{L"the show-menu act's destructor", kShowMenuActVtable + 0x00,
+                                                     {L"FEndActionPERelativeCamera__Dtor", 0x140DF5EA0, kShowMenuActDtorEntry}};
+inline constexpr platform::SlotFact kShowMenuActFinish{L"the show-menu act's OnFinish", kShowMenuActVtable + 0x10,
+                                                       {L"FEndActionPERelativeCamera__OnFinish", 0x140DF5F50, kShowMenuActFinishEntry}};
+inline constexpr platform::SlotFact kShowMenuActUpdate{L"the show-menu act's Update", kShowMenuActVtable + 0x20,
+                                                       {L"FEndActionPERelativeCamera__Update", 0x140DF6080, kShowMenuActUpdateEntry}};
+inline constexpr std::uintptr_t kTableAction       = 0x145839B80;  // g_DT_Action, three tables
+inline constexpr std::uint32_t  kActionRowIntegers = 0xD8;         // FEndDataTableAction::IntegerArgumentList (TArray<int32>)
+inline constexpr std::uintptr_t kShopSlotGlobal    = 0x1459CAAD0;  // EndUISystem[44] (kEndUISystemSlots + 44 * 8)
+inline constexpr std::uint32_t  kShopUp            = 0x370;        // the shop UI's "a shop is up" byte
 /// The field target icon manager (EndUISystem[15], one for the game's life): its hold gauge's last ratio (+0x54, one
 /// float for every widget: the "gauge full" sound plays when a ratio reaches 1 from below it); its icon map's element
 /// count (+0x08) and free slots (+0x34): the live icons are their difference.
