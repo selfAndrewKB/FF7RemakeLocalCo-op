@@ -8,7 +8,8 @@
 // change is kept as small as the call redirect's:
 //   - the function's first instruction must be exactly the bytes the research read, one instruction
 //     of at least a jump's length, position-independent (no RIP-relative operand, no branch), inside
-//     one aligned 16-byte block, and no branch in the game may land inside it after its first byte;
+//     one aligned 16-byte block, and no branch in the game may land inside it after its first byte
+//     (InstallWithoutOriginal drops the position-independence: that instruction is never replayed);
 //   - that instruction is replaced by `jmp rel32` in one atomic 16-byte store, so a thread entering
 //     the function reaches either the game's code or ours, never a mix;
 //   - the jump lands on a thunk near the game image, a single `jmp [rip+0]` to the replacement, which
@@ -65,19 +66,26 @@ public:
     bool InstallAtSecondInstruction(std::uintptr_t entry, std::span<const std::uint8_t> first,
                                     std::span<const std::uint8_t> second, std::uintptr_t replacement) noexcept;
 
+    /// The same redirect for a replacement that never calls the game's function, which then needs no
+    /// trampoline: `first` may read relative to its own address (it is never run elsewhere), and
+    /// Original() stays 0. For a function the replacement answers in full (audio/listeners.h: SEAD's
+    /// listener getter, `mov rax, [rip+X]; ret`). The other conditions are Install's.
+    bool InstallWithoutOriginal(std::uintptr_t entry, std::span<const std::uint8_t> first,
+                                std::uintptr_t replacement) noexcept;
+
     /// Puts the original instruction back, if this object replaced it and it is still ours.
     /// Returns false if it was changed after us (it is then left alone).
     bool Restore() noexcept;
 
     bool IsInstalled() const noexcept { return block_ != 0; }
 
-    /// The game's function, for the replacement to call (0 before Install; kept after Restore: a
-    /// call already inside the replacement may still use it).
+    /// The game's function, for the replacement to call (0 before Install and after
+    /// InstallWithoutOriginal; kept after Restore: a call already inside the replacement may still use it).
     std::uintptr_t Original() const noexcept { return trampoline_; }
 
 private:
     bool Place(std::uintptr_t entry, std::span<const std::uint8_t> copied, std::size_t siteOffset,
-               std::uintptr_t replacement) noexcept;
+               std::uintptr_t replacement, bool replay = true) noexcept;
 
     std::uintptr_t block_       = 0;  // the aligned 16-byte block holding the replaced instruction
     std::uintptr_t trampoline_  = 0;  // the replaced instruction(s), then a jump back

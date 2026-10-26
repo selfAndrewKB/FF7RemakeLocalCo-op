@@ -124,7 +124,7 @@ add_library(LocalSplitScreen SHARED
     src/world/target_icons.cpp
     src/world/traversal_action.cpp
     src/world/traversal_walkup.cpp
-    src/audio/listener_watch.cpp
+    src/audio/listeners.cpp
 )
 
 # Includes are rooted at src/ so every #include names its module ("platform/log.h").

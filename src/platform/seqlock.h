@@ -2,7 +2,7 @@
 
 // N floats one thread writes and others read (Boehm's seqlock): the writer bumps the version to odd, stores the
 // values, bumps it to even; a reader retries while it sees an odd version or a version that changed under it. No
-// locks, so it serves the audio and SEAD threads (audio/listener_watch). Taken from Rebirth's platform/seqlock.h
+// locks, so it serves the audio and SEAD threads (audio/listeners). Taken from Rebirth's platform/seqlock.h
 // (cleanup-2026-10) as is. Tested on the host (tests/listener_rules_test.cpp).
 
 #include <array>

@@ -1,10 +1,13 @@
-// Host-side tests for the sound watch's decisions (audio/listener_rules.h) and the seqlock it reads its threads'
+// Host-side tests for the listeners' decisions (audio/listener_rules.h) and the seqlock it reads its threads'
 // values through (platform/seqlock.h, taken from Rebirth with its tests). Run without the game.
 
 #include "audio/listener_rules.h"
 #include "platform/seqlock.h"
 
+#include <array>
+#include <cmath>
 #include <cstdio>
+#include <limits>
 
 namespace lss::test {
 inline int g_failures = 0;
@@ -62,6 +65,95 @@ void ClipIsBeyondTheDistance()
     EXPECT(!rules::BeyondClip({3, 4, 0}, {0, 0, 0}, 5.0f));
 }
 
+bool Near(const rules::Vec3& a, const rules::Vec3& b)
+{
+    return rules::Distance(a, b) < 1e-5f;
+}
+
+void RotationGivesTheSeadAxes()
+{
+    std::puts("listener_rules: the push's front and up from an engine rotation");
+    const float identity[4] = {0.0f, 0.0f, 0.0f, 1.0f};
+    EXPECT(Near(rules::SeadFront(identity), {1, 0, 0}));
+    EXPECT(Near(rules::SeadUp(identity), {0, 0, -1}));
+    const float s = std::sqrt(0.5f);
+    const float yaw90[4] = {0.0f, 0.0f, s, s};  // a quarter turn about up: front x -> y
+    EXPECT(Near(rules::SeadFront(yaw90), {0, 1, 0}));
+    EXPECT(Near(rules::SeadUp(yaw90), {0, 0, -1}));
+}
+
+void NearestTakesTheClosestThenHolds()
+{
+    std::puts("listener_rules: a new sound takes the nearest listener; ties go to player 1");
+    const float inf  = std::numeric_limits<float>::infinity();
+    const float nan  = std::numeric_limits<float>::quiet_NaN();
+    const float wide = 100000.0f;  // a range every listener is within
+    EXPECT(rules::ChooseNearest(rules::kNoChoice, std::array{500.0f, 200.0f, 900.0f}, wide) == 1);
+    EXPECT(rules::ChooseNearest(rules::kNoChoice, std::array{300.0f, 300.0f, 300.0f}, wide) == 0);
+    EXPECT(rules::ChooseNearest(rules::kNoChoice, std::array{500.0f, inf, 100.0f}, wide) == 2);
+
+    std::puts("listener_rules: a chosen listener within range is kept until another is 20 % nearer");
+    EXPECT(rules::ChooseNearest(0, std::array{500.0f, 450.0f, inf}, wide) == 0);   // 450 is not below 400
+    EXPECT(rules::ChooseNearest(0, std::array{500.0f, 390.0f, inf}, wide) == 1);
+    EXPECT(rules::ChooseNearest(1, std::array{390.0f, 450.0f, inf}, wide) == 1);   // back to player 1 needs below 360
+    EXPECT(rules::ChooseNearest(1, std::array{350.0f, 450.0f, inf}, wide) == 0);
+    EXPECT(rules::ChooseNearest(2, std::array{900.0f, 100.0f, 110.0f}, wide) == 2);  // between two seats: held
+    EXPECT(rules::ChooseNearest(0, std::array{500.0f, 450.0f, inf}, 0.0f) == 1);  // no range known yet: the nearest
+
+    std::puts("listener_rules: a chosen listener out of the sound's range is left for the nearest");
+    EXPECT(rules::ChooseNearest(1, std::array{900.0f, 1050.0f, inf}, 1000.0f) == 0);  // 900 is not below 840, yet 1050 > 1000
+    EXPECT(rules::ChooseNearest(1, std::array{900.0f, 1000.0f, inf}, 1000.0f) == 0);  // at the range is out (strict)
+    EXPECT(rules::ChooseNearest(1, std::array{900.0f, 990.0f, inf}, 1000.0f) == 1);   // within: held
+    EXPECT(rules::ChooseNearest(2, std::array{3000.0f, 2500.0f, 2600.0f}, 1000.0f) == 1);  // nobody hears it: the nearest
+
+    std::puts("listener_rules: a listener that goes off is left at once; none on is player 1's");
+    EXPECT(rules::ChooseNearest(2, std::array{900.0f, 800.0f, inf}, wide) == 1);
+    EXPECT(rules::ChooseNearest(1, std::array{900.0f, nan, inf}, wide) == 0);
+    EXPECT(rules::ChooseNearest(1, std::array{nan, nan, nan}, wide) == 0);
+    EXPECT(rules::ChooseNearest(7, std::array{900.0f, 100.0f}, wide) == 1);  // a stale index outside the list
+}
+
+void ChoicesLastFromTestToUpdateAndLapse()
+{
+    std::puts("listener_rules: a choice is the update's in its frame, held into the next, gone after");
+    rules::ChoiceTable<4, 4> table;
+    int a = 0, b = 0;
+    EXPECT(table.Held(&a, 10) == rules::kNoChoice);
+    EXPECT(table.Record(&a, 2, 10));
+    EXPECT(table.ChosenIn(&a, 10) == 2);
+    EXPECT(table.Held(&a, 11) == 2);
+    EXPECT(table.ChosenIn(&a, 11) == rules::kNoChoice);  // its test has not run in frame 11
+    EXPECT(table.Held(&a, 12) == rules::kNoChoice);      // not refreshed in frame 11: lapsed
+    EXPECT(table.Held(&b, 10) == rules::kNoChoice);
+    EXPECT(table.Record(&b, 1, 20));
+    EXPECT(table.Held(&b, 21) == 1);  // a new sound at a freed sound's address inherits its hold (the range rule decides)
+
+    std::puts("listener_rules: sounds that share a home slot keep their own choices");
+    rules::ChoiceTable<1, 2> two;  // two entries, each sound's probe covers both
+    int c = 0;
+    EXPECT(two.Record(&a, 1, 5));
+    EXPECT(two.Record(&b, 2, 5));
+    EXPECT(!two.Record(&c, 0, 5));  // no free entry: refused, the others' choices kept
+    EXPECT(two.ChosenIn(&a, 5) == 1 && two.ChosenIn(&b, 5) == 2);
+    EXPECT(two.ChosenIn(&c, 5) == rules::kNoChoice);
+    EXPECT(two.Record(&c, 2, 7));   // a's and b's lapsed: c takes one
+    EXPECT(two.ChosenIn(&c, 7) == 2);
+    EXPECT(two.Held(&a, 7) == rules::kNoChoice);
+
+    rules::ChoiceTable<4, 16> many;
+    std::array<int, 16> sounds{};
+    bool all = true;
+    for (std::size_t i = 0; i < sounds.size(); ++i)
+    {
+        all = many.Record(&sounds[i], static_cast<int>(i % 3), 1) && all;
+    }
+    EXPECT(all);
+    for (std::size_t i = 0; i < sounds.size(); ++i)
+    {
+        EXPECT(many.ChosenIn(&sounds[i], 1) == static_cast<int>(i % 3));
+    }
+}
+
 void SeqlockReadsWholePublishes()
 {
     std::puts("seqlock: nothing before the first publish; then the latest values, whole");
@@ -98,6 +190,9 @@ int main()
     DistanceIsEuclidean();
     AutoSeSpaceSwapsYAndZInMetres();
     ClipIsBeyondTheDistance();
+    RotationGivesTheSeadAxes();
+    NearestTakesTheClosestThenHolds();
+    ChoicesLastFromTestToUpdateAndLapse();
     SeqlockReadsWholePublishes();
     SeqlockNeverReadsMidPublish();
     return lss::test::Report();

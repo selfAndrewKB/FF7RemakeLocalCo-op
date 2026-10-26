@@ -2433,11 +2433,40 @@ inline constexpr platform::FunctionFact kFindTargetEntry{L"FieldTargetMgr_FindEn
 // --- Sound: SEAD's one listener and the footstep gates (research/RE-audio-listener.md, pass S-RMK-AUDIO) -----------
 // SEAD (Square Enix's middleware) measures every placed or moving sound from one listener object, which the SEAD audio
 // device sets each audio frame from the engine's listener [0] only (player 1's view). Positions are UE world cm, axes
-// as UE's (the push copies the translation as is). audio/listener_watch reads it all and changes nothing.
+// as UE's (the push copies the translation as is). audio/listeners measures each sound from the nearest player's
+// listener (RE §10: the build checks, 2026-10-26).
 
-/// The SEAD listener singleton (SQEX::Sd::Lay::Listener*, 0xA0 bytes): its position at +0x30.
+/// The SEAD listener singleton (SQEX::Sd::Lay::Listener*, 0xA0 bytes): its position at +0x30. The object holds its
+/// vtable (one slot, the deleting destructor), padding at +0x08 and values only (no pointer, no count): a byte copy is
+/// a listener of its own while its vtable is never called.
 inline constexpr std::uintptr_t kSeadListenerGlobal = 0x1457E8F68;
 inline constexpr std::uint32_t  kSeadListenerPosition = 0x30;
+inline constexpr std::size_t    kSeadListenerSize     = 0xA0;
+/// SeadLayListener_Get: `mov rax, [g_SeadLayListener]` (7 bytes, RIP-relative), `ret`, int3 padding to the next 16;
+/// every reader of the listener calls it (21 calls in 17 functions), nothing enters it after its first byte.
+inline constexpr std::array<std::uint8_t, 16> kSeadListenerGetEntry{
+    0x48, 0x8B, 0x05, 0x61, 0x2A, 0x81, 0x01, 0xC3, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC};
+inline constexpr platform::FunctionFact kSeadListenerGet{L"SeadLayListener_Get", 0x143FD6500, kSeadListenerGetEntry};
+inline constexpr std::size_t           kSeadListenerGetFirst = 7;
+/// SeadLayListener_Set (int(this, px, py, pz, fx, fy, fz, ux, uy, uz): position in xmm1-xmm3, the rest on the stack):
+/// writes this+0x20 and +0x30 (the position), +0x40 front, +0x50 up, and the matrix +0x60 when it is finite; 0, or -1
+/// (the matrix not finite, kept; the rest already written). SeadLayListener_UpdateVelocity (int(this)): +0x10 = +0x30 -
+/// +0x20, then +0x20 = +0x30. Only `this` is written by either.
+inline constexpr std::array<std::uint8_t, 16> kSeadListenerSetEntry{
+    0x48, 0x8B, 0xC4, 0x48, 0x89, 0x58, 0x10, 0x48, 0x89, 0x68, 0x18, 0x48, 0x89, 0x70, 0x20, 0x57};
+inline constexpr platform::FunctionFact kSeadListenerSet{L"SeadLayListener_Set", 0x143FDD640, kSeadListenerSetEntry};
+inline constexpr std::array<std::uint8_t, 16> kSeadListenerUpdateVelocityEntry{
+    0x40, 0x53, 0x48, 0x83, 0xEC, 0x70, 0x48, 0x8B, 0x05, 0x7B, 0x32, 0x3C, 0x01, 0x48, 0x33, 0xC4};
+inline constexpr platform::FunctionFact kSeadListenerUpdateVelocity{L"SeadLayListener_UpdateVelocity", 0x143FDD840,
+                                                                    kSeadListenerUpdateVelocityEntry};
+/// SEAD's frame (SEAD_Lay_ThreadLoop_SeadLayUpdate, its own thread, every 32 ms): the commands (the listener push's Set
+/// among them), then this call of the singleton's velocity update (no argument read; its return ignored), then the
+/// sounds' tests in one loop and their updates in a second.
+inline constexpr std::array<std::uint8_t, 16> kSeadListenerSpeedOfSingletonEntry{
+    0x48, 0x83, 0xEC, 0x28, 0x48, 0x8B, 0x0D, 0xCD, 0x29, 0x81, 0x01, 0x0F, 0x28, 0xC8, 0xE8, 0x9D};
+inline constexpr platform::FunctionFact kSeadListenerSpeedOfSingleton{L"SeadLayListener_UpdateVelocityOfSingleton",
+                                                                      0x143FD6590, kSeadListenerSpeedOfSingletonEntry};
+inline constexpr std::uintptr_t kSeadListenerSpeedCall = 0x143F9DD0B;  // E8, in the SEAD frame loop
 /// The SEAD audio device's listener push (u64(device), vt+0xF0 of vt_SeadAudioDevice 0x144F75D98; audio thread
 /// [ASSUMPTION]): only for the engine's main device; copies Listeners[0] (translation, front = Q.X, up = -(Q.Z)).
 inline constexpr std::array<std::uint8_t, 16> kSeadPushListenerEntry{
@@ -2453,6 +2482,7 @@ inline constexpr std::uint32_t kAudioDeviceListenerStride   = 0xB0;
 inline constexpr std::uint32_t kAudioDeviceGameListeners    = 0x88;
 inline constexpr std::uint32_t kAudioDeviceGameListenersNum = 0x90;
 inline constexpr std::uint32_t kAudioDeviceGameListenerStride = 0x30;
+inline constexpr std::uint32_t kTransformRotation           = 0x00;  // quaternion x, y, z, w
 inline constexpr std::uint32_t kTransformTranslation        = 0x10;
 /// The SEAD device's copy of what its push last sent (position, 3 floats; the push queues it as a SEAD command, which
 /// SEAD's thread applies to the listener later), and its override byte (set: the push sends the override transform,
@@ -2488,6 +2518,22 @@ inline constexpr platform::SlotFact kSeadPolygonAudibleSlot{L"SEAD polygon sound
                                                             kSeadPolygonAudible};
 inline constexpr platform::SlotFact kSeadSectorAudibleSlot{L"SEAD cylindrical sector sound: audibility (slot 42)",
                                                            0x1441FC470, kSeadPolygonAudible};
+/// The sound classes' updates (int(object, float seconds in xmm1), vt+0x58; SEAD's thread, the frame's second loop,
+/// return ignored): the moving sound's doppler, which ends in the base update; the base update runs Calc3D (gain and
+/// pan from the listener) and starts or stops the voice. Each reads the listener through the getter.
+inline constexpr std::array<std::uint8_t, 16> kSeadDynamicUpdateEntry{
+    0x40, 0x53, 0x48, 0x83, 0xEC, 0x40, 0x80, 0xB9, 0xEC, 0x01, 0x00, 0x00, 0x00, 0x48, 0x8B, 0xD9};
+inline constexpr std::array<std::uint8_t, 16> kSeadBaseUpdateEntry{
+    0x40, 0x55, 0x53, 0x56, 0x57, 0x48, 0x8D, 0xAC, 0x24, 0xB8, 0xFE, 0xFF, 0xFF, 0x48, 0x81, 0xEC};
+inline constexpr platform::FunctionFact kSeadDynamicUpdate{L"SEAD_LayDynamic_Update_Doppler", 0x143FE0780,
+                                                           kSeadDynamicUpdateEntry};
+inline constexpr platform::FunctionFact kSeadBaseUpdate{L"SEAD_LayObj_Update_Base", 0x143FDEEA0, kSeadBaseUpdateEntry};
+inline constexpr platform::SlotFact kSeadDynamicUpdateSlot{L"SEAD moving sound: update (slot 11)", 0x1441FBBC8,
+                                                           kSeadDynamicUpdate};
+inline constexpr platform::SlotFact kSeadPointUpdateSlot{L"SEAD placed sound: update (slot 11)", 0x1441FBD58,
+                                                         kSeadBaseUpdate};
+inline constexpr platform::SlotFact kSeadWedgeUpdateSlot{L"SEAD spherical wedge sound: update (slot 11)", 0x1441FC500,
+                                                         kSeadBaseUpdate};
 /// A SEAD sound object's fields: the point the test measured (polygon and sector: the shape's nearest point to the
 /// listener), the answer (u8), the audible range; a moving sound's world source and listener-relative flag (u8 1);
 /// a placed sound's (and wedge's) place.
