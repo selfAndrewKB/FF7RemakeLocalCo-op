@@ -100,6 +100,7 @@ src/
                             function itself (Original()), and puts it back
     guarded                 Structured-exception guards for touching engine memory and calling engine code
     image                   The game's executable image in memory, and the translation from IDA addresses to live ones
+                            and back (the IDA form of a live address, for log lines)
     instruction_patch       Rewrites one instruction of the game's code in place, with one of the same length, and puts
                             it back
     log                     The mod's log: one line per event, written to UE4SS.log with a "[LocalSplitScreen]" prefix

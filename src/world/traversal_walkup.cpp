@@ -256,7 +256,6 @@ void* ActorOfVolume(std::uint64_t volume) noexcept
 std::array<std::uintptr_t, kClasses> g_vtables{};
 std::array<bool, kClasses>           g_admitted{};  // a class a seat's trigger reaches (set at install)
 static_assert(std::wstring_view(facts::kWalkUpClasses[facts::kWalkUpPole].name) == L"pole slide");
-std::uintptr_t                       g_imageBase = 0;  // set at install: names a held-back class's vtable as IDA does
 
 /// The admitted class of a live actor (its native vtable: placed Blueprint actors keep it), or kClasses.
 std::size_t ClassOfVtable(const void* actor) noexcept
@@ -428,7 +427,7 @@ char Route(std::uint64_t volume, void* collider, bool enter, const platform::Cal
         const auto vtable = reinterpret_cast<std::uintptr_t>(ReadPointer(actor, 0));
         platform::LogDebug(L"walk-up: {}'s trigger {} volume {:#x} held back (a field-action spot of a kind not admitted yet, vtable "
                            L"{})", players::SeatName(g_current), enter ? L"entered" : L"left", volume,
-                           vtable != 0 ? std::format(L"{:#x} in IDA", vtable - g_imageBase + 0x140000000) : std::wstring(L"unreadable"));
+                           vtable != 0 ? std::format(L"{:#x} in IDA", platform::IdaAddress(vtable)) : std::wstring(L"unreadable"));
         return 0;
     }
     return Deliver(g_current, actor, cls, enter, volume, collider, router);
@@ -685,7 +684,6 @@ bool Install(const platform::GameImage& image) noexcept
     {
         return fail(L"a function or global");
     }
-    g_imageBase = image.Base();
     std::array<std::uintptr_t, kClasses> slots{}, markerSlots{}, tryStartFns{}, markerFns{};
     for (std::size_t cls = 0; cls < kClasses; ++cls)
     {

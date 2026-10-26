@@ -14,6 +14,8 @@ namespace {
 constexpr std::uintptr_t kIdaImageBase = 0x140000000;
 constexpr wchar_t        kGameModule[] = L"ff7remake_.exe";
 
+std::uintptr_t g_locatedBase = 0;  // set once by Locate at the start (game thread), then only read: the free IdaAddress
+
 /// True if every byte of [address, address + length) is committed and readable. Lying inside the
 /// image is not enough: a page can still be inaccessible, and reading it would crash the game
 /// instead of letting a startup check fail cleanly.
@@ -49,7 +51,13 @@ std::optional<GameImage> GameImage::Locate() noexcept
     const auto base = reinterpret_cast<std::uintptr_t>(module);
     const auto dos  = reinterpret_cast<const IMAGE_DOS_HEADER*>(base);
     const auto nt   = reinterpret_cast<const IMAGE_NT_HEADERS64*>(base + dos->e_lfanew);
+    g_locatedBase   = base;
     return GameImage(base, nt->OptionalHeader.SizeOfImage);
+}
+
+std::uintptr_t IdaAddress(std::uintptr_t live) noexcept
+{
+    return g_locatedBase == 0 ? 0 : live - g_locatedBase + kIdaImageBase;
 }
 
 std::optional<std::uintptr_t> GameImage::Rebase(std::uintptr_t idaAddress, std::size_t length) const noexcept

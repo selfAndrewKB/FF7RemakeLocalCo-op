@@ -17,7 +17,6 @@
 #include <format>
 #include <string>
 
-#include <Windows.h>
 #include <intrin.h>
 
 namespace lss::battle::menu_grey {
@@ -120,8 +119,7 @@ void RestoreAfterMenu(void* filters, std::uint8_t type, std::uint8_t instant)
     {
         ++g_restoresSkipped;
         g_debt = true;
-        const auto here = reinterpret_cast<std::uintptr_t>(_ReturnAddress()) -
-                          reinterpret_cast<std::uintptr_t>(GetModuleHandleW(nullptr)) + 0x140000000;  // as IDA and the research name it
+        const auto here = platform::IdaAddress(reinterpret_cast<std::uintptr_t>(_ReturnAddress()));  // as IDA and the research name it
         platform::LogDebug(L"menu grey: a menu closed over a waiting battle menu (the call returning to {:#x}); its grey is "
                            L"not brought back (the slow-down is switched off)",
                            here);

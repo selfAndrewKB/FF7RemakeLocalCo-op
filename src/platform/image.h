@@ -1,6 +1,7 @@
 #pragma once
 
-// The game's executable image in memory, and the translation from IDA addresses to live ones.
+// The game's executable image in memory, and the translation from IDA addresses to live ones and back (the IDA
+// form of a live address, for log lines).
 //
 // Every engine address in this mod is written as it appears in IDA (image base 0x140000000),
 // because that is how the research documents cite them. The game is loaded at a different base
@@ -29,7 +30,6 @@ public:
     /// The pointer stored at an IDA address (for vtable entries), or empty if outside the image.
     std::optional<std::uintptr_t> ReadPointer(std::uintptr_t idaAddress) const noexcept;
 
-    std::uintptr_t Base() const noexcept { return base_; }
 
 private:
     GameImage(std::uintptr_t base, std::size_t size) noexcept : base_(base), size_(size) {}
@@ -37,5 +37,10 @@ private:
     std::uintptr_t base_;
     std::size_t    size_;
 };
+
+/// The IDA address of a live address of the image Locate last found (the research's and the log's form): for a
+/// module's log line after install, when no GameImage is at hand. 0 before Locate; an address outside the image
+/// gives no meaningful value.
+std::uintptr_t IdaAddress(std::uintptr_t live) noexcept;
 
 }  // namespace lss::platform
