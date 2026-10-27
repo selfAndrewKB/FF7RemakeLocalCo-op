@@ -1,7 +1,7 @@
 #include "battle/menu_grey.h"
 
 #include "battle/command_menu_tick.h"
-#include "battle/command_menu_two.h"
+#include "battle/command_menu.h"
 #include "battle/menu_grey_rules.h"
 #include "control/registry.h"
 #include "engine_facts.h"
@@ -96,7 +96,7 @@ bool BattleMenuWaits() noexcept
     }
     for (int seat = 1; seat <= players::kSeatsBuilt; ++seat)
     {
-        if (command_menu_two::Ready(seat) && Waits(command_menu_two::Controller(seat)))
+        if (command_menu::Ready(seat) && Waits(command_menu::Controller(seat)))
         {
             return true;
         }

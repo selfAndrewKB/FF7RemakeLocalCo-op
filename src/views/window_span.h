@@ -22,11 +22,11 @@
 // Taken from Rebirth's views/window_span: the chain walk and its checks, the hold, the saved-rect leave. Changed:
 // the resolution request in the entry and the leave (the Square Enix image), the fixed order, the layout byte.
 //
-// Entered on player 2's join when a row of equal monitors qualifies (`window-span on`, the default), or by the
-// command / Ctrl+F2; left by the command, with player 2, and at the mod's end. The number of columns is the number
+// Entered on a further player's join when a row of equal monitors qualifies (`window-span on`, the default), or by the
+// command / Ctrl+F2; left by the command, with the last further player, and at the mod's end. The number of columns is the number
 // of monitors in the row, up to three (plan/seats.md step 5; a three-monitor row is unplayed: none on this PC); the
 // mirror player fills the columns no player has. The hold (`window-span.hold on`, v0.41.0) spans the row with any player count and
-// keeps it when player 2 leaves (a loading screen, the main menu, a movie): the multi-monitor presentation modes
+// keeps it when the last further player leaves (a loading screen, the main menu, a movie): the multi-monitor presentation modes
 // (plan/topics/views.md); the mirror player (views/mirror_player, v0.42.0) fills the empty column under it. The
 // preset `[Views] multi-monitor = off | on | auto` in LocalSplitScreen.ini (v0.43.0; platform/settings) sets the
 // start: `on` holds from the first steady frame of the game (the title), `off` leaves the span to the command,
@@ -60,8 +60,9 @@ void Leave(const wchar_t* why) noexcept;
 /// Ctrl+F2: leaves (and stays out) when in, else enters (and enters on each join again).
 void Toggle() noexcept;
 
-/// Each engine tick: the entry's steps, the hold, the auto-enter on player 2's join, the leave with player 2.
-void Tick(bool playerTwoIn) noexcept;
+/// Each engine tick: the entry's steps, the hold, the auto-enter on a further player's join, the leave with the
+/// last further player.
+void Tick(bool furtherPlayerIn) noexcept;
 
 /// The span is in (or entering).
 bool In() noexcept;

@@ -36,7 +36,7 @@ namespace lss::platform {
 class GameImage;
 }
 
-namespace lss::battle::sequence_camera_two {
+namespace lss::battle::sequence_camera {
 
 bool Install(const platform::GameImage& image) noexcept;
 void Remove() noexcept;
@@ -49,4 +49,4 @@ void Tick() noexcept;
 /// active byte recorded, and the OR written once every operator in play has ticked this frame.
 void AfterOperatorTick(int seat) noexcept;
 
-}  // namespace lss::battle::sequence_camera_two
+}  // namespace lss::battle::sequence_camera

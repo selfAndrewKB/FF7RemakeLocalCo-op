@@ -1,4 +1,4 @@
-#include "battle/command_menu_two.h"
+#include "battle/command_menu.h"
 
 #include "control/registry.h"
 #include "engine_facts.h"
@@ -24,7 +24,7 @@
 #include <span>
 #include <string>
 
-namespace lss::battle::command_menu_two {
+namespace lss::battle::command_menu {
 
 namespace {
 
@@ -136,7 +136,7 @@ void Tint(void* widget, const float (&color)[4]) noexcept
 {
     if (widget != nullptr && !platform::CallGuarded(g_setColor, widget, static_cast<const float*>(color)))
     {
-        platform::LogDebug(L"command menu 2: SetColorAndOpacity faulted");
+        platform::LogDebug(L"command menu: SetColorAndOpacity faulted");
     }
 }
 
@@ -177,12 +177,12 @@ bool SetupSeat(int seat, void* world) noexcept
     std::uint64_t          result = 0;
     if (!scope.Held())
     {
-        platform::LogDebug(L"command menu 2: Setup skipped ({}'s scopes could not open)", SeatName(seat));
+        platform::LogDebug(L"command menu: Setup skipped ({}'s scopes could not open)", SeatName(seat));
         return false;
     }
     if (!platform::CallGuarded(g_setup, result, g_seats[seat].ctrl, world))
     {
-        platform::Log(L"command menu 2: Setup on {}'s controller RAISED AN EXCEPTION", SeatName(seat));
+        platform::Log(L"command menu: Setup on {}'s controller RAISED AN EXCEPTION", SeatName(seat));
         return false;
     }
     return true;
@@ -202,13 +202,13 @@ bool Build(int seat) noexcept
         !platform::CallGuarded(malloc, memory, allocator, std::uint64_t{facts::kCommandCtrlSize}, std::uint32_t{0}) ||
         memory == nullptr || !platform::CallGuarded(g_ctor, built, memory) || built == nullptr)
     {
-        platform::Log(L"command menu 2: {}'s controller could not be allocated or constructed; {} has no menu", SeatName(seat),
+        platform::Log(L"command menu: {}'s controller could not be allocated or constructed; {} has no menu", SeatName(seat),
                       SeatName(seat));
         return false;
     }
     g_seats[seat].ctrl = built;
     players::scopes::BindCommandController(seat, built);
-    platform::Log(L"command menu 2: {}'s controller built ({:#x})", SeatName(seat), reinterpret_cast<std::uintptr_t>(built));
+    platform::Log(L"command menu: {}'s controller built ({:#x})", SeatName(seat), reinterpret_cast<std::uintptr_t>(built));
     return true;
 }
 
@@ -236,15 +236,15 @@ void CatchUp(int seat, Seat& s) noexcept
         players::scopes::Scope scope(seat, kScopes);
         if (!scope.Held())
         {
-            platform::LogDebug(L"command menu 2: {}'s party panel not refreshed after its Setup (its scopes could not open)", name);
+            platform::LogDebug(L"command menu: {}'s party panel not refreshed after its Setup (its scopes could not open)", name);
         }
         else if (!platform::CallGuarded(g_refresh, s.ctrl))
         {
-            platform::Log(L"command menu 2: the party panel refresh on {}'s controller RAISED AN EXCEPTION", name);
+            platform::Log(L"command menu: the party panel refresh on {}'s controller RAISED AN EXCEPTION", name);
         }
         else
         {
-            platform::LogDebug(L"command menu 2: the party panel rebuilt on {}'s controller after its Setup", name);
+            platform::LogDebug(L"command menu: the party panel rebuilt on {}'s controller after its Setup", name);
         }
     }
     for (const std::uint32_t root : kRoots)
@@ -253,7 +253,7 @@ void CatchUp(int seat, Seat& s) noexcept
     }
     s.borrowLogged = false;
     s.caughtUp     = true;
-    platform::Log(L"command menu 2: {}'s controller set up (its menu {} and panel {} in {}'s context; path set {})", name,
+    platform::Log(L"command menu: {}'s controller set up (its menu {} and panel {} in {}'s context; path set {})", name,
                   Root(s.ctrl, facts::kCommandCtrlMenuWeak) != nullptr ? L"built" : L"MISSING",
                   Root(s.ctrl, facts::kCommandCtrlFieldMenuWeak) != nullptr ? L"built" : L"MISSING", name,
                   players::scopes::FocusPathSet(seat) ? L"yes" : L"NO");
@@ -270,7 +270,7 @@ std::uint64_t Setup(void* controller, void* world)
         {
             if (g_seats[seat].ctrl != nullptr && g_seats[seat].plays)
             {
-                platform::LogDebug(L"command menu 2: the game's Setup, repeated on {}'s controller", SeatName(seat));
+                platform::LogDebug(L"command menu: the game's Setup, repeated on {}'s controller", SeatName(seat));
                 SetupSeat(seat, world);
                 g_seats[seat].caughtUp = false;  // its next tick catches it up again
             }
@@ -295,7 +295,7 @@ void ResetAll(void* controller)
         players::scopes::Scope scope(seat, kResetScopes);
         if (scope.Held())  // unbound (the seat has no player): the controller was already reset at the leave
         {
-            platform::LogDebug(L"command menu 2: the game's ResetAll, repeated on {}'s controller", SeatName(seat));
+            platform::LogDebug(L"command menu: the game's ResetAll, repeated on {}'s controller", SeatName(seat));
             platform::CallGuarded(g_resetAll, g_seats[seat].ctrl);
         }
     }
@@ -312,7 +312,7 @@ void SetHudMode(void* controller, std::uint8_t mode)
         players::scopes::Scope scope(seat, kScopes);
         if (scope.Held())
         {
-            platform::LogDebug(L"command menu 2: battle HUD mode {} on {}'s controller", mode, SeatName(seat));
+            platform::LogDebug(L"command menu: battle HUD mode {} on {}'s controller", mode, SeatName(seat));
             platform::CallGuarded(reinterpret_cast<HudModeFn>(g_hudMode.Original()), g_seats[seat].ctrl, mode);
         }
     });
@@ -329,7 +329,7 @@ std::uint64_t Rebuild(void* partyList, std::uint64_t a2)
         players::scopes::Scope scope(seat, kScopes);
         if (scope.Held())
         {
-            platform::LogDebug(L"command menu 2: the party panel rebuilt on {}'s controller", SeatName(seat));
+            platform::LogDebug(L"command menu: the party panel rebuilt on {}'s controller", SeatName(seat));
             platform::CallGuarded(g_refresh, g_seats[seat].ctrl);  // its own pass through here: a different list, the game's call only
         }
     });
@@ -381,7 +381,7 @@ std::int64_t NativeTick(void* widget, const void* geometry, float deltaTime)
         if (!g_skippedLogged)
         {
             g_skippedLogged = true;
-            platform::Log(L"command menu 2: a command menu's key-state advance in a further column's pass was skipped (one advance per frame)");
+            platform::Log(L"command menu: a command menu's key-state advance in a further column's pass was skipped (one advance per frame)");
         }
         return 0;
     }
@@ -484,7 +484,7 @@ bool Install(const platform::GameImage& image) noexcept
         !FindInto(image, facts::kCommandCtrlSetInputLive, g_setInputLive) ||
         !FindInto(image, facts::kCommandMenuNativeTick.target, g_nativeTick))
     {
-        platform::Log(L"command menu 2: an engine check failed; the seats have no command menu");
+        platform::Log(L"command menu: an engine check failed; the seats have no command menu");
         return false;
     }
     g_gmalloc  = reinterpret_cast<void**>(*gmalloc);
@@ -511,15 +511,15 @@ bool Install(const platform::GameImage& image) noexcept
     if (!installed)
     {
         Remove();
-        platform::Log(L"command menu 2: a redirect could not be placed; the seats have no command menu");
+        platform::Log(L"command menu: a redirect could not be placed; the seats have no command menu");
         return false;
     }
     control::Register({.name  = L"menu-two",
                        .shape = control::Shape::OnOff,
-                       .help  = L"each seat's own command menu follows the game's (battle/command_menu_two.h; on)",
+                       .help  = L"each seat's own command menu follows the game's (battle/command_menu.h; on)",
                        .set   = [](const control::Value& value) {
                            g_enabled = std::get<bool>(value);
-                           platform::Log(L"command menu 2 {}", g_enabled ? L"on" : L"off");
+                           platform::Log(L"command menu {}", g_enabled ? L"on" : L"off");
                            return control::Outcome{};
                        },
                        .get = [] { return control::Value{g_enabled}; }});
@@ -537,7 +537,7 @@ bool Install(const platform::GameImage& image) noexcept
                            const Seat& seat = g_seats[1];
                            return control::Value{std::wstring(seat.ctrl == nullptr ? L"none" : ReadyOf(seat) ? L"ready" : L"built")};
                        }});
-    platform::Log(L"command menu 2: installed; the game's controller calls are repeated on each seat's");
+    platform::Log(L"command menu: installed; the game's controller calls are repeated on each seat's");
     return true;
 }
 
@@ -592,7 +592,7 @@ void Tick(int seat, bool seatPlays) noexcept
         }
         if (!ReadyOf(s))
         {
-            platform::LogDebug(L"command menu 2: {}'s Setup deferred by the game (pending {})", name, Byte(s.ctrl, facts::kCommandCtrlSetupPending));
+            platform::LogDebug(L"command menu: {}'s Setup deferred by the game (pending {})", name, Byte(s.ctrl, facts::kCommandCtrlSetupPending));
             return;
         }
     }
@@ -606,7 +606,7 @@ void Tick(int seat, bool seatPlays) noexcept
     if (Read(static_cast<const std::uint8_t*>(s.ctrl) + facts::kCommandCtrlLeaderOrdinal, ordinal) && ordinal != s.ordinal)
     {
         s.ordinal = ordinal;
-        platform::LogDebug(L"command menu 2: {}'s controller now caches leader ordinal {} ({}'s member type {}, {})", name, ordinal, name,
+        platform::LogDebug(L"command menu: {}'s controller now caches leader ordinal {} ({}'s member type {}, {})", name, ordinal, name,
                            players::scopes::MemberType(seat), LeaderReading());
     }
     // The battle HUD mode the game set on its controller while the seat had no member (a battle begun in a cutscene
@@ -618,7 +618,7 @@ void Tick(int seat, bool seatPlays) noexcept
         players::scopes::Scope scope(seat, kScopes);
         if (scope.Held())
         {
-            platform::LogDebug(L"command menu 2: battle HUD mode {} caught up on {}'s controller (set while {} had no member)", hudMode, name, name);
+            platform::LogDebug(L"command menu: battle HUD mode {} caught up on {}'s controller (set while {} had no member)", hudMode, name, name);
             platform::CallGuarded(reinterpret_cast<HudModeFn>(g_hudMode.Original()), s.ctrl, hudMode);
         }
     }
@@ -635,7 +635,7 @@ void Tick(int seat, bool seatPlays) noexcept
     {
         // Off closes both menus' polls (the game's own gate 4 of RE-ko-leader-input.md §3.1): a script or event
         // that closes player 1's menu closes the seat's too, so each change is logged.
-        platform::LogDebug(L"command menu 2: menu allowed {} on {}'s controller (copied from the game's)", allowed, name);
+        platform::LogDebug(L"command menu: menu allowed {} on {}'s controller (copied from the game's)", allowed, name);
         platform::WriteGuarded(static_cast<std::uint8_t*>(s.ctrl) + facts::kCommandCtrlMenuAllowed, &allowed, 1);
     }
     if (Byte(s.ctrl, facts::kCommandCtrlInputLive) != live)
@@ -643,7 +643,7 @@ void Tick(int seat, bool seatPlays) noexcept
         players::scopes::Scope scope(seat, kScopes);
         if (scope.Held())
         {
-            platform::LogDebug(L"command menu 2: input live {} on {}'s controller", live, name);
+            platform::LogDebug(L"command menu: input live {} on {}'s controller", live, name);
             platform::CallGuarded(g_setInputLive, s.ctrl, live, std::uint64_t{0});
         }
     }
@@ -678,7 +678,7 @@ void OnLeave(int seat) noexcept
             if (Read(static_cast<const std::uint8_t*>(s.ctrl) + facts::kCommandCtrlWaitState, wait) && wait != 0)
             {
                 platform::CallGuarded(g_setInputLive, s.ctrl, std::uint8_t{0}, std::uint64_t{0});
-                platform::LogDebug(L"command menu 2: {}'s menu was open at the leave (wait {}); the game's end of the wait "
+                platform::LogDebug(L"command menu: {}'s menu was open at the leave (wait {}); the game's end of the wait "
                                    L"released it",
                                    SeatName(seat), wait);
             }
@@ -686,7 +686,7 @@ void OnLeave(int seat) noexcept
         }
     }
     players::scopes::BindCommandController(seat, nullptr);
-    platform::LogDebug(L"command menu 2: {}'s controller reset for the seat's next player", SeatName(seat));
+    platform::LogDebug(L"command menu: {}'s controller reset for the seat's next player", SeatName(seat));
 }
 
 void* Controller(int seat) noexcept
@@ -728,7 +728,7 @@ void BeginPass(int column) noexcept
     if (!s.borrowLogged && (s.swapped[0] || s.swapped[1]))
     {
         s.borrowLogged = true;
-        platform::LogDebug(L"command menu 2: {}'s roots take player 1's colours in its pass (menu alpha {:.2f}, panel alpha {:.2f})", SeatName(seat),
+        platform::LogDebug(L"command menu: {}'s roots take player 1's colours in its pass (menu alpha {:.2f}, panel alpha {:.2f})", SeatName(seat),
                            s.swapped[0] ? s.colorOne[0][3] : -1.0f, s.swapped[1] ? s.colorOne[1][3] : -1.0f);
     }
 }
@@ -752,4 +752,4 @@ void EndPass() noexcept
     g_passSeat = 0;
 }
 
-}  // namespace lss::battle::command_menu_two
+}  // namespace lss::battle::command_menu

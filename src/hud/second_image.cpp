@@ -6,12 +6,12 @@
 #include "hud/image_entries.h"
 #include "hud/field_icons.h"
 #include "hud/marker_replay.h"
-#include "hud/minimap_two.h"
+#include "hud/minimap.h"
 #include "hud/overlay_layout.h"
 #include "hud/overlay_pass.h"
 #include "hud/outside_icons.h"
-#include "battle/command_menu_two.h"
-#include "battle/target_cursor_two.h"
+#include "battle/command_menu.h"
+#include "battle/target_cursor.h"
 #include "hud/pass_hide.h"
 #include "hud/ui_targets.h"
 #include "platform/call_redirect.h"
@@ -98,7 +98,7 @@ void Refuse(const wchar_t* why)
 bool Ready() noexcept
 {
     if (!g_on || !g_split || g_refused || g_stockName == 0 || g_columns.count < 2 || !g_acquireCall.IsInstalled() ||
-        !minimap_two::PoolCodeInstalled())
+        !minimap::PoolCodeInstalled())
     {
         return false;
     }
@@ -159,8 +159,8 @@ bool RenderFurther(void* overlay, int column) noexcept
     Fade         fade;
     platform::CopyGuarded(&fade, static_cast<const std::uint8_t*>(overlay) + facts::kOverlayFade, sizeof(fade));
     pass_hide::BeginFurtherPass(overlay_pass::SeatOf(column));
-    battle::command_menu_two::BeginPass(column);
-    battle::target_cursor_two::BeginPass(column);
+    battle::command_menu::BeginPass(column);
+    battle::target_cursor::BeginPass(column);
     *g_deltaTime = 0.0;
     // The frame number one back, as the engine does around an extra view family: the widgets this pass paints (at a
     // step of 0) are not stamped as painted this frame, so player 1's pass, the last, advances the ones player 1 does
@@ -173,9 +173,9 @@ bool RenderFurther(void* overlay, int column) noexcept
         ++g_catchUpPasses;
     }
     overlay_pass::Set(column);
-    minimap_two::BeginPass(column);
+    minimap::BeginPass(column);
     const bool ok = platform::CallGuarded(g_render, overlay);
-    minimap_two::EndPass();
+    minimap::EndPass();
     if (rewind)
     {
         ++*g_frameNumber;  // relative: any step taken during the render is kept
@@ -194,8 +194,8 @@ bool RenderFurther(void* overlay, int column) noexcept
     {
         platform::WriteGuarded(static_cast<std::uint8_t*>(overlay) + facts::kOverlayFade, &fade, sizeof(fade));
     }
-    battle::target_cursor_two::EndPass();
-    battle::command_menu_two::EndPass();
+    battle::target_cursor::EndPass();
+    battle::command_menu::EndPass();
     pass_hide::EndPass();
     return ok;
 }
@@ -260,19 +260,19 @@ void Driver(void* delegate)
         pass_hide::BeginOwnPass();  // the seats' target icons are not player 1's (nor the single render's)
     }
     overlay_pass::Set(own);
-    minimap_two::BeginPass(own);
-    battle::command_menu_two::BeginPass(own);
-    battle::target_cursor_two::BeginPass(own);
+    minimap::BeginPass(own);
+    battle::command_menu::BeginPass(own);
+    battle::target_cursor::BeginPass(own);
     g_render(overlay);
-    battle::target_cursor_two::EndPass();
-    battle::command_menu_two::EndPass();
-    minimap_two::EndPass();
+    battle::target_cursor::EndPass();
+    battle::command_menu::EndPass();
+    minimap::EndPass();
     if (onGame)
     {
         pass_hide::EndPass();
     }
     overlay_pass::Set(overlay_pass::kSingle);
-    minimap_two::EndFrame();  // pool 0's slot, if player 1's map did not take it
+    minimap::EndFrame();  // pool 0's slot, if player 1's map did not take it
     if (GetCurrentThreadId() == g_gameThread)  // the replays' records are the game thread's
     {
         marker_replay::EndFrame();
@@ -346,7 +346,7 @@ bool Install(const platform::GameImage& image) noexcept
         g_uiFilters = reinterpret_cast<void**>(*filters);
     }
     const auto thunk     = image.Rebase(facts::kOverlayDelegateThunk);
-    if (!render || !slot || !acquire || !acquireFn || !submitFn || !delta || !frame || !thunk || !minimap_two::PoolCodeInstalled())
+    if (!render || !slot || !acquire || !acquireFn || !submitFn || !delta || !frame || !thunk || !minimap::PoolCodeInstalled())
     {
         platform::Log(L"HUD image: the overlay render is not what the research read; the further players' images stay off");
         return false;

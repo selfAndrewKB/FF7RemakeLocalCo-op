@@ -138,9 +138,9 @@ src/
     layout_code.h           The machine code for the 16:9 assumptions in Square's HUD placement that misplace things in
                             a split half's band
     marker_replay           Battle world markers placed through each player's own camera
-    minimap_rules.h         The navi map's pool-0 handover across the frame's HUD passes, as a pure rule
-                            (hud/minimap_two.h holds the game side; the seats follow plan/seats.md step 3)
-    minimap_two             Each seat's own minimap and compass: a navi map manager per seat, the game's own
+    minimap                 Each seat's own minimap and compass: a navi map manager per seat, the game's own
+    minimap_rules.h         The navi map's pool-0 handover across the frame's HUD passes, as a pure rule (hud/minimap.h
+                            holds the game side; the seats follow plan/seats.md step 3)
     outside_icons           The off-screen enemy arrows (HUD slot 38: the red arrow at the view's edge pointing at an
                             enemy outside it) placed through each column's own camera
     overlay_band            Taken from Rebirth's hud/overlay_band unchanged in substance
@@ -163,7 +163,7 @@ src/
                             a copy of an action key, as the game calls them: the key is 24 bytes (FName, details object,
                             reference controller), passed by value, and …
     action_tables.h         A pad's own copy of the game's action state (RE-input.md §1.6-§1.7, RE-input-p2.md §2.3)
-    camera_override_two     A seat's member's camera overrides reach that seat's camera (RE-lock-camera-ledger.md row
+    camera_override         A seat's member's camera overrides reach that seat's camera (RE-lock-camera-ledger.md row
                             X3)
     field_exit              Player 2 leaves before the game leaves the field
                             (Remake/Documentation/research/RE-lifecycle-world.md §3, §8)
@@ -183,7 +183,7 @@ src/
                             own paths, on the game thread
     menu_pads.h             Where a further pad's key events go while the game's menus need them
                             (RE-pause-menu-any-pad.md §2.2, §3.3)
-    nav_area_two            A seat's nav-area component ticks in that seat's scopes (RE-operator-settings-two.md §2.5)
+    nav_area                A seat's nav-area component ticks in that seat's scopes (RE-operator-settings-two.md §2.5)
     operator_battle_mode    Each seat's field camera operator enters and leaves battle mode with player 1's
                             (RE-operator-settings-two.md)
     own_controller          Player 2's own PlayerController: the End camera manager's BeginPlay, made safe for a second
@@ -200,9 +200,9 @@ src/
                             gives it back
     player_trigger          Each seat's own PlayerTrigger: a copy of the game's one placed trigger actor
                             (RE-player-trigger.md §4-§5, Fix A)
-    player_two_camera       Each seat's own field camera: a further AEndFieldCameraOperator per seat, driven by the
-                            game's own code
     scopes                  The game's single slots answered for one further player
+    seat_camera             Each seat's own field camera: a further AEndFieldCameraOperator per seat, driven by the
+                            game's own code
     seat_objects            One registry of each seat's game objects: its player controller, its field camera operator
                             and the member it plays, kept as weak pairs (players/weak_object.h) so a destroyed or
                             replaced object resolves to null wherever it is …
@@ -274,13 +274,13 @@ src/
                             actor, null root or a faulting read answer false, `out` untouched)
     anim_choice.h           Which camera the game's animation judge reads for one mesh, and a further player's camera
                             snapshot in the game's own form
-    anim_two_views          Characters near any player animate as the game animates them near player 1
+    anim_views              Characters near any player animate as the game animates them near player 1
     charapop_rule.h         CharaPop's Light/Middle rule, as its evaluators apply it to one camera, for the entries a
                             further player's camera needs (world/npc_detail.h)
-    env_set_view.h          The pieces of world/env_sets_two that need no game: a further player's EnvironmentSet as the
-                            mod keeps it (one per seat), paced the way the game paces player 1's, and the edit of a
-                            player's hidden-actor list that removes only the …
-    env_sets_two            Each further player's view hides what the area's design hides under that player, as player
+    env_set_view.h          The pieces of world/env_sets that need no game: a further player's EnvironmentSet as the mod
+                            keeps it (one per seat), paced the way the game paces player 1's, and the edit of a player's
+                            hidden-actor list that removes only the …
+    env_sets                Each further player's view hides what the area's design hides under that player, as player
                             1's view does under player 1
     field_targets           A further player opens chests, picks up the shining items on the ground, opens doors and
                             curtains and fires the grappling hook with their own pad, as player 1 does
@@ -331,7 +331,7 @@ src/
     mirror_player           The mirror players: an extra local player of the mod's in every column no player fills,
                             showing player 1's picture, so a spanned window never shows one view across the whole row
     monitor_row             Which monitors a spanned game window may cover: a row of equal monitors
-    scene_camera_two        The scene camera on player 2's view: a cutscene, a talk scene or an event camera plays on
+    scene_camera            The scene camera on player 2's view: a cutscene, a talk scene or an event camera plays on
                             player 2's view as it does on player 1's
     split_scale             Split views fill their part of the window whatever the game's resolution option
     split_scale_rules.h     The pure rule of views/split_scale: how far the split views must be scaled so they fit the
@@ -353,19 +353,19 @@ src/
     coin_table.h            The coins enemies hold (battle/enemy_coin.h): a lock-free table keyed by the enemy's battle
                             AI controller, each coin the player it names (1..4) and when it was tossed, plus one mark
                             per coin: "an action has run since this toss" …
-    command_camera_two      Each seat's Tactical Mode target camera: the field camera's Command flavor (13) reads the
+    command_camera          Each seat's Tactical Mode target camera: the field camera's Command flavor (13) reads the
                             seat's own menu
+    command_menu            Each seat's own battle command menu: a FieldCommandCtrl per seat, built and kept with the
+                            game's own calls
     command_menu_rules.h    The command menus' shared engine state, as rules without the game
     command_menu_tick       Each seat's command controller ticked at the game's own spot, inside the seat's scopes
-    command_menu_two        Each seat's own battle command menu: a FieldCommandCtrl per seat, built and kept with the
-                            game's own calls
     enemy_coin              Enemies share their attention between the humans: one coin per enemy decision
     enemy_leader            Enemies follow the human whose member stands when the game's leader is down
                             (RE-enemy-leader-reads.md §2, §5.1)
     enemy_watch             What each enemy is doing, for the live reads behind the circling report
-    lock_camera_rules.h     The lock camera readings' arithmetic, without the game (battle/lock_camera_two.h applies it)
-    lock_camera_two         Each seat's lock camera at the edges outside the operator's tick (RE-lock-camera-ledger.md;
+    lock_camera             Each seat's lock camera at the edges outside the operator's tick (RE-lock-camera-ledger.md;
                             the seats follow plan/seats.md step 3)
+    lock_camera_rules.h     The lock camera readings' arithmetic, without the game (battle/lock_camera.h applies it)
     member_rates            Each further player's member at the player's rates (RE-battle-member-two.md §2, L1;
                             Rebirth's player_two/player_hits)
     menu_grey               The open battle menu's grey follows the menu slow-down switch
@@ -373,9 +373,9 @@ src/
                             pure rules over what the game's UI filter 0 shows: at the wait's spawn, at a menu-close
                             restore, at a flip of the switch and at the tick …
     party_switch            Neither player switches onto a member the other human plays
-    sequence_camera_two     The battle sequence cameras (abilities, enemy specials, summons) on each player's own camera
-    target_cursor_two       Each seat's own battle target cursor: the game's cursor driver run again per seat
-    targeting_two           Each seat's targeting: the game's own targeting tick run again, once per seat
+    sequence_camera         The battle sequence cameras (abilities, enemy specials, summons) on each player's own camera
+    target_cursor           Each seat's own battle target cursor: the game's cursor driver run again per seat
+    targeting               Each seat's targeting: the game's own targeting tick run again, once per seat
     type_answer_code.h      The bytes of a small function that answers the game's inlined "is this member the player"
                             test for every human's member
   audio/                    sound for every player: a listener per further player, each sound measured from the nearest

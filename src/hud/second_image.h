@@ -14,7 +14,7 @@
 //      (the acquire call 0x141509FCF, crossing a block: installed from the game thread outside the render); every later
 //      pass takes the held slot; each pass's layer entry is named for its column (hud/overlay_layout's entry call) and
 //      laid out in its column's view; its submit is skipped; the navi map's pool 0 is handed over between the passes
-//      (hud/minimap_two.h);
+//      (hud/minimap.h);
 //   2. column 0's pass, player 1's: the game's own call. Its acquire consumes the held slot, its entry is the stock one,
 //      and its submit sends the slot holding [the further columns' entries, player 1's entry].
 // Player 1 renders last, so everything the overlay keeps from its last pass (its rects, hit-test grid, window size,

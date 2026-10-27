@@ -48,7 +48,7 @@ namespace lss::platform {
 class GameImage;
 }
 
-namespace lss::views::scene_camera_two {
+namespace lss::views::scene_camera {
 
 /// Rebases the globals, finds the game's slot setters, the reset and the cutscene manager's playing test, redirects
 /// the cutscene end's reset call, and registers the readings and the switch. False (logged) if a check fails: the
@@ -96,4 +96,4 @@ void BeforeMirrorUpdate(int slot) noexcept;
 /// The mirror copies' state and counts, for the `mirror-player.state` reading.
 std::wstring MirrorPlayerText();
 
-}  // namespace lss::views::scene_camera_two
+}  // namespace lss::views::scene_camera

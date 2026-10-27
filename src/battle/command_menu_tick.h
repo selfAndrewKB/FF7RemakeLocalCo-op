@@ -6,7 +6,7 @@
 //
 // The game ticks its one command controller once per frame from the field systems' tick (one call, crossing a
 // code block: it is redirected from the game thread, outside that function). The game's controller ticks as
-// before; then each built seat's (battle/command_menu_two.h) ticks inside that seat's scopes (players/scopes.h)
+// before; then each built seat's (battle/command_menu.h) ticks inside that seat's scopes (players/scopes.h)
 // with its own pad's buttons and sticks (a seat's pad is XInput user `seat`), so its poll reads its own widget,
 // and its sub-ticks call the game's per-character attack, guard, dodge and command functions on the seat's
 // member. Right after, the game's leader-only input buffer (combo follow-ups, dodge retries, buffered uniques) is

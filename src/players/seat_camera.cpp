@@ -1,4 +1,4 @@
-#include "players/player_two_camera.h"
+#include "players/seat_camera.h"
 
 #include "engine_facts.h"
 #include "platform/guarded.h"
@@ -6,9 +6,9 @@
 #include "platform/log.h"
 #include "platform/verified_code.h"
 #include "platform/vtable_entry.h"
-#include "players/camera_override_two.h"
+#include "players/camera_override.h"
 #include "players/field_root.h"
-#include "players/nav_area_two.h"
+#include "players/nav_area.h"
 #include "players/operator_battle_mode.h"
 #include "players/pad_buttons.h"
 #include "players/scopes.h"
@@ -16,11 +16,11 @@
 #include "players/seats.h"
 #include "players/weak_object.h"
 #include "render/history_cut.h"
-#include "views/scene_camera_two.h"
-#include "battle/command_camera_two.h"
-#include "battle/lock_camera_two.h"
-#include "battle/sequence_camera_two.h"
-#include "battle/targeting_two.h"
+#include "views/scene_camera.h"
+#include "battle/command_camera.h"
+#include "battle/lock_camera.h"
+#include "battle/sequence_camera.h"
+#include "battle/targeting.h"
 
 #include <array>
 #include <cstdint>
@@ -28,7 +28,7 @@
 #include <format>
 #include <string>
 
-namespace lss::players::player_two_camera {
+namespace lss::players::seat_camera {
 
 namespace {
 
@@ -339,13 +339,13 @@ void OperatorTick(void* self, float deltaSeconds)
         const bool one = seatsIn && self == PlayerOneOperator();
         if (one)
         {
-            battle::lock_camera_two::BeforePlayerOneOperatorTick();
+            battle::lock_camera::BeforePlayerOneOperatorTick();
         }
         g_operatorTick(self, deltaSeconds);
         if (one)
         {
-            battle::sequence_camera_two::AfterOperatorTick(0);  // player 1's operator
-            battle::lock_camera_two::AfterPlayerOneOperatorTick(self, deltaSeconds);
+            battle::sequence_camera::AfterOperatorTick(0);  // player 1's operator
+            battle::lock_camera::AfterPlayerOneOperatorTick(self, deltaSeconds);
         }
         return;
     }
@@ -359,18 +359,18 @@ void OperatorTick(void* self, float deltaSeconds)
     // camera follows the seat's target, not player 1's.
     const scopes::Scope              leader(seat, scopes::Leader);
     // In battle the seat's UI context too: the Command camera flavor frames the target the seat's own list cursor is
-    // on, read from the UI slot and the focus path inside this tick (battle/command_camera_two.h).
-    const battle::command_camera_two::TickScope ui(seat);
-    const battle::targeting_two::FieldsScope targets(seat);
+    // on, read from the UI slot and the focus path inside this tick (battle/command_camera.h).
+    const battle::command_camera::TickScope ui(seat);
+    const battle::targeting::FieldsScope targets(seat);
     g_tickingSeat = seat;
-    battle::lock_camera_two::BeforeOperatorTick(seat, self, controller);
+    battle::lock_camera::BeforeOperatorTick(seat, self, controller);
     g_operatorTick(self, deltaSeconds);
-    battle::lock_camera_two::AfterOperatorTick(seat, self, deltaSeconds, targets.Held());
+    battle::lock_camera::AfterOperatorTick(seat, self, deltaSeconds, targets.Held());
     g_tickingSeat = 0;
-    battle::sequence_camera_two::AfterOperatorTick(seat);
+    battle::sequence_camera::AfterOperatorTick(seat);
     // The owner's camera-override route follows the owner (the tick may have changed it: the LeaderChange flavor).
     void* owner = nullptr;
-    camera_override_two::Route(seat, Read(static_cast<std::uint8_t*>(self) + facts::kOperatorOwnerChara, owner) ? owner : nullptr);
+    camera_override::Route(seat, Read(static_cast<std::uint8_t*>(self) + facts::kOperatorOwnerChara, owner) ? owner : nullptr);
 }
 
 /// AEndPlayerCameraManager::UpdateCamera: a seat's camera manager updates as the primary player's, with the seat's
@@ -378,12 +378,12 @@ void OperatorTick(void* self, float deltaSeconds)
 /// controller's rotation; RE-lock-camera-ledger.md row X7).
 void UpdateCamera(void* self, float deltaSeconds)
 {
-    if (const int mirror = views::scene_camera_two::MirrorSlotOf(self); mirror >= 0)
+    if (const int mirror = views::scene_camera::MirrorSlotOf(self); mirror >= 0)
     {
         // A mirror player's manager (views/mirror_player): every slot of player 1's set on it, under the mirror's
         // primary scope so the game's primary-scoped setters (the blend records, the cut) reach it.
-        const PrimaryScope primary(views::scene_camera_two::MirrorController(mirror));
-        views::scene_camera_two::BeforeMirrorUpdate(mirror);
+        const PrimaryScope primary(views::scene_camera::MirrorController(mirror));
+        views::scene_camera::BeforeMirrorUpdate(mirror);
         g_cameraUpdate(self, deltaSeconds);
         render::history_cut::AfterCameraUpdate(self, false);
         return;
@@ -395,9 +395,9 @@ void UpdateCamera(void* self, float deltaSeconds)
     {
         void* const managerOne = platform::ReadPointer(one, facts::kControllerCameraManager);
         if ((seatsIn && self == managerOne) ||
-            (self != nullptr && self == views::scene_camera_two::MirrorSource()))
+            (self != nullptr && self == views::scene_camera::MirrorSource()))
         {
-            views::scene_camera_two::BeforeUpdateCamera(self, 0, nullptr);  // player 1's: its camera cut noted for this frame
+            views::scene_camera::BeforeUpdateCamera(self, 0, nullptr);  // player 1's: its camera cut noted for this frame
         }
         g_cameraUpdate(self, deltaSeconds);
         if (self != nullptr && self == managerOne)
@@ -411,7 +411,7 @@ void UpdateCamera(void* self, float deltaSeconds)
     const scopes::Scope leader(seat, scopes::Leader);
     // A scene's camera (slots player 1's manager was given this frame) onto the seat's, with the game's own setters,
     // inside the scope so the primary-scoped ones reach the seat's manager.
-    views::scene_camera_two::BeforeUpdateCamera(platform::ReadPointer(one, facts::kControllerCameraManager), seat, self);
+    views::scene_camera::BeforeUpdateCamera(platform::ReadPointer(one, facts::kControllerCameraManager), seat, self);
     g_cameraUpdate(self, deltaSeconds);
     render::history_cut::AfterCameraUpdate(self, false);
 }
@@ -453,9 +453,9 @@ void ProcessPlayerInput(void* self, float deltaSeconds, bool gamePaused)
     // The right stick is the lock's while the leader is locked on a target in range (the stick switches targets
     // then; the camera does not turn): the seat's lock and leader, not player 1's (RE-lock-camera-ledger.md X1).
     const scopes::Scope                      leader(seat, scopes::Leader);
-    const battle::targeting_two::FieldsScope targets(seat);
+    const battle::targeting::FieldsScope targets(seat);
     g_processInput(self, deltaSeconds, gamePaused);
-    battle::lock_camera_two::AfterInput(seat, self);
+    battle::lock_camera::AfterInput(seat, self);
 }
 
 /// AEndPlayerController::Tick_FieldMove: each player's left stick moves only that player's character. A seat's
@@ -487,7 +487,7 @@ void FieldMove(void* self, float deltaSeconds)
     const StickScope               stick(static_cast<std::uint32_t>(seat), true);
     const pad_buttons::ButtonScope buttons(seat);
     // Locked-on movement faces the target (strafes) on the seat's lock, not player 1's (RE-lock-camera-ledger.md X2).
-    const battle::targeting_two::FieldsScope targets(seat);
+    const battle::targeting::FieldsScope targets(seat);
     g_fieldMove(self, deltaSeconds);
 }
 
@@ -605,9 +605,9 @@ bool Install(const platform::GameImage& image) noexcept
         g_operatorBeginPlaySlot.Restore();
         return false;
     }
-    camera_override_two::Install(image);  // optional: without it a seat's attack cameras stay on player 1's camera
+    camera_override::Install(image);  // optional: without it a seat's attack cameras stay on player 1's camera
     operator_battle_mode::Install(image);  // optional: without it a seat's camera plays battles on the field setting
-    nav_area_two::Install(image);          // optional: without it a seat's InDoor settings reach player 1's operator
+    nav_area::Install(image);          // optional: without it a seat's InDoor settings reach player 1's operator
     // Optional: without it a seat's right stick does nothing, and everything else still works.
     if (!Global(image, facts::kWorldTickPhaseHookGlobal, g_phaseHookPointer) ||
         !FindInto(image, facts::kWorldTickPhaseHook, g_phaseHook) || !FindInto(image, facts::kTickPlayerInput, g_tickPlayerInput))
@@ -754,9 +754,9 @@ bool Start(int seat, void* playerOneController, void* seatController, void* memb
     }
     if (owned)
     {
-        camera_override_two::Route(seat, member);  // the game's SetOwnerChara just wrote the member's delegate
+        camera_override::Route(seat, member);  // the game's SetOwnerChara just wrote the member's delegate
         operator_battle_mode::OnOperatorStarted(seat, spawned, operatorOne);  // a join mid-battle
-        nav_area_two::OnOperatorStarted(seat, seatController);                // the volumes entered before the spawn
+        nav_area::OnOperatorStarted(seat, seatController);                // the volumes entered before the spawn
     }
     // Moving the new operator off the leader cleared the leader's camera delegate that player 1's operator
     // had bound; the game's own re-apply puts it back.
@@ -775,7 +775,7 @@ void* Take(int seat) noexcept
     {
         return nullptr;
     }
-    camera_override_two::Route(seat, nullptr);  // the member's delegate holds the game's handler again
+    camera_override::Route(seat, nullptr);  // the member's delegate holds the game's handler again
     void* cameraOperator = seat_objects::Operator(seat);
     g_seats[seat]        = {};
     seat_objects::BindOperator(seat, nullptr);
@@ -852,4 +852,4 @@ catch (...)
     // Formatting fails only by running out of memory; a lost diagnostic line must not take the game down.
 }
 
-}  // namespace lss::players::player_two_camera
+}  // namespace lss::players::seat_camera

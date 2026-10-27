@@ -1,6 +1,6 @@
 #include "hud/marker_replay.h"
 
-#include "battle/target_cursor_two.h"
+#include "battle/target_cursor.h"
 #include "control/registry.h"
 #include "engine_facts.h"
 #include "hud/bar_class.h"
@@ -521,7 +521,7 @@ WeakKey ColumnKey(int column, const void* manager) noexcept
         return LiveKey(manager);
     }
     WeakKey key{};
-    battle::target_cursor_two::DisplayedTarget(seat, key.object, key.controller);
+    battle::target_cursor::DisplayedTarget(seat, key.object, key.controller);
     return key;
 }
 

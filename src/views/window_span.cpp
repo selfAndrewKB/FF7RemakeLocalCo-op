@@ -81,12 +81,12 @@ std::uintptr_t      g_engineGlobal = 0;        // GEngine, live
 std::uintptr_t      g_vtable       = 0;        // FWindowsWindow's vtable, live
 RequestResolutionFn g_request      = nullptr;  // live
 const std::int32_t* g_systemRes    = nullptr;  // GSystemResolution, live (read only)
-bool                g_auto         = true;     // enter on player 2's join
+bool                g_auto         = true;     // enter on a further player's join
 bool                g_autoTried    = false;    // one try per join
-bool                g_held         = false;    // the hold: the span with any player count, kept when player 2 leaves
+bool                g_held         = false;    // the hold: the span with any player count, kept when the last further player leaves
 bool                g_holdTried    = false;    // one try per switch-on (the preset's waits for the game's first steady frame)
 bool                g_holdPreset   = false;    // the hold came from the preset: its try waits for the window and the play state
-bool                g_playerTwoIn  = false;
+bool                g_furtherPlayerIn = false;
 
 /// The preset's word as the live state reads: `on` while the hold is on, `off` while neither the hold nor the join
 /// rule is, else `auto`.
@@ -479,7 +479,7 @@ bool Install(const platform::GameImage& image) noexcept
                            if (g_auto)
                            {
                                g_autoTried = true;
-                               if (g_step == Step::Out && !Enter(g_playerTwoIn ? kColumnsBuilt : 1))
+                               if (g_step == Step::Out && !Enter(g_furtherPlayerIn ? kColumnsBuilt : 1))
                                {
                                    return control::Outcome{false, L"the span could not be entered (see the log)"};
                                }
@@ -491,9 +491,9 @@ bool Install(const platform::GameImage& image) noexcept
                        .get = [] { return control::Value{g_auto}; }});
     control::Register({.name  = L"window-span.hold",
                        .shape = control::Shape::OnOff,
-                       .help  = L"on: the window spans the row now with any player count and stays spanned when player 2 "
-                                L"leaves (loading screens, the main menu, movies); off: back to following player 2 (leaves "
-                                L"now if player 2 is out)",
+                       .help  = L"on: the window spans the row now with any player count and stays spanned when the last further player "
+                                L"leaves (loading screens, the main menu, movies); off: back to following the further players (leaves "
+                                L"now if every one is out)",
                        .set   = [](const control::Value& v) {
                            g_held = std::get<bool>(v);
                            if (g_held)
@@ -503,13 +503,13 @@ bool Install(const platform::GameImage& image) noexcept
                                {
                                    return control::Outcome{false, L"the span could not be entered (see the log)"};
                                }
-                               platform::Log(L"window span: held (with any player count, kept when player 2 leaves)");
+                               platform::Log(L"window span: held (with any player count, kept when the last further player leaves)");
                                return control::Outcome{};
                            }
-                           platform::Log(L"window span: the hold is off; the span follows player 2 again");
-                           if (!g_playerTwoIn)
+                           platform::Log(L"window span: the hold is off; the span follows the further players again");
+                           if (!g_furtherPlayerIn)
                            {
-                               Leave(L"the hold switched off with player 2 out");
+                               Leave(L"the hold switched off with every further player out");
                            }
                            return control::Outcome{};
                        },
@@ -526,7 +526,7 @@ bool Install(const platform::GameImage& image) noexcept
         [] { return Preset(); });
     SetPreset(platform::settings::Of(platform::settings::kMultiMonitor).word, platform::settings::Why(platform::settings::kMultiMonitor).c_str());
     const auto res = ReadResolution();
-    platform::Log(L"window span: ready (on by default: with player 2 in, the window spans a row of equal monitors through "
+    platform::Log(L"window span: ready (on by default: with a further player in, the window spans a row of equal monitors through "
                   L"the game's resolution request and the engine's window reshape; Ctrl+F2 toggles; window-span.hold on "
                   L"spans with any player count); the game's resolution is {} now",
                   ResolutionText(res));
@@ -658,9 +658,9 @@ void Toggle() noexcept
     {
         g_auto      = true;
         g_autoTried = true;
-        if (!g_playerTwoIn && !g_held)
+        if (!g_furtherPlayerIn && !g_held)
         {
-            platform::Log(L"window span: Ctrl+F2 with player 2 out: the span enters on the join (window-span.hold on "
+            platform::Log(L"window span: Ctrl+F2 with every further player out: the span enters on the next join (window-span.hold on "
                           L"spans now)");
             return;
         }
@@ -703,7 +703,7 @@ void SetPreset(const std::wstring& preset, const wchar_t* why) noexcept
         g_held       = false;
         g_holdPreset = false;
         platform::Log(L"window span: multi-monitor = auto ({}): the span while a further player is in", why);
-        if (In() && !g_playerTwoIn)
+        if (In() && !g_furtherPlayerIn)
         {
             Leave(L"multi-monitor auto with no further player in");
         }
@@ -714,16 +714,16 @@ void SetPreset(const std::wstring& preset, const wchar_t* why) noexcept
     }
 }
 
-void Tick(bool playerTwoIn) noexcept
+void Tick(bool furtherPlayerIn) noexcept
 {
     if (!g_installed)
     {
         return;
     }
-    g_playerTwoIn = playerTwoIn;
+    g_furtherPlayerIn = furtherPlayerIn;
     if (g_step == Step::Out)
     {
-        if (!playerTwoIn)
+        if (!furtherPlayerIn)
         {
             g_autoTried = false;
         }
@@ -738,16 +738,16 @@ void Tick(bool playerTwoIn) noexcept
                 Enter(kColumnsBuilt);
             }
         }
-        else if (playerTwoIn && g_auto && !g_autoTried)
+        else if (furtherPlayerIn && g_auto && !g_autoTried)
         {
             g_autoTried = true;
             Enter(kColumnsBuilt);
         }
         return;
     }
-    if (!playerTwoIn && !g_held && g_step != Step::Leaving)
+    if (!furtherPlayerIn && !g_held && g_step != Step::Leaving)
     {
-        Leave(L"player 2 is out");
+        Leave(L"every further player is out");
     }
     ++g_ticks;
     ++g_stepTicks;
@@ -894,9 +894,9 @@ std::wstring Reading() noexcept
         return std::format(L"out; auto {}; hold {}; entries {}; the resolution {}", g_auto ? L"on" : L"off",
                            g_held ? L"on" : L"off", g_entries, ResolutionText(ReadResolution()));
     }
-    return std::format(L"{} ({} columns, row {}; hold {}; player 2 {}); the window's client area {}; the resolution {}; "
+    return std::format(L"{} ({} columns, row {}; hold {}; further players {}); the window's client area {}; the resolution {}; "
                        L"the viewport {}; re-applies {}{}",
-                       StepName(g_step), g_columns, RectText(g_target), g_held ? L"on" : L"off", g_playerTwoIn ? L"in" : L"out",
+                       StepName(g_step), g_columns, RectText(g_target), g_held ? L"on" : L"off", g_furtherPlayerIn ? L"in" : L"out",
                        RectText(IsWindow(g_hwnd) ? ClientRect(g_hwnd) : Rect{}), ResolutionText(ReadResolution()), ViewportText(),
                        g_reapplies, display_align::Moved() ? std::format(L"; monitors lined up: {}", display_align::Reading()) : L"");
 }

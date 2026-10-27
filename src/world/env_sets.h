@@ -34,7 +34,7 @@ namespace lss::platform {
 class GameImage;
 }
 
-namespace lss::world::env_sets_two {
+namespace lss::world::env_sets {
 
 /// Checks the calls and the game functions against the research and places the read redirect (logged). The trace's
 /// call crosses a block: Tick places it. False if anything differs (every further player's view then shows player
@@ -55,4 +55,4 @@ void SetEnabled(bool on) noexcept;
 /// The `world.env-sets` reading: each further player's set, the actors hidden in their view, what could not be.
 std::wstring Reading() noexcept;
 
-}  // namespace lss::world::env_sets_two
+}  // namespace lss::world::env_sets

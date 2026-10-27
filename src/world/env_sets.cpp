@@ -1,4 +1,4 @@
-#include "world/env_sets_two.h"
+#include "world/env_sets.h"
 
 #include "control/registry.h"
 #include "engine_facts.h"
@@ -22,7 +22,7 @@
 #include <string>
 #include <utility>
 
-namespace lss::world::env_sets_two {
+namespace lss::world::env_sets {
 
 namespace {
 
@@ -166,7 +166,7 @@ try
     if (problem != what)
     {
         problem = std::move(what);
-        platform::LogDebug(L"env sets 2: {}: {}", SeatName(seat), problem);
+        platform::LogDebug(L"env sets: {}: {}", SeatName(seat), problem);
     }
 }
 catch (...)
@@ -256,7 +256,7 @@ ReadResult ReadSeat(int seat, Seat& s, void* manager) noexcept
     ++s.reads;
     if (name != nullptr && !platform::WriteGuarded(name, savedName.data(), savedName.size()))
     {
-        platform::LogWarning(L"env sets 2: the save data's set name could not be put back");
+        platform::LogWarning(L"env sets: the save data's set name could not be put back");
         Problem(seat, L"the save data's set name could not be put back; no other player's set is read this frame");
         return ReadResult::NameLost;
     }
@@ -291,7 +291,7 @@ ReadResult ReadSeat(int seat, Seat& s, void* manager) noexcept
     platform::CopyGuarded(ids.data(), s.block.data() + facts::kEnvSetBlockIds, sizeof(ids));
     if (ids != s.ids)
     {
-        platform::LogDebug(L"env sets 2: {}'s ground names set {} ({} actors, {} levels)", SeatName(seat), IdsText(ids),
+        platform::LogDebug(L"env sets: {}'s ground names set {} ({} actors, {} levels)", SeatName(seat), IdsText(ids),
                            s.fresh.entries.count, s.fresh.levels.count);
         s.ids = ids;
     }
@@ -420,7 +420,7 @@ bool Write(int seat, Seat& s, std::uint8_t* controller) noexcept
         s.ours.count = 0;  // a new controller: nothing of the mod's there
         std::uint8_t renders = 0;
         Read(controller + facts::kControllerRenderPrimitives, renders);
-        platform::LogDebug(L"env sets 2: {}'s controller builds its view's hidden list {} (bRenderPrimitiveComponents {}); "
+        platform::LogDebug(L"env sets: {}'s controller builds its view's hidden list {} (bRenderPrimitiveComponents {}); "
                            L"{} actors listed before the mod's",
                            SeatName(seat), renders != 0 ? L"yes" : L"NO", renders, now.num);
     }
@@ -462,11 +462,11 @@ void Refresh(int seat, Seat& s, std::uint8_t* manager, bool changed) noexcept
     }
     if (Write(seat, s, s.controller))
     {
-        platform::LogDebug(L"env sets 2: {}'s view hides {} actors of set {} ({} attached; {} of its {} hidden entries not "
+        platform::LogDebug(L"env sets: {}'s view hides {} actors of set {} ({} attached; {} of its {} hidden entries not "
                            L"found; {} it shows are hidden by player 1's set)",
                            SeatName(seat), s.ours.count, IdsText(s.pacedIds), s.attachedCount, s.notFound, s.hiddenEntries,
                            s.shownButHidden);
-        platform::LogDebug(L"env sets 2: searched {} of the set's {} levels (the ones in the game's lookup set)",
+        platform::LogDebug(L"env sets: searched {} of the set's {} levels (the ones in the game's lookup set)",
                            g_lookupLevels.count, s.paced.set.levels.count);
     }
 }
@@ -524,7 +524,7 @@ bool Install(const platform::GameImage& image) noexcept
     if (!issueCall || !readCall || !issue || !read || !reset || !findId || !findActor || !resize || !attached ||
         !release || !save || !manager)
     {
-        platform::LogWarning(L"env sets 2: the EnvironmentSet code is not what the research read; every further player's "
+        platform::LogWarning(L"env sets: the EnvironmentSet code is not what the research read; every further player's "
                              L"view shows what player 1's ground leaves");
         return false;
     }
@@ -540,7 +540,7 @@ bool Install(const platform::GameImage& image) noexcept
     g_manager   = reinterpret_cast<std::uint8_t**>(*manager);
     if (!g_readCall.Install(*readCall, *read, reinterpret_cast<std::uintptr_t>(&ReadSet)))
     {
-        platform::LogWarning(L"env sets 2: the read could not be redirected; every further player's view shows what player "
+        platform::LogWarning(L"env sets: the read could not be redirected; every further player's view shows what player "
                              L"1's ground leaves");
         return false;
     }
@@ -549,7 +549,7 @@ bool Install(const platform::GameImage& image) noexcept
     control::Register({.name  = L"env-sets",
                        .shape = control::Shape::OnOff,
                        .help  = L"each further player's view hides what the area hides under that player, as player 1's does "
-                                L"(world/env_sets_two.h; on)",
+                                L"(world/env_sets.h; on)",
                        .set   = [](const control::Value& value) {
                            SetEnabled(std::get<bool>(value));
                            return control::Outcome{};
@@ -558,7 +558,7 @@ bool Install(const platform::GameImage& image) noexcept
     control::Register({.name = L"world.env-sets", .shape = control::Shape::Text,
                        .help = L"each further player's EnvironmentSet and the actors hidden in their view",
                        .get  = [] { return control::Value{Reading()}; }});
-    platform::Log(L"env sets 2: the read is redirected; the further players' traces are placed on the first tick; each "
+    platform::Log(L"env sets: the read is redirected; the further players' traces are placed on the first tick; each "
                   L"further player's view hides what their ground hides (the world stays player 1's)");
     return true;
 }
@@ -588,11 +588,11 @@ void Tick() noexcept
     g_placed = true;  // once, whatever the outcome; outside the world tick, as the crossing call needs
     if (g_issueCall.InstallFromOwnThread(g_issueSite, g_issueTarget, reinterpret_cast<std::uintptr_t>(&Issue)))
     {
-        platform::Log(L"env sets 2: the trace is redirected; each further player's view hides what their ground hides");
+        platform::Log(L"env sets: the trace is redirected; each further player's view hides what their ground hides");
     }
     else
     {
-        platform::LogWarning(L"env sets 2: the trace could not be redirected; every further player's view shows what player "
+        platform::LogWarning(L"env sets: the trace could not be redirected; every further player's view shows what player "
                              L"1's ground leaves");
     }
 }
@@ -604,7 +604,7 @@ void SetEnabled(bool on) noexcept
     {
         g_seats[seat].due = true;
     }
-    platform::Log(L"env sets 2 {}", on ? L"on" : L"off (a further player's view hides nothing of its own from the next read)");
+    platform::Log(L"env sets {}", on ? L"on" : L"off (a further player's view hides nothing of its own from the next read)");
 }
 
 std::wstring Reading() noexcept
@@ -636,4 +636,4 @@ catch (...)
     return L"?";
 }
 
-}  // namespace lss::world::env_sets_two
+}  // namespace lss::world::env_sets

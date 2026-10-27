@@ -40,8 +40,8 @@
 //   - the crawl's, the squeeze's and the grappling hook's field control lock is skipped for a seat's member (it would
 //     hand the scoped leader to its AI and lock the field for player 1);
 //   - player 1's own crawl, squeeze or hookshot lock hands only player 1's character to its AI: the session asks
-//     MoverLockNow and PlayerOneMoveHolds and keeps the seats' members theirs; the scene camera (views/scene_camera_two)
-//     does not count its bits as a scene and the command menu (battle/command_menu_two) does not copy player 1's closed
+//     MoverLockNow and PlayerOneMoveHolds and keeps the seats' members theirs; the scene camera (views/scene_camera)
+//     does not count its bits as a scene and the command menu (battle/command_menu) does not copy player 1's closed
 //     menu to the seats while it holds; and that action's "no new action" switch is taken away for the seats' start
 //     tests (world/traversal_walkup.h), a script's own hold kept;
 //   - a seat's own action takes "no new action" for the seat's own target pick and start tests (NoActionScope), as the
@@ -116,7 +116,7 @@ bool MoverLockNow() noexcept;
 
 /// Of `mask` (the field control lock mask read now), the bits that are player 1's own crawl, squeeze or grappling hook,
 /// and a bit once seen as the move's kept while it stays set (its queued unlock drops the flag before the bit clears).
-/// Kept up to date by the scene camera's read every frame (views/scene_camera_two). Game thread.
+/// Kept up to date by the scene camera's read every frame (views/scene_camera). Game thread.
 std::uint32_t PlayerOneMoveBitsIn(std::uint32_t mask) noexcept;
 
 /// The lock `mask` holds nothing but player 1's own move (a mask still 0: MoverLockNow, its lock queued and not yet

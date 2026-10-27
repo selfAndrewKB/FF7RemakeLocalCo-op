@@ -15,7 +15,7 @@
 // second camera without a member would float alone over an empty view.
 // Member: the seat takes the member in its row of the game's party order (players/party_member.h: seat 1 the 2nd
 // row) through the game's leader funnel (players/party_seat.h), and its own field camera operator follows that
-// member (players/player_two_camera.h). It follows the row through the game's own funnels (players/party_events.h):
+// member (players/seat_camera.h). It follows the row through the game's own funnels (players/party_events.h):
 // before the game seats player 1 on its member, and when a formation rebuild drops the member, it is given back
 // (through the same funnel) and the row's new member seated next tick, or, with none free, the player leaves and
 // waits as at a join; after a rebuild its PLAYER actor type is set again; when the game hands its leader to its AI

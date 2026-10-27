@@ -1,4 +1,4 @@
-#include "players/nav_area_two.h"
+#include "players/nav_area.h"
 
 #include "control/registry.h"
 #include "engine_facts.h"
@@ -19,7 +19,7 @@
 #include <format>
 #include <string>
 
-namespace lss::players::nav_area_two {
+namespace lss::players::nav_area {
 
 namespace {
 
@@ -145,16 +145,16 @@ void* RoomLeader(void* partyManager, std::uint8_t selector, RoomEvent event) noe
     {
     case RoomEvent::Enter:
         ++c.roomEnters;
-        platform::LogDebug(L"nav area 2: {} entered a room; its walk limit goes on {}'s own character", SeatName(run.seat),
+        platform::LogDebug(L"nav area: {} entered a room; its walk limit goes on {}'s own character", SeatName(run.seat),
                            SeatName(run.seat));
         break;
     case RoomEvent::Stay:
         ++c.roomStays;
-        platform::LogTrace(L"nav area 2: {} stays in a room; its walk limit on its own character", SeatName(run.seat));
+        platform::LogTrace(L"nav area: {} stays in a room; its walk limit on its own character", SeatName(run.seat));
         break;
     case RoomEvent::Leave:
         ++c.roomLeaves;
-        platform::LogDebug(L"nav area 2: {} left a room; its walk limit comes off {}'s own character (or the next room's)",
+        platform::LogDebug(L"nav area: {} left a room; its walk limit comes off {}'s own character (or the next room's)",
                            SeatName(run.seat), SeatName(run.seat));
         break;
     }
@@ -283,13 +283,13 @@ bool Install(const platform::GameImage& image) noexcept
     const auto tick = platform::FindFunction(image, facts::kNavAreaComponentTick.target);
     if (!tick)
     {
-        platform::Log(L"nav area 2: the component's tick differs; a seat's InDoor camera settings reach player 1's operator");
+        platform::Log(L"nav area: the component's tick differs; a seat's InDoor camera settings reach player 1's operator");
         return false;
     }
     g_tick = reinterpret_cast<TickFn>(*tick);
     if (!platform::ReplaceSlot(image, facts::kNavAreaComponentTick, reinterpret_cast<std::uintptr_t>(&TickComponent), g_slot))
     {
-        platform::Log(L"nav area 2: the component's tick slot could not be replaced; a seat's InDoor camera settings reach player 1's operator");
+        platform::Log(L"nav area: the component's tick slot could not be replaced; a seat's InDoor camera settings reach player 1's operator");
         return false;
     }
     const auto refresh   = platform::FindFunction(image, facts::kNavAreaRefreshFromLeader);
@@ -301,7 +301,7 @@ bool Install(const platform::GameImage& image) noexcept
     }
     else
     {
-        platform::Log(L"nav area 2: the component's diff or its map's Remove differs; a respawned operator keeps missing the InDoor setting pushed before it");
+        platform::Log(L"nav area: the component's diff or its map's Remove differs; a respawned operator keeps missing the InDoor setting pushed before it");
     }
     const auto leader = platform::FindFunction(image, facts::kGetPartyLeader);
     bool       sites  = leader.has_value();
@@ -318,13 +318,13 @@ bool Install(const platform::GameImage& image) noexcept
     else
     {
         g_roomSites = {};
-        platform::Log(L"nav area 2: the room handlers' leader calls could not be checked; a further player's room limits player 1's "
+        platform::Log(L"nav area: the room handlers' leader calls could not be checked; a further player's room limits player 1's "
                       L"character");
     }
     control::Register({.name = L"nav-area-two", .shape = control::Shape::Text,
                        .help = L"each seat's controller's nav-area component ticks: all, of them in the seat's scopes, of those with its own command row, with its row alone; operator spawns re-entered at, volumes entered again; room walk limits written on the seat's own character (enters, stays, leaves, none read) and cleared at a take or give-back",
                        .get  = [] { return control::Value{Reading()}; }});
-    platform::Log(L"nav area 2: each seat's nav-area component ticks in that seat's scopes{}",
+    platform::Log(L"nav area: each seat's nav-area component ticks in that seat's scopes{}",
                   g_refresh != nullptr ? L"; its volumes enter again at each operator spawn" : L"");
     return true;
 }
@@ -341,20 +341,20 @@ void OnOperatorStarted(int seat, void* seatController) noexcept
     const wchar_t* name = SeatName(seat);
     if (!Read(static_cast<std::uint8_t*>(component) + facts::kNavAreaComponentController, owner) || owner != seatController)
     {
-        platform::LogDebug(L"nav area 2: {}'s component has not begun play at the operator spawn; its first tick enters", name);
+        platform::LogDebug(L"nav area: {}'s component has not begun play at the operator spawn; its first tick enters", name);
         return;
     }
     const RoomRunScope  room(seat, seatController);
     const scopes::Scope scope(seat, kSeatScopes);
     if (!scope.Held())
     {
-        platform::Log(L"nav area 2: {}'s scopes could not be held at the operator spawn; the volumes entered before it stay missing", name);
+        platform::Log(L"nav area: {}'s scopes could not be held at the operator spawn; the volumes entered before it stay missing", name);
         return;
     }
     const scopes::Scope row(seat, scopes::UiSlot);
     if (!row.Held())
     {
-        platform::LogDebug(L"nav area 2: {}'s UI slot could not be held at the operator spawn (no command controller bound?); a hook area "
+        platform::LogDebug(L"nav area: {}'s UI slot could not be held at the operator spawn (no command controller bound?); a hook area "
                            L"entered again shows its row in player 1's menu", name);
     }
     // The game's own diff once, out of band as its camera reset runs it: volumes left during the scene Leave, new
@@ -376,7 +376,7 @@ void OnOperatorStarted(int seat, void* seatController) noexcept
     platform::CallGuarded(g_refresh, component, 0.0f);
     ++g_counts[seat].spawns;
     g_counts[seat].reentered += removed;
-    platform::Log(L"nav area 2: {}'s component listed {} volumes at the operator spawn, {} forgotten and entered again on the new operator",
+    platform::Log(L"nav area: {}'s component listed {} volumes at the operator spawn, {} forgotten and entered again on the new operator",
                   name, listed, removed);
 }
 
@@ -404,11 +404,11 @@ void Tick() noexcept
         {
             call.Restore();
         }
-        platform::Log(L"nav area 2: a room handler's leader call could not be redirected; a further player's room limits player 1's "
+        platform::Log(L"nav area: a room handler's leader call could not be redirected; a further player's room limits player 1's "
                       L"character");
         return;
     }
-    platform::Log(L"nav area 2: rooms per player: a room a further player walks in limits that player's own character");
+    platform::Log(L"nav area: rooms per player: a room a further player walks in limits that player's own character");
 }
 
 void TickSeat(int seat, void* member) noexcept
@@ -447,7 +447,7 @@ void TickSeat(int seat, void* member) noexcept
         if (character != nullptr && character != one && !otherSeats(character) && ClearRoomLimit(character))
         {
             ++g_counts[seat].roomClears;
-            platform::LogDebug(L"nav area 2: {}'s {} member has its room walk limit cleared (its room check sets it again if "
+            platform::LogDebug(L"nav area: {}'s {} member has its room walk limit cleared (its room check sets it again if "
                                L"it stands in one)",
                                SeatName(seat), character == member ? L"new" : L"former");
         }
@@ -464,4 +464,4 @@ void Remove() noexcept
     g_slot.Restore();
 }
 
-}  // namespace lss::players::nav_area_two
+}  // namespace lss::players::nav_area

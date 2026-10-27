@@ -10,7 +10,7 @@
 #include "platform/vtable_entry.h"
 #include "players/field_root.h"
 #include "players/player_trigger.h"
-#include "players/player_two_camera.h"
+#include "players/seat_camera.h"
 #include "players/scopes.h"
 #include "players/seats.h"
 #include "players/weak_object.h"
@@ -563,7 +563,7 @@ void TryStartFor(int seat, void* actor, std::size_t cls, float dt, TryStartFn or
         const players::scopes::Scope scope(seat, players::scopes::Leader | players::scopes::Primary);
         if (scope.Held())
         {
-            const players::player_two_camera::StickScope stick(static_cast<std::uint32_t>(seat), true);
+            const players::seat_camera::StickScope stick(static_cast<std::uint32_t>(seat), true);
             original(actor, dt);
         }
     }

@@ -8,7 +8,7 @@
 #include "platform/log.h"
 #include "platform/verified_code.h"
 #include "platform/vtable_entry.h"
-#include "players/player_two_camera.h"
+#include "players/seat_camera.h"
 #include "players/scopes.h"
 #include "players/seats.h"
 
@@ -172,7 +172,7 @@ char Steer(void* component, float deltaTime)
     {
         return original(component, deltaTime);  // never the seat's stick against player 1's camera
     }
-    const players::player_two_camera::StickScope stick(static_cast<std::uint32_t>(seat), true);
+    const players::seat_camera::StickScope stick(static_cast<std::uint32_t>(seat), true);
     return original(component, deltaTime);
 }
 

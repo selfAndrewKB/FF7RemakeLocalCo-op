@@ -4,7 +4,7 @@
 // a faulting read answer false, `out` untouched). The distance the modules measure with comes with it: flat, in the
 // ground plane (the talk gather's threshold, the battle warps' log). Before this header nine modules each read the two fields
 // themselves (talk_gather's Vec3/Location/Flat, battle_warps' FlatMetres, npc_senses' and npc_crowd's Location,
-// traversal_walkup's LocationOf, field_icons' and anim_two_views' owner location, env_sets_two's trace origin,
+// traversal_walkup's LocationOf, field_icons' and anim_views' owner location, env_sets's trace origin,
 // npc_detail's record walk; cleanup step 3, plan/code-alignment.md B2). The modules whose arithmetic takes arrays or
 // their own three-float struct keep that type and take the array form; audio/listener_rules keeps its std::array
 // form, since its host-tested math takes arrays. Any thread: a guarded read of the actor's own fields, nothing kept.

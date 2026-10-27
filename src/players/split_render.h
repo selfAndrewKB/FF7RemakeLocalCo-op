@@ -35,7 +35,7 @@ void Remove() noexcept;
 /// The bits forced on while player 2 is in. Default 0x1008 (TAA and 0x1000); the mod raises it to 0x100A (bloom too)
 /// when render/bloom_origin installs, since bloom leaks player 1's rows into player 2's half without it. Applied at
 /// once if player 2 is in. Game thread.
-void SetMask(std::uint32_t mask, bool playerTwoIn) noexcept;
+void SetMask(std::uint32_t mask, bool furtherPlayerIn) noexcept;
 std::uint32_t Mask() noexcept;
 
 }  // namespace lss::players::split_render

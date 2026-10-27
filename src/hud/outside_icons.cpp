@@ -1,6 +1,6 @@
 #include "hud/outside_icons.h"
 
-#include "battle/target_cursor_two.h"
+#include "battle/target_cursor.h"
 #include "control/registry.h"
 #include "engine_facts.h"
 #include "hud/arrow_timers.h"
@@ -304,7 +304,7 @@ void RunForColumn(int column, void* controller) noexcept
         StandAside(L"reading the arrows");
         return;
     }
-    battle::target_cursor_two::HighlightName(seat, seatName);  // 0 before the seat's first target, as a new manager
+    battle::target_cursor::HighlightName(seat, seatName);  // 0 before the seat's first target, as a new manager
     auto& timers = g_timers[static_cast<std::size_t>(seat)];
     timers.BeginIn();
     for (std::size_t i = 0; i < before.count; ++i)

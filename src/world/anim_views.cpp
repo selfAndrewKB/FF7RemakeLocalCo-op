@@ -1,4 +1,4 @@
-#include "world/anim_two_views.h"
+#include "world/anim_views.h"
 
 #include "control/registry.h"
 #include "engine_facts.h"
@@ -17,7 +17,7 @@
 #include <format>
 #include <string>
 
-namespace lss::world::anim_two_views {
+namespace lss::world::anim_views {
 
 namespace {
 
@@ -227,7 +227,7 @@ try
     g_summary = std::format(L"{:.0f} meshes judged per frame, {}judging {:.3f} ms per frame, {} snapshot write(s) failed{}",
                             static_cast<double>(g_judged) / g_updates, shares, g_updateMicros / g_updates / 1000.0,
                             g_swapFailed, members);
-    platform::LogDebug(L"anim two views: {}", g_summary);
+    platform::LogDebug(L"anim views: {}", g_summary);
     g_updates = g_judged = g_swapFailed = 0;
     g_updateMicros = 0.0;
     for (int seat = 1; seat <= kSeatsBuilt; ++seat)
@@ -246,7 +246,7 @@ bool Install(const platform::GameImage& image) noexcept
     const auto judge = reinterpret_cast<std::uintptr_t>(&Judge);
     if (!platform::ReplaceSlot(image, facts::kAnimJudgeSlot, judge, g_judgeSlot))
     {
-        platform::LogWarning(L"anim two views: the judge's slot differs; characters are judged from player 1's camera only");
+        platform::LogWarning(L"anim views: the judge's slot differs; characters are judged from player 1's camera only");
         return false;
     }
     if (!platform::ReplaceSlot(image, facts::kAnimJudgeSwitchableSlot, judge, g_judgeSwitchableSlot) ||
@@ -254,14 +254,14 @@ bool Install(const platform::GameImage& image) noexcept
     {
         g_judgeSwitchableSlot.Restore();
         g_judgeSlot.Restore();
-        platform::LogWarning(L"anim two views: a slot differs; characters are judged from player 1's camera only");
+        platform::LogWarning(L"anim views: a slot differs; characters are judged from player 1's camera only");
         return false;
     }
     g_judge  = reinterpret_cast<JudgeFn>(g_judgeSlot.Original());
     g_update = reinterpret_cast<UpdateFn>(g_updateSlot.Original());
     control::Register({.name  = L"anim-two",
                        .shape = control::Shape::OnOff,
-                       .help  = L"characters near a further player are animated as if that player's camera were the game's (world/anim_two_views.h; on)",
+                       .help  = L"characters near a further player are animated as if that player's camera were the game's (world/anim_views.h; on)",
                        .set   = [](const control::Value& value) {
                            SetEnabled(std::get<bool>(value));
                            return control::Outcome{};
@@ -270,7 +270,7 @@ bool Install(const platform::GameImage& image) noexcept
     control::Register({.name = L"world.anim", .shape = control::Shape::Text,
                        .help = L"the last 10 s: meshes judged, the share judged from each further player's camera, the time, their characters",
                        .get  = [] { return control::Value{Reading()}; }});
-    platform::Log(L"anim two views: installed; each character is judged from the camera that sees it best while a further "
+    platform::Log(L"anim views: installed; each character is judged from the camera that sees it best while a further "
                   L"player is in");
     return true;
 }
@@ -303,7 +303,7 @@ void Tick() noexcept
 void SetEnabled(bool on) noexcept
 {
     g_enabled = on;
-    platform::Log(L"anim two views {}", on ? L"on" : L"off (every character judged from player 1's camera, as the game alone does)");
+    platform::Log(L"anim views {}", on ? L"on" : L"off (every character judged from player 1's camera, as the game alone does)");
 }
 
 std::wstring Reading() noexcept
@@ -311,4 +311,4 @@ std::wstring Reading() noexcept
     return std::wstring(g_enabled ? L"on; " : L"off; ") + g_summary;
 }
 
-}  // namespace lss::world::anim_two_views
+}  // namespace lss::world::anim_views

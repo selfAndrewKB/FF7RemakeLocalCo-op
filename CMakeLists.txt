@@ -29,26 +29,26 @@ add_library(LocalSplitScreen SHARED
     src/control/runner.cpp
     src/control/script.cpp
     src/control/server.cpp
-    src/battle/command_camera_two.cpp
+    src/battle/command_camera.cpp
     src/battle/arena_warp.cpp
     src/battle/battle_warps.cpp
     src/battle/command_menu_tick.cpp
-    src/battle/command_menu_two.cpp
+    src/battle/command_menu.cpp
     src/battle/menu_grey.cpp
     src/battle/enemy_coin.cpp
     src/battle/enemy_leader.cpp
     src/battle/enemy_watch.cpp
-    src/battle/lock_camera_two.cpp
+    src/battle/lock_camera.cpp
     src/battle/member_rates.cpp
     src/battle/party_switch.cpp
-    src/battle/sequence_camera_two.cpp
-    src/battle/target_cursor_two.cpp
-    src/battle/targeting_two.cpp
+    src/battle/sequence_camera.cpp
+    src/battle/target_cursor.cpp
+    src/battle/targeting.cpp
     src/hud/hud_probe.cpp
     src/hud/field_icons.cpp
     src/hud/image_entries.cpp
     src/hud/marker_replay.cpp
-    src/hud/minimap_two.cpp
+    src/hud/minimap.cpp
     src/hud/outside_icons.cpp
     src/render/shadows_per_view.cpp
     src/hud/overlay_pass.cpp
@@ -85,10 +85,10 @@ add_library(LocalSplitScreen SHARED
     src/players/party_member.cpp
     src/players/party_seat.cpp
     src/players/player_trigger.cpp
-    src/players/camera_override_two.cpp
+    src/players/camera_override.cpp
     src/players/operator_battle_mode.cpp
-    src/players/nav_area_two.cpp
-    src/players/player_two_camera.cpp
+    src/players/nav_area.cpp
+    src/players/seat_camera.cpp
     src/players/scopes.cpp
     src/players/seat_objects.cpp
     src/players/session.cpp
@@ -114,12 +114,12 @@ add_library(LocalSplitScreen SHARED
     src/views/split_scale.cpp
     src/views/display_align.cpp
     src/views/mirror_player.cpp
-    src/views/scene_camera_two.cpp
+    src/views/scene_camera.cpp
     src/views/monitor_row.cpp
     src/views/window_span.cpp
     src/world/actor_place.cpp
-    src/world/anim_two_views.cpp
-    src/world/env_sets_two.cpp
+    src/world/anim_views.cpp
+    src/world/env_sets.cpp
     src/world/npc_crowd.cpp
     src/world/npc_detail.cpp
     src/world/npc_senses.cpp

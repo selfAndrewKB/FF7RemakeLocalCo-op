@@ -11,7 +11,7 @@
 #include "platform/vtable_entry.h"
 #include "players/field_root.h"
 #include "players/pad_buttons.h"
-#include "players/player_two_camera.h"
+#include "players/seat_camera.h"
 #include "players/scopes.h"
 #include "players/seat_objects.h"
 #include "players/seats.h"
@@ -219,7 +219,7 @@ void RunAsSeat(int seat, Call&& call)
         const players::scopes::Scope scope(seat, players::scopes::Leader | players::scopes::Primary | players::scopes::Operator);
         if (scope.Held())
         {
-            const players::player_two_camera::StickScope stick(static_cast<std::uint32_t>(seat), true);
+            const players::seat_camera::StickScope stick(static_cast<std::uint32_t>(seat), true);
             const players::pad_buttons::ButtonScope      buttons(static_cast<unsigned>(seat));
             auto*                                        root = players::field_root::Root();
             const KeptByte latch(root != nullptr ? root + facts::kRootStickLatch : nullptr, 0);  // player 1's camera-cut latch
@@ -740,7 +740,7 @@ bool DuctLeaving(const void* flavor) noexcept
 /// delegate's own condition: the squeeze's leaves whenever the operator has the flavor, the crawl's only once it began.
 void DuctLeaveNearEnd(int seat, std::uint8_t action) noexcept
 {
-    const void*  op     = players::player_two_camera::Operator(seat);
+    const void*  op     = players::seat_camera::Operator(seat);
     void*        flavor = op != nullptr ? ReadPointer(op, facts::kOperatorFlavors + 8u * facts::kFlavorDuct) : nullptr;
     std::uint8_t begun  = 0;
     if (flavor == nullptr || g_ductLeave == nullptr ||
@@ -768,7 +768,7 @@ bool RopeLeaving(const void* flavor) noexcept
 /// The seat's rope/pole camera eased out with the game's own leave, unless it is leaving already.
 void RopeLeave(int seat, const wchar_t* when) noexcept
 {
-    const void* op     = players::player_two_camera::Operator(seat);
+    const void* op     = players::seat_camera::Operator(seat);
     void*       flavor = op != nullptr ? ReadPointer(op, facts::kOperatorFlavors + 8u * facts::kFlavorRope) : nullptr;
     std::uint8_t active = 0;
     if (flavor == nullptr || g_ropeLeave == nullptr || !Read(static_cast<const std::uint8_t*>(flavor) + facts::kFlavorActive, active) ||
@@ -806,7 +806,7 @@ void LadderLeaveAtExit(int seat, void* state, std::uint8_t phase) noexcept
 {
     const auto*  component = static_cast<const std::uint8_t*>(g_seats[seat].component);
     std::uint8_t action    = 0;
-    const void*  op        = players::player_two_camera::Operator(seat);
+    const void*  op        = players::seat_camera::Operator(seat);
     void*        flavor    = op != nullptr ? ReadPointer(op, facts::kOperatorFlavors + 8u * facts::kFlavorLadder) : nullptr;
     const bool   climbing  = component != nullptr && Read(component + facts::kFieldActionState, action) &&
                           action == facts::kFieldActionLadder &&
@@ -853,8 +853,8 @@ void LogHookShotCameras(int seat, const void* member, const wchar_t* when) noexc
     const bool  tiltRead = mesh != nullptr && platform::CopyGuarded(tilt, mesh + facts::kSceneRelativeRotation, sizeof(tilt));
     platform::LogDebug(L"traversal: {}'s grappling hook {}: its hookshot camera {}, player 1's {}; its controller possesses the member: {}; "
                        L"mesh pitch {:.1f} roll {:.1f}{}",
-                       players::SeatName(seat), when, FlavorActive(players::player_two_camera::Operator(seat), facts::kFlavorHookShot),
-                       FlavorActive(players::player_two_camera::OperatorOne(), facts::kFlavorHookShot),
+                       players::SeatName(seat), when, FlavorActive(players::seat_camera::Operator(seat), facts::kFlavorHookShot),
+                       FlavorActive(players::seat_camera::OperatorOne(), facts::kFlavorHookShot),
                        member == nullptr ? L"no member" : controller == nullptr ? L"no controller" : possessed == member ? L"yes" : L"NO",
                        tilt[0], tilt[2], tiltRead ? L"" : L" (unread)");
 }
@@ -862,7 +862,7 @@ void LogHookShotCameras(int seat, const void* member, const wchar_t* when) noexc
 /// After a seat's action ends: the camera flavors its exit left on the seat's operator, switched off by the game.
 void CamerasOffAfter(int seat, std::uint8_t ended) noexcept
 {
-    void* op = players::player_two_camera::Operator(seat);
+    void* op = players::seat_camera::Operator(seat);
     if (op == nullptr || g_deactivate == nullptr)
     {
         return;
@@ -1174,13 +1174,13 @@ void WatchSqueezeCameras() noexcept
             const std::uint8_t* comp = nullptr;
             member    = PlayerOneLeader(&comp);
             component = comp;
-            op        = players::player_two_camera::OperatorOne();
+            op        = players::seat_camera::OperatorOne();
         }
         else
         {
             member    = g_seats[player].member;
             component = g_seats[player].component;
-            op        = players::player_two_camera::Operator(player);
+            op        = players::seat_camera::Operator(player);
         }
         std::uint8_t action = 0;
         if (component == nullptr || !Read(static_cast<const std::uint8_t*>(component) + facts::kFieldActionState, action) ||

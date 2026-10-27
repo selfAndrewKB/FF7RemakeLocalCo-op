@@ -24,13 +24,13 @@
 #include "players/party_events.h"
 #include "players/party_member.h"
 #include "players/party_seat.h"
-#include "players/player_two_camera.h"
+#include "players/seat_camera.h"
 #include "players/seat_objects.h"
 #include "players/weak_object.h"
 #include "battle/arena_warp.h"
-#include "battle/command_menu_two.h"
-#include "battle/targeting_two.h"
-#include "battle/lock_camera_two.h"
+#include "battle/command_menu.h"
+#include "battle/targeting.h"
+#include "battle/lock_camera.h"
 #include "world/talk_gather.h"
 #include "world/traversal_action.h"
 #include "players/pad_buttons.h"
@@ -155,7 +155,7 @@ bool Session::Install(const platform::GameImage& image) noexcept
         return false;
     }
     removeLocalPlayer_ = *remove;
-    cameraInstalled_   = player_two_camera::Install(image);  // optional: without it the seat's camera stays still
+    cameraInstalled_   = seat_camera::Install(image);  // optional: without it the seat's camera stays still
     seatInstalled_     = party_seat::Install(image) && party_member::Install(image);  // optional: without it the seat has no member
     split_render::Install(image);                            // optional: without it the views keep the split rule's reduced effects
     fieldExitInstalled_ = field_exit::Install(image, &Session::OnFieldExit, this);  // without it, Tick's step check alone
@@ -213,9 +213,9 @@ UObject* Session::Controller(const Seat& seat) const noexcept
 
 void Session::EndMemberModules(const Seat& seat) noexcept
 {
-    battle::targeting_two::OnLeave(seat.index);
-    battle::lock_camera_two::OnLeave(seat.index);
-    battle::command_menu_two::OnLeave(seat.index);
+    battle::targeting::OnLeave(seat.index);
+    battle::lock_camera::OnLeave(seat.index);
+    battle::command_menu::OnLeave(seat.index);
 }
 
 void Session::OnFieldExit(void* self, const wchar_t* caller) noexcept
@@ -521,7 +521,7 @@ void Session::Forget(Seat& seat) noexcept
     pad_buttons::SetPads(SeatIds());  // the split effects' mask follows the further views by the tick (split_render::Tick)
     if (cameraInstalled_)
     {
-        player_two_camera::Take(seat.index);  // forgotten, not destroyed: it belonged to the old world
+        seat_camera::Take(seat.index);  // forgotten, not destroyed: it belonged to the old world
     }
     if (seatInstalled_)
     {
@@ -779,7 +779,7 @@ try
     platform::Log(L"{} plays member type {} (row {} of the party order){}", seat.Name(), choice.type, choice.ordinal,
                   seat.waitLogged == 0 ? L"" : std::format(L", {} ticks after it began to wait for one", ticks_ - seat.awaitSince));
     seat.waitLogged = 0;
-    if (cameraInstalled_ && !player_two_camera::Start(seat.index, playerOne, seatController, choice.member))
+    if (cameraInstalled_ && !seat_camera::Start(seat.index, playerOne, seatController, choice.member))
     {
         platform::Log(L"{} keeps a still camera; each player's sticks are still their own pad's", seat.Name());
     }
@@ -795,7 +795,7 @@ catch (...)
 
 void Session::DestroyOperator(Seat& seat) noexcept
 {
-    UObject*   operatorSeat = cameraInstalled_ ? static_cast<UObject*>(player_two_camera::Take(seat.index)) : nullptr;
+    UObject*   operatorSeat = cameraInstalled_ ? static_cast<UObject*>(seat_camera::Take(seat.index)) : nullptr;
     const bool operatorGone = operatorSeat != nullptr && CallNoParams(operatorSeat, STR("/Script/Engine.Actor:K2_DestroyActor"));
     platform::Log(L"{}'s camera operator {}", seat.Name(), operatorSeat == nullptr ? L"was not running" : operatorGone ? L"destroyed" : L"NOT DESTROYED");
 }
@@ -1104,7 +1104,7 @@ void Session::Status() const noexcept
     Report();
     if (Count() != 0 && cameraInstalled_)
     {
-        player_two_camera::LogCounts();
+        seat_camera::LogCounts();
     }
 }
 

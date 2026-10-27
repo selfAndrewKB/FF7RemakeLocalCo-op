@@ -35,7 +35,7 @@ namespace lss::platform {
 class GameImage;
 }
 
-namespace lss::battle::lock_camera_two {
+namespace lss::battle::lock_camera {
 
 bool Install(const platform::GameImage& image) noexcept;
 void Remove() noexcept;
@@ -57,4 +57,4 @@ void AfterInput(int seat, void* seatController) noexcept;
 /// burst of jumps, the seat's and player 1's, ends with its line).
 void OnLeave(int seat) noexcept;
 
-}  // namespace lss::battle::lock_camera_two
+}  // namespace lss::battle::lock_camera

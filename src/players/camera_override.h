@@ -24,7 +24,7 @@ namespace lss::platform {
 class GameImage;
 }
 
-namespace lss::players::camera_override_two {
+namespace lss::players::camera_override {
 
 /// Checks the game's handler; registers the reading. False (logged) if the handler differs.
 bool Install(const platform::GameImage& image) noexcept;
@@ -35,4 +35,4 @@ void Remove() noexcept;
 /// the game's is there (idempotent; the seat's previous character is given the game's handler back). Null releases.
 void Route(int seat, void* character) noexcept;
 
-}  // namespace lss::players::camera_override_two
+}  // namespace lss::players::camera_override

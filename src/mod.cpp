@@ -27,12 +27,12 @@
 #include "platform/image.h"
 #include "platform/log.h"
 #include "platform/settings.h"
-#include "players/camera_override_two.h"
+#include "players/camera_override.h"
 #include "players/field_root.h"
-#include "players/nav_area_two.h"
+#include "players/nav_area.h"
 #include "players/operator_battle_mode.h"
 #include "players/own_controller.h"
-#include "players/player_two_camera.h"
+#include "players/seat_camera.h"
 #include "players/scopes.h"
 #include "players/session.h"
 #include "players/split_render.h"
@@ -41,10 +41,11 @@
 #include "views/column_source.h"
 #include "views/columns.h"
 #include "views/mirror_player.h"
-#include "views/scene_camera_two.h"
+#include "views/scene_camera.h"
 #include "views/window_span.h"
 #include "world/shop_act.h"
 
+#include <array>
 #include <cstdint>
 #include <format>
 #include <span>
@@ -60,7 +61,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.107.0-module-table";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.108.0-seat-names";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
@@ -87,8 +88,11 @@ using lss::control::Outcome;
 using lss::control::Shape;
 using lss::control::Value;
 
-constexpr int kSeatOne   = 1;  // player 2: the `join`, `leave` and p2.* commands (plan/seats.md step 7 may rename them)
-constexpr int kSeatThree = 2;  // player 3: `p3.join`, `p3.leave` and p3.*
+/// A seat's console prefix: `p2` for the first further player, `p3` for the next (the user's names for them).
+std::wstring SeatPrefix(int seat)
+{
+    return std::format(L"p{}", seat + 1);
+}
 
 /// The input holds the console can make: at the mod's own per-pad stick layer, so a scripted stick takes the
 /// path a real pad takes.
@@ -103,12 +107,12 @@ public:
         {
             return {false, L"stick holds act only while that player is in"};
         }
-        lss::players::player_two_camera::HoldStick(static_cast<unsigned>(player - 1), axes);
+        lss::players::seat_camera::HoldStick(static_cast<unsigned>(player - 1), axes);
         return {};
     }
     void ReleaseStick(std::int32_t player) override
     {
-        lss::players::player_two_camera::ReleaseStick(static_cast<unsigned>(player - 1));
+        lss::players::seat_camera::ReleaseStick(static_cast<unsigned>(player - 1));
     }
 
 private:
@@ -117,7 +121,8 @@ private:
 
 /// One seat's intents and readings: `join`/`leave` (or the prefixed ones) and `<prefix>.member`, `.in`, `.rejoin`,
 /// `.state`.
-void RegisterSeatCommands(lss::players::Session& session, int seat, const wchar_t* prefix, const wchar_t* join, const wchar_t* leave)
+void RegisterSeatCommands(lss::players::Session& session, int seat, const std::wstring& prefix, const std::wstring& join,
+                          const std::wstring& leave)
 {
     using lss::control::Register;
     const std::wstring name = lss::players::SeatName(seat);
@@ -160,15 +165,19 @@ void RegisterSeatCommands(lss::players::Session& session, int seat, const wchar_
 void RegisterSessionCommands(lss::players::Session& session)
 {
     using lss::control::Register;
-    RegisterSeatCommands(session, kSeatOne, L"p2", L"join", L"leave");
-    RegisterSeatCommands(session, kSeatThree, L"p3", L"p3.join", L"p3.leave");
+    // The first further player's intents are `join` and `leave` (the user's aliases); every seat's are prefixed.
+    for (int seat = 1; seat <= lss::players::kSeatsBuilt; ++seat)
+    {
+        const std::wstring prefix = SeatPrefix(seat);
+        RegisterSeatCommands(session, seat, prefix, seat == 1 ? L"join" : prefix + L".join", seat == 1 ? L"leave" : prefix + L".leave");
+    }
     Register({.name = L"party.ai", .shape = Shape::Text,
               .help = L"each deployed member's status, PLAYER slot holder, actor mode and field AI layers (the take test's view)",
               .get  = [&session] { return Value{session.FormationReading()}; }});
     Register({.name  = L"showflags",
               .shape = Shape::Hex,
               .max   = 0xFFFFFFFF,
-              .help  = L"the show flags forced on in both halves while player 2 is in (0 = the engine's split rule; "
+              .help  = L"the show flags forced on in every view while a further player is in (0 = the engine's split rule; "
                        L"players/split_render.h)",
               .set   = [&session](const Value& value) {
                   lss::players::split_render::SetMask(static_cast<std::uint32_t>(std::get<std::int64_t>(value)),
@@ -225,18 +234,18 @@ public:
         lss::modules::Remove();                // the table in reverse (modules.h)
         if (installed_)
         {
-            session_.Remove();  // the field-exit calls go back whether or not player 2 is in
+            session_.Remove();  // the field-exit calls go back whether or not a further player is in
         }
-        // With player 2 in, its camera manager was built through the replacement; the DLL is pinned, so the
+        // With a further player in, its camera manager was built through the replacement; the DLL is pinned, so the
         // replacement stays valid. Otherwise the engine's function goes back, with the field hooks the seats'
         // members use (the table's rows removed with the players out) and the session's own camera modules.
         if (installed_ && session_.Count() == 0)
         {
-            lss::players::player_two_camera::RemoveInputTick();
+            lss::players::seat_camera::RemoveInputTick();
             lss::modules::RemoveWithPlayersOut();
-            lss::players::nav_area_two::Remove();
+            lss::players::nav_area::Remove();
             lss::players::operator_battle_mode::Remove();
-            lss::players::camera_override_two::Remove();
+            lss::players::camera_override::Remove();
             lss::players::own_controller::Remove();
         }
     }
@@ -277,21 +286,19 @@ public:
 private:
     void OnEngineTick() noexcept
     {
-        if (Pressed(VK_F7, joinWasDown_))
+        // Ctrl+F7/F8 for the first further player, Ctrl+Shift+F7/F8 for the next (players/seats.h names the keys).
+        static_assert(lss::players::kSeatsBuilt <= 2, "the keys: Ctrl+F7/F8 and Ctrl+Shift+F7/F8, one pair per built seat");
+        for (int seat = 1; seat <= lss::players::kSeatsBuilt; ++seat)
         {
-            session_.Join(kSeatOne);
-        }
-        if (Pressed(VK_F8, leaveWasDown_))
-        {
-            session_.Leave(kSeatOne);
-        }
-        if (Pressed(VK_F7, joinThreeWasDown_, true))
-        {
-            session_.Join(kSeatThree);
-        }
-        if (Pressed(VK_F8, leaveThreeWasDown_, true))
-        {
-            session_.Leave(kSeatThree);
+            const auto at = static_cast<std::size_t>(seat);
+            if (Pressed(VK_F7, joinWasDown_[at], seat != 1))
+            {
+                session_.Join(seat);
+            }
+            if (Pressed(VK_F8, leaveWasDown_[at], seat != 1))
+            {
+                session_.Leave(seat);
+            }
         }
         if (Pressed(VK_F6, reportWasDown_))
         {
@@ -324,7 +331,7 @@ private:
         moment.columnsHeld = columns.columnsHeld;
         moment.choice      = singleViewChoice_;
         moment.map         = columns_;
-        moment.sceneHolds  = lss::views::scene_camera_two::SceneHolds();
+        moment.sceneHolds  = lss::views::scene_camera::SceneHolds();
         for (int seat = 1; seat <= lss::players::kSeatsBuilt; ++seat)
         {
             moment.seats[static_cast<std::size_t>(seat)]   = session_.State(seat);
@@ -399,7 +406,7 @@ private:
             {
                 Log(L"column source: {}", text);  // a seat in the game; a leave says nothing here (the session logs it)
             }
-            lss::views::scene_camera_two::SetSource(seat, shown.OnPlayerOne(seat), ManagerOfSeat(seat));
+            lss::views::scene_camera::SetSource(seat, shown.OnPlayerOne(seat), ManagerOfSeat(seat));
         }
         shown_ = shown;
     }
@@ -472,10 +479,8 @@ private:
     lss::views::column_source::Override singleViewChoice_ = lss::views::column_source::Override::Auto;
     bool                                singleViewUnbuiltLogged_ = false;
     bool                                installed_         = false;
-    bool                                joinWasDown_       = false;
-    bool                                leaveWasDown_      = false;
-    bool                                joinThreeWasDown_  = false;
-    bool                                leaveThreeWasDown_ = false;
+    std::array<bool, lss::players::scopes::kMaxPlayers> joinWasDown_{};   // by seat (index 0 unused)
+    std::array<bool, lss::players::scopes::kMaxPlayers> leaveWasDown_{};
     bool                                reportWasDown_     = false;
     bool                                spanWasDown_       = false;
     bool                                menuSlowWasDown_   = false;

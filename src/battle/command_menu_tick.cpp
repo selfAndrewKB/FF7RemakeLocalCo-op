@@ -2,8 +2,8 @@
 
 #include "battle/arena_warp.h"
 #include "battle/command_menu_rules.h"
-#include "battle/command_menu_two.h"
-#include "battle/targeting_two.h"
+#include "battle/command_menu.h"
+#include "battle/targeting.h"
 #include "control/registry.h"
 #include "engine_facts.h"
 #include "platform/call_redirect.h"
@@ -14,7 +14,7 @@
 #include "platform/verified_code.h"
 #include "players/field_root.h"
 #include "players/pad_buttons.h"
-#include "players/player_two_camera.h"
+#include "players/seat_camera.h"
 #include "players/scopes.h"
 #include "players/seats.h"
 
@@ -107,11 +107,11 @@ void RunInputBuffer(int seat, float deltaTime) noexcept
     if (!s.bufferLogged)
     {
         s.bufferLogged = true;
-        platform::LogDebug(L"command menu 2: the game's input buffer runs for {}'s member after its tick", SeatName(seat));
+        platform::LogDebug(L"command menu: the game's input buffer runs for {}'s member after its tick", SeatName(seat));
     }
     if (!platform::CallGuarded(buffer, component, deltaTime))
     {
-        platform::Log(L"command menu 2: the input buffer for {}'s member RAISED AN EXCEPTION", SeatName(seat));
+        platform::Log(L"command menu: the input buffer for {}'s member RAISED AN EXCEPTION", SeatName(seat));
     }
 }
 
@@ -119,17 +119,17 @@ void RunInputBuffer(int seat, float deltaTime) noexcept
 /// then the game's input buffer for its member.
 void TickSeat(int seat, float deltaTime)
 {
-    void* ctrl = command_menu_two::Controller(seat);
-    if (ctrl == nullptr || !command_menu_two::Ready(seat) || players::scopes::Member(seat) == nullptr)
+    void* ctrl = command_menu::Controller(seat);
+    if (ctrl == nullptr || !command_menu::Ready(seat) || players::scopes::Member(seat) == nullptr)
     {
         return;
     }
     players::scopes::Scope                 scope(seat, players::scopes::All);
     players::pad_buttons::ButtonScope      buttons(static_cast<unsigned>(seat));
-    players::player_two_camera::StickScope stick(static_cast<std::uint32_t>(seat), true);
+    players::seat_camera::StickScope stick(static_cast<std::uint32_t>(seat), true);
     // A command executed here aims at the displayed target and re-locks the camera on it while the member is the
     // leader and locked on: the seat's target fields, not player 1's (RE-lock-camera-ledger.md row X4).
-    const targeting_two::FieldsScope targets(seat);
+    const targeting::FieldsScope targets(seat);
     if (!scope.Held())
     {
         return;
@@ -175,7 +175,7 @@ std::int64_t SetSlot(std::uint8_t slot, float value)
     if (seat != 0 && g_slowWrites.Alone() != aloneBefore && !g_aloneLogged)
     {
         g_aloneLogged = true;  // the game's tick writes every frame (RE-battle.md §2.7): this line means that changed
-        platform::Log(L"command menu 2: WARNING: {}'s tick wrote the world slow with no write of player 1's this frame; "
+        platform::Log(L"command menu: WARNING: {}'s tick wrote the world slow with no write of player 1's this frame; "
                       L"written as asked",
                       SeatName(seat));
     }
@@ -188,7 +188,7 @@ void NoteRouting(int seat, bool routed, const wchar_t* why) noexcept
     if (routed != routing.lastRouted)
     {
         routing.lastRouted = routed;
-        platform::LogDebug(L"command menu 2: {}'s pad's key events {} its context ({})", SeatName(seat),
+        platform::LogDebug(L"command menu: {}'s pad's key events {} its context ({})", SeatName(seat),
                            routed ? L"reach" : L"do NOT reach", why);
     }
 }
@@ -203,7 +203,7 @@ bool EnterEventContext(unsigned user) noexcept
         return false;
     }
     Routing& routing = g_seats[seat].routing;
-    if (!command_menu_two::Ready(seat))
+    if (!command_menu::Ready(seat))
     {
         ++routing.notReady;
         NoteRouting(seat, false, L"its menu is not set up");
@@ -266,7 +266,7 @@ bool Install(const platform::GameImage& image) noexcept
     const auto gameMode = image.Rebase(facts::kGameModeGlobal, sizeof(void*));
     if (!tickCall || !tick || !slowCall || !slow || !slot || !players::field_root::Installed() || !gameMode)
     {
-        platform::Log(L"command menu 2: the tick's engine checks failed; no seat's menu ever ticks, and the menu-slow "
+        platform::Log(L"command menu: the tick's engine checks failed; no seat's menu ever ticks, and the menu-slow "
                       L"switch does nothing");
         return false;
     }
@@ -280,7 +280,7 @@ bool Install(const platform::GameImage& image) noexcept
     g_slowWrites.SetSlows(platform::settings::Of(platform::settings::kMenuSlow).word == L"on");
     if (!g_slow.Install(g_slowCall, g_slowTarget, reinterpret_cast<std::uintptr_t>(&SetSlot)))
     {
-        platform::Log(L"command menu 2: the time-slow write could not be redirected; no seat's menu ever ticks, and the "
+        platform::Log(L"command menu: the time-slow write could not be redirected; no seat's menu ever ticks, and the "
                       L"menu-slow switch does nothing");
         return false;
     }
@@ -318,11 +318,11 @@ void Tick() noexcept
     g_placed = true;  // once, whatever the outcome
     if (g_tick.InstallFromOwnThread(g_tickCall, g_tickTarget, reinterpret_cast<std::uintptr_t>(&TickControllers)))
     {
-        platform::Log(L"command menu 2: the controller tick's call is redirected; each seat's controller ticks after the game's");
+        platform::Log(L"command menu: the controller tick's call is redirected; each seat's controller ticks after the game's");
     }
     else
     {
-        platform::Log(L"command menu 2: the controller tick's call could not be redirected; no seat's menu ever ticks");
+        platform::Log(L"command menu: the controller tick's call could not be redirected; no seat's menu ever ticks");
     }
 }
 

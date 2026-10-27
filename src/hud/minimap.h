@@ -39,7 +39,7 @@ namespace lss::platform {
 class GameImage;
 }
 
-namespace lss::hud::minimap_two {
+namespace lss::hud::minimap {
 
 bool Install(const platform::GameImage& image) noexcept;
 void Remove() noexcept;
@@ -64,4 +64,4 @@ void EndFrame() noexcept;
 void SetEnabled(bool on) noexcept;
 bool Enabled() noexcept;
 
-}  // namespace lss::hud::minimap_two
+}  // namespace lss::hud::minimap

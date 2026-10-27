@@ -1,4 +1,4 @@
-#include "hud/minimap_two.h"
+#include "hud/minimap.h"
 
 #define RC_UNREAL_DISABLE_PROPERTY_DEPRECATION_WARNINGS
 #define RC_UNREAL_DISABLE_CLASS_DEPRECATION_WARNINGS
@@ -28,7 +28,7 @@
 #include <string>
 #include <vector>
 
-namespace lss::hud::minimap_two {
+namespace lss::hud::minimap {
 
 namespace {
 
@@ -1099,4 +1099,4 @@ bool Enabled() noexcept
     return g_on && g_installed;
 }
 
-}  // namespace lss::hud::minimap_two
+}  // namespace lss::hud::minimap

@@ -1,6 +1,6 @@
-#include "battle/targeting_two.h"
+#include "battle/targeting.h"
 
-#include "battle/target_cursor_two.h"
+#include "battle/target_cursor.h"
 #include "control/registry.h"
 #include "engine_facts.h"
 #include "platform/byte_scope.h"
@@ -11,7 +11,7 @@
 #include "platform/verified_code.h"
 #include "players/field_root.h"
 #include "players/pad_buttons.h"
-#include "players/player_two_camera.h"
+#include "players/seat_camera.h"
 #include "players/scopes.h"
 #include "players/seats.h"
 
@@ -21,7 +21,7 @@
 #include <span>
 #include <string>
 
-namespace lss::battle::targeting_two {
+namespace lss::battle::targeting {
 
 namespace {
 
@@ -91,7 +91,7 @@ bool FieldsFor(int seat, void* system) noexcept
     if (s.fields.Defined())
     {
         // The battle system changed before Tick noticed: the old copy goes without the game's clear (its system is gone).
-        platform::LogDebug(L"targeting 2: {}'s target copy redefined on a new battle system; the old one dropped", SeatName(seat));
+        platform::LogDebug(L"targeting: {}'s target copy redefined on a new battle system; the old one dropped", SeatName(seat));
     }
     const platform::ByteContext::Range range{reinterpret_cast<std::uintptr_t>(system) + facts::kBattleSysTargetFields,
                                              facts::kBattleSysTargetFieldsBytes, platform::ByteContext::Kind::Exchange};
@@ -101,7 +101,7 @@ bool FieldsFor(int seat, void* system) noexcept
     }
     s.system   = system;
     s.lastLock = 0;
-    platform::LogDebug(L"targeting 2: {}'s target fields start empty on battle system {:#x}", SeatName(seat),
+    platform::LogDebug(L"targeting: {}'s target fields start empty on battle system {:#x}", SeatName(seat),
                        reinterpret_cast<std::uintptr_t>(system));
     return true;
 }
@@ -117,10 +117,10 @@ void End(int seat, const wchar_t* why) noexcept
     if (s.fields.IsOpen())
     {
         // A call made for the seat is running with its copy in (no such path today): the copy cannot go now.
-        platform::LogDebug(L"targeting 2: {}'s targets' end deferred, its copy is in use ({})", SeatName(seat), why);
+        platform::LogDebug(L"targeting: {}'s targets' end deferred, its copy is in use ({})", SeatName(seat), why);
         return;
     }
-    target_cursor_two::End(seat);  // the seat's cursor released while its member and the battle system exist
+    target_cursor::End(seat);  // the seat's cursor released while its member and the battle system exist
     void* system = System();
     if (system != nullptr && system == s.system)
     {
@@ -133,12 +133,12 @@ void End(int seat, const wchar_t* why) noexcept
     }
     else
     {
-        platform::LogDebug(L"targeting 2: the battle system is gone; {}'s target copy dropped ({})", SeatName(seat), why);
+        platform::LogDebug(L"targeting: the battle system is gone; {}'s target copy dropped ({})", SeatName(seat), why);
     }
     s.fields.Clear();
     s.system   = nullptr;
     s.lastLock = 0;
-    platform::LogDebug(L"targeting 2: {}'s lock and target ended ({})", SeatName(seat), why);
+    platform::LogDebug(L"targeting: {}'s lock and target ended ({})", SeatName(seat), why);
 }
 
 /// The pre-tick and the targeting tick again for one seat, inside its scopes with its copy in.
@@ -152,7 +152,7 @@ void RunSeat(int seat, void* system, float deltaTime) noexcept
     {
         players::scopes::Scope                 scope(seat, kScopes);
         players::pad_buttons::ButtonScope      buttons(static_cast<unsigned>(seat));
-        players::player_two_camera::StickScope stick(static_cast<std::uint32_t>(seat), true);
+        players::seat_camera::StickScope stick(static_cast<std::uint32_t>(seat), true);
         const FieldsScope                      fields(seat);
         if (!scope.Held() || !fields.Held())
         {
@@ -161,13 +161,13 @@ void RunSeat(int seat, void* system, float deltaTime) noexcept
         ++s.runs;
         g_preTick(system);
         reinterpret_cast<SysDtFn>(g_target)(system, deltaTime);
-        target_cursor_two::RunForSeat(seat, system);  // the game's cursor driver follows its targeting call
+        target_cursor::RunForSeat(seat, system);  // the game's cursor driver follows its targeting call
     }
     const std::uint8_t lock = LockOf(s);
     if (lock != s.lastLock)
     {
         s.lastLock = lock;
-        platform::LogDebug(L"targeting 2: {}'s lock {}", SeatName(seat), lock ? L"on" : L"off");
+        platform::LogDebug(L"targeting: {}'s lock {}", SeatName(seat), lock ? L"on" : L"off");
     }
 }
 
@@ -226,7 +226,7 @@ bool Install(const platform::GameImage& image) noexcept
     if (!players::field_root::Installed() || !slot || !target || !pausedCall || !normalCall || !FindInto(image, facts::kBattleTargetPreTick, g_preTick) ||
         !FindInto(image, facts::kBattleSetLockOn, g_setLock) || !FindInto(image, facts::kBattleClearLockAndTarget, g_clear))
     {
-        platform::Log(L"targeting 2: an engine check failed; no seat has targeting or lock-on");
+        platform::Log(L"targeting: an engine check failed; no seat has targeting or lock-on");
         return false;
     }
     g_slot       = *slot;
@@ -234,15 +234,15 @@ bool Install(const platform::GameImage& image) noexcept
     g_normalCall = *normalCall;
     if (!g_pausedCall.Install(*pausedCall, g_target, reinterpret_cast<std::uintptr_t>(&Targeting)))
     {
-        platform::Log(L"targeting 2: the paused-path call could not be redirected; no seat has targeting or lock-on");
+        platform::Log(L"targeting: the paused-path call could not be redirected; no seat has targeting or lock-on");
         return false;
     }
     control::Register({.name  = L"targeting-two",
                        .shape = control::Shape::OnOff,
-                       .help  = L"the game's targeting tick runs again for each seat (battle/targeting_two.h; on)",
+                       .help  = L"the game's targeting tick runs again for each seat (battle/targeting.h; on)",
                        .set   = [](const control::Value& value) {
                            g_enabled = std::get<bool>(value);
-                           platform::Log(L"targeting 2 {}", g_enabled ? L"on" : L"off");
+                           platform::Log(L"targeting {}", g_enabled ? L"on" : L"off");
                            return control::Outcome{};
                        },
                        .get = [] { return control::Value{g_enabled}; }});
@@ -268,11 +268,11 @@ void Tick() noexcept
         g_placed = true;
         if (g_normalCallRedirect.InstallFromOwnThread(g_normalCall, g_target, reinterpret_cast<std::uintptr_t>(&Targeting)))
         {
-            platform::Log(L"targeting 2: installed; the game's targeting tick runs again for each seat");
+            platform::Log(L"targeting: installed; the game's targeting tick runs again for each seat");
         }
         else
         {
-            platform::Log(L"targeting 2: the normal-path call could not be redirected; the seats' targeting runs only while paused");
+            platform::Log(L"targeting: the normal-path call could not be redirected; the seats' targeting runs only while paused");
         }
     }
     // The battle's end: the game's own controller leaves its battle HUD mode, or the battle system goes.
@@ -344,4 +344,4 @@ FieldsScope::~FieldsScope()
     s.fields.Value(0)[kLatchAt] = latch;
 }
 
-}  // namespace lss::battle::targeting_two
+}  // namespace lss::battle::targeting

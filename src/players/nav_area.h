@@ -46,7 +46,7 @@ namespace lss::platform {
 class GameImage;
 }
 
-namespace lss::players::nav_area_two {
+namespace lss::players::nav_area {
 
 /// Replaces the component's tick slot; registers the reading `nav-area-two`. False (logged) if a check fails.
 bool Install(const platform::GameImage& image) noexcept;
@@ -62,4 +62,4 @@ void Tick() noexcept;
 /// Game thread, each engine tick: the seat's member while its player is in (null otherwise).
 void TickSeat(int seat, void* member) noexcept;
 
-}  // namespace lss::players::nav_area_two
+}  // namespace lss::players::nav_area

@@ -8,7 +8,7 @@
 // mirror's columns, and a seat's column on player 1's picture (views/column_source.h), show column 0's image and get
 // no pass. Outside the passes, and during the game's one render while no
 // further column has an image, the column is kSingle. Set by second_image, the one module that runs the passes; read by
-// everything that paints into a menu-renderer slot during them (hud/overlay_layout.cpp, hud/minimap_two.cpp, the
+// everything that paints into a menu-renderer slot during them (hud/overlay_layout.cpp, hud/minimap.cpp, the
 // battle widgets). The rules the pass modules share are pure functions here (tests/overlay_pass_test.cpp). Game
 // thread only.
 

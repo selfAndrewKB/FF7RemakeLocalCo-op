@@ -2,7 +2,7 @@
 
 // UE4 weak object pointers as the game stores them: {the object's index in GUObjectArray, its serial number}. A pair
 // names an object across frames and resolves to null once the engine destroyed or replaced it (the engine's own
-// validity rule: the same serial, not unreachable or pending kill). Moved out of players/player_two_camera (plan/
+// validity rule: the same serial, not unreachable or pending kill). Moved out of players/seat_camera (plan/
 // seats.md, the close of step 3): every module that keeps a game object between ticks uses these, and the camera
 // module's satellites no longer include the camera module for them. Game thread.
 

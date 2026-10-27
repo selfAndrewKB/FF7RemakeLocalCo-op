@@ -1,4 +1,4 @@
-#include "battle/target_cursor_two.h"
+#include "battle/target_cursor.h"
 
 #define RC_UNREAL_DISABLE_PROPERTY_DEPRECATION_WARNINGS
 #define RC_UNREAL_DISABLE_CLASS_DEPRECATION_WARNINGS
@@ -7,7 +7,7 @@
 #include <Unreal/UObject.hpp>
 #include <Unreal/UObjectGlobals.hpp>
 
-#include "battle/targeting_two.h"
+#include "battle/targeting.h"
 #include "control/registry.h"
 #include "engine_facts.h"
 #include "hud/overlay_pass.h"
@@ -30,7 +30,7 @@
 #include <span>
 #include <string>
 
-namespace lss::battle::target_cursor_two {
+namespace lss::battle::target_cursor {
 
 namespace {
 
@@ -135,7 +135,7 @@ bool CopyFor(int seat, void* system) noexcept
     s.system = system;
     s.bar    = bar;
     s.icon   = icon;
-    platform::LogDebug(L"target cursor 2: {}'s cursor slot and HUD keys start empty on battle system {:#x}", SeatName(seat),
+    platform::LogDebug(L"target cursor: {}'s cursor slot and HUD keys start empty on battle system {:#x}", SeatName(seat),
                        reinterpret_cast<std::uintptr_t>(system));
     return true;
 }
@@ -154,7 +154,7 @@ try
     if (g_hide == nullptr || g_api == nullptr || g_hide->GetParmsSize() != sizeof(void*))
     {
         g_hide = nullptr;
-        platform::Log(L"target cursor 2: EndMenuAPI.HideBattleTargetIcon is not the function the mod expects; every seat's cursor is dropped without the game's hide when it goes");
+        platform::Log(L"target cursor: EndMenuAPI.HideBattleTargetIcon is not the function the mod expects; every seat's cursor is dropped without the game's hide when it goes");
         return false;
     }
     return true;
@@ -184,7 +184,7 @@ void ReleaseCopy(int seat, const wchar_t* why) noexcept
     std::memcpy(s.copy.Value(0).data(), &none, sizeof(none));
     s.cursorSeen = false;
     ++s.counts.releases;
-    platform::LogDebug(L"target cursor 2: {}'s cursor {} ({})", SeatName(seat),
+    platform::LogDebug(L"target cursor: {}'s cursor {} ({})", SeatName(seat),
                        hidden ? L"released with the game's hide" : L"DROPPED (the hide could not run)", why);
 }
 
@@ -200,7 +200,7 @@ void LineOfSight(void* system)
             continue;
         }
         const players::scopes::Scope     scope(seat, players::scopes::Primary | players::scopes::Leader);
-        const targeting_two::FieldsScope fields(seat);
+        const targeting::FieldsScope fields(seat);
         const platform::ByteScope        copy(s.copy);
         if (scope.Held() && fields.Held() && copy.Held())
         {
@@ -276,7 +276,7 @@ bool Install(const platform::GameImage& image) noexcept
     const auto setColor = image.Rebase(facts::kSetColorAndOpacity);
     if (!players::field_root::Installed() || !bar || !icon || !los || !losCall || !suspend || !setColor || !FindInto(image, facts::kCursorDriver, g_driver))
     {
-        platform::Log(L"target cursor 2: an engine check failed; no seat has a cursor of its own");
+        platform::Log(L"target cursor: an engine check failed; no seat has a cursor of its own");
         return false;
     }
     g_barSlot         = reinterpret_cast<std::uint8_t**>(*bar);
@@ -310,7 +310,7 @@ void Tick() noexcept
     // runs it, and it is here, outside [ASSUMPTION: its delegate tables fire on the game thread].
     const bool suspend = g_suspendRedirect.Install(g_suspend, std::span(facts::kBattleSuspendEntry.data(), facts::kBattleSuspendFirstBytes),
                                                    reinterpret_cast<std::uintptr_t>(&Suspend));
-    platform::Log(L"target cursor 2: installed; the game's cursor driver runs again for each seat (line of sight {}, suspension {})",
+    platform::Log(L"target cursor: installed; the game's cursor driver runs again for each seat (line of sight {}, suspension {})",
                   los ? L"redirected" : L"NOT redirected", suspend ? L"redirected" : L"NOT redirected");
 }
 
@@ -329,7 +329,7 @@ void RunForSeat(int seat, void* system) noexcept
     ++s.counts.runs;
     if (!platform::CallGuarded(g_driver, system))
     {
-        platform::Log(L"target cursor 2: the cursor driver for {} RAISED AN EXCEPTION", SeatName(seat));
+        platform::Log(L"target cursor: the cursor driver for {} RAISED AN EXCEPTION", SeatName(seat));
     }
     const bool shown = CopyWidget(s) != nullptr;
     if (shown)
@@ -339,7 +339,7 @@ void RunForSeat(int seat, void* system) noexcept
     if (shown != s.cursorSeen)
     {
         s.cursorSeen = shown;
-        platform::LogDebug(L"target cursor 2: {}'s cursor {} (the game's driver, on that player's target)", SeatName(seat),
+        platform::LogDebug(L"target cursor: {}'s cursor {} (the game's driver, on that player's target)", SeatName(seat),
                            shown ? L"shown" : L"gone");
     }
 }
@@ -441,4 +441,4 @@ void EndPass() noexcept
     g_hiddenCount = 0;
 }
 
-}  // namespace lss::battle::target_cursor_two
+}  // namespace lss::battle::target_cursor

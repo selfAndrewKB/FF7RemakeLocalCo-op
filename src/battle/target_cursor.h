@@ -5,7 +5,7 @@
 // follow plan/seats.md step 3).
 //
 // The game has one battle target cursor, a widget whose pointer sits at `sys+0x10` of the battle system, outside the
-// target fields each seat already has a copy of (battle/targeting_two.h). One function, the cursor driver, creates,
+// target fields each seat already has a copy of (battle/targeting.h). One function, the cursor driver, creates,
 // moves, styles (the lock look, the dummy-lock flag), traces line of sight for and releases it, from the leader's menu
 // target, lock, dummy lock or soft target, and writes the HUD's shared keys (the enemy bar's displayed target, the
 // off-screen icon's name); the battle tick calls it right after each of its two targeting calls. So the cursor showed
@@ -29,7 +29,7 @@ namespace lss::platform {
 class GameImage;
 }
 
-namespace lss::battle::target_cursor_two {
+namespace lss::battle::target_cursor {
 
 bool Install(const platform::GameImage& image) noexcept;
 void Remove() noexcept;
@@ -56,4 +56,4 @@ bool HighlightName(int seat, std::uint64_t& name) noexcept;
 void BeginPass(int column) noexcept;
 void EndPass() noexcept;
 
-}  // namespace lss::battle::target_cursor_two
+}  // namespace lss::battle::target_cursor

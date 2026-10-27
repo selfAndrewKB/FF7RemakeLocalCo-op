@@ -9,7 +9,7 @@
 // mode's HUD step inside Place), the highlight name (+0x98, the player's last target's owner) and the host set the
 // pass writes. So, as Rebirth's marker timers did, the game's own tick runs again per pass:
 //   - a further column: the seat's timers swapped into the arrows, the seat's highlight name (its copy in
-//     battle/target_cursor_two), the two lookups answering the seat's controller, the real step (the seat's arrows
+//     battle/target_cursor), the two lookups answering the seat's controller, the real step (the seat's arrows
 //     fade at the game's rate); then player 1's timers and name put back;
 //   - column 0, before player 1's render once a further column ran: the tick with player 1's inputs and the HUD step
 //     at 0 for that run. An arrow on screen then keeps its timer and one off screen gets the full value the tick

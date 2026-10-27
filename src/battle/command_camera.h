@@ -25,7 +25,7 @@ namespace lss::platform {
 class GameImage;
 }
 
-namespace lss::battle::command_camera_two {
+namespace lss::battle::command_camera {
 
 /// Checks the flavor's vtable slot and replaces it with the reading. False (logged) if it differs; the scope below
 /// works either way.
@@ -48,4 +48,4 @@ private:
     std::optional<players::scopes::Scope> scope_;
 };
 
-}  // namespace lss::battle::command_camera_two
+}  // namespace lss::battle::command_camera

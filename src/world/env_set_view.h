@@ -1,6 +1,6 @@
 #pragma once
 
-// The pieces of world/env_sets_two that need no game: a further player's EnvironmentSet as the mod keeps it (one per
+// The pieces of world/env_sets that need no game: a further player's EnvironmentSet as the mod keeps it (one per
 // seat), paced the way the game paces player 1's, and the edit of a player's hidden-actor list that removes only the
 // mod's own entries (research/RE-picture-variants.md §9, §10). Host-tested (tests/env_set_view_test.cpp).
 //

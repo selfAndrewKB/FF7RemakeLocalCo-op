@@ -3,25 +3,25 @@
 #include "audio/listeners.h"
 #include "battle/arena_warp.h"
 #include "battle/battle_warps.h"
-#include "battle/command_camera_two.h"
+#include "battle/command_camera.h"
 #include "battle/command_menu_tick.h"
-#include "battle/command_menu_two.h"
+#include "battle/command_menu.h"
 #include "battle/enemy_coin.h"
 #include "battle/enemy_leader.h"
 #include "battle/enemy_watch.h"
-#include "battle/lock_camera_two.h"
+#include "battle/lock_camera.h"
 #include "battle/member_rates.h"
 #include "battle/menu_grey.h"
 #include "battle/party_switch.h"
-#include "battle/sequence_camera_two.h"
-#include "battle/target_cursor_two.h"
-#include "battle/targeting_two.h"
+#include "battle/sequence_camera.h"
+#include "battle/target_cursor.h"
+#include "battle/targeting.h"
 #include "engine_facts.h"
 #include "hud/field_icons.h"
 #include "hud/hud_probe.h"
 #include "hud/image_entries.h"
 #include "hud/marker_replay.h"
-#include "hud/minimap_two.h"
+#include "hud/minimap.h"
 #include "hud/outside_icons.h"
 #include "hud/overlay_layout.h"
 #include "hud/overlay_pass.h"
@@ -32,11 +32,11 @@
 #include "platform/log.h"
 #include "players/game_state.h"
 #include "players/lead_gate.h"
-#include "players/nav_area_two.h"
+#include "players/nav_area.h"
 #include "players/operator_battle_mode.h"
 #include "players/pad_buttons.h"
 #include "players/pad_presence.h"
-#include "players/player_two_camera.h"
+#include "players/seat_camera.h"
 #include "players/scopes.h"
 #include "players/session.h"
 #include "players/split_render.h"
@@ -58,11 +58,11 @@
 #include "views/display_align.h"
 #include "views/letterbox_patch.h"
 #include "views/mirror_player.h"
-#include "views/scene_camera_two.h"
+#include "views/scene_camera.h"
 #include "views/split_scale.h"
 #include "views/window_span.h"
-#include "world/anim_two_views.h"
-#include "world/env_sets_two.h"
+#include "world/anim_views.h"
+#include "world/env_sets.h"
 #include "world/field_targets.h"
 #include "world/forced_walk.h"
 #include "world/npc_crowd.h"
@@ -225,7 +225,7 @@ constexpr std::array kModules{
     // without it split at a resolution below the window leaves each view's outer part undrawn
     Module{.name = L"split scale", .install = &InstallSplitScale, .remove = &views::split_scale::Remove},
     // readings only; fine without
-    Module{.name = L"scene camera", .install = Call<&views::scene_camera_two::Install>, .remove = &views::scene_camera_two::Remove},
+    Module{.name = L"scene camera", .install = Call<&views::scene_camera::Install>, .remove = &views::scene_camera::Remove},
     // without it a held span shows one view across the row while no further player is in (the entry point clears the mirrors
     // first at the unload, before this table's removal)
     Module{.name = L"mirror player", .install = Call<&views::mirror_player::Install>},
@@ -245,11 +245,11 @@ constexpr std::array kModules{
     Module{.name = L"battle warps", .install = Call<&battle::battle_warps::Install>, .remove = &battle::battle_warps::Remove,
            .needs = {Need<&players::scopes::Install>()}},
     // a further player's command controller: built, follows the game's
-    Module{.name = L"command menu", .install = Call<&battle::command_menu_two::Install>, .remove = &battle::command_menu_two::Remove,
+    Module{.name = L"command menu", .install = Call<&battle::command_menu::Install>, .remove = &battle::command_menu::Remove,
            .needs = {Need<&players::scopes::Install>()}},
     // ticked in battle; a further player's attack, guard and dodge
     Module{.name = L"command menu tick", .install = Call<&battle::command_menu_tick::Install>, .remove = &battle::command_menu_tick::Remove,
-           .needs = {Need<&battle::command_menu_two::Install>()}},
+           .needs = {Need<&battle::command_menu::Install>()}},
     // without it an open menu greys the screen with the slow-down off
     Module{.name = L"menu grey", .install = Call<&battle::menu_grey::Install>, .remove = &battle::menu_grey::Remove,
            .needs = {Need<&battle::command_menu_tick::Install>()}},
@@ -257,33 +257,33 @@ constexpr std::array kModules{
     Module{.name = L"arena warp", .install = Call<&battle::arena_warp::Install>, .needs = {Need<&battle::command_menu_tick::Install>()}},
     // player 1's switch skips a further player's member
     Module{.name = L"party switch", .install = Call<&battle::party_switch::Install>, .remove = &battle::party_switch::Remove,
-           .needs = {Need<&battle::command_menu_two::Install>()}},
+           .needs = {Need<&battle::command_menu::Install>()}},
     // a further player's targeting: the game's tick run again for it
-    Module{.name = L"targeting", .install = Call<&battle::targeting_two::Install>, .remove = &battle::targeting_two::Remove,
-           .needs = {Need<&battle::command_menu_two::Install>()}},
+    Module{.name = L"targeting", .install = Call<&battle::targeting::Install>, .remove = &battle::targeting::Remove,
+           .needs = {Need<&battle::command_menu::Install>()}},
     // without it both halves show player 1's cursor
-    Module{.name = L"target cursor", .install = Call<&battle::target_cursor_two::Install>, .remove = &battle::target_cursor_two::Remove,
-           .needs = {Need<&battle::targeting_two::Install>()}},
+    Module{.name = L"target cursor", .install = Call<&battle::target_cursor::Install>, .remove = &battle::target_cursor::Remove,
+           .needs = {Need<&battle::targeting::Install>()}},
     // the lock camera on each player's own view
-    Module{.name = L"lock camera", .install = Call<&battle::lock_camera_two::Install>, .remove = &battle::lock_camera_two::Remove,
-           .needs = {Need<&battle::command_menu_two::Install>()}},
+    Module{.name = L"lock camera", .install = Call<&battle::lock_camera::Install>, .remove = &battle::lock_camera::Remove,
+           .needs = {Need<&battle::command_menu::Install>()}},
     // without it the aim reading is off, the UI scope stays
-    Module{.name = L"command camera", .install = Call<&battle::command_camera_two::Install>, .remove = &battle::command_camera_two::Remove,
-           .needs = {Need<&battle::command_menu_two::Install>()}},
+    Module{.name = L"command camera", .install = Call<&battle::command_camera::Install>, .remove = &battle::command_camera::Remove,
+           .needs = {Need<&battle::command_menu::Install>()}},
     // a further player's member at the player rates (ATB, limit)
     Module{.name = L"member rates", .install = Call<&battle::member_rates::Install>, .remove = &battle::member_rates::Remove,
-           .needs = {Need<&battle::command_menu_two::Install>()}},
+           .needs = {Need<&battle::command_menu::Install>()}},
     // the game's own leader reads for an enemy follow the coin
     Module{.name = L"enemy leader", .install = Call<&battle::enemy_leader::Install>, .remove = &battle::enemy_leader::Remove,
-           .needs = {Need<&battle::command_menu_two::Install>()}},
+           .needs = {Need<&battle::command_menu::Install>()}},
     // without it enemies name player 1 as the player
     Module{.name = L"enemy coin", .install = Call<&battle::enemy_coin::Install>, .remove = &battle::enemy_coin::Remove,
-           .needs = {Need<&battle::command_menu_two::Install>()}},
+           .needs = {Need<&battle::command_menu::Install>()}},
     // logging only: fed by the coin's decision gate
     Module{.name = L"enemy watch", .install = Call<&battle::enemy_watch::Install>, .needs = {Need<&battle::enemy_coin::Install>()}},
     // battle camera sequences on each player's own view
-    Module{.name = L"sequence camera", .install = Call<&battle::sequence_camera_two::Install>, .remove = &battle::sequence_camera_two::Remove,
-           .needs = {Need<&battle::command_menu_two::Install>()}},
+    Module{.name = L"sequence camera", .install = Call<&battle::sequence_camera::Install>, .remove = &battle::sequence_camera::Remove,
+           .needs = {Need<&battle::command_menu::Install>()}},
 
     // The game's state as readings, and the world around the views.
     // readings only; fine without
@@ -299,7 +299,7 @@ constexpr std::array kModules{
     // without it a further player's hook area uses player 1's search arrow (the seats' arrows cleared on the game thread)
     Module{.name = L"search arrows", .install = Call<&world::search_arrows::Install>, .remove = &world::search_arrows::Remove},
     // without it characters near a further player animate by player 1's camera
-    Module{.name = L"anim per view", .install = Call<&world::anim_two_views::Install>},
+    Module{.name = L"anim per view", .install = Call<&world::anim_views::Install>},
     // without it NPCs near a further player pause by player 1's camera
     Module{.name = L"npc detail", .install = Call<&world::npc_detail::Install>},
     // without it the crowd is spawned around player 1 only
@@ -307,7 +307,7 @@ constexpr std::array kModules{
     // without it NPCs see nobody beyond player 1's grid
     Module{.name = L"npc senses", .install = Call<&world::npc_senses::Install>},
     // without it only player 1's ground hides the area's actors
-    Module{.name = L"env sets", .install = Call<&world::env_sets_two::Install>},
+    Module{.name = L"env sets", .install = Call<&world::env_sets::Install>},
     // The field hooks the seats' members use, removed only with every further player out (the field-action tick back
     // on any thread; the seats' triggers no longer reach the dispatcher; the presses and chest opens back to the
     // game's; the consumers of the presses first).
@@ -341,10 +341,10 @@ constexpr std::array kModules{
     Module{.name = L"movie frame", .install = Call<&render::movie_frame::Install>, .remove = &render::movie_frame::Remove},
     // the further players' HUD image: its entries, each seat's minimap, the image itself
     Module{.name = L"image entries", .install = Call<&hud::image_entries::Install>, .remove = &hud::image_entries::Remove},
-    Module{.name = L"minimap", .install = Call<&hud::minimap_two::Install>, .remove = &hud::minimap_two::Remove,
+    Module{.name = L"minimap", .install = Call<&hud::minimap::Install>, .remove = &hud::minimap::Remove,
            .needs = {Need<&hud::image_entries::Install>()}},
     Module{.name = L"second image", .install = Call<&hud::second_image::Install>, .remove = &hud::second_image::Remove,
-           .needs = {Need<&hud::image_entries::Install>(), Need<&hud::minimap_two::Install>()}},
+           .needs = {Need<&hud::image_entries::Install>(), Need<&hud::minimap::Install>()}},
     // the markers, field icons and off-screen icons placed per view, in the image
     Module{.name = L"marker replay", .install = Call<&hud::marker_replay::Install>, .remove = &hud::marker_replay::Remove,
            .needs = {Need<&hud::second_image::Install>()}},
@@ -503,7 +503,7 @@ bool MirrorPlayerInstalled() noexcept
 
 void TickBeforeSession() noexcept
 {
-    players::player_two_camera::MaintainInputTick();
+    players::seat_camera::MaintainInputTick();
     players::game_state::Tick();  // the session reads this tick's values (the console's lines, before it, the last tick's)
     players::pad_presence::Tick();
 }
@@ -548,15 +548,15 @@ void TickWorld(const Frame& frame) noexcept
         void*              controller  = seatIn ? s.controller : nullptr;
         void*              localPlayer = seatIn ? s.localPlayer : nullptr;
         anyIn                          = anyIn || seatIn;
-        world::anim_two_views::TickSeat(seat, camera, member);
+        world::anim_views::TickSeat(seat, camera, member);
         world::npc_crowd::TickSeat(seat, member);
         world::npc_senses::TickSeat(seat, member);
         world::npc_detail::TickSeat(seat, camera);
-        world::env_sets_two::TickSeat(seat, member, controller);
+        world::env_sets::TickSeat(seat, member, controller);
         world::traversal_walkup::TickSeat(seat, controller, member);
         world::traversal_action::TickSeat(seat, member);
         world::forced_walk::TickSeat(seat, member);
-        players::nav_area_two::TickSeat(seat, member);
+        players::nav_area::TickSeat(seat, member);
         world::field_targets::TickSeat(seat, localPlayer, member);
         world::search_arrows::TickSeat(seat, localPlayer);
         audio::listeners::TickSeat(seat, controller);
@@ -564,11 +564,11 @@ void TickWorld(const Frame& frame) noexcept
     world::traversal_action::Tick(anyIn);
     world::field_targets::Tick();
     world::search_arrows::Tick();
-    world::anim_two_views::Tick();
+    world::anim_views::Tick();
     world::npc_crowd::Tick();
     world::npc_senses::Tick(anyIn ? frame.pawnOne : nullptr);
     world::npc_detail::Tick(anyIn ? frame.managerOne : nullptr);
-    world::env_sets_two::Tick();
+    world::env_sets::Tick();
     audio::listeners::Tick(frame.map.count);
 }
 
@@ -622,11 +622,11 @@ void TickHud(const Frame& frame) noexcept
         columns.member[column] = seat >= 1 ? players::scopes::Member(seat) : nullptr;
     }
     hud::second_image::Tick(split, columns);
-    hud::minimap_two::Tick();
+    hud::minimap::Tick();
     for (int seat = 1; seat <= players::kSeatsBuilt; ++seat)
     {
         const Frame::Seat& s = frame.seats[static_cast<std::size_t>(seat)];
-        hud::minimap_two::TickSeat(seat, split && s.seated, split ? s.controller : nullptr);
+        hud::minimap::TickSeat(seat, split && s.seated, split ? s.controller : nullptr);
     }
     hud::marker_replay::Tick();
     hud::field_icons::Tick();
@@ -639,22 +639,22 @@ void TickBattle(const Frame& frame) noexcept
 {
     for (int seat = 1; seat <= players::kSeatsBuilt; ++seat)
     {
-        battle::command_menu_two::Tick(seat, frame.seats[static_cast<std::size_t>(seat)].seated);
+        battle::command_menu::Tick(seat, frame.seats[static_cast<std::size_t>(seat)].seated);
     }
     battle::command_menu_tick::Tick();
-    players::nav_area_two::Tick();
+    players::nav_area::Tick();
     battle::arena_warp::Tick();
     battle::menu_grey::Tick();
     battle::party_switch::Tick();
     players::operator_battle_mode::Tick();
-    battle::targeting_two::Tick();
-    battle::target_cursor_two::Tick();
-    battle::lock_camera_two::Tick();
+    battle::targeting::Tick();
+    battle::target_cursor::Tick();
+    battle::lock_camera::Tick();
     battle::member_rates::Tick();
     battle::enemy_leader::Tick();
     battle::enemy_coin::Tick();
     battle::enemy_watch::Tick();
-    battle::sequence_camera_two::Tick();
+    battle::sequence_camera::Tick();
 }
 
 }  // namespace
@@ -663,12 +663,12 @@ void TickAfterSession(const Frame& frame) noexcept
 {
     players::split_render::Tick(frame.map.count > 1);
     render::area_blend::Tick(frame.map.count > 1);  // before this frame's views
-    views::scene_camera_two::SeatManagers seatManagers{};
+    views::scene_camera::SeatManagers seatManagers{};
     for (int seat = 1; seat <= players::kSeatsBuilt; ++seat)
     {
         seatManagers[static_cast<std::size_t>(seat)] = frame.seats[static_cast<std::size_t>(seat)].manager;
     }
-    views::scene_camera_two::Tick(frame.managerOne, seatManagers);
+    views::scene_camera::Tick(frame.managerOne, seatManagers);
     TickBattle(frame);
     TickWorld(frame);
     TickHud(frame);

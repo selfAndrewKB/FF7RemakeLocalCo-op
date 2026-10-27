@@ -1,7 +1,7 @@
 #pragma once
 
 // Characters near any player animate as the game animates them near player 1 (research/RE-anim-two-views.md;
-// Rebirth's player_two/anim_two_views, cleanup-2026-10, single-seat; the seats follow plan/seats.md step 3).
+// Rebirth's player_two/world/anim_two_views, cleanup-2026-10, single-seat; the seats follow plan/seats.md step 3).
 //
 // Square Enix's animation budget judges every skeletal mesh once per frame from ONE camera snapshot, player 1's: a
 // character outside player 1's 60-degree cone and more than 5 m away gets reduced cloth and hair, beyond 20 m it stops
@@ -29,7 +29,7 @@ namespace lss::platform {
 class GameImage;
 }
 
-namespace lss::world::anim_two_views {
+namespace lss::world::anim_views {
 
 /// Replaces the three slots (each checked; logged). False if one differs (nothing is replaced then).
 bool Install(const platform::GameImage& image) noexcept;
@@ -47,4 +47,4 @@ void SetEnabled(bool on) noexcept;
 /// The `world.anim` reading: the last 10 s summary.
 std::wstring Reading() noexcept;
 
-}  // namespace lss::world::anim_two_views
+}  // namespace lss::world::anim_views

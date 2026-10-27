@@ -16,7 +16,7 @@
 //     entries of this act alone) run in the same scopes. So "the leader" is the opener's character and the camera the
 //     opener's manager, through the game's own code. The act's tick (which takes and releases the field lock) is not
 //     scoped: the lock and its hand stay the game's, so the whole game pauses as for player 1's shop.
-//   - While a player's shop act lives, views/scene_camera_two leaves that player's camera manager alone (OwnsScene), so
+//   - While a player's shop act lives, views/scene_camera leaves that player's camera manager alone (OwnsScene), so
 //     the opener's view keeps its own shop zoom; player 1's view stays as it is.
 //   - The shop menu is one, global: while it is up (EndUISystem[44]'s "shop up" byte), players/game_state counts it
 //     as menu time, so every pad drives it as in a pause (players/menu_pads.h), the opener's included.

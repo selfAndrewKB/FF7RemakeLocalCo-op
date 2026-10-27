@@ -1,7 +1,7 @@
 #pragma once
 
 // Each seat's own battle command menu: a FieldCommandCtrl per seat, built and kept with the game's own calls
-// (RE-command-menu-two.md; Rebirth's player_two/command_menu_two, command_locks and command_menu_views in one, which
+// (RE-command-menu-two.md; Rebirth's player_two/battle/command_menu_two, command_locks and command_menu_views in one, which
 // stayed single-seat; the seats here follow plan/seats.md step 3).
 //
 // The game owns one command controller (EndUISystem[19]) and builds it with three plain calls: GMalloc, the
@@ -29,7 +29,7 @@ namespace lss::platform {
 class GameImage;
 }
 
-namespace lss::battle::command_menu_two {
+namespace lss::battle::command_menu {
 
 bool Install(const platform::GameImage& image) noexcept;
 void Remove() noexcept;
@@ -52,4 +52,4 @@ bool  Ready(int seat) noexcept;
 void BeginPass(int column) noexcept;
 void EndPass() noexcept;
 
-}  // namespace lss::battle::command_menu_two
+}  // namespace lss::battle::command_menu

@@ -1,6 +1,6 @@
 #pragma once
 
-// The lock camera readings' arithmetic, without the game (battle/lock_camera_two.h applies it).
+// The lock camera readings' arithmetic, without the game (battle/lock_camera.h applies it).
 
 #include <cmath>
 #include <cstdint>

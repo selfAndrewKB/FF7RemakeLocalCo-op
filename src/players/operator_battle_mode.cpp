@@ -7,7 +7,7 @@
 #include "platform/image.h"
 #include "platform/log.h"
 #include "platform/verified_code.h"
-#include "players/player_two_camera.h"
+#include "players/seat_camera.h"
 #include "players/seat_objects.h"
 #include "players/scopes.h"
 #include "players/seats.h"
@@ -162,7 +162,7 @@ std::uint64_t Enter(std::uint64_t a1, std::uint64_t a2, std::uint64_t a3, std::u
         {
             ++g_counts[seat].enters;
             platform::LogDebug(L"operator battle mode: {}'s operator entered battle mode with player 1's (modes {} / {})", SeatName(seat),
-                               Mode(player_two_camera::OperatorOne()), Mode(seat_objects::Operator(seat)));
+                               Mode(seat_camera::OperatorOne()), Mode(seat_objects::Operator(seat)));
         }
     }
     return result;
@@ -174,7 +174,7 @@ std::uint64_t Enter(std::uint64_t a1, std::uint64_t a2, std::uint64_t a3, std::u
 std::uint64_t SetDistance(std::uint8_t field, std::uint8_t battle)
 {
     const std::uint64_t result = g_setDistance(field, battle);
-    if (!player_two_camera::IsGameThread())
+    if (!seat_camera::IsGameThread())
     {
         static std::atomic<bool> told{false};  // the scopes are the game thread's: player 1's change only
         if (!told.exchange(true))
@@ -211,7 +211,7 @@ void PopRequest(void* key, void* setting)
             LeaveSeat(seatOperator);
             ++g_counts[seat].leaves;
             platform::LogDebug(L"operator battle mode: {}'s operator left battle mode with player 1's (modes {} / {})", SeatName(seat),
-                               Mode(player_two_camera::OperatorOne()), Mode(seatOperator));
+                               Mode(seat_camera::OperatorOne()), Mode(seatOperator));
         }
     }
 }
@@ -242,7 +242,7 @@ std::wstring Describe(void* cameraOperator) noexcept
 
 std::wstring Reading()
 {
-    std::wstring text = std::format(L"player 1's {}", Describe(player_two_camera::OperatorOne()));
+    std::wstring text = std::format(L"player 1's {}", Describe(seat_camera::OperatorOne()));
     for (int seat = 1; seat <= kSeatsBuilt; ++seat)
     {
         text += std::format(L"; {}'s {}", SeatName(seat), Describe(seat_objects::Operator(seat)));

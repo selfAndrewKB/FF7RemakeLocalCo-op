@@ -124,10 +124,10 @@ void Remove() noexcept
     Clear(L"the mod unloads");
 }
 
-void SetMask(std::uint32_t mask, bool playerTwoIn) noexcept
+void SetMask(std::uint32_t mask, bool furtherPlayerIn) noexcept
 {
     g_mask = mask;
-    if (playerTwoIn && g_forceOn != nullptr)
+    if (furtherPlayerIn && g_forceOn != nullptr)
     {
         const bool wrote = Write(mask);
         g_written        = wrote ? mask : 0;

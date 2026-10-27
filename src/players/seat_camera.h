@@ -19,7 +19,7 @@
 // that player's pad record, and put back after (pad 1 = XInput user 0, a seat's pad = user `seat`).
 // The slot replacements find the seat from the object they are handed (its controller, operator or camera
 // manager), so one set of replacements serves every seat. All of this runs on the game thread.
-// Seats: players/seats.h (one wired today, player 2). State owned here: the stick holds and the call counts; each
+// Seats: players/seats.h (the seats built, each a further player). State owned here: the stick holds and the call counts; each
 // seat's controller and operator are the registry's (players/seat_objects.h: the session binds the controller at the
 // join, Start binds the operator it spawns, Take unbinds it). The battle modules this one
 // calls around a tick (the lock camera, the sequence cameras, the targeting copy) are one instance each until
@@ -30,7 +30,7 @@ namespace lss::platform {
 class GameImage;
 }
 
-namespace lss::players::player_two_camera {
+namespace lss::players::seat_camera {
 
 /// Checks every function, slot and global, and replaces the operator's BeginPlay and Tick slots, the End
 /// controller's ProcessPlayerInput and Tick_FieldMove slots and the End camera manager's UpdateCamera slot. False
@@ -70,8 +70,6 @@ bool IsGameThread() noexcept;
 /// Player 1's field camera operator (the field root's), and a seat's own; null when none.
 void* OperatorOne() noexcept;
 void* Operator(int seat) noexcept;
-/// Seat 1's operator (the callers of one instance, plan/seats.md step 3).
-inline void* OperatorTwo() noexcept { return Operator(1); }
 
 /// The merged stick replaced by one pad's record for its lifetime (`user` = XInput user: 0 pad 1, 1 pad 2; a pad not
 /// connected reads still). `clearKeys` also clears the key-driven stick (the keyboard is player 1's). The game
@@ -91,4 +89,4 @@ private:
     float         savedDigital_[4]{};
 };
 
-}  // namespace lss::players::player_two_camera
+}  // namespace lss::players::seat_camera

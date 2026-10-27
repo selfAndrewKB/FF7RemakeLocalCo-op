@@ -19,10 +19,10 @@
 //    minimap_once: the map widget paints the texture player 1's pass rendered.
 //    Replaced: the `call AcquireLayerSlot` (5 bytes at 0x1414FDDA9). There rsi = the painting octagon's paint
 //    interface (recorded for the mod's readings). If it is one of those named for this pass (every other player's
-//    octagon, up to three, hud/minimap_two.h; the skip counted): xmm8 = 1.0 (the
+//    octagon, up to three, hud/minimap.h; the skip counted): xmm8 = 1.0 (the
 //    span sets it; 0x1414FDFD0 compares with it) and a jump past the submit (0x1414FDFC0). Otherwise the call is made
 //    exactly as the game makes it, without a call instruction of our own: the game's return address (0x1414FDDAE) is
-//    pushed and the code jumps to the acquire (hud/minimap_two's handover), so unwinding inside it sees the game's own
+//    pushed and the code jumps to the acquire (hud/minimap's handover), so unwinding inside it sees the game's own
 //    frame. After the span the function reloads
 //    r12/r13 and every register and stack slot it reads (checked in IDA, RE-hud-overlay-pass.md §10). rax and the
 //    flags change (the site is a call: the flags are dead there).

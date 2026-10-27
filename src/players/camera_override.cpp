@@ -1,4 +1,4 @@
-#include "players/camera_override_two.h"
+#include "players/camera_override.h"
 
 #include "control/registry.h"
 #include "engine_facts.h"
@@ -16,7 +16,7 @@
 #include <string>
 #include <utility>
 
-namespace lss::players::camera_override_two {
+namespace lss::players::camera_override {
 
 namespace {
 
@@ -81,7 +81,7 @@ void Release(int seat) noexcept
     if (g_seats[seat].routed != nullptr)
     {
         const bool restored = Swap(g_seats[seat].routed, RoutingOf(seat), g_handler);
-        platform::LogDebug(L"camera override 2: the game's handler back in {}'s member's delegate: {}", SeatName(seat),
+        platform::LogDebug(L"camera override: the game's handler back in {}'s member's delegate: {}", SeatName(seat),
                            restored ? L"yes" : L"it was no longer there");
         g_seats[seat].routed = nullptr;
     }
@@ -104,7 +104,7 @@ bool Install(const platform::GameImage& image) noexcept
     const auto handler = platform::FindFunction(image, facts::kCharaCameraOverrideHandler);
     if (!handler)
     {
-        platform::Log(L"camera override 2: the game's handler differs; a seat's attack cameras stay on player 1's camera");
+        platform::Log(L"camera override: the game's handler differs; a seat's attack cameras stay on player 1's camera");
         return false;
     }
     g_handler = *handler;
@@ -139,8 +139,8 @@ void Route(int seat, void* character) noexcept
     if (Swap(character, g_handler, RoutingOf(seat)))
     {
         g_seats[seat].routed = character;
-        platform::LogDebug(L"camera override 2: {}'s member's camera overrides routed to {}'s operator", SeatName(seat), SeatName(seat));
+        platform::LogDebug(L"camera override: {}'s member's camera overrides routed to {}'s operator", SeatName(seat), SeatName(seat));
     }
 }
 
-}  // namespace lss::players::camera_override_two
+}  // namespace lss::players::camera_override

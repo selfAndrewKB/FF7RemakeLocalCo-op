@@ -193,7 +193,7 @@ void Tick(bool wanted) noexcept
     }
     else if (!want && g_applied)
     {
-        Lift(L"player 2 is out and the span is not held");
+        Lift(L"every further player is out and the span is not held");
     }
 }
 

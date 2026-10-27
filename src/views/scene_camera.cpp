@@ -1,4 +1,4 @@
-#include "views/scene_camera_two.h"
+#include "views/scene_camera.h"
 
 #include "control/registry.h"
 #include "engine_facts.h"
@@ -17,7 +17,7 @@
 #include <format>
 #include <string>
 
-namespace lss::views::scene_camera_two {
+namespace lss::views::scene_camera {
 
 namespace {
 
@@ -824,4 +824,4 @@ std::wstring MirrorPlayerText()
     return text.empty() ? L"no mirror manager" : text;
 }
 
-}  // namespace lss::views::scene_camera_two
+}  // namespace lss::views::scene_camera

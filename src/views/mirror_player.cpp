@@ -11,7 +11,7 @@
 #include "players/own_controller.h"
 #include "players/split_render.h"
 #include "views/column_rules.h"
-#include "views/scene_camera_two.h"
+#include "views/scene_camera.h"
 
 #include <algorithm>
 #include <array>
@@ -30,7 +30,7 @@ constexpr std::uint32_t kStatusTicks  = 300;
 constexpr std::uint32_t kRetryTicks   = 30;   // a refused add or removal tried again twice a second at 60
 constexpr std::uint8_t  kStatePlay    = 6;    // the game state and the field step of a steady field (as the session's)
 constexpr std::int32_t  kStepSteady   = 13;
-static_assert(kMirrorsBuilt == scene_camera_two::kMirrorSlots, "one camera copy record per mirror");
+static_assert(kMirrorsBuilt == scene_camera::kMirrorSlots, "one camera copy record per mirror");
 
 // Set at install, then only read.
 std::uintptr_t g_removeLocalPlayer = 0;
@@ -56,7 +56,7 @@ std::int32_t                      g_wanted       = 0;
 std::int32_t                      g_columns      = 0;        // the columns shown at the last tick
 std::int32_t                      g_columnsAlone = 0;        // the columns with player 1 alone (what a leave fills)
 std::uint32_t                     g_seatIds      = 1;        // bit i: controller id i is a player's (bit 0 player 1)
-std::uint32_t                     g_leaveFills   = 0;        // adds made the tick player 2 left for a world change
+std::uint32_t                     g_leaveFills   = 0;        // adds made the tick a further player left for a world change
 std::uint32_t                     g_ticks        = 0;
 std::uint32_t                     g_adds         = 0;
 std::uint32_t                     g_removes      = 0;
@@ -106,7 +106,7 @@ void TellSceneCamera() noexcept
     for (std::int32_t slot = 0; slot < kMirrorsBuilt; ++slot)
     {
         const Mirror& m = g_mirrors[slot];
-        scene_camera_two::SetMirror(slot, slot < g_count ? m.controller : nullptr, slot < g_count ? m.manager : nullptr,
+        scene_camera::SetMirror(slot, slot < g_count ? m.controller : nullptr, slot < g_count ? m.manager : nullptr,
                                     slot < g_count ? g_managerOne : nullptr);
     }
 }
@@ -147,7 +147,7 @@ std::int32_t FreeControllerId() noexcept
 }
 
 /// Why a mirror cannot be added now, or null with player 1's controller filled.
-/// `atLeave`: the tick player 2 leaves for a world change. The field is leaving, not steady, and still running:
+/// `atLeave`: the tick a further player leaves for a world change. The field is leaving, not steady, and still running:
 /// the mirror added then holds the column through the loading screen, where a steady-field add came too late (the
 /// user, 2026-10-22 10:52: one view stretched over both monitors at a save load with player 2 in, mirrored on the
 /// next load because the mirror from the first was still in).
@@ -497,11 +497,11 @@ std::wstring Reading()
     {
         in += std::format(L"{}column {} (controller id {})", i ? L", " : L"", g_mirrors[i].column + 1, g_mirrors[i].controllerId);
     }
-    return std::format(L"{}; wanted {} of {} column(s); {}; adds {} ({} at player 2's leave for a world change), removes {}, dropped by "
+    return std::format(L"{}; wanted {} of {} column(s); {}; adds {} ({} at a further player's leave for a world change), removes {}, dropped by "
                        L"the engine {}{}{}; camera copy: {}",
                        g_enabled ? L"on" : L"off", g_wanted, g_columns, g_count != 0 ? std::format(L"in {}", in) : L"out", g_adds,
                        g_leaveFills, g_removes, g_dropped, g_waiting != nullptr ? std::format(L"; waiting: {}", g_waiting) : L"",
-                       g_fault != nullptr ? std::format(L"; refused: {}", g_fault) : L"", scene_camera_two::MirrorPlayerText());
+                       g_fault != nullptr ? std::format(L"; refused: {}", g_fault) : L"", scene_camera::MirrorPlayerText());
 }
 
 }  // namespace lss::views::mirror_player

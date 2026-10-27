@@ -1,8 +1,8 @@
-#include "battle/lock_camera_two.h"
+#include "battle/lock_camera.h"
 
 #include "battle/command_menu_tick.h"
 #include "battle/lock_camera_rules.h"
-#include "battle/targeting_two.h"
+#include "battle/targeting.h"
 #include "control/registry.h"
 #include "engine_facts.h"
 #include "platform/call_redirect.h"
@@ -12,7 +12,7 @@
 #include "platform/verified_code.h"
 #include "platform/vtable_entry.h"
 #include "players/field_root.h"
-#include "players/player_two_camera.h"
+#include "players/seat_camera.h"
 #include "players/scopes.h"
 #include "players/seats.h"
 
@@ -25,7 +25,7 @@
 #include <format>
 #include <string>
 
-namespace lss::battle::lock_camera_two {
+namespace lss::battle::lock_camera {
 
 namespace {
 
@@ -132,7 +132,7 @@ char FindRotation(void* requests, float* outRotation, void* owner, void* view, v
     const char found = reinterpret_cast<FindRotationFn>(g_requestCall.Original())(requests, outRotation, owner, view, params, idFiltered);
     if (found != 0)
     {
-        const int seat = players::player_two_camera::TickingSeat();
+        const int seat = players::seat_camera::TickingSeat();
         Seat&     s    = g_seats[seat];
         ++s.requestHits;
         if (seat != 0 || g_oneTicking)
@@ -142,7 +142,7 @@ char FindRotation(void* requests, float* outRotation, void* owner, void* view, v
         if (seat != 0 && !s.requestLogged)
         {
             s.requestLogged = true;
-            platform::LogDebug(L"lock camera 2: a battle camera request re-aimed {}'s lock camera (yaw {:.1f})", SeatName(seat), outRotation[1]);
+            platform::LogDebug(L"lock camera: a battle camera request re-aimed {}'s lock camera (yaw {:.1f})", SeatName(seat), outRotation[1]);
         }
     }
     return found;
@@ -165,7 +165,7 @@ void ForEachSeatWithTargets(Fn&& fn) noexcept
         {
             continue;
         }
-        const targeting_two::FieldsScope targets(seat);
+        const targeting::FieldsScope targets(seat);
         if (targets.Held())
         {
             fn(seat);
@@ -181,7 +181,7 @@ void Transform(void* a1, void* a2, void* a3, void* a4)
         Seat& s = g_seats[seat];
         ++s.transforms;
         reinterpret_cast<TransformFn>(g_transform)(a1, a2, a3, a4);
-        platform::LogDebug(L"lock camera 2: an enemy transform re-targeted {}'s displayed target too ({} so far)", SeatName(seat), s.transforms);
+        platform::LogDebug(L"lock camera: an enemy transform re-targeted {}'s displayed target too ({} so far)", SeatName(seat), s.transforms);
     });
 }
 
@@ -193,7 +193,7 @@ void LockNearest(void* a1, char a2, char a3, char a4, char a5)
         Seat& s = g_seats[seat];
         ++s.lockNearests;
         reinterpret_cast<LockNearestFn>(g_lockNearest)(a1, a2, a3, a4, a5);
-        platform::LogDebug(L"lock camera 2: a scripted lock on the nearest enemy ran for {} too ({} so far)", SeatName(seat), s.lockNearests);
+        platform::LogDebug(L"lock camera: a scripted lock on the nearest enemy ran for {} too ({} so far)", SeatName(seat), s.lockNearests);
     });
 }
 
@@ -207,7 +207,7 @@ char CountRestore(std::uintptr_t original, void* state, void* a2, void* a3, void
     {
         g_restoreLogged[context] = true;
         const wchar_t* player = SeatName(context == 2 ? command_menu_tick::EventSeat() : seat);
-        platform::LogDebug(L"lock camera 2: the enemy detail window's close restored a lock in {}",
+        platform::LogDebug(L"lock camera: the enemy detail window's close restored a lock in {}",
                            context == 0   ? std::wstring(L"player 1's controller tick")
                            : context == 1 ? std::format(L"{}'s controller tick", player)
                            : context == 2 ? std::format(L"{}'s pad's key event", player)
@@ -436,7 +436,7 @@ bool Install(const platform::GameImage& image) noexcept
     const auto restoreB      = platform::FindFunction(image, facts::kCmdMenuRestoreLockB);
     if (!requestTarget || !requestSite || !transform || !transformSite || !lockNearest || !lockSite || !restoreA || !restoreB)
     {
-        platform::Log(L"lock camera 2: an engine check failed; the seats' lock edges are not covered");
+        platform::Log(L"lock camera: an engine check failed; the seats' lock edges are not covered");
         return false;
     }
     g_requestTarget = *requestTarget;
@@ -452,7 +452,7 @@ bool Install(const platform::GameImage& image) noexcept
     {
         g_lockNearestCall.Restore();
         g_transformCall.Restore();
-        platform::Log(L"lock camera 2: a re-target call could not be redirected; the seats' locks miss enemy transforms and scripted locks");
+        platform::Log(L"lock camera: a re-target call could not be redirected; the seats' locks miss enemy transforms and scripted locks");
     }
     bool readings = true;
     for (std::size_t i = 0; i < g_restoreSlots.size(); ++i)
@@ -463,7 +463,7 @@ bool Install(const platform::GameImage& image) noexcept
     }
     if (!readings)
     {
-        platform::Log(L"lock camera 2: an enemy detail window close slot could not be replaced; its context reading is partial");
+        platform::Log(L"lock camera: an enemy detail window close slot could not be replaced; its context reading is partial");
     }
     if (const auto stamp = image.Rebase(facts::kOperatorFrameStamp, sizeof(std::uint64_t)))
     {
@@ -580,7 +580,7 @@ void AfterOperatorTick(int seat, void* seatOperator, float deltaSeconds, bool ow
                 if (f.ring >= f.reversalTicks.size() && f.ticks - oldest <= 40 && now - f.lastBurstLog > std::chrono::seconds(2))
                 {
                     f.lastBurstLog = now;
-                    platform::LogDebug(L"lock camera 2: {}'s lock camera reversed its yaw 4 times in {} ticks (steps {:.2f} then {:.2f} deg; so far "
+                    platform::LogDebug(L"lock camera: {}'s lock camera reversed its yaw 4 times in {} ticks (steps {:.2f} then {:.2f} deg; so far "
                                        L"control rewritten {}, write-back skipped {}, character under another controller {}, stick while locked {})",
                                        SeatName(seat), f.ticks - oldest, f.lastStep, step, f.controlRewritten, f.writeBackSkipped, f.ownerNotSeat,
                                        f.stickWhileLocked);
@@ -627,7 +627,7 @@ void OnLeave(int seat) noexcept
 void AfterInput(int seat, void* seatController) noexcept
 {
     std::array<float, 2> input{};
-    if (SeatBuilt(seat) && seatController != nullptr && targeting_two::Lock(seat) != 0 &&
+    if (SeatBuilt(seat) && seatController != nullptr && targeting::Lock(seat) != 0 &&
         Read(static_cast<std::uint8_t*>(seatController) + facts::kControllerRotationInput, input) && (input[0] != 0.0f || input[1] != 0.0f))
     {
         ++g_seats[seat].frames.stickWhileLocked;
@@ -643,12 +643,12 @@ void Tick() noexcept
     g_placed = true;
     if (g_requestCall.InstallFromOwnThread(g_requestSite, g_requestTarget, reinterpret_cast<std::uintptr_t>(&FindRotation)))
     {
-        platform::Log(L"lock camera 2: installed; battle camera requests reaching each operator's lock camera are counted");
+        platform::Log(L"lock camera: installed; battle camera requests reaching each operator's lock camera are counted");
     }
     else
     {
-        platform::Log(L"lock camera 2: the request call could not be redirected; the seats' lock camera requests are not counted");
+        platform::Log(L"lock camera: the request call could not be redirected; the seats' lock camera requests are not counted");
     }
 }
 
-}  // namespace lss::battle::lock_camera_two
+}  // namespace lss::battle::lock_camera

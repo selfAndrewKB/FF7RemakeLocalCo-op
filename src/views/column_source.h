@@ -1,20 +1,20 @@
 #pragma once
 
 // Where each column's view comes from, decided in one place each tick (plan/seats.md; cleanup step 5,
-// plan/code-alignment.md A1: until it, `scene_camera_two`, `mirror_player` and mod.cpp's HUD tick each decided a
+// plan/code-alignment.md A1: until it, `scene_camera`, `mirror_player` and mod.cpp's HUD tick each decided a
 // part and nothing named the outcome per column). Pure rules over this tick's facts, host-tested
 // (tests/column_source_test.cpp); the entry point (mod.cpp) applies the result and nothing else decides. The design
 // is Rebirth's views/column_source (its seats step 6a, 2026-10-26), its names kept; the moments are Remake's.
 //
 // A column (views/columns.h) shows one of three things, one mechanism each:
 //   - Self: the player's own view, their own camera and their own HUD pass (hud/second_image.h). A scene plays on
-//     it through the scene camera copy (views/scene_camera_two.h: player 1's scene slots on the seat's own manager
+//     it through the scene camera copy (views/scene_camera.h: player 1's scene slots on the seat's own manager
 //     while the scene holds the players, v0.40.0), and a shop the seat opens runs its own shop camera there
 //     (world/shop_act.h): both are Self, by the user's policy of 2026-10-21 and 2026-10-26 (every view plays the
 //     scene; the opener's view zooms on the shop);
 //   - PlayerOne: the column stays and the mod puts player 1's camera and HUD in it, as a mirror player's column
 //     shows them (views/mirror_player.h): every slot of player 1's camera manager is set on the seat's each frame
-//     (scene_camera_two's every-slot copy) and no HUD pass runs for the seat (its view samples player 1's image;
+//     (scene_camera's every-slot copy) and no HUD pass runs for the seat (its view samples player 1's image;
 //     known gap, the dev override only: while another seat's own shop keeps the split, this seat's pass still runs);
 //   - Screen: no column at all; the whole screen would be the engine's single view, player 1's. The one-window single
 //     view is unbuilt (the user's call, plan/next-phase.md §7), which the moment says (`screenBuilt` false), so the
@@ -73,7 +73,7 @@ struct Moment
     Override     choice      = Override::Auto;  // the console's `single-view`
     columns::Map map;                  // the engine's list as columns, after the mirror players' tick
     std::array<players::SeatState, players::scopes::kMaxPlayers> seats{};  // each seat's word (index 0, player 1's, unused)
-    bool         sceneHolds = false;   // a scene holds the players (views/scene_camera_two.h: the Self mechanism)
+    bool         sceneHolds = false;   // a scene holds the players (views/scene_camera.h: the Self mechanism)
     std::array<bool, players::scopes::kMaxPlayers> ownShop{};  // the seat's own shop runs (world/shop_act.h): Self
     bool         screenBuilt = false;  // the engine's single view can be applied (unbuilt: Screen becomes PlayerOne)
 };
