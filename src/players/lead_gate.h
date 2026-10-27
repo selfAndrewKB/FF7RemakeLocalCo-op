@@ -16,9 +16,11 @@
 //      level cannot advance until the member arrives: a guide. A held member's runner never ticks, so that arrival
 //      would never come (seen live: Tifa's lead stalled the Ch. 3 timer step). The member's own chain of states
 //      counts too: from its own next state, the rows' next states are walked (a few links, the game's state-change
-//      tables), and a Lead among them (field_hold::LeadSetting) means the level walks the member along a scripted
-//      path to a "follow this character" (seen live 2026-10-27: Aerith's run to a mark, a stay, then her lead to
-//      her house; nothing else waited on the run, and the lead never came while a further player held her).
+//      tables, a Stable ending a branch), and a further move among them (field_hold::MoveSetting) means the level
+//      walks the member along a scripted path, every link of which the hold forecloses (seen live 2026-10-27:
+//      Aerith's guide home is a run to a mark, a stay until the player comes, the next run, and on, with no Lead
+//      setting in it; nothing else waited on the first run, and the chain never moved while a further player held
+//      her). One move ending in a stand is a placement and stays the player's.
 //   2. The story's marker (research/RE-navi-icon-target.md). The active story step's icon slot names the object the
 //      objective marker rides on; a marker on the member says the game points the player at it: a guide. No code
 //      links it to the LEAD setting, so it is the second signal; its absence proves nothing.

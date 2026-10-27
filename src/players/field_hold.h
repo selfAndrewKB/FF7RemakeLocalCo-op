@@ -87,16 +87,19 @@ constexpr bool SameIgnoringCase(std::wstring_view a, std::wstring_view b) noexce
     return true;
 }
 
-/// The Lead setting by its row's Status (the name StateMgr_OnActorSettingArrived_SendArg2Signal 0x14114E100
-/// compares, without case [CONFIRMED code]): the "follow this character" script the user's rule hands a member back
-/// for. A Lead ahead in a member's own chain of states (its run to a mark, a stay, then the lead: Aerith, Ch. 8,
-/// live 2026-10-27) makes the whole chain the level's path for the member.
-constexpr bool LeadSetting(std::wstring_view status) noexcept
+/// The level settings that move a member and signal its arrival: the four Status names
+/// StateMgr_OnActorSettingArrived_SendArg2Signal 0x14114E100 compares, without case [CONFIRMED code]. One such
+/// move that ends in a stand is a placement (Barret's lead path on the Mako 5 save: Lead, then Stable); a further move
+/// ahead in the member's own chain before it stands is the level walking the member along a path, which a hold
+/// breaks at the first link (Aerith's guide home, Ch. 8, live 2026-10-27: run, stay, run, ... with no Lead setting
+/// in it at all; the "follow this character" the user means is built from runs and stays).
+constexpr bool MoveSetting(std::wstring_view status) noexcept
 {
-    return SameIgnoringCase(status, L"Lead");
+    return SameIgnoringCase(status, L"Lead") || SameIgnoringCase(status, L"MoveToTarget") ||
+           SameIgnoringCase(status, L"FollowActor") || SameIgnoringCase(status, L"RouteMove");
 }
 
-/// The Stable setting: the member stands again and its scripted path is over; a Lead after it is the level's next
+/// The Stable setting: the member stands again and its scripted path is over; a move after it is the level's next
 /// script (a later beat's), not this path's, so the walk stops here.
 constexpr bool PathEnd(std::wstring_view status) noexcept
 {

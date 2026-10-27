@@ -50,19 +50,19 @@ void ArrivalAsksTheGame()
     EXPECT(fh::Of(5, fh::kFollowPosition) == Hold::Layer);
 }
 
-void TheLeadSetting()
+void TheMoveSettings()
 {
-    // The Lead row's Status, compared without case as the game does; a Lead ahead in a member's own chain of
-    // states makes the chain a scripted path (Aerith's run, a stay, then her lead).
-    for (const wchar_t* status : {L"Lead", L"lead", L"LEAD"})
+    // The four Status names the game's arrival sender compares, without case; a further one ahead in a member's
+    // own chain of states makes the chain a scripted path (Aerith's run, a stay, then the next run).
+    for (const wchar_t* status : {L"Lead", L"MoveToTarget", L"FollowActor", L"RouteMove", L"lead", L"MOVETOTARGET"})
     {
-        EXPECT(fh::LeadSetting(status));
+        EXPECT(fh::MoveSetting(status));
     }
-    for (const wchar_t* status : {L"Stable", L"Stay", L"MoveToTarget", L"", L"Lead ", L"Leads"})
+    for (const wchar_t* status : {L"Stable", L"Stay", L"Animation", L"", L"Lead ", L"Leads"})
     {
-        EXPECT(!fh::LeadSetting(status));
+        EXPECT(!fh::MoveSetting(status));
     }
-    // A path ends when the member stands (Stable); a stay or a lead is still the path.
+    // A path ends when the member stands (Stable); a stay or a move is still the path.
     EXPECT(fh::PathEnd(L"Stable"));
     EXPECT(fh::PathEnd(L"stable"));
     EXPECT(!fh::PathEnd(L"Stay"));
@@ -149,7 +149,7 @@ int main()
     LevelStagingIsFree();
     ArrivalAsksTheGame();
     OnlyTheArrivalKindsAskTheGame();
-    TheLeadSetting();
+    TheMoveSettings();
     AnimationsAreWatched();
     EscapeNeedsTheAi();
     ScriptLayersHold();
