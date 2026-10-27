@@ -264,7 +264,7 @@ void Release(SeatCopy& s, void* manager) noexcept
     {
         for (std::uint32_t i = 0; i < kSlots; ++i)
         {
-            if (i == 24 || ((s.mirrored >> i) & 1u) == 0 || IsBlendSlot(i))
+            if (i == facts::kCameraSlotField || ((s.mirrored >> i) & 1u) == 0 || IsBlendSlot(i))
             {
                 continue;  // the seat's own field camera stays on; a blend still running on the seat's manager ends by itself
             }
@@ -302,7 +302,7 @@ void CopySlots(Record& record, const Slots& one, void* source, void* target, boo
 {
     for (std::uint32_t i = 0; i < kSlots; ++i)
     {
-        if (!allSlots && i == 24)
+        if (!allSlots && i == facts::kCameraSlotField)
         {
             continue;  // the seat's own field camera
         }
@@ -316,7 +316,7 @@ void CopySlots(Record& record, const Slots& one, void* source, void* target, boo
                 // The on switch: the record, then the seed.
                 std::uint8_t        blend[facts::kCameraSlotBlendBytes]{};
                 const bool          ownSeed = !allSlots && SeededFromField(i);
-                const std::uint8_t* seed    = ownSeed ? SlotAt(target, 24) : SlotAt(source, i);
+                const std::uint8_t* seed    = ownSeed ? SlotAt(target, facts::kCameraSlotField) : SlotAt(source, i);
                 if (platform::CopyGuarded(blend, RecordAt(source, i), sizeof(blend)) && platform::CopyGuarded(pose, seed, sizeof(pose)))
                 {
                     std::int64_t unused = 0;
@@ -695,6 +695,14 @@ void SetSource(int seat, bool playerOne, void* manager) noexcept
         s.mirrored = 0;  // the seat left, or came back with another manager: nothing to switch off on the old one
         s.engaged  = false;
     }
+}
+
+bool SlotActive(const void* manager, std::uint32_t slot) noexcept
+{
+    std::uint8_t active = 0;
+    return manager != nullptr && slot < kSlots &&
+           Read(Bytes(manager) + facts::kCameraManagerSlots + slot * facts::kCameraSlotBytes + facts::kCameraSlotActive, active) &&
+           active != 0;
 }
 
 Scene ReadSceneNow() noexcept

@@ -64,7 +64,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.110.0-collapse-scope";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.111.0-event-camera";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
@@ -319,7 +319,7 @@ private:
         // The console's lines (joins and leaves among them) before the session and the column map, as the keys, so
         // this frame's HUD passes never name a player the console just took out.
         remote_.Tick();
-        lss::modules::TickBeforeSession();
+        lss::modules::TickBeforeSession(CameraManagerOf(0));
         session_.Tick();
         // The columns' tick (modules.h): the span, the layout and the mirrors toward the columns the frame shows.
         const lss::modules::Columns columns = lss::modules::TickColumns({.playersIn = 1 + session_.Count(),

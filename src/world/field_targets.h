@@ -22,7 +22,8 @@
 //     the player's pick every other active target is marked disabled (the entry's own byte, the pick's rejection test;
 //     put back after, unless the run applied the game's own pending write to it), so the game gives the player neither
 //     an icon nor a prompt for them.
-//   - An NPC's talk then runs as the game scripts it (its speaker, its camera on every view, the field lock and hand).
+//   - An NPC's talk then runs as the game scripts it (its speaker; its camera on every view, or in one window the
+//     engine's single view for a scripted talk on the event camera, views/whole_screen.h; the field lock and hand).
 //     The press is noted (the seat and the NPC) for the acts the NPC's talk state queues: a shop act claims it
 //     (world/shop_act.h). A note no act claims lapses after 10 s with no field lock held (a running talk holds it);
 //     player 1's own press of the same NPC (also in the same frame), the player's leave and a world change drop it.

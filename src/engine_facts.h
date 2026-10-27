@@ -1967,6 +1967,14 @@ inline constexpr std::uint32_t kSplitTypeThreePlayerFavorTop  = 3;
 inline constexpr std::uint32_t kCameraManagerSlots        = 0x1E48;
 inline constexpr std::uint32_t kCameraSlotBytes           = 48;
 inline constexpr std::uint32_t kCameraSlotCount           = 25;
+/// The pose slots a scene writes on the primary manager (research/RE-camera.md §2.2-2.4 table; RE-cutscene-camera-two.md
+/// §2): 8 the cutscene, 14 the talk camera (a look-at, a shop's framing), 18 the event camera (the event camera system
+/// writes it by priority: a scripted talk's angles, an event; a field area's rail cameras write it too, §2.3), 24 the
+/// field camera.
+inline constexpr std::uint32_t kCameraSlotCutscene        = 8;
+inline constexpr std::uint32_t kCameraSlotTalk            = 14;
+inline constexpr std::uint32_t kCameraSlotEvent           = 18;
+inline constexpr std::uint32_t kCameraSlotField           = 24;
 inline constexpr std::uint32_t kCameraSlotFov             = 0x24;  // float
 inline constexpr std::uint32_t kCameraSlotActive          = 0x2C;  // byte
 inline constexpr std::uint32_t kCameraSlotBlendRecords    = 0x2308;  // 25 blend records, 60 bytes each (kind, ms, rates, interps)

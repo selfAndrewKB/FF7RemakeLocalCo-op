@@ -508,11 +508,11 @@ bool MirrorPlayerInstalled() noexcept
     return g_installed[kMirrorPlayerRow];
 }
 
-void TickBeforeSession() noexcept
+void TickBeforeSession(const void* managerOne) noexcept
 {
     players::seat_camera::MaintainInputTick();
     players::game_state::Tick();  // the session reads this tick's values (the console's lines, before it, the last tick's)
-    views::whole_screen::Tick();  // the whole-screen read over them (the column source's moment, after the session)
+    views::whole_screen::Tick(managerOne);  // the whole-screen read over them (the column source's moment, after the session)
     players::pad_presence::Tick();
 }
 

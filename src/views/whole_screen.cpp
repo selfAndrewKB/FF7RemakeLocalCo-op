@@ -49,7 +49,7 @@ Reason   g_reason   = Reason::None;
 unsigned g_offTicks = kMinigameGapTicks + 1;  // ticks since this tick's own reason was last Minigame (the act-gap bridge; capped)
 bool     g_logged   = false;
 
-Signals Read() noexcept
+Signals Read(const void* managerOne) noexcept
 {
     Signals s;
     const players::game_state::Snapshot& state = players::game_state::Current();
@@ -79,14 +79,23 @@ Signals Read() noexcept
     s.shopUp      = players::game_state::ShopUp();
     s.pauseWidget = players::game_state::PauseWidgetAlive();
     // The cutscene manager and the field control lock's mask come through the scene camera's read (Scene{} while its
-    // globals failed their check: no cutscene, skip or bit is known then). The lock itself is no reason: a talk, an
-    // event camera or a pickup holds it, and those play on every view (the user, 2026-10-27); only its bit 21 is read,
+    // globals failed their check: no cutscene, skip, bit or held scene is known then, and so no event camera reason).
+    // The lock itself is no reason: a free talk or a pickup holds it, and those play on every view (the user,
+    // 2026-10-27); a scripted talk's event camera is its own signal below, which the lock gates; its bit 21 is read
     // for the arena rule (a VR or colosseum session switches it by phase: its menus collapse by ArenaMenu, its fights
     // stay split).
     const scene_camera::Scene scene = scene_camera::ReadSceneNow();
     s.cutscene    = scene.playing;
     s.skipping    = scene.skip;
     s.minigameBit = (scene.lockMask & facts::kControlLockMiniGame) != 0;
+    // The event camera system's slot on player 1's manager: a scripted talk (the game's own angles and cuts, the HUD
+    // off, the speakers alone in frame) or an event; a free talk keeps the field camera's slot (live 2026-10-27:
+    // Chadley's scripted talk on 18 with cuts, the armed leader's free talk on 24 alone). A field area's rail camera
+    // writes 18 in free play too (research/RE-cutscene-camera-two.md §2.3, §11 Q3), so the rule takes the slot only
+    // while a scene holds the players (the lock outside player 1's own move, or the cutscene) [ASSUMPTION until a
+    // rail area is played: a rail camera holds no lock].
+    s.eventCamera = scene_camera::SlotActive(managerOne, facts::kCameraSlotEvent);
+    s.sceneHeld   = scene.Holds();
     return s;
 }
 
@@ -97,12 +106,13 @@ std::wstring SignalsText(const Signals& s)
         return L"the game state is not readable";
     }
     return std::format(L"game state {} ({}, menu kind {}), script menu {}, shop {}, pause widget {}, arena {} (minigame bit {}, "
-                       L"in battle {}), minigame {} (by {}), cutscene {}, bike {}, skippable {}, skip {}, black {}, loading {}, "
-                       L"title {}",
+                       L"in battle {}), minigame {} (by {}), cutscene {}, event camera {} (scene held {}), bike {}, skippable {}, skip {}, "
+                       L"black {}, loading {}, title {}",
                        players::game_state::StateName(s.gameState), s.gameState, s.menuKind, s.scriptMenu ? L"on" : L"off",
                        s.shopUp ? L"up" : L"down", s.pauseWidget ? L"alive" : L"none", s.arena ? L"on" : L"off",
                        s.minigameBit ? L"on" : L"off", s.inBattle ? L"yes" : L"no", s.minigame ? L"on" : L"off",
-                       players::field_root::OnOffOwnerText(s.minigameAct), s.cutscene ? L"playing" : L"no", s.bike ? L"yes" : L"no",
+                       players::field_root::OnOffOwnerText(s.minigameAct), s.cutscene ? L"playing" : L"no",
+                       s.eventCamera ? L"on" : L"off", s.sceneHeld ? L"yes" : L"no", s.bike ? L"yes" : L"no",
                        s.skippable ? L"on" : L"off", s.skipping ? L"on" : L"off", s.black ? L"on" : L"off",
                        s.loading ? L"on" : L"off", s.title ? L"yes" : L"no");
 }
@@ -130,18 +140,20 @@ bool Install(const platform::GameImage& image) noexcept
                            return control::Value{std::format(L"{}: {}{}", NameOf(g_reason), SignalsText(g_signals),
                                                              ReasonOf(g_signals) != g_reason ? L" (held over the act gap)" : L"")};
                        }});
-    platform::Log(L"whole screen: menus, shops, cutscenes, a cutscene skip, a held black screen, the loading screen and the title "
-                  L"are read from the game's own state each tick (the one-window single view's reasons; a talk, an event camera or a "
-                  L"pickup holding the field lock is none); minigames by on/off 36 (held up to {} ticks over the gap between a segment's "
+    platform::Log(L"whole screen: menus, shops, cutscenes, the event camera (a scripted talk, an event: slot 18 on player 1's "
+                  L"camera manager while the field lock or a cutscene holds the players, outside a battle), a cutscene skip, a "
+                  L"held black screen, the loading screen and the title are read "
+                  L"from the game's own state each tick (the one-window single view's reasons; a free talk or a pickup holding the "
+                  L"field lock alone is none); minigames by on/off 36 (held up to {} ticks over the gap between a segment's "
                   L"chained acts), the bike chase by its shared state, the VR simulator's and colosseum's menus by on/off 78 with the "
                   L"minigame bit outside a battle (research/RE-minigame-signal.md)",
                   kMinigameGapTicks);
     return true;
 }
 
-void Tick() noexcept
+void Tick(const void* managerOne) noexcept
 {
-    const Signals now = Read();
+    const Signals now = Read(managerOne);
     const Reason  raw = ReasonOf(now);
     g_offTicks          = NextTicksOff(raw, g_offTicks);
     const Reason reason = BridgeActGap(raw, g_reason, g_offTicks);

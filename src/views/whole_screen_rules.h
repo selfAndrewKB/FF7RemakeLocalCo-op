@@ -3,10 +3,11 @@
 // Whether the game shows something that takes the whole screen: the decision, pure (host-tested,
 // tests/whole_screen_rules_test.cpp), over the signals views/whole_screen.cpp reads each tick (views/whole_screen.h
 // names the game state behind each one). The reason is what the one-window single view collapses the split for
-// (players/single_view.h; views/column_source.h Why::WholeScreen): the menus, the cutscenes and the minigames the
-// game's own signals pick up (the user, 2026-10-27: not a talk, an event camera or a field pickup, which hold the
-// field control lock; those play on every view). Rebirth's views/whole_screen_reason.h gave the shape; the signals
-// and their order are Remake's (research/RE-lifecycle-world.md §8).
+// (players/single_view.h; views/column_source.h Why::WholeScreen): the menus, the cutscenes, the minigames the game's
+// own signals pick up, and the scripted talks and events that take the game's event camera (the user, 2026-10-27: not
+// a free talk in the field camera or a field pickup, which hold the field control lock only; those play on every
+// view). Rebirth's views/whole_screen_reason.h gave the shape; the signals and their order are Remake's
+// (research/RE-lifecycle-world.md §8).
 
 #include <cstdint>
 #include <string_view>
@@ -26,6 +27,10 @@ struct Signals
     bool shopUp      = false;  // the shop UI's own "a shop is up" byte (a shop runs in the field state)
     bool pauseWidget = false;  // the game's IsPauseMenuClosed says a pause-family menu is alive
     bool cutscene    = false;  // the cutscene manager plays a scene
+    bool eventCamera = false;  // the event camera's slot (18) is active on player 1's camera manager: a scripted talk, an
+                               // event, or a field area's rail camera in free play
+    bool sceneHeld   = false;  // a scene holds the players: the cutscene playing, or the field control lock outside
+                               // player 1's own move (a talk, an event; not a rail camera in free play)
     bool skippable   = false;  // on/off 12 ShowSkipPauseMenu: a skippable scene
     bool skipping    = false;  // the cutscene manager's skip byte (the scene fast-forwards under black)
     bool black       = false;  // on/off 39, 40 or 53: a held black screen
@@ -52,6 +57,8 @@ enum class Reason : std::uint8_t
     Minigame,        // on/off 36
     Bike,            // a bike chase (chapters 4 and 18)
     Cutscene,        // the cutscene manager playing
+    EventCamera,     // the event camera on player 1's manager while a scene holds the players, outside a battle (a
+                     // scripted talk's angles, an event; a rail camera in free play is none)
     SkippableScene,  // on/off 12
     CutsceneSkip,    // the skip byte
     Black,           // a held black screen
@@ -118,6 +125,10 @@ constexpr Reason ReasonOf(const Signals& s) noexcept
     {
         return Reason::Cutscene;
     }
+    if (s.eventCamera && s.sceneHeld && !s.inBattle)
+    {
+        return Reason::EventCamera;
+    }
     if (s.skippable)
     {
         return Reason::SkippableScene;
@@ -175,6 +186,7 @@ constexpr const wchar_t* NameOf(Reason reason) noexcept
         case Reason::Minigame: return L"a minigame (on/off 36)";
         case Reason::Bike: return L"a bike chase";
         case Reason::Cutscene: return L"a cutscene";
+        case Reason::EventCamera: return L"an event camera (a scripted talk, an event; slot 18 on player 1's manager)";
         case Reason::SkippableScene: return L"a skippable scene (on/off 12)";
         case Reason::CutsceneSkip: return L"a cutscene skip";
         case Reason::Black: return L"a held black screen";

@@ -80,6 +80,16 @@ void EachSignal()
     s          = Readable();
     s.cutscene = true;
     EXPECT(ReasonOf(s) == Reason::Cutscene);
+    s             = Readable();
+    s.eventCamera = true;  // a rail camera in free play: nothing holds the players, no reason
+    EXPECT(ReasonOf(s) == Reason::None);
+    s.sceneHeld = true;  // a scripted talk: the lock and the event camera together
+    EXPECT(ReasonOf(s) == Reason::EventCamera);
+    s.inBattle = true;  // if a fight's camera ever takes 18: the fight stays split
+    EXPECT(ReasonOf(s) == Reason::None);
+    s           = Readable();
+    s.sceneHeld = true;  // a free talk or a pickup: the lock alone
+    EXPECT(ReasonOf(s) == Reason::None);
     s           = Readable();
     s.skippable = true;
     EXPECT(ReasonOf(s) == Reason::SkippableScene);
@@ -98,7 +108,8 @@ void EachSignal()
 }
 
 /// The order (which reason the log names; Shown() is "not None" either way): a pause state over a menu and a scene,
-/// a menu over a cutscene, a cutscene over its skip prompt, a chase over its opening scene.
+/// a menu over a cutscene, a cutscene over its skip prompt, a chase over its opening scene, a cutscene and a minigame
+/// over an event camera.
 void Order()
 {
     auto s      = Readable();
@@ -118,6 +129,16 @@ void Order()
     s.cutscene  = true;
     s.skippable = true;
     EXPECT(ReasonOf(s) == Reason::Cutscene);
+    s             = Readable();
+    s.cutscene    = true;
+    s.sceneHeld   = true;
+    s.eventCamera = true;  // a cutscene starting over an event camera (the 18 -> 8 blend)
+    EXPECT(ReasonOf(s) == Reason::Cutscene);
+    s             = Readable();
+    s.minigame    = true;
+    s.sceneHeld   = true;
+    s.eventCamera = true;  // the Reactor 5 segment's phases run on the event camera too
+    EXPECT(ReasonOf(s) == Reason::Minigame);
     s          = Readable();
     s.bike     = true;
     s.cutscene = true;  // a chase's opening scene: the chase holds through it

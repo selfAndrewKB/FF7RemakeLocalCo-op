@@ -93,7 +93,8 @@ struct Scene
 
     bool operator==(const Scene&) const = default;
 
-    /// The scene holds the players: the copy's reason to run (the whole screen no longer counts it, v0.110.0). Player
+    /// The scene holds the players: the copy's reason to run, and the whole screen's gate on the event camera
+    /// (views/whole_screen.h, v0.111.0: slot 18 alone is no reason; the lock alone neither). Player
     /// 1's own crawl, squeeze or grappling hook locks only player 1 (as the session keeps the seats' members theirs
     /// through it): its bits hold no one else.
     bool Holds() const noexcept { return playing || (lockMask & ~mover) != 0 || lockCount != 0; }
@@ -102,6 +103,10 @@ struct Scene
 /// The scene signals read now (a few guarded reads and the game's playing test; all false before Install): the
 /// whole-screen read takes them before the session's tick, Tick reads them again after it.
 Scene ReadSceneNow() noexcept;
+
+/// Whether a pose slot is active on a camera manager now (one guarded read; false for a null manager, a slot past
+/// the table or an unreadable byte): the whole-screen read asks for the event camera's slot on player 1's manager.
+bool SlotActive(const void* manager, std::uint32_t slot) noexcept;
 
 /// The mirror players' copies (views/mirror_player), one per mirror slot 0..kMirrorSlots-1.
 inline constexpr int kMirrorSlots = 2;
