@@ -50,6 +50,20 @@ void ArrivalAsksTheGame()
     EXPECT(fh::Of(5, fh::kFollowPosition) == Hold::Layer);
 }
 
+void TheGamesArrivalSettings()
+{
+    // The four Status names the game's arrival sender compares, without case; a member's own next state with one
+    // of them is a scripted path (Aerith's run, then her lead).
+    for (const wchar_t* status : {L"Lead", L"MoveToTarget", L"FollowActor", L"RouteMove", L"lead", L"MOVETOTARGET"})
+    {
+        EXPECT(fh::ArrivalSetting(status));
+    }
+    for (const wchar_t* status : {L"Stable", L"Stay", L"", L"Lead ", L"Leads"})
+    {
+        EXPECT(!fh::ArrivalSetting(status));
+    }
+}
+
 void OnlyTheArrivalKindsAskTheGame()
 {
     // The gate reads a handler only for the kinds whose arrival the level can wait on; the rule and the gate share
@@ -129,6 +143,7 @@ int main()
     LevelStagingIsFree();
     ArrivalAsksTheGame();
     OnlyTheArrivalKindsAskTheGame();
+    TheGamesArrivalSettings();
     AnimationsAreWatched();
     EscapeNeedsTheAi();
     ScriptLayersHold();

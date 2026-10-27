@@ -27,7 +27,9 @@
 //
 // Pure (host-tested in tests/field_hold_test.cpp); the actor modes and the event lock are the caller's tests.
 
+#include <cstddef>
 #include <cstdint>
+#include <string_view>
 
 namespace lss::players::field_hold {
 
@@ -64,6 +66,35 @@ enum Kind : std::uint8_t
 constexpr bool SignalsArrival(std::uint8_t kind) noexcept
 {
     return kind == kLead || kind == kFollowPosition;
+}
+
+/// ASCII letters compared without case, as the game's arrival sender compares a row's Status (its inlined Stricmp).
+constexpr bool SameIgnoringCase(std::wstring_view a, std::wstring_view b) noexcept
+{
+    if (a.size() != b.size())
+    {
+        return false;
+    }
+    for (std::size_t i = 0; i < a.size(); ++i)
+    {
+        const wchar_t x = a[i] >= L'A' && a[i] <= L'Z' ? static_cast<wchar_t>(a[i] + (L'a' - L'A')) : a[i];
+        const wchar_t y = b[i] >= L'A' && b[i] <= L'Z' ? static_cast<wchar_t>(b[i] + (L'a' - L'A')) : b[i];
+        if (x != y)
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+/// The level settings whose arrival the state manager signals: the four Status names
+/// StateMgr_OnActorSettingArrived_SendArg2Signal 0x14114E100 compares, without case [CONFIRMED code]. A member's
+/// own next state with one of these walks it on after its arrival: a scripted path (Aerith's run, then her lead,
+/// Ch. 8).
+constexpr bool ArrivalSetting(std::wstring_view status) noexcept
+{
+    return SameIgnoringCase(status, L"Lead") || SameIgnoringCase(status, L"MoveToTarget") ||
+           SameIgnoringCase(status, L"FollowActor") || SameIgnoringCase(status, L"RouteMove");
 }
 
 enum class Hold : std::uint8_t

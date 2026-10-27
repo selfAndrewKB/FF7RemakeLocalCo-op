@@ -1504,6 +1504,7 @@ inline constexpr std::uint32_t  kStateManagerSlotCount   = 0x33F00;
 inline constexpr std::uint32_t  kStateSlotObject         = 0x00;
 inline constexpr std::uint32_t  kStateSlotState          = 0x08;
 inline constexpr std::uint32_t  kStateSlotRow            = 0x10;
+inline constexpr std::uint32_t  kStateRowStatus          = 0x50;  // the Status FString (count +0x58): "Lead", "MoveToTarget", "Stable", ...
 inline constexpr std::uint32_t  kStateRowStringArgs      = 0x78;
 inline constexpr std::uint32_t  kStateRowTriggers        = 0x98;
 inline constexpr std::uint32_t  kStateRowNextStates      = 0xA8;
@@ -1537,6 +1538,9 @@ inline constexpr std::uint32_t  kTriggerRowAttributes    = 0x40;
 inline constexpr std::uint32_t  kTriggerRowStates        = 0x50;
 inline constexpr std::uint32_t  kTriggerRowSendObjects   = 0x80;
 inline constexpr std::uint32_t  kTriggerRowDirectSetsMax = 32;
+/// The three state-change data tables (g_DT_StateChange; a state row by its FName through the same virtual, as
+/// StateSlot_SetState 0x141169C00 does when a slot steps to its next state). [CONFIRMED code 2026-10-27]
+inline constexpr std::uintptr_t kStateChangeTablesGlobal = 0x145843FB0;
 /// The objective icon registry ([root+0x1F8]: a map of story step FName to a 96-byte record; the sparse array's data
 /// at +8, count +0x10, 24-byte elements with the record at +8): a record's key (+8), its FEndDataTableStory row
 /// (+0x18) and its "icon removed" byte (+0x29, 0 while the icon is shown). The story row's three icon slots:

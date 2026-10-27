@@ -32,9 +32,11 @@ using FindRowFn        = void* (*)(void* table, std::int64_t name);
 constexpr std::uint32_t kCensusEveryTicks = 60;
 constexpr std::uint32_t kMaxIconRecords   = 64;
 constexpr std::size_t   kMaxNameChars     = 96;
+constexpr std::size_t   kMaxStateChars    = 1024;  // a next-state name (the FName limit): read whole, or its lookup misses
 
-std::uintptr_t   g_triggerTables  = 0;
-StoryFlagIsSetFn g_storyFlagIsSet = nullptr;
+std::uintptr_t   g_triggerTables     = 0;
+std::uintptr_t   g_stateChangeTables = 0;
+StoryFlagIsSetFn g_storyFlagIsSet    = nullptr;
 
 /// The field AI whose handler last failed to read, and the kind: the failure is logged once (Debug) and then at
 /// Trace while it lasts.
@@ -67,7 +69,7 @@ struct Judgment
     std::int64_t  object = 0, state = 0;
     std::uint8_t  kind       = 0;
     bool          guide      = false;
-    bool          waiter     = false;  // an other waiter, or a direct set on another object
+    bool          waiter     = false;  // another waiter, a direct set on another object, or the member's own next setting (a scripted path)
     bool          marker     = false;  // the story's marker rides on the member
     std::uint32_t censusTick = 0;
     std::uint32_t calls      = 0;
@@ -125,7 +127,7 @@ std::wstring Name(std::int64_t bits) noexcept
 }
 
 /// An FString's text (`data` pointer, `num` count with the terminator), guarded and capped.
-std::wstring Text(const std::uint8_t* fstring) noexcept
+std::wstring Text(const std::uint8_t* fstring, std::size_t cap = kMaxNameChars) noexcept
 {
     const wchar_t* data = nullptr;
     std::int32_t   num  = 0;
@@ -133,7 +135,7 @@ std::wstring Text(const std::uint8_t* fstring) noexcept
     {
         return L"";
     }
-    const std::size_t count = std::min<std::size_t>(static_cast<std::size_t>(num) - 1, kMaxNameChars);
+    const std::size_t count = std::min<std::size_t>(static_cast<std::size_t>(num) - 1, cap);
     std::wstring      text(count, L'\0');
     if (!platform::CopyGuarded(text.data(), data, count * sizeof(wchar_t)))
     {
@@ -202,20 +204,21 @@ std::vector<Slot> ActiveSlots(const std::uint8_t* sm) noexcept
     return slots;
 }
 
-/// The trigger row named `trigger`, through the tables' own lookup (the virtual StateMgr_FireStateTrigger calls).
-const std::uint8_t* TriggerRow(std::int64_t trigger) noexcept
+/// The row named `name` in one of three data tables at `tables`, through the tables' own lookup (the virtual
+/// StateMgr_FireStateTrigger and StateSlot_SetState call).
+const std::uint8_t* TableRow(std::uintptr_t tables, std::int64_t name) noexcept
 {
     for (std::uint32_t k = 0; k < 3; ++k)
     {
         void* table = nullptr;
-        if (!Read(reinterpret_cast<const void*>(g_triggerTables + 8 * k), table) || table == nullptr)
+        if (!Read(reinterpret_cast<const void*>(tables + 8 * k), table) || table == nullptr)
         {
             continue;
         }
         void* vtable = ReadPointer(table, 0);
         auto  find   = reinterpret_cast<FindRowFn>(ReadPointer(vtable, facts::kDataTableFindRowSlot));
         void* row    = nullptr;
-        if (find != nullptr && platform::CallGuarded(find, row, table, trigger) && row != nullptr)
+        if (find != nullptr && platform::CallGuarded(find, row, table, name) && row != nullptr)
         {
             return static_cast<const std::uint8_t*>(row);
         }
@@ -223,11 +226,37 @@ const std::uint8_t* TriggerRow(std::int64_t trigger) noexcept
     return nullptr;
 }
 
+/// The FName of an existing name's text (0 if the pool has no such name; never adds one); a free function for the
+/// guard.
+void FindName(const wchar_t* text, std::int64_t* out) noexcept
+try
+{
+    const RC::Unreal::FName name(text, RC::Unreal::FNAME_Find);
+    *out = (static_cast<std::int64_t>(name.GetNumber()) << 32) | static_cast<std::int64_t>(name.GetComparisonIndex().ToUnstableInt());
+}
+catch (...)
+{
+    *out = 0;
+}
+
+/// The Status text of the state row named `state` (the game's state-change tables); empty if unknown.
+std::wstring StatusOf(const std::wstring& state) noexcept
+{
+    std::int64_t name = 0;
+    if (state.empty() || !platform::CallGuarded(&FindName, state.c_str(), &name) || name == 0)
+    {
+        return L"";
+    }
+    const std::uint8_t* row = TableRow(g_stateChangeTables, name);
+    return row == nullptr ? L"" : Text(row + facts::kStateRowStatus);
+}
+
 struct Census
 {
     bool         read    = false;
     std::int64_t trigger = 0;
     bool         self    = false;  // the member's own step waits (always, with a trigger)
+    bool         chain   = false;  // the member's own next state is another arrival setting: the level walks it on
     int          others  = 0;      // other waiters (scope) plus direct sets on other objects
     std::wstring text;
 };
@@ -262,7 +291,7 @@ try
     }
     census.trigger = args[2];
     // The trigger row: its scope and direct sets.
-    const std::uint8_t* trigger = TriggerRow(census.trigger);
+    const std::uint8_t* trigger = TableRow(g_triggerTables, census.trigger);
     std::uint8_t        scope   = 0xFF;
     std::vector<std::int64_t> sendObjects;
     if (trigger != nullptr)
@@ -310,11 +339,16 @@ try
             std::int32_t        nextCount  = 0;
             Read(s.row + facts::kStateRowNextStates, nextStates);
             Read(s.row + facts::kStateRowNextStates + 8, nextCount);
-            const std::wstring next = nextStates != nullptr && static_cast<std::int32_t>(i) < nextCount ? Text(nextStates + 16 * i) : L"?";
+            const bool         known = nextStates != nullptr && static_cast<std::int32_t>(i) < nextCount;
+            const std::wstring next  = known ? Text(nextStates + 16 * i, kMaxStateChars) : L"?";
             if (&s == self)
             {
                 census.self = true;
-                census.text += std::format(L"; self -> {}", next);
+                const std::wstring status = known ? StatusOf(next) : L"";
+                census.chain              = field_hold::ArrivalSetting(status);
+                census.text += std::format(L"; self -> {}{}", next,
+                                           census.chain ? std::format(L" ({}: the level walks the member on)", status)
+                                                        : std::format(L" ({})", status.empty() ? L"status unread" : status));
             }
             else
             {
@@ -422,20 +456,22 @@ catch (...)
 bool Install(const platform::GameImage& image) noexcept
 {
     const auto tables = image.Rebase(facts::kStateTriggerTablesGlobal, 3 * sizeof(void*));
+    const auto states = image.Rebase(facts::kStateChangeTablesGlobal, 3 * sizeof(void*));
     const auto flag   = platform::FindFunction(image, facts::kStoryFlagIsSet);
-    if (!field_root::Installed() || !tables || !flag)
+    if (!field_root::Installed() || !tables || !states || !flag)
     {
         platform::Log(L"lead gate: an engine check failed; a LEAD or a run to a mark on a further player's member stays the player's");
         return false;
     }
-    g_triggerTables  = *tables;
-    g_storyFlagIsSet = reinterpret_cast<StoryFlagIsSetFn>(*flag);
+    g_triggerTables     = *tables;
+    g_stateChangeTables = *states;
+    g_storyFlagIsSet    = reinterpret_cast<StoryFlagIsSetFn>(*flag);
     control::Register({.name = L"lead.gate", .shape = control::Shape::Text,
                        .help = L"the last LEAD or run to a mark on a further player's member judged: its arrival trigger, the level's waiters, the story's "
-                               L"marker, and the verdict (guide: to its AI; staging: the player's)",
+                               L"marker, the member's own next setting, and the verdict (guide: to its AI; staging: the player's)",
                        .get  = [] { return control::Value{Reading()}; }});
     platform::Log(L"lead gate: installed; a LEAD or a run to a mark on a further player's member goes to its AI when a level step "
-                  L"waits on its arrival or the story's marker rides on it");
+                  L"waits on its arrival, the story's marker rides on it, or its own next setting walks it on");
     return true;
 }
 
@@ -513,7 +549,7 @@ try
     {
         waiters         = Waiters(sm, object, state);
         last.censusTick = last.calls;
-        last.waiter     = waiters.others > 0;
+        last.waiter     = waiters.others > 0 || waiters.chain;
     }
     const bool wasMarker = last.marker;
     last.marker          = marker.onMember;

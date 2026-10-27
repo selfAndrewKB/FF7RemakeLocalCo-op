@@ -14,7 +14,10 @@
 //      on its arrival (the setting to its next, e.g. Lead to Stable); any OTHER slot waiting on it (a story
 //      manager's step, a timer, a door), or the trigger row's own direct state sets on another object, means the
 //      level cannot advance until the member arrives: a guide. A held member's runner never ticks, so that arrival
-//      would never come (seen live: Tifa's lead stalled the Ch. 3 timer step).
+//      would never come (seen live: Tifa's lead stalled the Ch. 3 timer step). The member's own next state counts
+//      too when it is another arrival setting (the game's list, field_hold::ArrivalSetting): the level walks the
+//      member on along a scripted path (seen live 2026-10-27: Aerith's run to a mark, then her lead to her house;
+//      nothing else waited on the run, and the lead never came while a further player held her).
 //   2. The story's marker (research/RE-navi-icon-target.md). The active story step's icon slot names the object the
 //      objective marker rides on; a marker on the member says the game points the player at it: a guide. No code
 //      links it to the LEAD setting, so it is the second signal; its absence proves nothing.
