@@ -29,7 +29,7 @@ Every module registers its own commands (`src/control/registry.h`), so `help` on
 Today: `join`, `leave`, `console <command>`, `report`, `quit`, `showflags <hex>`, `ao-origin on|off`,
 `bloom-origin on|off`, `distortion-apply on|off`, `pad-buttons on|off`, `menu-two on|off`, `menu-slow on|off` (off: an open battle command menu no longer slows the world or greys the screen), `menu-grey` (reading), `battle-warps players-stay|off|game` (who the game warps at a battle's start and end), `multi-monitor auto|on|off` and `column-order 123|132` (the settings file's options, switched in play; every option of `LocalSplitScreen.ini` is one row of the table in `src/platform/settings.h`, and its console command is built from that row), `targeting-two on|off`, `rates-two on|off`, `menu-two.leader`, `menu-two.route`, `window-span on|off`, `window-span.hold on|off` (the span with any player count, kept through loading screens), `mirror-player on|off` (an extra local player in every column no player fills shows player 1's picture, up to two; reading `mirror-player.state`), `view-columns 0..3` (the columns the window shows, side by side; 0 = as the span and the players decide; reading `column-layout.state`), `lock-camera-two.requests`, `lock-camera-two.restore`, `camera-override-two`, `enemy-leader`, `sequence-camera-two`, `target-cursor-two`, `party-events`, `log-level error|warning|info|debug|trace` (Debug by default; Trace holds the per-frame lines), `hud.dump roots|shown|all [<text>]`, `hud-band on|off`, `hud-image on|off`, `hud-targets on|off`, `hud-targets-log <renders>`, `movie-frame on|off` (a pre-rendered movie in every view; reading `movie-frame.state`); readings `p2.in`, `p2.member`, `p2.state` (out|awaiting|rejoining|in|playing|handed),
 `game.state` (title|loading|play|pause|menu|leaving|…), `game.paused`, `game.menu-kind`, `game.location`,
-`field.step` (13 = steady field), `field.running`, `hud.overlay`, `hud.layout`, `pad.events`, `pads` (the XInput users with a pad), `lead.gate` (the last LEAD on player 2's member judged), `menu-two.state`, `targeting-two.runs`, `targeting-two.lock`, `tick`, `version`. The language's own verbs (`src/control/script.h`): `get <name>`, `status`, `help [<name>]`,
+`field.step` (13 = steady field), `field.running`, `hud.overlay`, `hud.layout`, `pad.events`, `pads` (the XInput users with a pad), `lead.gate` (the last guide judgment: a LEAD or a run ahead on a further player's member; `lead.path <state>` prints a state's chain), `menu-two.state`, `targeting-two.runs`, `targeting-two.lock`, `tick`, `version`. The language's own verbs (`src/control/script.h`): `get <name>`, `status`, `help [<name>]`,
 `wait <ticks>`, `wait-until <name> <op> <value> [<ticks>]`, `hold <player> stick <lx> <ly> <rx> <ry> <ticks>`,
 `note <text>`, `abort`. A failure drops the commands queued behind it; queries answer even during a wait.
 
@@ -48,11 +48,16 @@ member. A virtual pad 2 for unattended tests: `python ../tools/pad2.py serve`, t
 `stick L 0 1`.
 
 In the field each further player opens chests, picks up items, opens doors, uses the grappling hook and talks to NPCs
-(quest NPCs and shopkeepers included) with their own pad and prompt. A talk plays as the game scripts it (on every
-view, the whole game held; player 1's character, when more than 8 m away, is brought beside the player who started
-it, facing the NPC). Each player walks only in the rooms (shops, homes) their own character stands in. A shop a further player opens zooms on that player's view and faces that player's
+(quest NPCs and shopkeepers included) with their own pad and prompt. A talk plays as the game scripts it (the whole game held; on every
+view, except that in one window a scripted talk on the game's event camera shows on one view; player 1's character,
+when more than 8 m away, is brought beside the player who started it, facing the NPC). Each player walks only in the rooms (shops, homes) their own character stands in. A shop a further player opens zooms on that player's view and faces that player's
 character; while any shop is up every pad drives it, as in the pause menu. Examine points and object events stay
-player 1's.
+player 1's. While player 1 opens a chest, picks up an item or works a switch or a terminal, the further players keep
+their characters and views; a story's guide (a lead, or a run ahead the level waits on) is walked by the character's
+AI with that player's view on it, and comes back after.
+
+In one window the views collapse to player 1's single view for menus, shops, cutscenes, minigames and scripted talks,
+and split again after; on a monitor row the further columns show player 1's picture instead.
 
 ## Building
 
