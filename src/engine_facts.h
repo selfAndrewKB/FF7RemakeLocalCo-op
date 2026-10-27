@@ -1442,7 +1442,8 @@ inline constexpr std::uint32_t  kFieldAiLayers         = 15;
 /// 0x100000 while an event holds the field; research/RE-script-release.md §3). The first bit set hands the game's
 /// leader to its AI, the last bit cleared returns it.
 inline constexpr std::uint32_t  kRootStateManager      = 0x138;
-inline constexpr std::uint32_t  kControlLockEvent      = 0x100000;
+inline constexpr std::uint32_t  kControlLockEvent      = 0x100000;  // _PushButtonAction (EventControl_Begin_HandLeaderToAI)
+inline constexpr std::uint32_t  kControlLockTreasure   = 0x4;       // _Treasure: a chest opened, an item picked up
 /// Bit 21 of the same mask, EndFieldExclusion DisableController_MiniGame (research/RE-minigame-signal.md §2): held for the
 /// whole of Fort Condor; switched by phase through a VR simulator or colosseum session (on/off 78 ShowColosseumMenu
 /// held for the session), off in its fights.

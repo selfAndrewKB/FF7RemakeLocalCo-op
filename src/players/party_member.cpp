@@ -94,16 +94,21 @@ Wait FieldWait(void* member) noexcept
     {
         return Wait::None;  // the battle AI never runs a player-held member; the cycle's own tests are player 1's
     }
-    if (EventLocked())
+    // A treasure or push-button lock freezes only the interacting character (field_hold::InteractionLock): the member
+    // is judged by its own state below (an event's listed actor is already in the cinema mode above).
+    if (!field_hold::InteractionLock(ControlLockMask()))
     {
-        return Wait::EventLock;
-    }
-    // The game's own leader handed to its AI: the game is in a scene, a field action or the control lock, and it
-    // hands every player's member the same way (the funnel, or its backstop in the session). A seat that landed
-    // inside such a hand played through it (seen live 2026-10-21: Tifa taken mid-animation under lock 0x1).
-    if (!LeaderWithPlayer())
-    {
-        return Wait::LeaderHanded;
+        if (EventLocked())
+        {
+            return Wait::EventLock;
+        }
+        // The game's own leader handed to its AI: the game is in a scene, a field action or the control lock, and it
+        // hands every player's member the same way (the funnel, or its backstop in the session). A seat that landed
+        // inside such a hand played through it (seen live 2026-10-21: Tifa taken mid-animation under lock 0x1).
+        if (!LeaderWithPlayer())
+        {
+            return Wait::LeaderHanded;
+        }
     }
     const std::uint8_t* ai    = static_cast<const std::uint8_t*>(ReadPointer(member, facts::kCharacterFieldAi));
     std::uint8_t        layer = field_hold::kNoLayer, kind = 0;
@@ -388,6 +393,9 @@ std::uint32_t ControlLockMask() noexcept
 {
     return field_root::ControlLockMask();
 }
+
+static_assert(field_hold::kLockPushButton == facts::kControlLockEvent && field_hold::kLockTreasure == facts::kControlLockTreasure,
+              "the interaction lock bits are the game's EndFieldExclusion bits");
 
 bool EventLocked() noexcept
 {

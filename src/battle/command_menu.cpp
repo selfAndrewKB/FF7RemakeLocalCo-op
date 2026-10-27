@@ -12,8 +12,11 @@
 #include "platform/vtable_entry.h"
 #include "players/weak_object.h"
 #include "players/scopes.h"
+#include "players/field_hold.h"
 #include "players/party_member.h"
+#include "players/party_seat.h"
 #include "players/seats.h"
+#include "views/scene_camera.h"
 #include "world/traversal_action.h"
 
 #include <array>
@@ -624,8 +627,13 @@ void Tick(int seat, bool seatPlays) noexcept
     }
     // The two bytes the game writes directly on its own controller. A lock of player 1's own crawl, squeeze or grappling
     // hook alone closes player 1's menu only (it locks only the mover, as the session keeps the seats' members theirs):
-    // not copied while it holds.
-    if (world::traversal_action::PlayerOneMoveHolds(players::party_member::ControlLockMask()))
+    // not copied while it holds. Nor a treasure or push-button lock alone, unless the event cut to its own shot: the
+    // interacting character's own (players/field_hold.h InteractionLock), the members stay their players'. Either way
+    // only while the seat's member is on its player's controller: one the event or its own hold took keeps the copy.
+    const std::uint32_t lock = players::party_member::ControlLockMask();
+    if ((world::traversal_action::PlayerOneMoveHolds(lock) ||
+         (players::field_hold::InteractionLock(lock) && !views::scene_camera::EventShot())) &&
+        !players::party_member::HandedToAi(players::party_seat::Member(seat)))
     {
         return;
     }

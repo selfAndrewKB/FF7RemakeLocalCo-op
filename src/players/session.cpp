@@ -17,6 +17,7 @@
 #include "platform/log.h"
 #include "platform/verified_code.h"
 #include "players/field_exit.h"
+#include "players/field_hold.h"
 #include "players/game_state.h"
 #include "players/lead_gate.h"
 #include "players/local_player_list.h"
@@ -33,6 +34,7 @@
 #include "battle/lock_camera.h"
 #include "world/talk_gather.h"
 #include "world/traversal_action.h"
+#include "views/scene_camera.h"
 #include "players/pad_buttons.h"
 #include "players/scopes.h"
 #include "players/split_render.h"
@@ -134,9 +136,10 @@ void Session::Seat::ResetMember() noexcept
 {
     memberWeak[0] = -1;
     memberWeak[1] = 0;
-    handedToAi    = false;
-    holdHand      = false;
-    hold          = party_member::Wait::None;
+    handedToAi      = false;
+    holdHand        = false;
+    keptThroughLock = false;
+    hold            = party_member::Wait::None;
 }
 
 Session::Session() noexcept
@@ -889,6 +892,31 @@ try
             }
             return;
         }
+        // A treasure or push-button lock, read now: the member goes back to its player unless the event took it (its
+        // cinema mode), cut to its own shot, or its own state holds it; the game's leader stays with its AI for the
+        // interaction.
+        const std::uint32_t lock = party_member::ControlLockMask();
+        if (!party_member::LeaderWithPlayer() && field_hold::InteractionLock(lock) && !views::scene_camera::EventShot())
+        {
+            if (const wchar_t* why = party_member::WhyHeldByScript(member))
+            {
+                if (!seat.returnWaitLogged)
+                {
+                    seat.returnWaitLogged = true;
+                    platform::Log(L"{}'s member stays with its AI through the interaction lock ({:#x}): {}", seat.Name(), lock, why);
+                }
+                return;
+            }
+            // A failed return leaves the member with its AI and the seat marked so: the next check tries again.
+            const bool back       = party_member::ReturnTo(member, Controller(seat));
+            seat.handedToAi       = !back;
+            seat.keptThroughLock  = back;
+            seat.returnWaitLogged = false;
+            platform::LogDebug(L"{}'s member back on its controller: the lock ({:#x}) is the interacting character's own (a "
+                               L"treasure, a pickup, a switch or a terminal), and the event does not use it: {}",
+                               seat.Name(), lock, back ? L"yes" : L"NO");
+            return;
+        }
         // The game's own state decides the return (RE-script-release.md §4: the event bit alone undid a keep-group
         // hand): its leader back with a player controller. The funnel is heard at its entry; this is the backstop,
         // and the retry while a script still held the member at the game's return.
@@ -899,17 +927,42 @@ try
         return;
     }
     const party_member::Wait hold = party_member::HoldWait(member);
-    if (hold == party_member::Wait::LeaderHanded)
+    // The event lock answers first while the game's leader is handed (an interaction lock the member stayed through that
+    // gained another bit reads as the event lock when its push-button bit stands): the same backstop. Only while the
+    // game's leader is with its AI: a push-button bit standing with the leader on its player would otherwise hand and
+    // return the member at every check (no such setter is known; EventControl_Begin hands the leader).
+    // A kept member's event cut to its own shot while the lock still stands (slot 18 alone is no reason, v0.111.0).
+    const bool eventShot = seat.keptThroughLock && field_hold::InteractionLock(party_member::ControlLockMask()) &&
+                           views::scene_camera::EventShot();
+    if (hold == party_member::Wait::LeaderHanded || (hold == party_member::Wait::EventLock && !party_member::LeaderWithPlayer()) ||
+        eventShot)
     {
         if (world::traversal_action::PlayerOneMoveHolds(party_member::ControlLockMask()))
         {
             return;  // player 1's own crawl, squeeze or grappling hook only: the member stays its player's (HandWithLeader)
         }
         // The hand funnel's backstop: the game's leader is with its AI and the seat's member is not (a seat that
-        // landed inside the hand, after the funnel fired: seen live 2026-10-21, Tifa taken mid-animation).
-        platform::Log(L"the game's leader is with its AI (lock {:#x}) and {}'s member is not: the hand was not heard for it; "
-                      L"handed now",
-                      party_member::ControlLockMask(), seat.Name());
+        // landed inside the hand, after the funnel fired: seen live 2026-10-21, Tifa taken mid-animation), or an
+        // interaction lock the member stayed through gained another bit (a scene, a story beat).
+        if (eventShot)
+        {
+            platform::Log(L"the event cut to its own shot (lock {:#x}): {}'s member goes to its AI with the game's leader",
+                          party_member::ControlLockMask(), seat.Name());
+            seat.keptThroughLock = false;
+        }
+        else if (seat.keptThroughLock)
+        {
+            platform::Log(L"the lock grew beyond the interacting character's own ({:#x}): {}'s member goes to its AI with the game's "
+                          L"leader",
+                          party_member::ControlLockMask(), seat.Name());
+            seat.keptThroughLock = false;
+        }
+        else
+        {
+            platform::Log(L"the game's leader is with its AI (lock {:#x}) and {}'s member is not: the hand was not heard for it; "
+                          L"handed now",
+                          party_member::ControlLockMask(), seat.Name());
+        }
         HandWithLeader(seat);
         return;
     }
@@ -1023,6 +1076,19 @@ void Session::HandWithLeader(Seat& seat) noexcept
                            party_member::ControlLockMask(), seat.Name());
         return;
     }
+    // A treasure or push-button lock is the interacting character's alone (field_hold::InteractionLock): a member nothing
+    // else holds stays its player's. The first lock's hand usually runs before its bits are set (the mask still 0):
+    // then the member goes with the leader and the follow check gives it back a tick later, once the bits are read
+    // and the event has put its own actors in the cinema mode.
+    const std::uint32_t lock = party_member::ControlLockMask();
+    if (field_hold::InteractionLock(lock) && !views::scene_camera::EventShot() && party_member::WhyHeldByScript(member) == nullptr)
+    {
+        seat.keptThroughLock = true;
+        platform::LogDebug(L"{}'s member stays theirs: the lock ({:#x}) is the interacting character's own (a treasure, a pickup, "
+                           L"a switch or a terminal)",
+                           seat.Name(), lock);
+        return;
+    }
     seat.handedToAi       = party_member::HandToAi(member);
     seat.returnWaitLogged = false;
     platform::LogDebug(L"{}'s member handed to its AI with the game's leader (lock {:#x}): {}; the member: {}", seat.Name(),
@@ -1034,6 +1100,8 @@ void Session::OnLeaderReturned(void* self) noexcept
     auto* session = static_cast<Session*>(self);
     for (int index = 1; index <= kSeatsBuilt; ++index)
     {
+        session->seats_[index].keptThroughLock  = false;
+        session->seats_[index].returnWaitLogged = false;  // the lock's "stays with its AI" line may have taken it
         session->ReturnWithLeader(session->seats_[index]);
     }
 }

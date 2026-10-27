@@ -697,6 +697,11 @@ void SetSource(int seat, bool playerOne, void* manager) noexcept
     }
 }
 
+bool EventShot() noexcept
+{
+    return g_slots[0].valid && ((g_slots[0].active >> facts::kCameraSlotEvent) & 1U) != 0;
+}
+
 bool SlotActive(const void* manager, std::uint32_t slot) noexcept
 {
     std::uint8_t active = 0;

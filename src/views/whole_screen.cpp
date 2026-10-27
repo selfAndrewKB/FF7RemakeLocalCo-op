@@ -95,7 +95,7 @@ Signals Read(const void* managerOne) noexcept
     // while a scene holds the players (the lock outside player 1's own move, or the cutscene) [ASSUMPTION until a
     // rail area is played: a rail camera holds no lock].
     s.eventCamera = scene_camera::SlotActive(managerOne, facts::kCameraSlotEvent);
-    s.sceneHeld   = scene.Holds();
+    s.sceneHeld   = scene.HoldsAnyone();
     return s;
 }
 

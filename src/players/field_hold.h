@@ -58,6 +58,24 @@ enum Kind : std::uint8_t
     kUnique          = 13,  // the base controller's route move
 };
 
+/// The field control lock bits (EndFieldExclusion, research/RE-script-release.md §3) that freeze only the character
+/// that interacts: opening a treasure or picking an item up (_Treasure) and a push-button action (_PushButtonAction:
+/// a switch, a lever, a terminal). The game hands only its leader for them, the interactor; an event's other actors
+/// are the ones it lists, which it puts in the cinema actor mode and moves on a script layer (both a member's own
+/// hold). So under such a lock a further player's member is judged by its own state, and stays its player's when
+/// nothing holds it (the user, 2026-10-27: keep moving through a switch, a terminal or a pickup). Today the
+/// interactor is always the game's leader (player 1); when a further player can work one, the lock is still the
+/// interactor's alone.
+inline constexpr std::uint32_t kLockTreasure     = 0x4;
+inline constexpr std::uint32_t kLockPushButton   = 0x100000;
+inline constexpr std::uint32_t kInteractionLocks = kLockTreasure | kLockPushButton;
+
+/// Whether the lock `mask` is made only of interaction bits (and is set at all).
+constexpr bool InteractionLock(std::uint32_t mask) noexcept
+{
+    return mask != 0 && (mask & ~kInteractionLocks) == 0;
+}
+
 /// The kinds whose arrival signals the level, so a level step can wait on it: a LEAD and the run to a mark
 /// (engine_facts.h kArrivalHandlerNames names their handlers' fields; lead_gate.cpp asserts the two lists agree).
 /// FOLLOW_TARGET (3) and the route move (13) signal through the same path, PATROL (10) sends its own triggers at

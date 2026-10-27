@@ -144,6 +144,23 @@ void NamesCoverTheEnum()
 
 }  // namespace
 
+void InteractionLocksFreezeTheInteractor()
+{
+    // A treasure, a pickup, a switch or a terminal: the interactor's lock alone (the bits seen live 2026-10-27:
+    // 0x100000 at a switch, 0x4 at a chest).
+    EXPECT(fh::InteractionLock(0x4));
+    EXPECT(fh::InteractionLock(0x100000));
+    EXPECT(fh::InteractionLock(0x100004));
+    // No lock, or any other bit with them: a scene, a story beat, a minigame, a location jump holds everyone.
+    EXPECT(!fh::InteractionLock(0));
+    EXPECT(!fh::InteractionLock(0x1));
+    EXPECT(!fh::InteractionLock(0x2));
+    EXPECT(!fh::InteractionLock(0x100001));
+    EXPECT(!fh::InteractionLock(0x40000));
+    EXPECT(!fh::InteractionLock(0x200000));
+    EXPECT(!fh::InteractionLock(0x80004));
+}
+
 int main()
 {
     LevelStagingIsFree();
@@ -156,6 +173,7 @@ int main()
     CinemaCopyFollowsItsKind();
     NoStateWaits();
     NamesCoverTheEnum();
+    InteractionLocksFreezeTheInteractor();
     if (g_failures == 0)
     {
         std::printf("field_hold: all passed\n");

@@ -38,6 +38,7 @@
 // copies are one loop (CopySlots), the slot set and the blend seed its parameters.
 // Readings `scene.*`, `camera-slots.*`, `scene-camera-two.state`; the switch `scene-camera-two on|off` (on). Game thread.
 
+#include "players/field_hold.h"
 #include "players/seats.h"
 
 #include <array>
@@ -93,16 +94,29 @@ struct Scene
 
     bool operator==(const Scene&) const = default;
 
-    /// The scene holds the players: the copy's reason to run, and the whole screen's gate on the event camera
-    /// (views/whole_screen.h, v0.111.0: slot 18 alone is no reason; the lock alone neither). Player
-    /// 1's own crawl, squeeze or grappling hook locks only player 1 (as the session keeps the seats' members theirs
-    /// through it): its bits hold no one else.
-    bool Holds() const noexcept { return playing || (lockMask & ~mover) != 0 || lockCount != 0; }
+    /// Any scene or lock beyond player 1's own move: the whole screen's gate on the event camera (views/whole_screen.h,
+    /// v0.111.0: slot 18 alone is no reason; the lock alone neither). Player 1's own crawl, squeeze or grappling hook
+    /// locks only player 1 (as the session keeps the seats' members theirs through it): its bits hold no one else. A
+    /// treasure or push-button lock still counts here: an event that cuts to its own shot collapses as before.
+    bool HoldsAnyone() const noexcept { return playing || (lockMask & ~mover) != 0 || lockCount != 0; }
+    /// The scene holds the further players: the copy's reason to run. A treasure or push-button lock freezes only the
+    /// interacting character (players/field_hold.h InteractionLock; the members stay their players'), so its bits hold
+    /// no one else either.
+    bool Holds() const noexcept
+    {
+        return playing || (lockMask & ~mover & ~players::field_hold::kInteractionLocks) != 0 || lockCount != 0;
+    }
 };
 
 /// The scene signals read now (a few guarded reads and the game's playing test; all false before Install): the
 /// whole-screen read takes them before the session's tick, Tick reads them again after it.
 Scene ReadSceneNow() noexcept;
+
+/// The event camera's slot (18) active on player 1's manager at the last Tick: an event that cut to its own shot.
+/// The whole screen then shows that shot alone (views/whole_screen.h), so a treasure or push-button lock takes the
+/// further players' members with the game's leader while it stands (the user, 2026-10-27: an event that brings the
+/// focus to something happening live may take them). False before Install.
+bool EventShot() noexcept;
 
 /// Whether a pose slot is active on a camera manager now (one guarded read; false for a null manager, a slot past
 /// the table or an unreadable byte): the whole-screen read asks for the event camera's slot on player 1's manager.
