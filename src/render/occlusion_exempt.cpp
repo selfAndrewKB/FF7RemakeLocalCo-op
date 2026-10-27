@@ -529,14 +529,14 @@ bool Install(const platform::GameImage& image) noexcept
                        .get   = [] {
                            return control::Value{std::wstring(kViewWords[static_cast<int>(g_views.load())])};
                        }});
-    control::Register({.name  = L"occlusion-exempt.third",
+    control::Register({.name  = L"occlusion-exempt.third-column",
                        .shape = control::Shape::Text,
                        .help  = L"test: a set of its own for the third column's view (\"a b, c d\" or none), so one "
                                 L"look tests two sets; main gives it the main set again (render/occlusion_exempt.h)",
                        .set   = &SetThird,
                        .get   = &GetThird});
     platform::Log(L"occlusion exempt: installed (command occlusion-exempt <a b, c d> | none, off until set; "
-                  L"occlusion-exempt.views all | player-1 | others; occlusion-exempt.third <a b, c d> | none | main)");
+                  L"occlusion-exempt.views all | player-1 | others; occlusion-exempt.third-column <a b, c d> | none | main)");
     return true;
 }
 

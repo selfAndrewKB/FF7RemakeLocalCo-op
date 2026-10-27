@@ -34,9 +34,9 @@
 // player 1's was (player 1's slot at the switch-on), the cut raised, the end reset run on it too. One source for
 // every copy; a mirror needs no scene to run. Each mirror has its own copy record, by the mirror module's slot. A seat
 // whose column shows player 1's picture (views/column_source.h Source::PlayerOne, SetSource) takes that every-slot
-// copy too, scene or not, whatever the `scene-camera-two` switch (that switch is the scene on further views); the two
+// copy too, scene or not, whatever the `scene-camera` switch (that switch is the scene on further views); the two
 // copies are one loop (CopySlots), the slot set and the blend seed its parameters.
-// Readings `scene.*`, `camera-slots.*`, `scene-camera-two.state`; the switch `scene-camera-two on|off` (on). Game thread.
+// Readings `scene.*`, `camera-slots.*`, `scene-camera.state`; the switch `scene-camera on|off` (on). Game thread.
 
 #include "players/field_hold.h"
 #include "players/seats.h"
@@ -86,7 +86,7 @@ struct Scene
     bool          playing   = false;  // its playing test (any scene)
     bool          skip      = false;  // its skip byte
     std::uint32_t lockMask  = 0;      // the field control lock mask
-    std::uint32_t lockCount = 0;      // and counter
+    std::uint32_t lockCount = 0;      // and counter (never raised in this build: kept as the game reads it)
     bool          skippable = false;  // on/off 12 ShowSkipPauseMenu
     bool          black     = false;  // on/off 39, 40 or 53
     bool          loading   = false;  // on/off 41

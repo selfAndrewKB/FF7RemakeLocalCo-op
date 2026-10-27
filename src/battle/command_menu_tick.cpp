@@ -293,7 +293,7 @@ bool Install(const platform::GameImage& image) noexcept
             return control::Outcome{};
         },
         [] { return std::wstring(MenuSlow() ? L"on" : L"off"); });
-    control::Register({.name = L"menu-two.route", .shape = control::Shape::Text,
+    control::Register({.name = L"command-menu.route", .shape = control::Shape::Text,
                        .help = L"each command controller's ticks at the game's spot and its world-slow writes; each seat's "
                                L"pad key events routed into the seat's context and those refused (menu not set up, path "
                                L"empty, scope not held); seat writes made with no write of player 1's in the frame",

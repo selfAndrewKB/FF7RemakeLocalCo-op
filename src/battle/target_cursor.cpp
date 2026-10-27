@@ -285,7 +285,7 @@ bool Install(const platform::GameImage& image) noexcept
     g_lineOfSightCall = *losCall;
     g_suspend         = *suspend;
     g_setColor        = reinterpret_cast<SetColorFn>(*setColor);
-    control::Register({.name = L"target-cursor-two", .shape = control::Shape::Text,
+    control::Register({.name = L"target-cursor", .shape = control::Shape::Text,
                        .help = L"each seat's cursor: driver runs, runs with a cursor, releases, line-of-sight runs, its cursor now; "
                                L"the per-pass hides",
                        .get  = [] { return control::Value{Reading()}; }});

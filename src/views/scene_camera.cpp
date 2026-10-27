@@ -514,7 +514,7 @@ bool Install(const platform::GameImage& image) noexcept
         Register({.name = std::move(name), .shape = Shape::Text, .help = std::move(help),
                   .get = [index] { return Value{SlotsText(g_slots[static_cast<std::size_t>(index)])}; }});
     }
-    Register({.name = L"scene-camera-two", .shape = Shape::OnOff,
+    Register({.name = L"scene-camera", .shape = Shape::OnOff,
               .help = L"the scene camera (a cutscene, a talk or event camera) on every further player's view too, while the scene "
                       L"holds the players",
               .set  = [](const Value& v) {
@@ -527,11 +527,11 @@ bool Install(const platform::GameImage& image) noexcept
                   return control::Outcome{};
               },
               .get = [] { return Value{g_enabled}; }});
-    Register({.name = L"scene-camera-two.state", .shape = Shape::Text, .help = L"the mirror: engaged, the slots mirrored now, its counts",
+    Register({.name = L"scene-camera.state", .shape = Shape::Text, .help = L"the mirror: engaged, the slots mirrored now, its counts",
               .get = [] { return Value{MirrorText()}; }});
     platform::Log(L"scene camera: readings installed (scene.playing, scene.skip, scene.state, camera-slots.one, .two, .three, .mirror, .mirror-2); "
                   L"the scene camera on the further players' views {}",
-                  g_mirrorReady ? L"ready (switch scene-camera-two)" : L"stood aside");
+                  g_mirrorReady ? L"ready (switch scene-camera)" : L"stood aside");
     return g_mirrorReady;
 }
 

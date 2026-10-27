@@ -108,7 +108,7 @@ bool Install(const platform::GameImage& image) noexcept
         return false;
     }
     g_handler = *handler;
-    control::Register({.name = L"camera-override-two", .shape = control::Shape::Text,
+    control::Register({.name = L"camera-override", .shape = control::Shape::Text,
                        .help = L"each seat's member's camera-override calls routed to that seat's operator: calls, of them scoped",
                        .get  = [] { return control::Value{Reading()}; }});
     return true;

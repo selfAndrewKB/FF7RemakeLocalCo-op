@@ -41,7 +41,7 @@ void TickSeat(int seat, void* seatCameraManager, void* seatMember) noexcept;
 /// Game thread, each engine tick after the seats': the 10 s summary.
 void Tick() noexcept;
 
-/// The comparison switch (`anim-two on|off`, on at start).
+/// The comparison switch (`anim on|off`, on at start).
 void SetEnabled(bool on) noexcept;
 
 /// The `world.anim` reading: the last 10 s summary.

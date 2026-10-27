@@ -14,7 +14,7 @@
 //     rule: player 2's camera update in its UI context in battle), so the flavor reads the seat's own list;
 //   - reads the flavor's per-frame aim (its vtable slot replaced, the game's function called): per seat, how often
 //     it ran on that seat's operator, how often with the seat's own controller in the UI slot, the target it
-//     settled on and its on/started bytes (`cmd-camera-two`; a Debug line per new target).
+//     settled on and its on/started bytes (`command-camera.aims`; a Debug line per new target).
 // Game thread only. State owned here: the counters per seat; the scope lives on the operator tick's stack.
 
 #include <optional>

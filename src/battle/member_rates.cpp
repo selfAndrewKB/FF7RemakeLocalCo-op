@@ -220,7 +220,7 @@ bool Install(const platform::GameImage& image) noexcept
         platform::Log(L"member rates: a slot or call could not be replaced; the further players' members keep the AI-ally rates");
         return false;
     }
-    control::Register({.name  = L"rates-two",
+    control::Register({.name  = L"member-rates",
                        .shape = control::Shape::OnOff,
                        .help  = L"each further player's member fills ATB, flags abilities and staggers at the player's rates, and turns by "
                                 L"that player's stick during a roll (battle/member_rates.h; on)",

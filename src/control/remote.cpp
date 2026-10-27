@@ -60,7 +60,7 @@ try
     Register({.name  = L"log-level",
               .shape = Shape::Word,
               .words = kLevels,
-              .help  = L"the most detailed log level written (info at start)",
+              .help  = L"the most detailed log level written (debug at start)",
               .set   = [](const Value& value) {
                   const auto& word = std::get<std::wstring>(value);
                   for (std::size_t i = 0; i < kLevels.size(); ++i)

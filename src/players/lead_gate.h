@@ -40,7 +40,8 @@ class GameImage;
 
 namespace lss::players::lead_gate {
 
-/// Resolves the globals and the story-flag test, registers the `lead.gate` reading (the last judgment). False
+/// Resolves the globals and the story-flag test, registers the `lead.gate` reading (the last judgment) and the
+/// `lead.path` reading (a level state's chain walked as the gate walks it). False
 /// (logged) if an engine check fails; a LEAD or a run to a mark is then staging, as before v0.26.0.
 bool Install(const platform::GameImage& image) noexcept;
 

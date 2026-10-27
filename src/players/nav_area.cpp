@@ -321,7 +321,7 @@ bool Install(const platform::GameImage& image) noexcept
         platform::Log(L"nav area: the room handlers' leader calls could not be checked; a further player's room limits player 1's "
                       L"character");
     }
-    control::Register({.name = L"nav-area-two", .shape = control::Shape::Text,
+    control::Register({.name = L"nav-area", .shape = control::Shape::Text,
                        .help = L"each seat's controller's nav-area component ticks: all, of them in the seat's scopes, of those with its own command row, with its row alone; operator spawns re-entered at, volumes entered again; room walk limits written on the seat's own character (enters, stays, leaves, none read) and cleared at a take or give-back",
                        .get  = [] { return control::Value{Reading()}; }});
     platform::Log(L"nav area: each seat's nav-area component ticks in that seat's scopes{}",

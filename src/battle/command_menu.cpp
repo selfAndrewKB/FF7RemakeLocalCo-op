@@ -406,7 +406,7 @@ bool FindInto(const platform::GameImage& image, const platform::FunctionFact& fa
 
 /// The bytes that gate each controller's input poll (RE-ko-leader-input.md §3.1): menu allowed (+0x3D5), input
 /// live (+0x420), the battle HUD mode (+0x348), the cached leader ordinal (+0x28); and the game state's pause counter.
-std::wstring GatesReading() noexcept
+std::wstring GatesReading()
 {
     const auto fields = [](const void* ctrl) {
         if (ctrl == nullptr)
@@ -435,7 +435,7 @@ std::wstring GatesReading() noexcept
 }
 
 /// Each controller's cached leader ordinal and member count, and the party's slot types.
-std::wstring LeaderReading() noexcept
+std::wstring LeaderReading()
 {
     const auto fields = [](const void* ctrl) {
         std::int32_t ordinal = -1, count = -1;
@@ -454,6 +454,19 @@ std::wstring LeaderReading() noexcept
         text += std::format(L", {} {}", SeatName(seat), fields(g_seats[seat].ctrl));
     }
     return text + std::format(L"; party slot types {} {} {}", slots[0], slots[1], slots[2]);
+}
+
+/// Each further player's command controller: none, built, or ready (set up).
+std::wstring StateReading()
+{
+    std::wstring text;
+    for (int seat = 1; seat <= kSeatsBuilt; ++seat)
+    {
+        const Seat& s = g_seats[seat];
+        text += std::format(L"{}{} {}", seat == 1 ? L"" : L", ", SeatName(seat),
+                            s.ctrl == nullptr ? L"none" : ReadyOf(s) ? L"ready" : L"built");
+    }
+    return text;
 }
 
 }  // namespace
@@ -517,7 +530,7 @@ bool Install(const platform::GameImage& image) noexcept
         platform::Log(L"command menu: a redirect could not be placed; the seats have no command menu");
         return false;
     }
-    control::Register({.name  = L"menu-two",
+    control::Register({.name  = L"command-menu",
                        .shape = control::Shape::OnOff,
                        .help  = L"each seat's own command menu follows the game's (battle/command_menu.h; on)",
                        .set   = [](const control::Value& value) {
@@ -526,20 +539,17 @@ bool Install(const platform::GameImage& image) noexcept
                            return control::Outcome{};
                        },
                        .get = [] { return control::Value{g_enabled}; }});
-    control::Register({.name = L"menu-two.leader", .shape = control::Shape::Text,
+    control::Register({.name = L"command-menu.leader", .shape = control::Shape::Text,
                        .help = L"each command controller's cached leader ordinal and member count, and the party's slot types "
                                L"(the poll reads no input while the member at its ordinal is KO'd)",
                        .get  = [] { return control::Value{LeaderReading()}; }});
-    control::Register({.name = L"menu-two.gates", .shape = control::Shape::Text,
+    control::Register({.name = L"command-menu.gates", .shape = control::Shape::Text,
                        .help = L"the bytes gating each controller's input poll (menu allowed, input live, battle HUD mode, "
                                L"cached leader ordinal) and the game state's pause counter",
                        .get  = [] { return control::Value{GatesReading()}; }});
-    control::Register({.name = L"menu-two.state", .shape = control::Shape::Word, .words = {L"none", L"built", L"ready"},
-                       .help = L"player 2's command controller: none, built, or ready (set up); seat 1 (plan/seats.md step 7 generalises the readings)",
-                       .get  = [] {
-                           const Seat& seat = g_seats[1];
-                           return control::Value{std::wstring(seat.ctrl == nullptr ? L"none" : ReadyOf(seat) ? L"ready" : L"built")};
-                       }});
+    control::Register({.name = L"command-menu.state", .shape = control::Shape::Text,
+                       .help = L"each further player's command controller: none, built, or ready (set up)",
+                       .get  = [] { return control::Value{StateReading()}; }});
     platform::Log(L"command menu: installed; the game's controller calls are repeated on each seat's");
     return true;
 }

@@ -141,7 +141,7 @@ bool Install(const platform::GameImage& image) noexcept
 {
     // The switch and the reading first: the UI scope works without the aim slot (the reading then shows the scope
     // counts alone).
-    control::Register({.name  = L"cmd-camera-two",
+    control::Register({.name  = L"command-camera",
                        .shape = control::Shape::OnOff,
                        .help  = L"each seat's operator tick holds the seat's UI context in battle, so the Command camera frames "
                                 L"the seat's own target list (battle/command_camera.h; on)",
@@ -151,7 +151,7 @@ bool Install(const platform::GameImage& image) noexcept
                            return control::Outcome{};
                        },
                        .get = [] { return control::Value{g_enabled}; }});
-    control::Register({.name = L"cmd-camera-two.aims", .shape = control::Shape::Text,
+    control::Register({.name = L"command-camera.aims", .shape = control::Shape::Text,
                        .help = L"the Command camera's per-frame aim by seat: runs, runs with the seat's own UI slot, runs on a "
                                L"foreign operator, target changes, its on/started bytes; the UI scope held and refused",
                        .get  = [] { return control::Value{Reading()}; }});

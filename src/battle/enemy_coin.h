@@ -31,8 +31,8 @@
 // Nothing is written to the game's state: every answer passes through the game's own call. Any thread for the toss,
 // the type answers and the area answer (the AI tick is written to run off the game thread); the natives run on the
 // game thread; hits and sensing are scoped on the game thread only (else counted and left as the game's).
-// Logged: the install (Info), each toss (Debug), a 60 s summary (Debug), each answer (Trace). `enemy-coin` reads
-// the counts; `coin-two` turns it off (every lever then passes the game's own answer through, the area's aside).
+// Logged: the install (Info), each toss (Debug), a 60 s summary (Debug), each answer (Trace). `enemy-coin.counts`
+// reads the counts; `enemy-coin` turns it off (every lever then passes the game's own answer through, the area's aside).
 
 namespace lss::platform {
 class GameImage;

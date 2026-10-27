@@ -73,6 +73,17 @@ std::uint32_t                                 g_toGame[kMaxPads]{};   // key eve
 std::uint32_t                                 g_opens       = 0;      // opening presses also given to the game
 bool                                          g_mixedLogged = false;
 
+/// A count for each further pad, by its number (pad 2 is XInput user 1): "pad 2 n, pad 3 m, pad 4 k".
+std::wstring PerPad(const std::uint32_t (&counts)[kMaxPads])
+{
+    std::wstring text;
+    for (unsigned user = 1; user < kMaxPads; ++user)
+    {
+        text += std::format(L"{}pad {} {}", user == 1 ? L"" : L", ", user + 1, counts[user]);
+    }
+    return text;
+}
+
 std::uint8_t* Owner() noexcept
 {
     std::uint8_t* owner = nullptr;
@@ -508,21 +519,15 @@ bool Install(const platform::GameImage& image) noexcept
                            return control::Outcome{};
                        },
                        .get = [] { return control::Value{g_menus}; }});
-    control::Register({.name = L"pad.to-game", .shape = control::Shape::Integer, .max = INT32_MAX,
-                       .help = L"pad 2's key events the game handled as its own pad's (menus)",
-                       .get  = [] { return control::Value{static_cast<std::int64_t>(g_toGame[1])}; }});
-    control::Register({.name = L"pad.to-game-3", .shape = control::Shape::Integer, .max = INT32_MAX,
-                       .help = L"pad 3's key events the game handled as its own pad's (menus)",
-                       .get  = [] { return control::Value{static_cast<std::int64_t>(g_toGame[2])}; }});
+    control::Register({.name = L"pad.to-game", .shape = control::Shape::Text,
+                       .help = L"each further pad's key events the game handled as its own pad's (menus)",
+                       .get  = [] { return control::Value{PerPad(g_toGame)}; }});
     control::Register({.name = L"pad.menu-opens", .shape = control::Shape::Integer, .max = INT32_MAX,
                        .help = L"further pads' presses of Start, the map or the enemy intel button given to the game",
                        .get  = [] { return control::Value{static_cast<std::int64_t>(g_opens)}; }});
-    control::Register({.name = L"pad.events", .shape = control::Shape::Integer, .max = INT32_MAX,
-                       .help = L"key events handled in pad 2's own state so far",
-                       .get  = [] { return control::Value{static_cast<std::int64_t>(g_events[1])}; }});
-    control::Register({.name = L"pad.events-3", .shape = control::Shape::Integer, .max = INT32_MAX,
-                       .help = L"key events handled in pad 3's own state so far",
-                       .get  = [] { return control::Value{static_cast<std::int64_t>(g_events[2])}; }});
+    control::Register({.name = L"pad.events", .shape = control::Shape::Text,
+                       .help = L"key events handled in each further pad's own state so far",
+                       .get  = [] { return control::Value{PerPad(g_events)}; }});
     platform::Log(L"pad buttons: installed; each further pad's buttons are its own player's{}",
                   g_openers[0] != 0 ? L"; every pad opens the game's menus and drives an open one (pad-menus)"
                                      : L"; every pad drives an open menu (pad-menus)");

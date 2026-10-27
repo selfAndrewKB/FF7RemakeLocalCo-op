@@ -259,7 +259,7 @@ bool Install(const platform::GameImage& image) noexcept
     }
     g_judge  = reinterpret_cast<JudgeFn>(g_judgeSlot.Original());
     g_update = reinterpret_cast<UpdateFn>(g_updateSlot.Original());
-    control::Register({.name  = L"anim-two",
+    control::Register({.name  = L"anim",
                        .shape = control::Shape::OnOff,
                        .help  = L"characters near a further player are animated as if that player's camera were the game's (world/anim_views.h; on)",
                        .set   = [](const control::Value& value) {

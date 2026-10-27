@@ -23,7 +23,7 @@
 // the game's unsuppress way (counted, unsuppressed, none up: started). With the switch on, every call is the game's.
 // Logged: Info at install (a Warning when a restore site is missing) and through the slow-down's own switch line,
 // Debug per skipped spawn, skipped restore, switch-time stop or start and settled debt; the reading `menu-grey`.
-// Known edge: with `menu-two` switched off mid-menu a further player's controller stops ticking at an open wait, so
+// Known edge: with `command-menu` switched off mid-menu a further player's controller stops ticking at an open wait, so
 // restores stay skipped and a debt waits until that player leaves (the leave ends the wait the game's way).
 // Game thread.
 

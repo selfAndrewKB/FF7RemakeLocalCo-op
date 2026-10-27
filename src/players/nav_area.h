@@ -48,7 +48,7 @@ class GameImage;
 
 namespace lss::players::nav_area {
 
-/// Replaces the component's tick slot; registers the reading `nav-area-two`. False (logged) if a check fails.
+/// Replaces the component's tick slot; registers the reading `nav-area`. False (logged) if a check fails.
 bool Install(const platform::GameImage& image) noexcept;
 void Remove() noexcept;
 

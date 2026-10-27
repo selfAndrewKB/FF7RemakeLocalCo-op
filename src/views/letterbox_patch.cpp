@@ -159,7 +159,7 @@ bool Install(const platform::GameImage& image) noexcept
     g_installed  = true;
     control::Register({.name  = L"letterbox-patch",
                        .shape = control::Shape::OnOff,
-                       .help  = L"the Borderless letterbox is switched off while player 2 is in or the span is held (on by "
+                       .help  = L"the Borderless letterbox is switched off while a further player is in or the span is held (on by "
                                 L"default); off keeps the game's compares: in split the last view covers the window, with "
                                 L"one view the game pillarboxes it into the window's middle",
                        .set   = [](const control::Value& v) {
@@ -175,7 +175,7 @@ bool Install(const platform::GameImage& image) noexcept
                        .help = L"the window-mode compares found and how many are patched now",
                        .get  = [] { return control::Value{Reading()}; }});
     platform::Log(L"letterbox patch: ready; {} window-mode compares found between {:#x} and {:#x}, and CalcSceneView's "
-                  L"view-rect override at {:#x}; patched while player 2 is in or the span is held",
+                  L"view-rect override at {:#x}; patched while a further player is in or the span is held",
                   g_sites.size() - 1, g_rangeStart, g_rangeStart + g_rangeBytes, *override);
     return true;
 }

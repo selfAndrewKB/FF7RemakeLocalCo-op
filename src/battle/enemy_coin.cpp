@@ -845,11 +845,11 @@ bool Install(const platform::GameImage& image) noexcept
     placed += PlaceCall(g_hitApplyB, image, facts::kBattleHitApplyBCall, *hitApplyB, &HitApplyB, true, L"the hit apply's second form") ? 1 : 0;
     placed += PlaceCall(g_sensing, image, facts::kBattleReactionSensingCall, *sensing, &Sensing, false, L"the reaction sensing") ? 1 : 0;
 
-    control::Register({.name  = L"enemy-coin",
+    control::Register({.name  = L"enemy-coin.counts",
                        .shape = control::Shape::Text,
                        .help  = L"the equal-attention coin's counts since install (battle/enemy_coin.h)",
                        .get   = [] { return control::Value{Reading(g_totals)}; }});
-    control::Register({.name  = L"coin-two",
+    control::Register({.name  = L"enemy-coin",
                        .shape = control::Shape::OnOff,
                        .help  = L"enemies share their attention between the humans by a coin per decision (battle/enemy_coin.h; on)",
                        .set   = [](const control::Value& value) {

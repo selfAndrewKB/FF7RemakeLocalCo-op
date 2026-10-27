@@ -390,7 +390,7 @@ bool Install(const platform::GameImage& image) noexcept
         platform::Log(L"sequence camera: a call could not be redirected; sequence cameras keep one state for every view");
         return false;
     }
-    control::Register({.name = L"sequence-camera-two", .shape = control::Shape::Text,
+    control::Register({.name = L"sequence-camera", .shape = control::Shape::Text,
                        .help = L"sequence cameras on each seat's own state: evaluations swapped, cuts to the seat's own view, captures; the "
                                L"world-state seeds and active-byte unions",
                        .get  = [] { return control::Value{Reading()}; }});

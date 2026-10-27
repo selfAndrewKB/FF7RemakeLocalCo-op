@@ -11,19 +11,19 @@
 //     game's own call again for every seat whose player holds a member, inside the seat's scopes (the primary, the
 //     operator, the leader, and the seat's target-field copy, which must be in), so each seat's lock follows the
 //     transform too and a scripted lock takes every player (row X9);
-//   - `lock-camera-two.requests`: the battle camera requests that re-aimed each operator's lock camera, per seat and
+//   - `lock-camera.requests`: the battle camera requests that re-aimed each operator's lock camera, per seat and
 //     for any other operator;
-//   - `lock-camera-two.restore`: which context runs the enemy detail window's close delegate (it restores the lock
+//   - `lock-camera.restore`: which context runs the enemy detail window's close delegate (it restores the lock
 //     and asks the Command camera flavor; pass S-RMK-CMDCAM found it is the window's, not a command-menu state's,
 //     so it counts only when that window closes): player 1's controller tick, a seat's, where its copy is in, or a
 //     seat's pad's key event, where it is not yet (row X5, read before a lever); and the re-targets repeated per
 //     seat;
-//   - `lock-camera-two.frames`: each seat's operator tick, read around it (the ledger's live checks L1, L2, L5): the
+//   - `lock-camera.frames`: each seat's operator tick, read around it (the ledger's live checks L1, L2, L5): the
 //     control yaw it starts from against the yaw it last wrote back (another writer in between), the frame stamp
 //     that would skip its write-back, the character under another controller, the yaw it moves per tick and its
 //     reversals (a stutter), and the seat's pad's rotation input while the seat is locked. A Debug line names a burst
 //     of reversals;
-//   - `lock-camera-two.jumps`: every player's camera after its operator's tick (player 1's while a further player is
+//   - `lock-camera.jumps`: every player's camera after its operator's tick (player 1's while a further player is
 //     in): a tick that turned or moved it far faster than a stick, a follow or a dodge does (a cut, a reset, another
 //     writer) opens a burst of jumps, a Debug line "camera jump" with what surrounded it: the player's lock and
 //     displayed target and when they last changed, a battle camera request in that tick, the camera behaviours
@@ -43,7 +43,7 @@ void Remove() noexcept;
 /// Each engine tick: places the call redirect that crosses a block, from the game thread.
 void Tick() noexcept;
 
-/// Around the seat's operator tick, and after the seat's input step: the `lock-camera-two.frames` readings, and the
+/// Around the seat's operator tick, and after the seat's input step: the `lock-camera.frames` readings, and the
 /// jump watch (`ownTargets`: the seat's target-field copy is in, so the battle system's fields are the seat's).
 void BeforeOperatorTick(int seat, void* seatOperator, void* seatController) noexcept;
 void AfterOperatorTick(int seat, void* seatOperator, float deltaSeconds, bool ownTargets) noexcept;

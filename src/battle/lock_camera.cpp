@@ -473,19 +473,19 @@ bool Install(const platform::GameImage& image) noexcept
     {
         g_gameMode = reinterpret_cast<void**>(*mode);
     }
-    control::Register({.name = L"lock-camera-two.jumps", .shape = control::Shape::Text,
+    control::Register({.name = L"lock-camera.jumps", .shape = control::Shape::Text,
                        .help = L"each player's camera (player 1's while a further player is in): the bursts of jumps (a tick turning over 10 "
                                L"deg at over 720 deg/s, or moving over 1 m at over 25 m/s; a Debug line at a burst's start with the locks, "
                                L"targets and camera behaviours around it, one at its end) and the largest jump",
                        .get  = [] { return control::Value{JumpsReading()}; }});
-    control::Register({.name = L"lock-camera-two.frames", .shape = control::Shape::Text,
+    control::Register({.name = L"lock-camera.frames", .shape = control::Shape::Text,
                        .help = L"each seat's operator tick read around it: ticks, yaw moves (max deg), reversals, control yaw rewritten between "
                                L"ticks (max deg), write-back skipped, the character under another controller, stick input while locked",
                        .get  = [] { return control::Value{FramesReading()}; }});
-    control::Register({.name = L"lock-camera-two.requests", .shape = control::Shape::Text,
+    control::Register({.name = L"lock-camera.requests", .shape = control::Shape::Text,
                        .help = L"battle camera requests that re-aimed a lock camera: in each seat's operator tick, in any other",
                        .get  = [] { return control::Value{RequestsReading()}; }});
-    control::Register({.name = L"lock-camera-two.restore", .shape = control::Shape::Text,
+    control::Register({.name = L"lock-camera.restore", .shape = control::Shape::Text,
                        .help = L"the enemy detail window's close (lock restore, row X5) by context, and the re-targets repeated for each seat",
                        .get  = [] { return control::Value{RestoreReading()}; }});
     return true;

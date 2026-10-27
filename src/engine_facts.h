@@ -2055,7 +2055,8 @@ inline constexpr std::array<std::uint8_t, 16> kCutsceneIsPlayingEntry{
 inline constexpr platform::FunctionFact kCutsceneIsPlaying{L"EndCutsceneMgr_IsPlaying_ByNameOrAny", 0x140A99610,
                                                            kCutsceneIsPlayingEntry};
 /// The state manager (ROOT+0x138) holds the field control lock mask (the game's own IsEnableFieldControler reads it
-/// with the counter) and the on/off table (one dword counter per id: 12 ShowSkipPauseMenu = a skippable scene,
+/// with the counter beside it; that counter is never raised in this build, only zeroed and counted down:
+/// research/RE-script-release.md §10) and the on/off table (one dword counter per id: 12 ShowSkipPauseMenu = a skippable scene,
 /// 39/40/53 a held black screen, 41 the loading screen) followed by the owner of each id (an FName: the last non-zero
 /// reason a SetOn passed, zeroed when the count drops to 0; research/RE-minigame-signal.md §1). kRootStateManager
 /// (0x138) is above.

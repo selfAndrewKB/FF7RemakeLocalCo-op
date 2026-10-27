@@ -9,7 +9,7 @@
 // The mod calls it for a further player's member, with the leader switch's gates, when that player clicks L3 twice
 // within 0.4 s in a battle. L3 is the game's Dash, which does nothing in battle; the press is the game's, read with its
 // own getter inside the player's button scope (players/pad_buttons.h), at the player's command menu tick: so only with
-// the player's own pad (never player 1's), with `menu-two` on and the player's command menu set up. The warp runs on
+// the player's own pad (never player 1's), with `command-menu` on and the player's command menu set up. The warp runs on
 // the next engine tick, outside every player's scope (the warp reads "the party leader": player 1's character):
 //   - in a battle, the battle system's no-recovery byte clear, its ready word set (the game's own gates);
 //   - the member alive (not KO: the game's gate); not locked in an action (the leader switch's "may be left" rule) and

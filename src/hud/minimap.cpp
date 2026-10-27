@@ -890,7 +890,7 @@ bool Install(const platform::GameImage& image) noexcept
                       return Value{std::wstring(L"unreadable (an exception)")};
                   }
               }});
-    Register({.name  = L"hud-minimap-two",
+    Register({.name  = L"hud-minimap",
               .shape = Shape::OnOff,
               .help  = L"each further player's own minimap and compass: a navi map manager of the game's per player (on at start)",
               .set   = [](const Value& value) {

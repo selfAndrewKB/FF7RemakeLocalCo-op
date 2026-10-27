@@ -237,7 +237,7 @@ bool Install(const platform::GameImage& image) noexcept
         platform::Log(L"targeting: the paused-path call could not be redirected; no seat has targeting or lock-on");
         return false;
     }
-    control::Register({.name  = L"targeting-two",
+    control::Register({.name  = L"targeting",
                        .shape = control::Shape::OnOff,
                        .help  = L"the game's targeting tick runs again for each seat (battle/targeting.h; on)",
                        .set   = [](const control::Value& value) {
@@ -246,10 +246,10 @@ bool Install(const platform::GameImage& image) noexcept
                            return control::Outcome{};
                        },
                        .get = [] { return control::Value{g_enabled}; }});
-    control::Register({.name = L"targeting-two.runs", .shape = control::Shape::Integer, .max = INT32_MAX,
+    control::Register({.name = L"targeting.runs", .shape = control::Shape::Integer, .max = INT32_MAX,
                        .help = L"the seats' targeting runs so far, together",
                        .get  = [] { return control::Value{static_cast<std::int64_t>(Runs())}; }});
-    control::Register({.name = L"targeting-two.lock", .shape = control::Shape::Text,
+    control::Register({.name = L"targeting.lock", .shape = control::Shape::Text,
                        .help = L"the battle system's lock byte (player 1's, live) and each seat's copy (-1: none)",
                        .get  = [] { return control::Value{LockReading()}; }});
     return true;

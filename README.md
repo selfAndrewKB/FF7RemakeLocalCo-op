@@ -25,11 +25,47 @@ python ../tools/game.py run ../tools/scripts/smoke.txt         a file of command
 python ../tools/game.py status | launch | quit | relaunch --deploy --label v0.8.0 | shot | keys Enter
 ```
 
-Every module registers its own commands (`src/control/registry.h`), so `help` on the running build is the list.
-Today: `join`, `leave`, `console <command>`, `report`, `quit`, `showflags <hex>`, `ao-origin on|off`,
-`bloom-origin on|off`, `distortion-apply on|off`, `pad-buttons on|off`, `menu-two on|off`, `menu-slow on|off` (off: an open battle command menu no longer slows the world or greys the screen), `menu-grey` (reading), `battle-warps players-stay|off|game` (who the game warps at a battle's start and end), `multi-monitor auto|on|off` and `column-order 123|132` (the settings file's options, switched in play; every option of `LocalSplitScreen.ini` is one row of the table in `src/platform/settings.h`, and its console command is built from that row), `targeting-two on|off`, `rates-two on|off`, `menu-two.leader`, `menu-two.route`, `window-span on|off`, `window-span.hold on|off` (the span with any player count, kept through loading screens), `mirror-player on|off` (an extra local player in every column no player fills shows player 1's picture, up to two; reading `mirror-player.state`), `view-columns 0..3` (the columns the window shows, side by side; 0 = as the span and the players decide; reading `column-layout.state`), `lock-camera-two.requests`, `lock-camera-two.restore`, `camera-override-two`, `enemy-leader`, `sequence-camera-two`, `target-cursor-two`, `party-events`, `log-level error|warning|info|debug|trace` (Debug by default; Trace holds the per-frame lines), `hud.dump roots|shown|all [<text>]`, `hud-band on|off`, `hud-image on|off`, `hud-targets on|off`, `hud-targets-log <renders>`, `movie-frame on|off` (a pre-rendered movie in every view; reading `movie-frame.state`); readings `p2.in`, `p2.member`, `p2.state` (out|awaiting|rejoining|in|playing|handed),
-`game.state` (title|loading|play|pause|menu|leaving|…), `game.paused`, `game.menu-kind`, `game.location`,
-`field.step` (13 = steady field), `field.running`, `hud.overlay`, `hud.layout`, `pad.events`, `pads` (the XInput users with a pad), `lead.gate` (the last guide judgment: a LEAD or a run ahead on a further player's member; `lead.path <state>` prints a state's chain), `menu-two.state`, `targeting-two.runs`, `targeting-two.lock`, `tick`, `version`. The language's own verbs (`src/control/script.h`): `get <name>`, `status`, `help [<name>]`,
+Every module registers its own commands (`src/control/registry.h`), so `help` on the running build is the list, with
+one line of help each. A switch is named after its module and takes `on|off` (all on at start unless noted); its
+readings are `<switch>.<what>`, and an area's readings `<area>.<what>`. Today:
+
+- **Players:** `join` and `leave` (player 2), `p3.join` and `p3.leave` (player 3); per seat `p2.state` and `p3.state`
+  (out|awaiting|rejoining|in|playing|handed), `.member`, `.in`, `.rejoin`; `party.ai`, `party-events`, `pads` (the
+  XInput users with a pad), `report`, `quit`, `console <command>`, `showflags <hex>`, `version`, `tick`,
+  `log-level error|warning|info|debug|trace` (debug at start; trace holds the per-frame lines).
+- **The settings file's options**, switched in play: `multi-monitor auto|on|off`, `column-order 123|132`,
+  `menu-slow on|off` (off: an open battle command menu no longer slows the world or greys the screen),
+  `battle-warps players-stay|off|game` (who the game warps at a battle's start and end). Every option of
+  `LocalSplitScreen.ini` is one row of the table in `src/platform/settings.h`, and its command is built from that row.
+- **The game:** `game.state` (title|loading|play|pause|menu|leaving|…), `game.paused`, `game.menu-kind`,
+  `game.menu-owns-input`, `game.location`, `field.step` (13 = steady field), `field.running`, `field.targets`,
+  `scene.playing`, `scene.skip`, `scene.state`, `camera-slots.one|two|three|mirror|mirror-2`.
+- **Views:** `window-span`, `window-span.hold` (off at start: the span with any player count, kept through loading screens),
+  `mirror-player` (an extra local player in every column no player fills shows player 1's picture), `view-columns 0..3`
+  (the columns the window shows; 0 = as the span and the players decide), `single-view auto|on|off`, `scene-camera`,
+  `split-scale`, `letterbox-patch`; readings `whole-screen`, `split-switch`, `column-layout.state`, `window-span.state`,
+  `mirror-player.state`, `scene-camera.state`, `split-scale.state`, `letterbox-patch.sites`.
+- **The field:** `npc-crowd`, `npc-detail`, `npc-senses`, `env-sets`, `forced-walk`, `overlap-fade`, `search-arrows`,
+  `anim`, each with its reading `world.<switch>`; `world.fade`, `lead.gate` (the last guide judgment: a LEAD or a run
+  ahead on a further player's member), `lead.path <state>` (prints a state's chain), `nav-area`, `camera-override`,
+  `shop-act`, `talk-gather`, `traversal.action`, `traversal.walkup`.
+- **Pads:** `pad-buttons`, `pad-menus`; readings `pad.events`, `pad.to-game` (each further pad's counts),
+  `pad.menu-opens`.
+- **Battle:** `command-menu`, `command-camera`, `targeting`, `member-rates`, `enemy-coin`, `member-area`; readings
+  `command-menu.state`, `.leader`, `.gates`, `.route`, `command-camera.aims`, `targeting.runs`, `targeting.lock`,
+  `target-cursor`, `lock-camera.jumps`, `.frames`, `.requests`, `.restore`, `sequence-camera`, `menu-grey`,
+  `enemy-coin.counts`, `enemy-leader`, `enemy-watch`, `arena-warp`, `operator-battle-mode`.
+- **The HUD:** `hud-band`, `hud-image`, `hud-catch-up`, `hud-minimap`, `hud-markers`, `hud-field-icons`,
+  `hud-outside-icons`, `hud-targets` (off at start: the HUD image turns it on when the screen splits),
+  `hud-targets-log <renders>`; readings `hud.layout`, `hud.overlay`, `hud.minimap`,
+  `hud.markers`, `hud.field-icons`, `hud.outside-icons`, `hud.image-ms`; `hud.dump roots|shown|all [<text>]`.
+- **Rendering and sound:** `ao-origin`, `bloom-origin`, `ssr-origin`, `distortion-apply`, `sun-cascades`, `area-blend`,
+  `one-family`, `movie-frame` (a pre-rendered movie in every view), `history-cut <n>`; readings `ssr-origin.shaders`,
+  `sun-cascades.away`, `render.area-blend`, `movie-frame.state`, `history-cut.raised`, `shadows`, `fog-volumes`,
+  `fog-lights`, `sound`; tests `volume-box` (off at start; reading `.views`), `occlusion-exempt <a b, c d>|none`, `occlusion-exempt.views`,
+  `occlusion-exempt.third-column`.
+
+The language's own verbs (`src/control/script.h`): `get <name>`, `status`, `help [<name>]`,
 `wait <ticks>`, `wait-until <name> <op> <value> [<ticks>]`, `hold <player> stick <lx> <ly> <rx> <ry> <ticks>`,
 `note <text>`, `abort`. A failure drops the commands queued behind it; queries answer even during a wait.
 

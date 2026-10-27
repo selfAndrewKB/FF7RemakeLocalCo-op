@@ -60,7 +60,7 @@ void BeginPass(int column) noexcept;
 void EndPass() noexcept;
 void EndFrame() noexcept;
 
-/// The `hud-minimap-two` switch (on at start).
+/// The `hud-minimap` switch (on at start).
 void SetEnabled(bool on) noexcept;
 bool Enabled() noexcept;
 

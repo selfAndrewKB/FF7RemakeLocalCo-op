@@ -22,7 +22,7 @@
 // player 1's). Exempting in player 1's view only tells a limit shared by all views' queries from a fault in the
 // answers of player 2's and player 3's own views (2026-10-24: the latter).
 //
-// Command `occlusion-exempt.third <a b, c d> | none | main`: a set of its own for the third column's view (in a split
+// Command `occlusion-exempt.third-column <a b, c d> | none | main`: a set of its own for the third column's view (in a split
 // frame the third view of the engine's list; otherwise the view whose rectangle's left edge is two widths in, in the
 // top row, which is another player's view under the column order `1 3 2`; it then ignores `.views`), so one look tests two
 // sets: player 2's view takes the main set (with `.views others`), player 3's its own. `main` gives it the main set
