@@ -23,6 +23,7 @@ add_subdirectory("${UE4SS_ROOT}" "${CMAKE_BINARY_DIR}/RE-UE4SS")
 
 add_library(LocalSplitScreen SHARED
     src/mod.cpp
+    src/modules.cpp
     src/control/registry.cpp
     src/control/remote.cpp
     src/control/runner.cpp

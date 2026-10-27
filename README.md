@@ -88,6 +88,8 @@ src/
   engine_facts.h            Every engine address and offset the mod relies on, as read in IDA (image base 0x140000000)
                             for ff7remake_.exe SHA-256 25B54C34...6635, with the research document that established it
   mod.cpp                   LocalSplitScreen for FINAL FANTASY VII REMAKE: the UE4SS entry point
+  modules.cpp               The module table: every module the entry point installs after the session, in install order,
+                            each with its removal or none and the rows it needs (modules.cpp)
   platform/                 the image, verified functions and vtable slots, code and call redirects, guards, the log,
                             the settings file (shared design with Rebirth's)
     byte_scope              The game's single slots answered for one player for the length of a call

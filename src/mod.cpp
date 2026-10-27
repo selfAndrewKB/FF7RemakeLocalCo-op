@@ -1,9 +1,11 @@
 // LocalSplitScreen for FINAL FANTASY VII REMAKE: the UE4SS entry point.
 //
-// Verifies every engine fact it relies on, installs, and turns the player-intent keys into joins and leaves
-// on the game thread (the engine tick's pre-callback), so they never land inside a frame's drawing. A retry, load,
-// jump or return to the title takes the further players out first and brings them back after (players/field_exit.h).
-// While the screen is split the HUD is laid out for each view's shape (hud/overlay_layout.h, hud/root_placement.h).
+// Verifies every engine fact it relies on, installs the session and the module table (modules.h), and turns the
+// player-intent keys into joins and leaves on the game thread (the engine tick's pre-callback), so they never land
+// inside a frame's drawing. A retry, load, jump or return to the title takes the further players out first and brings
+// them back after (players/field_exit.h). Each tick: the keys and the console's lines, the modules' phase before the
+// session, the session's tick, the columns' tick, the engine's list read once into the columns map, where each
+// column's view comes from decided (views/column_source.h) and applied, then the modules' phase over the frame.
 //   Ctrl+F7        player 2 joins with a controller and camera manager of its own, and takes its party member at once
 //   Ctrl+F8        player 2 leaves
 //   Ctrl+Shift+F7  player 3 joins (the third row of the party order), Ctrl+Shift+F8 player 3 leaves
@@ -15,100 +17,39 @@
 #include <Mod/CppUserModBase.hpp>
 #include <Unreal/Hooks/Hooks.hpp>
 
-#include "battle/command_camera_two.h"
-#include "battle/battle_warps.h"
-#include "battle/arena_warp.h"
 #include "battle/command_menu_tick.h"
-#include "battle/menu_grey.h"
-#include "battle/command_menu_two.h"
-#include "battle/enemy_coin.h"
-#include "battle/enemy_leader.h"
-#include "battle/enemy_watch.h"
-#include "battle/lock_camera_two.h"
-#include "battle/member_rates.h"
-#include "battle/party_switch.h"
-#include "battle/sequence_camera_two.h"
-#include "battle/target_cursor_two.h"
-#include "battle/targeting_two.h"
 #include "control/registry.h"
 #include "control/remote.h"
-#include "hud/hud_probe.h"
-#include "hud/overlay_layout.h"
+#include "engine_facts.h"
 #include "hud/overlay_pass.h"
-#include "hud/root_placement.h"
-#include "hud/field_icons.h"
-#include "hud/outside_icons.h"
-#include "hud/image_entries.h"
-#include "hud/marker_replay.h"
-#include "hud/minimap_two.h"
-#include "hud/second_image.h"
-#include "hud/ui_targets.h"
+#include "modules.h"
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
 #include "platform/settings.h"
-#include "players/field_root.h"
-#include "players/own_controller.h"
-#include "players/pad_buttons.h"
-#include "players/pad_presence.h"
-#include "players/scopes.h"
 #include "players/camera_override_two.h"
+#include "players/field_root.h"
 #include "players/nav_area_two.h"
 #include "players/operator_battle_mode.h"
+#include "players/own_controller.h"
 #include "players/player_two_camera.h"
-#include "players/weak_object.h"
-#include "players/game_state.h"
-#include "players/lead_gate.h"
+#include "players/scopes.h"
 #include "players/session.h"
 #include "players/split_render.h"
-#include "engine_facts.h"
-#include "render/ao_origin.h"
-#include "render/bloom_origin.h"
-#include "render/shadows_per_view.h"
-#include "render/distortion_apply.h"
-#include "render/movie_frame.h"
-#include "render/ssr_origin.h"
-#include "render/sun_cascades.h"
-#include "render/family_boundary.h"
-#include "render/fog_volume_watch.h"
-#include "render/occlusion_exempt.h"
-#include "render/one_family.h"
-#include "render/history_cut.h"
-#include "render/lighting_volume.h"
-#include "views/column_layout.h"
-#include "views/split_scale.h"
+#include "players/weak_object.h"
 #include "views/column_rules.h"
 #include "views/column_source.h"
 #include "views/columns.h"
-#include "views/letterbox_patch.h"
-#include "views/display_align.h"
 #include "views/mirror_player.h"
-#include "audio/listeners.h"
 #include "views/scene_camera_two.h"
 #include "views/window_span.h"
-#include "world/anim_two_views.h"
-#include "world/env_sets_two.h"
-#include "world/npc_crowd.h"
-#include "world/npc_detail.h"
-#include "world/npc_senses.h"
-#include "world/forced_walk.h"
-#include "world/search_arrows.h"
-#include "render/area_blend.h"
-#include "world/overlap_fade.h"
-#include "world/party_fade.h"
-#include "world/field_targets.h"
 #include "world/shop_act.h"
-#include "world/talk_gather.h"
-#include "world/traversal_action.h"
-#include "world/traversal_walkup.h"
 
-#include <algorithm>
 #include <cstdint>
 #include <format>
-#include <optional>
 #include <span>
-#include <tuple>
 #include <string>
+#include <tuple>
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -119,8 +60,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.106.0-column-source";
-static_assert(lss::views::column_rules::kMaxColumns == lss::hud::overlay_pass::kMaxColumns, "the columns the views and the HUD count");  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.107.0-module-table";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
@@ -216,7 +156,7 @@ void RegisterSeatCommands(lss::players::Session& session, int seat, const wchar_
               .get   = [&session, seat] { return Value{std::wstring(lss::players::StateName(session.State(seat)))}; }});
 }
 
-/// The session's commands and readings on the console. The render modules register their own switches.
+/// The session's commands and readings on the console. The modules register their own switches.
 void RegisterSessionCommands(lss::players::Session& session)
 {
     using lss::control::Register;
@@ -282,63 +222,18 @@ public:
         remote_.Close();
         lss::views::mirror_player::Clear(L"the mod unloads");
         lss::players::split_render::Remove();  // after the mirrors: the mask back to zero so a reinstall finds it free
-        lss::views::column_layout::Remove();
-        lss::views::split_scale::Remove();  // the player's dynamic-resolution values back (on the game thread only)
-        lss::views::window_span::Leave(L"the mod unloads");
-        lss::views::display_align::Restore();  // the leave's ticks never come: the monitors go back now
-        lss::views::scene_camera_two::Remove();
-        lss::views::letterbox_patch::Restore();
-        lss::hud::hud_probe::Remove();
-        lss::hud::root_placement::Remove();
-        lss::hud::overlay_layout::Remove();
-        lss::hud::marker_replay::Remove();
-        lss::hud::field_icons::Remove();
-        lss::hud::outside_icons::Remove();
-        lss::hud::second_image::Remove();
-        lss::hud::minimap_two::Remove();
-        lss::hud::image_entries::Remove();
-        lss::hud::ui_targets::Remove();
-        lss::render::movie_frame::Remove();
-        lss::render::shadows_per_view::Remove();
-        lss::render::ssr_origin::Remove();
-        lss::render::sun_cascades::Remove();
-        lss::render::lighting_volume::Remove();
-        lss::render::history_cut::Remove();
-        lss::render::one_family::Remove();
-        lss::render::occlusion_exempt::Remove();
-        lss::render::fog_volume_watch::Remove();
-        lss::players::pad_buttons::Remove();
-        lss::battle::sequence_camera_two::Remove();
-        lss::battle::target_cursor_two::Remove();
-        lss::battle::enemy_coin::Remove();
-        lss::battle::enemy_leader::Remove();
-        lss::battle::member_rates::Remove();
-        lss::battle::command_camera_two::Remove();
-        lss::battle::lock_camera_two::Remove();
-        lss::battle::targeting_two::Remove();
-        lss::battle::party_switch::Remove();
-        lss::battle::battle_warps::Remove();
-        lss::battle::menu_grey::Remove();
-        lss::battle::command_menu_tick::Remove();
-        lss::battle::command_menu_two::Remove();
-        lss::world::overlap_fade::Remove();  // any time: its slots pass through and it writes no game state
-        lss::world::forced_walk::Remove();   // any time: its slots call the game's first; the members keep the caps last copied
-        lss::world::search_arrows::Remove();  // the seats' arrows cleared on the game thread
-        lss::audio::listeners::Remove();  // any time: it turns the seats off first; every hook then answers as the game
+        lss::modules::Remove();                // the table in reverse (modules.h)
         if (installed_)
         {
             session_.Remove();  // the field-exit calls go back whether or not player 2 is in
         }
         // With player 2 in, its camera manager was built through the replacement; the DLL is pinned, so the
-        // replacement stays valid. Otherwise the engine's function goes back.
+        // replacement stays valid. Otherwise the engine's function goes back, with the field hooks the seats'
+        // members use (the table's rows removed with the players out) and the session's own camera modules.
         if (installed_ && session_.Count() == 0)
         {
             lss::players::player_two_camera::RemoveInputTick();
-            lss::world::talk_gather::Remove();    // the consumers of the presses first
-            lss::world::shop_act::Remove();
-            lss::world::field_targets::Remove();  // further players' presses and chest opens back to the game's
-            lss::world::traversal_walkup::Remove();  // the seats' triggers no longer reach the dispatcher
-            lss::world::traversal_action::Remove();  // the field-action tick back on any thread
+            lss::modules::RemoveWithPlayersOut();
             lss::players::nav_area_two::Remove();
             lss::players::operator_battle_mode::Remove();
             lss::players::camera_override_two::Remove();
@@ -362,101 +257,11 @@ public:
             return;
         }
         installed_ = true;
-        lss::render::ao_origin::Install(*image);  // optional: without it player 2's half keeps the AO ghost
-        // Optional: without it a distortion crossing the split line streaks over the other half.
-        lss::render::distortion_apply::Install(*image);
-        lss::render::shadows_per_view::Install(*image);  // optional: without it one camera decides some shadows for every view
-        lss::render::area_blend::Install(*image);        // its site is the shadows' call: without it every view takes player 1's area fades
-        lss::render::ssr_origin::Install(*image);  // optional: without it a view's reflections read the next column's surfaces
-        lss::render::sun_cascades::Install(*image);  // optional: without it each view takes every view's sun cascades
-        lss::render::lighting_volume::Install(*image);  // optional: the volume-box test only
-        lss::render::history_cut::Install(*image);      // optional: the history-cut test only
-        lss::render::fog_volume_watch::Install(*image);  // optional: logging only
-        lss::render::occlusion_exempt::Install(*image);  // optional: the occlusion-exempt test only
-        // Optional: without them every player is a view of one family, and views after the first lose their fog.
-        if (lss::render::family_boundary::Install(*image))
-        {
-            lss::render::one_family::Install(*image);
-        }
-        // Optional: without it player 2's bloom would be built from player 1's rows, so bloom stays off in split.
-        if (lss::render::bloom_origin::Install(*image))
-        {
-            lss::players::split_render::SetMask(lss::facts::kSplitDisabledFlags, false);
-        }
-        // Optional: without them split in Borderless keeps the game's letterbox, and the window stays on one monitor.
-        lss::views::letterbox_patch::Install(*image);
-        lss::views::window_span::Install(*image);
-        lss::views::column_layout::Install(*image);     // optional: without it three local players take the stock quadrants
-        // Optional: without it split at a resolution below the window leaves each view's outer part undrawn.
-        lss::views::split_scale::Install(*image, &lss::players::Session::Console);
-        lss::views::scene_camera_two::Install(*image);  // readings only; fine without
-        // Optional: without it a held span shows one view across the row while player 2 is out.
-        if (lss::views::mirror_player::Install(*image))
+        lss::modules::Install(*image);  // every module after the session, in table order (modules.cpp)
+        if (lss::modules::MirrorPlayerInstalled())
         {
             session_.SetMirrorPlayers({&lss::views::mirror_player::Count, &lss::views::mirror_player::Clear,
                                        &lss::views::mirror_player::FillAtLeave});
-        }
-        lss::players::pad_buttons::Install(*image);  // optional: without it every pad presses player 1's buttons
-        lss::players::pad_presence::Register();      // diagnostics: which XInput users have a pad
-        lss::players::lead_gate::Install(*image);    // optional: without it a LEAD on player 2's member stays the player's
-        // Player 2's own battle: its command menu, ticked in its scopes, and the switch rules. Each optional.
-        const bool scopesReady = lss::players::scopes::Install(*image);
-        if (scopesReady)
-        {
-            lss::battle::battle_warps::Install(*image);  // optional: without it the game warps the whole party
-        }
-        if (scopesReady && lss::battle::command_menu_two::Install(*image))
-        {
-            if (lss::battle::command_menu_tick::Install(*image))
-            {
-                lss::battle::menu_grey::Install(*image);  // optional: without it an open menu greys the screen with the slow-down off
-                lss::battle::arena_warp::Install(*image);  // optional: without it a player locked outside a fight stays there
-            }
-            lss::battle::party_switch::Install(*image);
-            if (lss::battle::targeting_two::Install(*image))
-            {
-                lss::battle::target_cursor_two::Install(*image);  // optional: without it both halves show player 1's cursor
-            }
-            lss::battle::lock_camera_two::Install(*image);
-            lss::battle::command_camera_two::Install(*image);  // optional: without it the aim reading is off, the UI scope stays
-            lss::battle::member_rates::Install(*image);
-            lss::battle::enemy_leader::Install(*image);
-            if (lss::battle::enemy_coin::Install(*image))  // optional: without it enemies name player 1 as the player
-            {
-                lss::battle::enemy_watch::Install(*image);  // logging only: fed by the coin's decision gate
-            }
-            lss::battle::sequence_camera_two::Install(*image);
-        }
-        lss::players::game_state::Install(*image);  // readings only; fine without
-        lss::world::party_fade::Install(*image);    // optional: without it a member near player 2's camera vanishes in both halves
-        lss::world::overlap_fade::Install(*image);  // optional: without it characters in a ladder or squeeze turn see-through near another
-        lss::world::forced_walk::Install(*image);   // optional: without it further players run free in a story walk
-        lss::world::search_arrows::Install(*image); // optional: without it a further player's hook area uses player 1's search arrow
-        lss::world::anim_two_views::Install(*image);  // optional: without it characters near a further player animate by player 1's camera
-        lss::world::npc_detail::Install(*image);      // optional: without it NPCs near a further player pause by player 1's camera
-        lss::world::npc_crowd::Install(*image);       // optional: without it the crowd is spawned around player 1 only
-        lss::world::npc_senses::Install(*image);      // optional: without it NPCs see nobody beyond player 1's grid
-        lss::world::env_sets_two::Install(*image);    // optional: without it only player 1's ground hides the area's actors
-        lss::world::traversal_action::Install(*image);  // optional: without it further players' members take ladders by themselves
-        lss::world::traversal_walkup::Install(*image);  // optional: without it further players cannot use walk-up spots
-        if (lss::world::field_targets::Install(*image))  // optional: without it further players cannot open chests or doors
-        {
-            lss::world::shop_act::Install(*image);  // optional: without it a further player's shop is player 1's (camera, facing)
-            lss::world::talk_gather::Install(*image);  // optional: without it player 1's character stays far from their talks
-        }
-        lss::audio::listeners::Install(*image);  // optional: without it, every sound is player 1's
-        lss::hud::hud_probe::Install(*image);       // logging only; fine without
-        lss::hud::overlay_layout::Install(*image);  // optional: without it each half shows the middle of the HUD
-        lss::hud::ui_targets::Install(*image);      // optional: without it both halves sample one UI image
-        lss::render::movie_frame::Install(*image);  // optional: without it a movie shows in the first view only
-        if (lss::hud::image_entries::Install(*image) && lss::hud::minimap_two::Install(*image))  // optional: player 2's image
-        {
-            if (lss::hud::second_image::Install(*image))
-            {
-                lss::hud::marker_replay::Install(*image);
-                lss::hud::field_icons::Install(*image);
-                lss::hud::outside_icons::Install(*image);
-            }
         }
         RegisterSessionCommands(session_);
         lss::views::column_source::RegisterCommands(singleViewChoice_);
@@ -503,25 +308,12 @@ private:
         // The console's lines (joins and leaves among them) before the session and the column map, as the keys, so
         // this frame's HUD passes never name a player the console just took out.
         remote_.Tick();
-        lss::players::player_two_camera::MaintainInputTick();
-        lss::players::game_state::Tick();  // first: the session and the console read this tick's values
-        lss::players::pad_presence::Tick();
+        lss::modules::TickBeforeSession();
         session_.Tick();
-        const int playersIn = 1 + session_.Count();  // player 1 and the seats in: the columns the players fill
-        lss::views::letterbox_patch::Tick(playersIn > 1 || lss::views::window_span::Held());
-        lss::views::window_span::Tick(playersIn > 1);
-        // The columns this frame shows (views/column_rules.h): the players, the span's while held, or the console's.
-        const int  heldColumns  = lss::views::window_span::Held() ? lss::views::window_span::Columns() : 0;
-        const int  viewColumns  = lss::views::column_rules::Wanted(playersIn, heldColumns, lss::views::column_layout::Override());
-        const int  aloneColumns = lss::views::column_rules::Wanted(1, heldColumns, lss::views::column_layout::Override());
-        const bool columnsHeld  = heldColumns > 0 || lss::views::column_layout::Override() > 0;  // beyond the players
-        // The layout asks whether the window spans monitors at all (held or entered at a join), not only while held.
-        lss::views::column_layout::Tick(viewColumns, playersIn + lss::views::mirror_player::Count(), lss::views::window_span::Columns(),
-                                        ListSeatsOf(MapOfList()));
-        lss::views::mirror_player::Tick(playersIn, session_.SeatIds(), viewColumns, aloneColumns);
-        // Whenever the letterbox patch is on the views are in window pixels, one view included (the span's hold keeps it on
-        // with player 2 awaiting a member: seen 2026-10-24 on the ultrawide, player 1's view streaked past the resolution).
-        lss::views::split_scale::Tick(lss::views::letterbox_patch::Applied());
+        // The columns' tick (modules.h): the span, the layout and the mirrors toward the columns the frame shows.
+        const lss::modules::Columns columns = lss::modules::TickColumns({.playersIn = 1 + session_.Count(),
+                                                                         .seatIds   = session_.SeatIds(),
+                                                                         .listSeats = ListSeatsOf(MapOfList())});
         // The engine's list as columns, after every join, leave and mirror change of this tick (views/columns.h): the one
         // map every module that runs per column reads (the HUD passes, the listeners, this frame's passes).
         columns_ = MapOfList();
@@ -529,7 +321,7 @@ private:
         // Where each column's view comes from this tick (views/column_source.h decides; this is the one place that
         // applies it): a seat on player 1's picture gets the every-slot camera copy and no HUD pass of its own.
         lss::views::column_source::Moment moment;
-        moment.columnsHeld = columnsHeld;
+        moment.columnsHeld = columns.columnsHeld;
         moment.choice      = singleViewChoice_;
         moment.map         = columns_;
         moment.sceneHolds  = lss::views::scene_camera_two::SceneHolds();
@@ -538,9 +330,10 @@ private:
             moment.seats[static_cast<std::size_t>(seat)]   = session_.State(seat);
             moment.ownShop[static_cast<std::size_t>(seat)] = lss::world::shop_act::OwnsScene(seat);
         }
-        // The engine's single view in one window is not built (plan/next-phase.md §7, the user's call): the decision
-        // gives every further column player 1's picture instead, never a split with a menu over it; said once.
-        if (moment.choice == lss::views::column_source::Override::Single && !columnsHeld && !singleViewUnbuiltLogged_ &&
+        // The engine's single view in one window is not built yet (plan/next-phase.md §7: wanted since 2026-10-26, the
+        // first build after the cleanup): the decision gives every further column player 1's picture instead, never a
+        // split with a menu over it; said once.
+        if (moment.choice == lss::views::column_source::Override::Single && !columns.columnsHeld && !singleViewUnbuiltLogged_ &&
             session_.Count() > 0)
         {
             singleViewUnbuiltLogged_ = true;
@@ -548,34 +341,7 @@ private:
                 L"picture instead (the mirror look)");
         }
         FollowShown(lss::views::column_source::Decide(moment));
-        lss::players::split_render::Tick(columns_.count > 1);
-        lss::render::area_blend::Tick(columns_.count > 1);  // before this frame's views
-        lss::views::scene_camera_two::SeatManagers seatManagers{};
-        for (int seat = 1; seat <= lss::players::kSeatsBuilt; ++seat)
-        {
-            seatManagers[static_cast<std::size_t>(seat)] = ManagerOfSeat(seat);
-        }
-        lss::views::scene_camera_two::Tick(CameraManagerOf(0), seatManagers);
-        for (int seat = 1; seat <= lss::players::kSeatsBuilt; ++seat)
-        {
-            lss::battle::command_menu_two::Tick(seat, session_.Seated(seat));
-        }
-        lss::battle::command_menu_tick::Tick();
-        lss::players::nav_area_two::Tick();
-        lss::battle::arena_warp::Tick();
-        lss::battle::menu_grey::Tick();
-        lss::battle::party_switch::Tick();
-        lss::players::operator_battle_mode::Tick();
-        lss::battle::targeting_two::Tick();
-        lss::battle::target_cursor_two::Tick();
-        lss::battle::lock_camera_two::Tick();
-        lss::battle::member_rates::Tick();
-        lss::battle::enemy_leader::Tick();
-        lss::battle::enemy_coin::Tick();
-        lss::battle::enemy_watch::Tick();
-        lss::battle::sequence_camera_two::Tick();
-        TickWorld();
-        TickHud();
+        lss::modules::TickAfterSession(FrameNow());
     }
 
     /// The engine's local-player list as columns (views/columns.h): each listed place's seat (0 player 1, then the
@@ -638,21 +404,39 @@ private:
         shown_ = shown;
     }
 
-    /// A local player's view share (ULocalPlayer Origin and Size), read under a guard.
-    bool ReadView(int index, lss::hud::overlay_layout::ViewShare& out) const noexcept
+    /// This tick's facts for the modules (modules.h), read once from the session: each seat's word, player and
+    /// objects, player 1's camera manager and pawn, the columns map and the decision, each column's local player.
+    lss::modules::Frame FrameNow() const noexcept
     {
-        const auto* player = reinterpret_cast<const std::uint8_t*>(session_.LocalPlayer(index));
-        return player != nullptr &&
-               lss::platform::CopyGuarded(&out.originX, player + lss::facts::kLocalPlayerOrigin, 2 * sizeof(float)) &&
-               lss::platform::CopyGuarded(&out.sizeX, player + lss::facts::kLocalPlayerSize, 2 * sizeof(float)) &&
-               out.sizeX > 0.0f && out.sizeY > 0.0f && out.sizeX <= 1.0f && out.sizeY <= 1.0f;
+        lss::modules::Frame frame;
+        frame.count      = session_.Count();
+        frame.managerOne = CameraManagerOf(0);
+        frame.pawnOne    = PawnOf(0);
+        frame.map        = columns_;
+        frame.shown      = shown_;
+        for (int column = 0; column < lss::views::columns::kMaxColumns; ++column)
+        {
+            const auto at           = static_cast<std::size_t>(column);
+            frame.localPlayer[at]   = session_.LocalPlayer(column);
+            frame.controller[at]    = ControllerOf(column);
+        }
+        for (int seat = 1; seat <= lss::players::kSeatsBuilt; ++seat)
+        {
+            auto& s       = frame.seats[static_cast<std::size_t>(seat)];
+            s.state       = session_.State(seat);
+            s.seated      = session_.Seated(seat);
+            s.localPlayer = session_.SeatPlayer(seat);
+            s.controller  = ControllerOfSeat(seat);
+            s.manager     = ManagerOfSeat(seat);
+            s.member      = session_.In(seat) ? lss::players::scopes::Member(seat) : nullptr;
+        }
+        return frame;
     }
 
     /// A local player's camera manager (null if unread).
     void* CameraManagerOf(int index) const noexcept
     {
-        return lss::platform::ReadPointer(lss::platform::ReadPointer(session_.LocalPlayer(index), lss::facts::kLocalPlayerController),
-                                          lss::facts::kControllerCameraManager);
+        return lss::platform::ReadPointer(ControllerOf(index), lss::facts::kControllerCameraManager);
     }
 
     /// A local player's pawn (player 1's is the character the game centres the NPCs' senses on), or null.
@@ -679,114 +463,23 @@ private:
         return lss::platform::ReadPointer(ControllerOfSeat(seat), lss::facts::kControllerCameraManager);
     }
 
-    /// The world around the views (world/): party members kept visible near a camera, characters animated by the
-    /// camera that sees them best, the NPCs near every further player kept awake and spawned around them too, and
-    /// able to see them.
-    void TickWorld() noexcept
-    {
-        // Every world module per built seat (plan/seats.md step 3): each told the seat's member, camera or controller
-        // while the seat's player is in, then its once-a-tick work.
-        bool anyIn = false;
-        lss::world::party_fade::Tick(session_.Count());
-        lss::world::overlap_fade::Tick(session_.Count());
-        for (int seat = 1; seat <= lss::players::kSeatsBuilt; ++seat)
-        {
-            const bool seatIn = session_.In(seat);
-            void*      member = seatIn ? lss::players::scopes::Member(seat) : nullptr;
-            void*      camera = seatIn ? ManagerOfSeat(seat) : nullptr;
-            anyIn             = anyIn || seatIn;
-            lss::world::anim_two_views::TickSeat(seat, camera, member);
-            lss::world::npc_crowd::TickSeat(seat, member);
-            lss::world::npc_senses::TickSeat(seat, member);
-            lss::world::npc_detail::TickSeat(seat, camera);
-            lss::world::env_sets_two::TickSeat(seat, member, seatIn ? ControllerOfSeat(seat) : nullptr);
-            lss::world::traversal_walkup::TickSeat(seat, seatIn ? ControllerOfSeat(seat) : nullptr, member);
-            lss::world::traversal_action::TickSeat(seat, member);
-            lss::world::forced_walk::TickSeat(seat, member);
-            lss::players::nav_area_two::TickSeat(seat, member);
-            lss::world::field_targets::TickSeat(seat, seatIn ? session_.SeatPlayer(seat) : nullptr, member);
-            lss::world::search_arrows::TickSeat(seat, seatIn ? session_.SeatPlayer(seat) : nullptr);
-            lss::audio::listeners::TickSeat(seat, seatIn ? ControllerOfSeat(seat) : nullptr);
-        }
-        lss::world::traversal_action::Tick(anyIn);
-        lss::world::field_targets::Tick();
-        lss::world::search_arrows::Tick();
-        lss::world::anim_two_views::Tick();
-        lss::world::npc_crowd::Tick();
-        lss::world::npc_senses::Tick(anyIn ? PawnOf(0) : nullptr);
-        lss::world::npc_detail::Tick(anyIn ? CameraManagerOf(0) : nullptr);
-        lss::world::env_sets_two::Tick();
-        lss::audio::listeners::Tick(columns_.count);
-    }
-
-    /// The HUD layout follows the columns (views/columns.h) and what each shows (views/column_source.h: column 0 is
-    /// player 1's, the seats' follow in the engine list's order, then the mirrors'). While no further column shows its
-    /// own view (the mirror players alone beside player 1, or every seat on player 1's picture), the HUD is laid out
-    /// for player 1's column and every view samples that one image: the further passes and the per-view targets stay
-    /// off, since only a further pass would draw into a second target, leaving those views empty. Known gap [dev
-    /// override only]: under `single-view on` with three players, a seat in its own shop keeps the split while the
-    /// other seat shows player 1's picture, and that seat still gets a HUD pass of its own (the passes cannot skip a
-    /// middle column today): its own HUD over player 1's camera.
-    void TickHud() noexcept
-    {
-        namespace op = lss::hud::overlay_pass;
-        lss::hud::second_image::Columns columns;
-        columns.count = shown_.SplitShown() ? std::min(1 + session_.Count(), op::kMaxColumns) : 1;  // the columns with a pass
-        const bool mirror      = !shown_.SplitShown() && columns_.count > 1;
-        const int  viewColumns = std::min(columns_.count, op::kMaxColumns);
-        lss::hud::overlay_layout::ViewShares shares{};
-        int                                  read = 0;  // the columns whose views were read, from the first
-        for (int column = 0; column < viewColumns && ReadView(column, shares[column]); ++column)
-        {
-            read = column + 1;
-        }
-        const bool views = read >= 2;  // a split, or the mirror beside player 1
-        const bool split = views && columns.count > 1 && read >= columns.count;
-        lss::hud::ui_targets::SetPlayerColumns(columns.count);  // a mirror's column samples player 1's HUD image
-        lss::hud::overlay_layout::Tick(views, shares, read);
-        if (mirror && lss::hud::ui_targets::Enabled())
-        {
-            lss::hud::ui_targets::SetEnabled(false);
-            Log(L"HUD targets: off while every further column shows player 1's picture (each column samples player 1's HUD "
-                L"image; a further player's own view turns them on again)");
-        }
-        for (int column = 0; split && column < columns.count; ++column)
-        {
-            columns.localPlayer[column] = session_.LocalPlayer(column);
-            columns.controller[column]  = ControllerOf(column);
-            // A further column's seat from the map: its member.
-            const int seat         = op::SeatOf(column);
-            columns.member[column] = seat >= 1 ? lss::players::scopes::Member(seat) : nullptr;
-        }
-        lss::hud::second_image::Tick(split, columns);
-        lss::hud::minimap_two::Tick();
-        for (int seat = 1; seat <= lss::players::kSeatsBuilt; ++seat)
-        {
-            lss::hud::minimap_two::TickSeat(seat, split && session_.Seated(seat), split ? ControllerOfSeat(seat) : nullptr);
-        }
-        lss::hud::marker_replay::Tick();
-        lss::hud::field_icons::Tick();
-        lss::hud::outside_icons::Tick();
-        lss::hud::root_placement::Tick(views && lss::hud::overlay_layout::BandApplies());
-    }
-
     // Declaration order matters: holds_ and remote_ hold references into session_, so it comes first.
-    lss::players::Session          session_;
-    ModHolds                       holds_{session_};
-    lss::control::Remote           remote_{holds_};
-    lss::views::columns::Map                 columns_;  // this tick's map (set before the modules that read it)
-    lss::views::column_source::Shown         shown_;    // this tick's decision
-    lss::views::column_source::Override      singleViewChoice_ = lss::views::column_source::Override::Auto;
-    bool                                     singleViewUnbuiltLogged_ = false;
-    bool                  installed_     = false;
-    bool                  joinWasDown_   = false;
-    bool                  leaveWasDown_  = false;
-    bool                  joinThreeWasDown_  = false;
-    bool                  leaveThreeWasDown_ = false;
-    bool                  reportWasDown_ = false;
-    bool                  spanWasDown_   = false;
-    bool                  menuSlowWasDown_ = false;
-    Hook::GlobalCallbackId tickCallback_ = Hook::ERROR_ID;
+    lss::players::Session               session_;
+    ModHolds                            holds_{session_};
+    lss::control::Remote                remote_{holds_};
+    lss::views::columns::Map            columns_;  // this tick's map (set before the modules that read it)
+    lss::views::column_source::Shown    shown_;    // this tick's decision
+    lss::views::column_source::Override singleViewChoice_ = lss::views::column_source::Override::Auto;
+    bool                                singleViewUnbuiltLogged_ = false;
+    bool                                installed_         = false;
+    bool                                joinWasDown_       = false;
+    bool                                leaveWasDown_      = false;
+    bool                                joinThreeWasDown_  = false;
+    bool                                leaveThreeWasDown_ = false;
+    bool                                reportWasDown_     = false;
+    bool                                spanWasDown_       = false;
+    bool                                menuSlowWasDown_   = false;
+    Hook::GlobalCallbackId              tickCallback_      = Hook::ERROR_ID;
 };
 
 }  // namespace
