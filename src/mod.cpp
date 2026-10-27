@@ -64,7 +64,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.109.0-single-view";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.110.0-collapse-scope";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;

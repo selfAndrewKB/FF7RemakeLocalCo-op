@@ -3,8 +3,10 @@
 // Whether the game shows something that takes the whole screen: the decision, pure (host-tested,
 // tests/whole_screen_rules_test.cpp), over the signals views/whole_screen.cpp reads each tick (views/whole_screen.h
 // names the game state behind each one). The reason is what the one-window single view collapses the split for
-// (players/single_view.h; views/column_source.h Why::WholeScreen). Rebirth's views/whole_screen_reason.h gave the
-// shape; the signals and their order are Remake's (research/RE-lifecycle-world.md §8).
+// (players/single_view.h; views/column_source.h Why::WholeScreen): the menus, the cutscenes and the minigames the
+// game's own signals pick up (the user, 2026-10-27: not a talk, an event camera or a field pickup, which hold the
+// field control lock; those play on every view). Rebirth's views/whole_screen_reason.h gave the shape; the signals
+// and their order are Remake's (research/RE-lifecycle-world.md §8).
 
 #include <cstdint>
 #include <string_view>
@@ -24,13 +26,12 @@ struct Signals
     bool shopUp      = false;  // the shop UI's own "a shop is up" byte (a shop runs in the field state)
     bool pauseWidget = false;  // the game's IsPauseMenuClosed says a pause-family menu is alive
     bool cutscene    = false;  // the cutscene manager plays a scene
-    bool sceneHolds  = false;  // a scene holds every player: the cutscene, or the field control lock outside player 1's own
-                               // move, read outside a battle and without the arena's bit 21 (views/whole_screen.cpp)
     bool skippable   = false;  // on/off 12 ShowSkipPauseMenu: a skippable scene
     bool skipping    = false;  // the cutscene manager's skip byte (the scene fast-forwards under black)
     bool black       = false;  // on/off 39, 40 or 53: a held black screen
     bool loading     = false;  // on/off 41: the loading screen
-    bool minigame    = false;  // on/off 36 MiniGamePlaying (Fort Condor natively; which act rows set it: research/RE-minigame-signal.md)
+    bool minigame    = false;  // on/off 36 MiniGamePlaying (an act's exclusion row or Fort Condor; research/RE-minigame-signal.md §1)
+    std::uint64_t minigameAct = 0;  // who turned 36 on: the act's FName (0 while off), for the log
     bool bike        = false;  // a bike chase: the game's own test of its shared bike state
     bool title       = false;  // the field root's location is the title's
 
@@ -51,7 +52,6 @@ enum class Reason : std::uint8_t
     Minigame,        // on/off 36
     Bike,            // a bike chase (chapters 4 and 18)
     Cutscene,        // the cutscene manager playing
-    Scene,           // a scene holds every player (a talk, an event camera: the field control lock)
     SkippableScene,  // on/off 12
     CutsceneSkip,    // the skip byte
     Black,           // a held black screen
@@ -118,10 +118,6 @@ constexpr Reason ReasonOf(const Signals& s) noexcept
     {
         return Reason::Cutscene;
     }
-    if (s.sceneHolds)
-    {
-        return Reason::Scene;
-    }
     if (s.skippable)
     {
         return Reason::SkippableScene;
@@ -141,6 +137,28 @@ constexpr Reason ReasonOf(const Signals& s) noexcept
     return s.title ? Reason::Title : Reason::None;
 }
 
+/// How many ticks a minigame moment outlives on/off 36: a minigame segment runs as chained acts (the Reactor 5 lock
+/// segment's phases, live 2026-10-27), and 36 is off for the one tick between an act's release (its step 10) and the
+/// next act's start (its step 2; research/RE-minigame-signal.md §1), which would flash the split for a frame. The
+/// mod's own bridge over the game's gap [ASSUMPTION: three ticks cover every chain; the gap seen was one tick].
+inline constexpr unsigned kMinigameGapTicks = 3;
+
+/// The next count of ticks off: 0 on a tick whose own reason is Minigame, else one more up to kMinigameGapTicks + 1
+/// (where it stays: "off for longer than the bridge").
+constexpr unsigned NextTicksOff(Reason raw, unsigned ticksOff) noexcept
+{
+    return raw == Reason::Minigame ? 0 : ticksOff <= kMinigameGapTicks ? ticksOff + 1 : ticksOff;
+}
+
+/// This tick's reason with the bridge: `now` is this tick's by the signals, `last` the tick before's, `ticksOff` the
+/// count NextTicksOff keeps (ticks since this tick's own reason was last Minigame; 1 on the first). A minigame moment
+/// holds while nothing else takes the screen and the gap is within kMinigameGapTicks; any other reason, and a longer
+/// gap, end it.
+constexpr Reason BridgeActGap(Reason now, Reason last, unsigned ticksOff) noexcept
+{
+    return now == Reason::None && last == Reason::Minigame && ticksOff <= kMinigameGapTicks ? Reason::Minigame : now;
+}
+
 /// For the log.
 constexpr const wchar_t* NameOf(Reason reason) noexcept
 {
@@ -157,7 +175,6 @@ constexpr const wchar_t* NameOf(Reason reason) noexcept
         case Reason::Minigame: return L"a minigame (on/off 36)";
         case Reason::Bike: return L"a bike chase";
         case Reason::Cutscene: return L"a cutscene";
-        case Reason::Scene: return L"a scene holding the players (a talk, an event camera)";
         case Reason::SkippableScene: return L"a skippable scene (on/off 12)";
         case Reason::CutsceneSkip: return L"a cutscene skip";
         case Reason::Black: return L"a held black screen";

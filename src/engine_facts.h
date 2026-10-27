@@ -2009,11 +2009,15 @@ inline constexpr platform::FunctionFact kCutsceneIsPlaying{L"EndCutsceneMgr_IsPl
                                                            kCutsceneIsPlayingEntry};
 /// The state manager (ROOT+0x138) holds the field control lock mask (the game's own IsEnableFieldControler reads it
 /// with the counter) and the on/off table (one dword counter per id: 12 ShowSkipPauseMenu = a skippable scene,
-/// 39/40/53 a held black screen, 41 the loading screen). kRootStateManager (0x138) is above.
+/// 39/40/53 a held black screen, 41 the loading screen) followed by the owner of each id (an FName: the last non-zero
+/// reason a SetOn passed, zeroed when the count drops to 0; research/RE-minigame-signal.md §1). kRootStateManager
+/// (0x138) is above.
 inline constexpr std::uint32_t kFieldControlLockMask    = 0x11062B0;  // dword
 inline constexpr std::uint32_t kFieldControlLockCounter = 0x1109C88;  // dword
 inline constexpr std::uint32_t kOnOffTable              = 0x11063B4;  // dword per id, 92 ids
 inline constexpr std::uint32_t kOnOffCount              = 92;
+inline constexpr std::uint32_t kOnOffOwners             = 0x1106524;  // FName per id: who turned it on
+static_assert(kOnOffOwners == kOnOffTable + 4 * kOnOffCount, "the owners follow the counts");
 /// The bike chases (chapters 4 and 18) are a mode of their own, neither a cutscene nor an act with on/off 36
 /// (research/RE-minigame-signal.md §4 [CONFIRMED code]): the bike act fills a shared state and the game's own test (its
 /// pause-kind chooser) is "the shared state is set and its reference block's count at +8 is above 0".

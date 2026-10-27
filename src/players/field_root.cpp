@@ -6,6 +6,10 @@
 #include "platform/log.h"
 #include "platform/verified_code.h"
 
+#include <Unreal/NameTypes.hpp>
+
+#include <string>
+
 namespace lss::players::field_root {
 
 namespace {
@@ -91,6 +95,39 @@ bool OnOff(std::uint32_t id) noexcept
     const std::uint8_t* manager = StateManager();
     std::uint32_t       count   = 0;
     return id < facts::kOnOffCount && manager != nullptr && Read(manager + facts::kOnOffTable + 4 * id, count) && count != 0;
+}
+
+std::uint64_t OnOffOwner(std::uint32_t id) noexcept
+{
+    const std::uint8_t* manager = StateManager();
+    std::uint64_t       owner   = 0;
+    return id < facts::kOnOffCount && manager != nullptr && Read(manager + facts::kOnOffOwners + 8 * id, owner) ? owner : 0;
+}
+
+namespace {
+void OwnerText(std::int64_t bits, std::wstring* out) noexcept
+try
+{
+    *out = RC::Unreal::FName(bits).ToString();
+}
+catch (...)
+{
+    out->clear();
+}
+}  // namespace
+
+std::wstring OnOffOwnerText(std::uint64_t owner) noexcept
+{
+    if (owner == 0)
+    {
+        return L"none";
+    }
+    std::wstring text;
+    if (!platform::CallGuarded(&OwnerText, static_cast<std::int64_t>(owner), &text) || text.empty())
+    {
+        return L"?";
+    }
+    return text;
 }
 
 std::uint8_t* CharaOwner() noexcept

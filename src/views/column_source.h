@@ -21,10 +21,10 @@
 //     ruling of 2026-10-26: cutscenes, menus and minigames collapse as in Rebirth; the mirror look is the row's).
 //
 // The moments: the game shows something that takes the whole screen (views/whole_screen.h: a pause menu, a shop, a
-// script menu, a pause-family widget, a cutscene, a scene holding the players, a skippable scene, a cutscene skip, a
-// minigame, a bike chase, a held black, the loading screen, the title) gives every further seat Screen in one window
-// and PlayerOne while columns are held (the span, the console's columns): a held column is never black and never a
-// split with a menu over it. A seat's own shop camera on its manager (a row's shop) is that seat's moment: every
+// script menu, a pause-family widget, a cutscene, a skippable scene, a cutscene skip, a minigame, a bike chase, a held
+// black, the loading screen, the title; not a talk, an event camera or a pickup: the user, 2026-10-27) gives every
+// further seat Screen in one window and PlayerOne while columns are held (the span, the console's columns): a held
+// column is never black and never a split with a menu over it. A seat's own shop camera on its manager (a row's shop) is that seat's moment: every
 // seat keeps Self through it (the opener's view zooms, the others play on; the shop holds the game for all), never
 // the single view while a seat's own view is wanted; under the console's `on` the others go on player 1's picture
 // (the dev gap above). The mirror policy

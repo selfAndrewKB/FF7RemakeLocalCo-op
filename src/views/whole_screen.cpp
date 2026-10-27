@@ -44,9 +44,10 @@ bool BikeChase() noexcept
 }
 
 // Game thread.
-Signals g_signals;
-Reason  g_reason = Reason::None;
-bool    g_logged = false;
+Signals  g_signals;
+Reason   g_reason   = Reason::None;
+unsigned g_offTicks = kMinigameGapTicks + 1;  // ticks since this tick's own reason was last Minigame (the act-gap bridge; capped)
+bool     g_logged   = false;
 
 Signals Read() noexcept
 {
@@ -65,6 +66,7 @@ Signals Read() noexcept
         s.scriptMenu = s.scriptMenu || players::field_root::OnOff(id);
     }
     s.minigame    = players::field_root::OnOff(kMiniGamePlaying);
+    s.minigameAct = s.minigame ? players::field_root::OnOffOwner(kMiniGamePlaying) : 0;
     s.arena       = players::field_root::OnOff(kShowColosseumMenu);
     s.inBattle    = players::field_root::InBattle();
     s.skippable   = players::field_root::OnOff(kShowSkipPauseMenu) && !s.arena;  // the VR act holds 12 for its session
@@ -76,17 +78,15 @@ Signals Read() noexcept
     s.bike        = BikeChase();
     s.shopUp      = players::game_state::ShopUp();
     s.pauseWidget = players::game_state::PauseWidgetAlive();
-    // The cutscene manager and the field control lock come through the scene camera's read (Scene{} while its
-    // globals failed their check: no cutscene, skip or scene hold is known then). The lock holds the whole screen
-    // outside a battle only (the battle AI and the boss restrictions write lock bits of their own,
-    // research/RE-minigame-signal.md §1-2: a fight never collapses), and without the arena's bit 21, which a VR or
-    // colosseum session switches by phase: its menus collapse by ArenaMenu, its fights stay split.
+    // The cutscene manager and the field control lock's mask come through the scene camera's read (Scene{} while its
+    // globals failed their check: no cutscene, skip or bit is known then). The lock itself is no reason: a talk, an
+    // event camera or a pickup holds it, and those play on every view (the user, 2026-10-27); only its bit 21 is read,
+    // for the arena rule (a VR or colosseum session switches it by phase: its menus collapse by ArenaMenu, its fights
+    // stay split).
     const scene_camera::Scene scene = scene_camera::ReadSceneNow();
     s.cutscene    = scene.playing;
     s.skipping    = scene.skip;
     s.minigameBit = (scene.lockMask & facts::kControlLockMiniGame) != 0;
-    const std::uint32_t held = scene.lockMask & ~scene.mover & ~(s.arena ? facts::kControlLockMiniGame : 0u);
-    s.sceneHolds = !s.inBattle && (scene.playing || held != 0 || scene.lockCount != 0);
     return s;
 }
 
@@ -97,13 +97,14 @@ std::wstring SignalsText(const Signals& s)
         return L"the game state is not readable";
     }
     return std::format(L"game state {} ({}, menu kind {}), script menu {}, shop {}, pause widget {}, arena {} (minigame bit {}, "
-                       L"in battle {}), minigame {}, cutscene {}, bike {}, scene holds {}, skippable {}, skip {}, black {}, "
-                       L"loading {}, title {}",
+                       L"in battle {}), minigame {} (by {}), cutscene {}, bike {}, skippable {}, skip {}, black {}, loading {}, "
+                       L"title {}",
                        players::game_state::StateName(s.gameState), s.gameState, s.menuKind, s.scriptMenu ? L"on" : L"off",
                        s.shopUp ? L"up" : L"down", s.pauseWidget ? L"alive" : L"none", s.arena ? L"on" : L"off",
                        s.minigameBit ? L"on" : L"off", s.inBattle ? L"yes" : L"no", s.minigame ? L"on" : L"off",
-                       s.cutscene ? L"playing" : L"no", s.bike ? L"yes" : L"no", s.sceneHolds ? L"yes" : L"no", s.skippable ? L"on" : L"off",
-                       s.skipping ? L"on" : L"off", s.black ? L"on" : L"off", s.loading ? L"on" : L"off", s.title ? L"yes" : L"no");
+                       players::field_root::OnOffOwnerText(s.minigameAct), s.cutscene ? L"playing" : L"no", s.bike ? L"yes" : L"no",
+                       s.skippable ? L"on" : L"off", s.skipping ? L"on" : L"off", s.black ? L"on" : L"off",
+                       s.loading ? L"on" : L"off", s.title ? L"yes" : L"no");
 }
 
 }  // namespace
@@ -125,20 +126,28 @@ bool Install(const platform::GameImage& image) noexcept
                        .shape = control::Shape::Text,
                        .help  = L"what takes the whole screen now (the reason the one-window single view collapses the split), "
                                 L"and the game's signals it is read from",
-                       .get   = [] { return control::Value{std::format(L"{}: {}", NameOf(g_reason), SignalsText(g_signals))}; }});
-    platform::Log(L"whole screen: menus, shops, scenes, a cutscene skip, a held black screen, the loading screen and the title "
-                  L"are read from the game's own state each tick (the one-window single view's reasons); minigames by on/off 36, the "
-                  L"bike chase by its shared state, the VR simulator's and colosseum's menus by on/off 78 with the minigame bit "
-                  L"outside a battle (research/RE-minigame-signal.md)");
+                       .get   = [] {
+                           return control::Value{std::format(L"{}: {}{}", NameOf(g_reason), SignalsText(g_signals),
+                                                             ReasonOf(g_signals) != g_reason ? L" (held over the act gap)" : L"")};
+                       }});
+    platform::Log(L"whole screen: menus, shops, cutscenes, a cutscene skip, a held black screen, the loading screen and the title "
+                  L"are read from the game's own state each tick (the one-window single view's reasons; a talk, an event camera or a "
+                  L"pickup holding the field lock is none); minigames by on/off 36 (held up to {} ticks over the gap between a segment's "
+                  L"chained acts), the bike chase by its shared state, the VR simulator's and colosseum's menus by on/off 78 with the "
+                  L"minigame bit outside a battle (research/RE-minigame-signal.md)",
+                  kMinigameGapTicks);
     return true;
 }
 
 void Tick() noexcept
 {
-    const Signals now    = Read();
-    const Reason  reason = ReasonOf(now);
+    const Signals now = Read();
+    const Reason  raw = ReasonOf(now);
+    g_offTicks          = NextTicksOff(raw, g_offTicks);
+    const Reason reason = BridgeActGap(raw, g_reason, g_offTicks);
     // Info when something takes the whole screen or lets go (the state change); a reason changing within one moment
-    // (a cutscene into a held black into a loading screen) and each change of the signals at Debug.
+    // (a cutscene into a held black into a loading screen), the bridge over an act gap, and each change of the
+    // signals at Debug.
     if (!g_logged || (reason != Reason::None) != (g_reason != Reason::None))
     {
         platform::Log(L"whole screen: {}", NameOf(reason));
@@ -147,11 +156,15 @@ void Tick() noexcept
     {
         platform::LogDebug(L"whole screen: {} (within the moment)", NameOf(reason));
     }
+    if (reason != raw && g_offTicks == 1)
+    {
+        platform::LogDebug(L"whole screen: on/off 36 went off; the minigame moment is held up to {} ticks for its next act", kMinigameGapTicks);
+    }
     if ((!g_logged || !(now == g_signals)) && platform::Enabled(platform::Level::Debug))
     {
         try
         {
-            platform::LogDebug(L"whole screen: {} -> {}", SignalsText(now), NameOf(reason));
+            platform::LogDebug(L"whole screen: {} -> {}{}", SignalsText(now), NameOf(reason), reason != raw ? L" (held over the act gap)" : L"");
         }
         catch (...)
         {

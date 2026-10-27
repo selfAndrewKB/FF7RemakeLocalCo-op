@@ -93,7 +93,7 @@ struct Scene
 
     bool operator==(const Scene&) const = default;
 
-    /// The scene holds the players: the copy's reason to run, and the whole screen's (views/whole_screen.h). Player
+    /// The scene holds the players: the copy's reason to run (the whole screen no longer counts it, v0.110.0). Player
     /// 1's own crawl, squeeze or grappling hook locks only player 1 (as the session keeps the seats' members theirs
     /// through it): its bits hold no one else.
     bool Holds() const noexcept { return playing || (lockMask & ~mover) != 0 || lockCount != 0; }

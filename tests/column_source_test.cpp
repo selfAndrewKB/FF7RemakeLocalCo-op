@@ -103,7 +103,7 @@ void FieldPlay()
     static_assert(Decide(At(kTwoPlayers, SeatState::Playing, SeatState::Out)).SplitShown(), "constexpr");
 }
 
-/// The game takes the whole screen (a menu, a cutscene, a scene holding the players, a shop: views/whole_screen.h).
+/// The game takes the whole screen (a menu, a cutscene, a minigame, a shop: views/whole_screen.h).
 void WholeScreen()
 {
     {

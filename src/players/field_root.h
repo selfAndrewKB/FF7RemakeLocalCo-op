@@ -2,9 +2,9 @@
 
 // The field root and what the modules read off it, in one place (research/RE-lifecycle-world.md §3 and §8,
 // RE-script-release.md): the game's field root object (facts::kEndGameRootGlobal), its state manager (the field
-// control lock's mask and counter live there, as does the on/off table), the root's object that holds the character
-// registry and the field battle state, the battle system global (null outside battle), the party manager and the
-// game's own party leader getter. Before this header each module rebased the same globals and walked the same
+// control lock's mask and counter live there, as do the on/off table and the owner of each id), the root's object
+// that holds the character registry and the field battle state, the battle system global (null outside battle), the
+// party manager and the game's own party leader getter. Before this header each module rebased the same globals and walked the same
 // pointers itself (fourteen copies of the root, seven of the battle system, two of InBattle; cleanup step 3,
 // plan/code-alignment.md B1). Rebased and verified once at install, which runs right after weak_object's and before
 // every module that reads them; a module that needs them checks Installed() at its own install. Every read is
@@ -14,6 +14,7 @@
 // to the game thread, as before.
 
 #include <cstdint>
+#include <string>
 
 namespace lss::platform {
 class GameImage;
@@ -40,6 +41,11 @@ std::uint32_t ControlLockMask() noexcept;
 /// The on/off table on the state manager (facts::kOnOffTable: Square Enix's EndFieldOnOffTable, one reference count
 /// per id): whether `id` is on; false for an id past the table or while unread.
 bool OnOff(std::uint32_t id) noexcept;
+/// Who turned `id` on (facts::kOnOffOwners: the last non-zero reason a SetOn passed, an act's name for a data-set id);
+/// 0 while off, unread or past the table.
+std::uint64_t OnOffOwner(std::uint32_t id) noexcept;
+/// An owner's text for the log ("none" for 0).
+std::wstring OnOffOwnerText(std::uint64_t owner) noexcept;
 
 /// The root's object holding the character registry and the field battle state (facts::kEndGameRootCharaOwner),
 /// or null.

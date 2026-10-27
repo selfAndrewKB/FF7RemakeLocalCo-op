@@ -80,9 +80,6 @@ void EachSignal()
     s          = Readable();
     s.cutscene = true;
     EXPECT(ReasonOf(s) == Reason::Cutscene);
-    s            = Readable();
-    s.sceneHolds = true;
-    EXPECT(ReasonOf(s) == Reason::Scene);
     s           = Readable();
     s.skippable = true;
     EXPECT(ReasonOf(s) == Reason::SkippableScene);
@@ -101,34 +98,32 @@ void EachSignal()
 }
 
 /// The order (which reason the log names; Shown() is "not None" either way): a pause state over a menu and a scene,
-/// a menu over a scene, a cutscene over the lock that comes with it, a skip over a held black.
+/// a menu over a cutscene, a cutscene over its skip prompt, a chase over its opening scene.
 void Order()
 {
-    auto s       = Readable();
-    s.gameState  = kStateCinemaPause;
-    s.cutscene   = true;
-    s.sceneHolds = true;
+    auto s      = Readable();
+    s.gameState = kStateCinemaPause;
+    s.cutscene  = true;
     EXPECT(ReasonOf(s) == Reason::CinemaPause);
     s            = Readable();
     s.gameState  = kStatePauseMenu;
     s.shopUp     = true;  // a shop re-opened under a pause menu
     s.scriptMenu = true;
     EXPECT(ReasonOf(s) == Reason::PauseMenu);
-    s            = Readable();
-    s.shopUp     = true;
-    s.sceneHolds = true;  // a shop holds the field lock too
+    s          = Readable();
+    s.shopUp   = true;
+    s.cutscene = true;  // a shop opened by a scene
     EXPECT(ReasonOf(s) == Reason::Shop);
-    s            = Readable();
-    s.cutscene   = true;
-    s.sceneHolds = true;
-    s.skippable  = true;
+    s           = Readable();
+    s.cutscene  = true;
+    s.skippable = true;
     EXPECT(ReasonOf(s) == Reason::Cutscene);
     s          = Readable();
     s.bike     = true;
     s.cutscene = true;  // a chase's opening scene: the chase holds through it
     EXPECT(ReasonOf(s) == Reason::Bike);
-    // A VR or colosseum session: its fight stays split (78 with the bit in a battle, the lock not counted: the read
-    // leaves sceneHolds false in a battle), its menu collapses, a pause over it is the pause's.
+    // A VR or colosseum session: its fight stays split (78 with the bit in a battle), its menu collapses, a pause over
+    // it is the pause's.
     s             = Readable();
     s.arena       = true;
     s.minigameBit = true;
@@ -153,12 +148,77 @@ void Order()
     EXPECT(ReasonOf(s) == Reason::None);
 }
 
+/// The bridge over the gap between a minigame segment's chained acts: a minigame moment holds while nothing takes the
+/// screen and on/off 36 has been off for at most kMinigameGapTicks ticks; a longer gap ends it; any other reason is
+/// its own; no other moment is bridged.
+void ActGap()
+{
+    static_assert(kMinigameGapTicks >= 1, "the gap seen was one tick");
+    EXPECT(BridgeActGap(Reason::None, Reason::Minigame, 1) == Reason::Minigame);
+    EXPECT(BridgeActGap(Reason::None, Reason::Minigame, kMinigameGapTicks) == Reason::Minigame);
+    EXPECT(BridgeActGap(Reason::None, Reason::Minigame, kMinigameGapTicks + 1) == Reason::None);
+    EXPECT(BridgeActGap(Reason::Minigame, Reason::Minigame, 0) == Reason::Minigame);
+    EXPECT(BridgeActGap(Reason::PauseMenu, Reason::Minigame, 1) == Reason::PauseMenu);
+    EXPECT(BridgeActGap(Reason::None, Reason::Cutscene, 1) == Reason::None);
+    EXPECT(BridgeActGap(Reason::None, Reason::None, 1) == Reason::None);
+    // The tick after a bridged tick: the last reason is the held one, so the hold runs on to the cap.
+    Reason held = Reason::Minigame;
+    for (unsigned off = 1; off <= kMinigameGapTicks + 1; ++off)
+    {
+        held = BridgeActGap(Reason::None, held, off);
+        EXPECT((held == Reason::Minigame) == (off <= kMinigameGapTicks));
+    }
+    // The counter step: 0 on a minigame tick, one more per other tick up to the cap, where it stays.
+    EXPECT(NextTicksOff(Reason::Minigame, 7) == 0);
+    EXPECT(NextTicksOff(Reason::None, 0) == 1);
+    EXPECT(NextTicksOff(Reason::None, kMinigameGapTicks) == kMinigameGapTicks + 1);
+    EXPECT(NextTicksOff(Reason::None, kMinigameGapTicks + 1) == kMinigameGapTicks + 1);
+    EXPECT(NextTicksOff(Reason::PauseMenu, 1) == 2);
+    // The two together, as Tick runs them: the one-tick gap between chained acts never shows; a longer gap shows
+    // after exactly kMinigameGapTicks ticks and stays shown; another reason in the gap is its own and ends the hold.
+    struct Run
+    {
+        Reason   last  = Reason::None;
+        unsigned off   = kMinigameGapTicks + 1;  // the start: nothing was on
+        unsigned flips = 0;
+        Reason Tick(Reason raw)
+        {
+            off              = NextTicksOff(raw, off);
+            const Reason now = BridgeActGap(raw, last, off);
+            flips += (now != Reason::None) != (last != Reason::None);
+            last = now;
+            return now;
+        }
+    };
+    Run chain;
+    EXPECT(chain.Tick(Reason::Minigame) == Reason::Minigame);
+    EXPECT(chain.Tick(Reason::None) == Reason::Minigame);
+    EXPECT(chain.Tick(Reason::Minigame) == Reason::Minigame);
+    EXPECT(chain.flips == 1);
+    Run over;
+    over.Tick(Reason::Minigame);
+    for (unsigned i = 1; i <= kMinigameGapTicks + 3; ++i)
+    {
+        EXPECT((over.Tick(Reason::None) == Reason::Minigame) == (i <= kMinigameGapTicks));
+    }
+    EXPECT(over.flips == 2 && over.off == kMinigameGapTicks + 1);
+    Run menu;
+    menu.Tick(Reason::Minigame);
+    EXPECT(menu.Tick(Reason::None) == Reason::Minigame);
+    EXPECT(menu.Tick(Reason::PauseMenu) == Reason::PauseMenu);
+    EXPECT(menu.Tick(Reason::None) == Reason::None);
+    EXPECT(menu.flips == 2);
+}
+
 /// The signals compare field by field (the log's change test); the title by the field root's name.
 void Compare()
 {
     EXPECT(Readable() == Readable());
     auto changed     = Readable();
     changed.menuKind = 4;
+    EXPECT(!(changed == Readable()));
+    changed             = Readable();
+    changed.minigameAct = 1;  // the owner is part of the change test
     EXPECT(!(changed == Readable()));
     EXPECT(IsTitle(L"005-TITLB") && !IsTitle(L"080-SLU5B") && !IsTitle(L""));
     for (int i = 0; i <= static_cast<int>(Reason::Title); ++i)
@@ -174,6 +234,7 @@ int main()
     NothingKnown();
     EachSignal();
     Order();
+    ActGap();
     Compare();
     return lss::test::Report();
 }
