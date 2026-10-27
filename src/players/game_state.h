@@ -32,8 +32,8 @@ struct Snapshot
     std::wstring  location;         // the location FName as text ("" without a root or a name)
 };
 
-/// The last values Tick read.
-Snapshot Current() noexcept;
+/// The last values Tick read (a reference to them: copy what is kept).
+const Snapshot& Current() noexcept;
 
 /// The world the game mode names (AEndGameMode::GetWorld), or null. Game thread.
 void* World() noexcept;
@@ -44,6 +44,14 @@ void* World() noexcept;
 /// Blueprint-opened pause menu and Libra opened from the main menu). Read live, not from the
 /// tick's values. False while neither can be read. Game thread.
 bool MenuOwnsInput() noexcept;
+
+/// The shop UI's own "a shop is up" byte (EndUISystem[44]+0x370, RE-shop-two.md §3): a shop runs in the field state.
+/// False while unread. Game thread.
+bool ShopUp() noexcept;
+
+/// The game's own IsPauseMenuClosed says a pause-family menu is alive (a Blueprint-opened pause menu, Libra from the
+/// main menu). False while its check failed or the call raises. Game thread.
+bool PauseWidgetAlive() noexcept;
 
 /// The state's console word: none, boot, title, loading, play, pause, menu, leaving, chapter-start, other.
 const wchar_t* StateName(std::uint8_t state) noexcept;

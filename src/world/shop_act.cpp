@@ -32,15 +32,18 @@ using FindRowFn  = void* (*)(const void* tables, std::uint64_t name);
 
 constexpr std::size_t  kNotes    = 4;  // shop acts of further players alive at once (one shop UI: one at a time)
 constexpr std::int32_t kShopKind = 1;
-constexpr unsigned     kScopes   = players::scopes::Leader | players::scopes::Primary;
+constexpr unsigned     kRowScopes    = players::scopes::Leader | players::scopes::Primary;  // the camera on the opener's manager
+constexpr unsigned     kWindowScopes = players::scopes::Leader;  // the camera on the game's primary manager, player 1's
 
-/// A further player's shop act: the runner, its player and the character that player held at the start (a later
-/// call for another character, after a leave and a join on the same seat, is the game's).
+/// A further player's shop act: the runner, its player, the character that player held at the start (a later
+/// call for another character, after a leave and a join on the same seat, is the game's) and the scopes it started
+/// in (kept for the act's life).
 struct Note
 {
-    void* runner = nullptr;
-    int   seat   = 0;
-    void* member = nullptr;
+    void*    runner = nullptr;
+    int      seat   = 0;
+    void*    member = nullptr;
+    unsigned scopes = 0;
 };
 
 // Set at install, then only read.
@@ -51,6 +54,7 @@ platform::VTableEntry  g_update, g_finish, g_dtor;
 
 // Game thread.
 std::array<Note, kNotes> g_notes{};
+bool                     g_oneWindow = false;  // the next shop's camera on the game's primary manager (SetOneWindow)
 std::uint32_t g_created = 0, g_claimed = 0, g_notShops = 0, g_ended = 0, g_refused = 0, g_full = 0, g_stale = 0;
 
 /// The note is still this act's: the runner still carries the act's vtable (else it was freed by a path that bypassed
@@ -101,12 +105,13 @@ std::int32_t KindOf(std::uint64_t act) noexcept
 }
 
 /// The note's scope is open: its player still holds the character it opened the shop with, and the scope opened (or
-/// is already open for that player).
+/// is already open for that player, each scope the note names).
 bool Opened(const Note& note, const players::scopes::Scope& scope) noexcept
 {
     using players::scopes::OpenPlayer;
     return players::scopes::Member(note.seat) == note.member &&
-           (scope.Held() || (OpenPlayer(players::scopes::Leader) == note.seat && OpenPlayer(players::scopes::Primary) == note.seat));
+           (scope.Held() || (OpenPlayer(players::scopes::Leader) == note.seat &&
+                             ((note.scopes & players::scopes::Primary) == 0 || OpenPlayer(players::scopes::Primary) == note.seat)));
 }
 
 /// A later call of a noted act whose scope did not open: the rest of the act is the game's (logged once).
@@ -180,15 +185,16 @@ void* Create(void* runner, const std::uint64_t* act, std::uint32_t type, void* c
                              kNotes);
         return original(runner, act, type, channel, flag);
     }
-    *free = {runner, seat, players::scopes::Member(seat)};
+    *free = {runner, seat, players::scopes::Member(seat), g_oneWindow ? kWindowScopes : kRowScopes};
     {
-        const players::scopes::Scope scope(seat, kScopes);
+        const players::scopes::Scope scope(seat, free->scopes);
         if (free->member != nullptr && Opened(*free, scope))
         {
             void* const result = original(runner, act, type, channel, flag);
             ++g_claimed;
-            platform::Log(L"shop act: {} opened a shop: its camera on {}'s view, its character facing the shopkeeper",
-                          SeatName(seat), SeatName(seat));
+            const bool window = (free->scopes & players::scopes::Primary) == 0;
+            platform::Log(L"shop act: {} opened a shop: its camera on {}{}, its character facing the shopkeeper", SeatName(seat),
+                          window ? L"the screen's one view (player 1's manager, one window)" : SeatName(seat), window ? L"" : L"'s view");
             return result;
         }
     }
@@ -209,7 +215,7 @@ bool Update(void* runner, float dt)
         return original(runner, dt);
     }
     {
-        const players::scopes::Scope scope(note->seat, kScopes);
+        const players::scopes::Scope scope(note->seat, note->scopes);
         if (Opened(*note, scope))
         {
             return original(runner, dt);
@@ -228,7 +234,7 @@ char OnFinish(void* runner)
         return original(runner);
     }
     {
-        const players::scopes::Scope scope(note->seat, kScopes);
+        const players::scopes::Scope scope(note->seat, note->scopes);
         if (Opened(*note, scope))
         {
             return original(runner);
@@ -248,10 +254,10 @@ void* Destroy(void* runner, bool free)
     }
     const int seat = note->seat;
     {
-        const players::scopes::Scope scope(seat, kScopes);
+        const players::scopes::Scope scope(seat, note->scopes);
         if (Opened(*note, scope))
         {
-            void* const result = original(runner, free);  // the end blend back to the field camera, on the opener's manager
+            void* const result = original(runner, free);  // the end blend back to the field camera, on the shop camera's manager
             *note              = {};                      // after the original: the runner is freed by then, never read again
             ++g_ended;
             platform::Log(L"shop act: {}'s shop ended", SeatName(seat));
@@ -314,8 +320,8 @@ bool Install(const platform::GameImage& image) noexcept
                        .shape = control::Shape::Text,
                        .help  = L"further players' shops: the show-menu acts seen, the shops claimed and ended, the scopes refused",
                        .get   = [] { return control::Value{Report()}; }});
-    platform::Log(L"shop act: installed; a shop a further player opens zooms on that player's view and faces that player's "
-                  L"character");
+    platform::Log(L"shop act: installed; a shop a further player opens faces that player's character and zooms on that "
+                  L"player's view on a monitor row, on the screen's one view in one window");
     return true;
 }
 
@@ -329,11 +335,16 @@ void Remove() noexcept
     g_notes.fill({});
 }
 
+void SetOneWindow(bool oneWindow) noexcept
+{
+    g_oneWindow = oneWindow;
+}
+
 bool OwnsScene(int seat) noexcept
 {
     for (Note& note : g_notes)
     {
-        if (note.runner != nullptr && note.seat == seat && StillAct(note))
+        if (note.runner != nullptr && note.seat == seat && (note.scopes & players::scopes::Primary) != 0 && StillAct(note))
         {
             return true;
         }

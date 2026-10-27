@@ -77,9 +77,31 @@ void BeforeUpdateCamera(void* managerOne, int seat, void* manager) noexcept;
 /// now (null when the seat is out: nothing is touched; its own field camera slot stays on either way).
 void SetSource(int seat, bool playerOne, void* manager) noexcept;
 
-/// The scene holds the players as last read (the cutscene manager playing, or the field control lock outside player
-/// 1's own move): the Self mechanism's reason, for the column source's moment.
-bool SceneHolds() noexcept;
+/// The game's scene signals, as read.
+struct Scene
+{
+    bool          valid     = false;  // the state manager was readable
+    bool          manager   = false;  // the cutscene manager exists
+    bool          playing   = false;  // its playing test (any scene)
+    bool          skip      = false;  // its skip byte
+    std::uint32_t lockMask  = 0;      // the field control lock mask
+    std::uint32_t lockCount = 0;      // and counter
+    bool          skippable = false;  // on/off 12 ShowSkipPauseMenu
+    bool          black     = false;  // on/off 39, 40 or 53
+    bool          loading   = false;  // on/off 41
+    std::uint32_t mover     = 0;      // the lock bits that are player 1's own crawl, squeeze or grappling hook
+
+    bool operator==(const Scene&) const = default;
+
+    /// The scene holds the players: the copy's reason to run, and the whole screen's (views/whole_screen.h). Player
+    /// 1's own crawl, squeeze or grappling hook locks only player 1 (as the session keeps the seats' members theirs
+    /// through it): its bits hold no one else.
+    bool Holds() const noexcept { return playing || (lockMask & ~mover) != 0 || lockCount != 0; }
+};
+
+/// The scene signals read now (a few guarded reads and the game's playing test; all false before Install): the
+/// whole-screen read takes them before the session's tick, Tick reads them again after it.
+Scene ReadSceneNow() noexcept;
 
 /// The mirror players' copies (views/mirror_player), one per mirror slot 0..kMirrorSlots-1.
 inline constexpr int kMirrorSlots = 2;

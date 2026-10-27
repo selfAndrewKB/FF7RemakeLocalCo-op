@@ -1443,6 +1443,10 @@ inline constexpr std::uint32_t  kFieldAiLayers         = 15;
 /// leader to its AI, the last bit cleared returns it.
 inline constexpr std::uint32_t  kRootStateManager      = 0x138;
 inline constexpr std::uint32_t  kControlLockEvent      = 0x100000;
+/// Bit 21 of the same mask, EndFieldExclusion DisableController_MiniGame (research/RE-minigame-signal.md §2): held for the
+/// whole of Fort Condor; switched by phase through a VR simulator or colosseum session (on/off 78 ShowColosseumMenu
+/// held for the session), off in its fights.
+inline constexpr std::uint32_t  kControlLockMiniGame   = 0x200000;
 /// The leader funnels: every path that seats player 1 on a character passes PartyManager_SetPartyLeader(PM, actor,
 /// input, force) or its toad twin (PM, actor) before any party-manager write; both open with pushes.
 inline constexpr std::array<std::uint8_t, 16> kSetPartyLeaderEntry{
@@ -1946,6 +1950,10 @@ inline constexpr std::uint32_t kGameMapsThreePlayerLayout = 0x6A;
 /// (0x142F68540) on every redraw; each entry a 16-byte TArray<FPerPlayerSplitscreenData>, each record four floats
 /// {SizeX, SizeY, OriginX, OriginY}. A TArray's Num is the int32 after its data pointer.
 inline constexpr std::uint32_t kViewportClientSplitscreenInfo = 0x60;
+/// UGameViewportClient::bDisableSplitScreenOverride (research/RE-layout-fov.md §2.2 [CONFIRMED static]): while set, the
+/// split type is None whatever the player count (player 1 fills the screen, the others get a zero-size view). Not
+/// written by the constructor; no reflected setter in 4.18 (players/split_switch.h writes the byte).
+inline constexpr std::uint32_t kViewportClientDisableSplitOverride = 0x600;
 inline constexpr std::uint32_t kTArrayNum                     = 0x08;
 inline constexpr std::int32_t  kSplitscreenTypes              = 6;
 inline constexpr std::uint32_t kSplitscreenDataBytes          = 0x10;
@@ -2006,6 +2014,12 @@ inline constexpr std::uint32_t kFieldControlLockMask    = 0x11062B0;  // dword
 inline constexpr std::uint32_t kFieldControlLockCounter = 0x1109C88;  // dword
 inline constexpr std::uint32_t kOnOffTable              = 0x11063B4;  // dword per id, 92 ids
 inline constexpr std::uint32_t kOnOffCount              = 92;
+/// The bike chases (chapters 4 and 18) are a mode of their own, neither a cutscene nor an act with on/off 36
+/// (research/RE-minigame-signal.md §4 [CONFIRMED code]): the bike act fills a shared state and the game's own test (its
+/// pause-kind chooser) is "the shared state is set and its reference block's count at +8 is above 0".
+inline constexpr std::uintptr_t kBikeGameShared         = 0x14585A958;  // void*: the shared bike state, null outside a chase
+inline constexpr std::uintptr_t kBikeGameSharedRefCtrl  = 0x14585A960;  // void*: its reference block; int32 +8 the count
+inline constexpr std::uint32_t  kBikeGameSharedRefCount = 0x8;
 
 // Walk-up traversal for further players: ladders, squeezes, crawls, monkey bars, climbs and jumps
 // (research/RE-traversal-walkup-two.md, S-RMK-TRAVERSE3B; RE-traversal-action-two.md, S-RMK-TRAVERSE3A; both read in

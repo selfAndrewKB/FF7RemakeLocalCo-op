@@ -55,7 +55,7 @@ bool MirrorPlayerInstalled() noexcept;
 
 /// Game thread, once per engine tick, after the console's lines and before the session's tick: the seats' input
 /// tick kept, the game's state read (the session reads this tick's values; the console's lines, before it, the last
-/// tick's), the pads.
+/// tick's), the whole-screen read over it (the column source's moment), the pads.
 void TickBeforeSession() noexcept;
 
 /// What the columns' tick reads from the session.

@@ -40,6 +40,7 @@
 #include "players/scopes.h"
 #include "players/session.h"
 #include "players/split_render.h"
+#include "players/split_switch.h"
 #include "render/ao_origin.h"
 #include "render/area_blend.h"
 #include "render/bloom_origin.h"
@@ -59,6 +60,7 @@
 #include "views/letterbox_patch.h"
 #include "views/mirror_player.h"
 #include "views/scene_camera.h"
+#include "views/whole_screen.h"
 #include "views/split_scale.h"
 #include "views/window_span.h"
 #include "world/anim_views.h"
@@ -288,6 +290,11 @@ constexpr std::array kModules{
     // The game's state as readings, and the world around the views.
     // readings only; fine without
     Module{.name = L"game state", .install = Call<&players::game_state::Install>},
+    // without it the split stays through the whole-screen moments in one window (the mirror look)
+    Module{.name = L"split switch", .install = Call<&players::split_switch::Install>},
+    // without it no moment collapses the split in one window
+    Module{.name = L"whole screen", .install = Call<&views::whole_screen::Install>,
+           .needs = {Need<&players::game_state::Install>()}},
     // without it a member near a further player's camera vanishes in both halves
     Module{.name = L"party fade", .install = Call<&world::party_fade::Install>},
     // without it characters in a ladder or squeeze turn see-through near another (removed any time: its slots pass
@@ -505,6 +512,7 @@ void TickBeforeSession() noexcept
 {
     players::seat_camera::MaintainInputTick();
     players::game_state::Tick();  // the session reads this tick's values (the console's lines, before it, the last tick's)
+    views::whole_screen::Tick();  // the whole-screen read over them (the column source's moment, after the session)
     players::pad_presence::Tick();
 }
 
@@ -594,7 +602,7 @@ void TickHud(const Frame& frame) noexcept
     namespace op = hud::overlay_pass;
     hud::second_image::Columns columns;
     columns.count = frame.shown.SplitShown() ? std::min(1 + frame.count, op::kMaxColumns) : 1;  // the columns with a pass
-    const bool mirror      = !frame.shown.SplitShown() && frame.map.count > 1;
+    const bool mirror      = !frame.shown.SplitShown() && frame.map.count > 1 && !frame.shown.Single();  // the single view: one view, nothing to sample
     const int  viewColumns = std::min(frame.map.count, op::kMaxColumns);
     hud::overlay_layout::ViewShares shares{};
     int                             read = 0;  // the columns whose views were read, from the first
@@ -602,7 +610,9 @@ void TickHud(const Frame& frame) noexcept
     {
         read = column + 1;
     }
-    const bool views = read >= 2;  // a split, or the mirror beside player 1
+    // A split, or the mirror beside player 1; not on the frame the single view's switch is written (the engine's sizes
+    // change at the redraw, after this tick: the switch set means it shows, the fallback above decides otherwise).
+    const bool views = read >= 2 && !frame.shown.Single();
     const bool split = views && columns.count > 1 && read >= columns.count;
     hud::ui_targets::SetPlayerColumns(columns.count);  // a mirror's column samples player 1's HUD image
     hud::overlay_layout::Tick(views, shares, read);

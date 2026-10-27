@@ -94,7 +94,7 @@ const wchar_t* StateName(std::uint8_t state) noexcept
     }
 }
 
-Snapshot Current() noexcept
+const Snapshot& Current() noexcept
 {
     return g_last;
 }
@@ -208,13 +208,22 @@ bool MenuOwnsInput() noexcept
         return true;
     }
     // A shop runs in the field state (6): its UI's own "a shop is up" byte (RE-shop-two.md §3).
+    return ShopUp() || PauseWidgetAlive();
+}
+
+bool ShopUp() noexcept
+{
     const std::uint8_t* shop = nullptr;
     std::uint8_t        up   = 0;
-    if (g_shopSlot != nullptr && platform::CopyGuarded(&shop, g_shopSlot, sizeof(shop)) && shop != nullptr &&
-        ReadAt(shop, facts::kShopUp, up) && up != 0)
-    {
-        return true;
-    }
+    return g_shopSlot != nullptr && platform::CopyGuarded(&shop, g_shopSlot, sizeof(shop)) && shop != nullptr &&
+           ReadAt(shop, facts::kShopUp, up) && up != 0;
+}
+
+// Read by the whole-screen moment too (views/whole_screen.h), so a pause-family widget alive collapses the one-window
+// split; whether a widget of the family stays alive through a battle (Libra, a tutorial popup) is [UNKNOWN: the play
+// check reads the Debug signal line in a fight].
+bool PauseWidgetAlive() noexcept
+{
     if (g_pauseMenuClosed == nullptr)
     {
         return false;

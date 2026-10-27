@@ -67,27 +67,6 @@ struct Slots
     bool operator==(const Slots&) const = default;
 };
 
-/// The game's scene signals.
-struct Scene
-{
-    bool          valid    = false;  // the state manager was readable
-    bool          manager  = false;  // the cutscene manager exists
-    bool          playing  = false;  // its playing test (any scene)
-    bool          skip     = false;  // its skip byte
-    std::uint32_t lockMask = 0;      // the field control lock mask
-    std::uint32_t lockCount = 0;     // and counter
-    bool          skippable = false;  // on/off 12 ShowSkipPauseMenu
-    bool          black     = false;  // on/off 39, 40 or 53
-    bool          loading   = false;  // on/off 41
-    std::uint32_t mover     = 0;      // the lock bits that are player 1's own crawl, squeeze or grappling hook
-
-    bool operator==(const Scene&) const = default;
-
-    /// The scene holds the players: the mirror's reason to run. Player 1's own crawl, squeeze or grappling hook locks only
-    /// player 1 (as the session keeps the seats' members theirs through it): its bits hold no one else.
-    bool Holds() const noexcept { return playing || (lockMask & ~mover) != 0 || lockCount != 0; }
-};
-
 /// The mirror player's manager and its copy of every slot (views/mirror_player.h).
 struct MirrorPlayer
 {
@@ -196,12 +175,6 @@ Slots ReadSlots(const void* manager) noexcept
     return now;
 }
 
-bool OnOff(const std::uint8_t* stateManager, std::uint32_t id) noexcept
-{
-    std::uint32_t count = 0;
-    return id < facts::kOnOffCount && Read(stateManager + facts::kOnOffTable + 4 * id, count) && count != 0;
-}
-
 Scene ReadScene() noexcept
 {
     Scene now;
@@ -222,9 +195,10 @@ Scene ReadScene() noexcept
     {
         now.valid     = true;
         now.mover     = world::traversal_action::PlayerOneMoveBitsIn(now.lockMask);
-        now.skippable = OnOff(stateManager, 12);
-        now.black     = OnOff(stateManager, 39) || OnOff(stateManager, 40) || OnOff(stateManager, 53);
-        now.loading   = OnOff(stateManager, 41);
+        using players::field_root::OnOff;
+        now.skippable = OnOff(12);
+        now.black     = OnOff(39) || OnOff(40) || OnOff(53);
+        now.loading   = OnOff(41);
     }
     return now;
 }
@@ -723,9 +697,9 @@ void SetSource(int seat, bool playerOne, void* manager) noexcept
     }
 }
 
-bool SceneHolds() noexcept
+Scene ReadSceneNow() noexcept
 {
-    return g_scene.Holds();
+    return g_cutsceneManager == nullptr ? Scene{} : ReadScene();
 }
 
 void SetMirror(int slot, void* controller, void* manager, void* managerOne) noexcept

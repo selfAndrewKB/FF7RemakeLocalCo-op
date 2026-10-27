@@ -93,7 +93,9 @@ add_library(LocalSplitScreen SHARED
     src/players/seat_objects.cpp
     src/players/session.cpp
     src/players/weak_object.cpp
+    src/players/single_view.cpp
     src/players/split_render.cpp
+    src/players/split_switch.cpp
     src/players/unreal_call.cpp
     src/render/ao_origin.cpp
     src/render/bloom_origin.cpp
@@ -115,6 +117,7 @@ add_library(LocalSplitScreen SHARED
     src/views/display_align.cpp
     src/views/mirror_player.cpp
     src/views/scene_camera.cpp
+    src/views/whole_screen.cpp
     src/views/monitor_row.cpp
     src/views/window_span.cpp
     src/world/actor_place.cpp
@@ -379,6 +382,21 @@ add_executable(ColumnSourceTests
 target_include_directories(ColumnSourceTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_compile_features(ColumnSourceTests PRIVATE cxx_std_20)
 add_test(NAME column_source COMMAND ColumnSourceTests)
+
+add_executable(WholeScreenRulesTests
+    tests/whole_screen_rules_test.cpp
+)
+target_include_directories(WholeScreenRulesTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(WholeScreenRulesTests PRIVATE cxx_std_20)
+add_test(NAME whole_screen_rules COMMAND WholeScreenRulesTests)
+
+add_executable(SingleViewTests
+    tests/single_view_test.cpp
+    src/players/single_view.cpp
+)
+target_include_directories(SingleViewTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(SingleViewTests PRIVATE cxx_std_20)
+add_test(NAME single_view COMMAND SingleViewTests)
 
 add_executable(SettingsTests
     tests/settings_test.cpp

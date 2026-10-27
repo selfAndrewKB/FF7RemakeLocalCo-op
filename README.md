@@ -210,8 +210,13 @@ src/
     seats.h                 The seats: the further human players the mod adds (plan/seats.md)
     session                 The further players (seats) joining, taking their party member, and leaving, through UE's
                             and the game's own paths, on the game thread
+    single_view             The engine's single view: the whole screen player 1's view alone while further players are
+                            in (their controllers, characters and pads untouched)
     split_render            The single-player look in each half: the effects stock UE 4.18 switches off for a split
                             viewport
+    split_switch            The game viewport's stock split switch, UGameViewportClient::bDisableSplitScreenOverride:
+                            while it is set, UpdateActiveSplitscreenType picks the None layout whatever the player
+                            count, player 1's view fills the screen and every …
     unreal_call             A reflected engine call (UObject::ProcessEvent) under a structured-exception guard, shared
                             by the modules that drive the game's reflected setters (players/session, hud/root_placement)
     weak_object             UE4 weak object pointers as the game stores them: {the object's index in GUObjectArray, its
@@ -336,6 +341,11 @@ src/
     split_scale             Split views fill their part of the window whatever the game's resolution option
     split_scale_rules.h     The pure rule of views/split_scale: how far the split views must be scaled so they fit the
                             scene buffer
+    whole_screen            Whether the game shows something that takes the whole screen, from the game's own state: the
+                            reason the one-window single view collapses the split
+    whole_screen_rules.h    Whether the game shows something that takes the whole screen: the decision, pure, over the
+                            signals views/whole_screen.cpp reads each tick (views/whole_screen.h names the game state
+                            behind each one)
     window_span             The game window spanned across a row of monitors, one full 16:9 view per player, through the
                             game's own levers
   battle/                   battle per seat: the command menu, targeting, the cursor, the lock and sequence cameras, the
@@ -383,5 +393,5 @@ src/
                             (tests/listener_rules_test.cpp)
     listeners               Every player hears the sounds near them: each SEAD sound is measured from the nearest
                             player's listener
-tests/                      46 host-side test programs (ctest), one per pure header or code stub; run without the game
+tests/                      48 host-side test programs (ctest), one per pure header or code stub; run without the game
 ```

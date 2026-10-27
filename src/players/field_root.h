@@ -37,6 +37,10 @@ bool ControlLock(std::uint32_t& mask, std::uint32_t& counter) noexcept;
 /// The mask alone (one read): 0 when free or unread.
 std::uint32_t ControlLockMask() noexcept;
 
+/// The on/off table on the state manager (facts::kOnOffTable: Square Enix's EndFieldOnOffTable, one reference count
+/// per id): whether `id` is on; false for an id past the table or while unread.
+bool OnOff(std::uint32_t id) noexcept;
+
 /// The root's object holding the character registry and the field battle state (facts::kEndGameRootCharaOwner),
 /// or null.
 std::uint8_t* CharaOwner() noexcept;

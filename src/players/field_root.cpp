@@ -86,6 +86,13 @@ std::uint32_t ControlLockMask() noexcept
     return manager != nullptr && Read(manager + facts::kFieldControlLockMask, mask) ? mask : 0;
 }
 
+bool OnOff(std::uint32_t id) noexcept
+{
+    const std::uint8_t* manager = StateManager();
+    std::uint32_t       count   = 0;
+    return id < facts::kOnOffCount && manager != nullptr && Read(manager + facts::kOnOffTable + 4 * id, count) && count != 0;
+}
+
 std::uint8_t* CharaOwner() noexcept
 {
     return static_cast<std::uint8_t*>(ReadPointer(Root(), facts::kEndGameRootCharaOwner));

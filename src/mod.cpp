@@ -35,6 +35,8 @@
 #include "players/seat_camera.h"
 #include "players/scopes.h"
 #include "players/session.h"
+#include "players/single_view.h"
+#include "players/split_switch.h"
 #include "players/split_render.h"
 #include "players/weak_object.h"
 #include "views/column_rules.h"
@@ -42,6 +44,7 @@
 #include "views/columns.h"
 #include "views/mirror_player.h"
 #include "views/scene_camera.h"
+#include "views/whole_screen.h"
 #include "views/window_span.h"
 #include "world/shop_act.h"
 
@@ -61,7 +64,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.108.0-seat-names";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.109.0-single-view";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
@@ -229,6 +232,7 @@ public:
             Hook::UnregisterCallback(tickCallback_);
         }
         remote_.Close();
+        LogSingleViewChange(singleView_.Release());  // the mod's switch cleared first: the split back for the game
         lss::views::mirror_player::Clear(L"the mod unloads");
         lss::players::split_render::Remove();  // after the mirrors: the mask back to zero so a reinstall finds it free
         lss::modules::Remove();                // the table in reverse (modules.h)
@@ -326,28 +330,34 @@ private:
         columns_ = MapOfList();
         lss::hud::overlay_pass::SetMap(columns_);
         // Where each column's view comes from this tick (views/column_source.h decides; this is the one place that
-        // applies it): a seat on player 1's picture gets the every-slot camera copy and no HUD pass of its own.
+        // applies it): the engine's single view through the viewport's switch (players/single_view.h), a seat on
+        // player 1's picture gets the every-slot camera copy and no HUD pass of its own.
         lss::views::column_source::Moment moment;
         moment.columnsHeld = columns.columnsHeld;
         moment.choice      = singleViewChoice_;
         moment.map         = columns_;
-        moment.sceneHolds  = lss::views::scene_camera::SceneHolds();
+        moment.wholeScreen = session_.Count() > 0 && lss::views::whole_screen::Shown();
         for (int seat = 1; seat <= lss::players::kSeatsBuilt; ++seat)
         {
             moment.seats[static_cast<std::size_t>(seat)]   = session_.State(seat);
             moment.ownShop[static_cast<std::size_t>(seat)] = lss::world::shop_act::OwnsScene(seat);
         }
-        // The engine's single view in one window is not built yet (plan/next-phase.md §7: wanted since 2026-10-26, the
-        // first build after the cleanup): the decision gives every further column player 1's picture instead, never a
-        // split with a menu over it; said once.
-        if (moment.choice == lss::views::column_source::Override::Single && !columns.columnsHeld && !singleViewUnbuiltLogged_ &&
-            session_.Count() > 0)
+        lss::views::column_source::Shown shown = lss::views::column_source::Decide(moment);
+        LogSingleViewChange(singleView_.Update(shown.Single()));
+        if (shown.Single() && !singleView_.Single())
         {
-            singleViewUnbuiltLogged_ = true;
-            Log(L"column source: the engine's single view is asked for but not built; every further column shows player 1's "
-                L"picture instead (the mirror look)");
+            // The switch could not be set (or read): the columns stay on screen, so the same moment is answered as
+            // with columns held: player 1's camera and HUD in every further column (never a split with a menu over it).
+            moment.columnsHeld = true;
+            shown              = lss::views::column_source::Decide(moment);
         }
-        FollowShown(lss::views::column_source::Decide(moment));
+        // The other way round (the split decided while the switch stays set: a clear that failed, or someone else's
+        // switch) the screen stays single; the policy's log says so, and the HUD follows the engine's view sizes.
+        FollowShown(shown);
+        // The next shop a further player opens: its camera on the screen's one view in one window (where the single
+        // view can show it), on the opener's on a row or under the console's off (world/shop_act.h).
+        lss::world::shop_act::SetOneWindow(!columns.columnsHeld &&
+                                           singleViewChoice_ != lss::views::column_source::Override::Split);
         lss::modules::TickAfterSession(FrameNow());
     }
 
@@ -409,6 +419,15 @@ private:
             lss::views::scene_camera::SetSource(seat, shown.OnPlayerOne(seat), ManagerOfSeat(seat));
         }
         shown_ = shown;
+    }
+
+    /// The single view's change (players/single_view.h), logged once per change.
+    static void LogSingleViewChange(lss::players::SingleViewChange change) noexcept
+    {
+        if (const std::wstring text = lss::players::Describe(change); !text.empty())
+        {
+            Log(L"{}", text);
+        }
     }
 
     /// This tick's facts for the modules (modules.h), read once from the session: each seat's word, player and
@@ -477,7 +496,7 @@ private:
     lss::views::columns::Map            columns_;  // this tick's map (set before the modules that read it)
     lss::views::column_source::Shown    shown_;    // this tick's decision
     lss::views::column_source::Override singleViewChoice_ = lss::views::column_source::Override::Auto;
-    bool                                singleViewUnbuiltLogged_ = false;
+    lss::players::SingleView            singleView_{{&lss::players::split_switch::Read, &lss::players::split_switch::Write}};
     bool                                installed_         = false;
     std::array<bool, lss::players::scopes::kMaxPlayers> joinWasDown_{};   // by seat (index 0 unused)
     std::array<bool, lss::players::scopes::kMaxPlayers> leaveWasDown_{};
