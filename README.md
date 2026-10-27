@@ -60,6 +60,8 @@ readings are `<switch>.<what>`, and an area's readings `<area>.<what>`. Today:
   `hud-targets-log <renders>`; readings `hud.layout`, `hud.overlay`, `hud.minimap`,
   `hud.markers`, `hud.field-icons`, `hud.outside-icons`, `hud.image-ms`; `hud.dump roots|shown|all [<text>]`.
 - **Rendering and sound:** `ao-origin`, `bloom-origin`, `ssr-origin`, `distortion-apply`, `sun-cascades`, `area-blend`,
+  `shadows-areas`, `shadows-sun`, `fog-areas`, `shadows-lamps`, `shadows-casters` (each view's shadow and fog
+  distances and lamp shadows from its own camera),
   `one-family`, `movie-frame` (a pre-rendered movie in every view), `history-cut <n>`; readings `ssr-origin.shaders`,
   `sun-cascades.away`, `render.area-blend`, `movie-frame.state`, `history-cut.raised`, `shadows`, `fog-volumes`,
   `fog-lights`, `sound`; tests `volume-box` (off at start; reading `.views`), `occlusion-exempt <a b, c d>|none`, `occlusion-exempt.views`,
