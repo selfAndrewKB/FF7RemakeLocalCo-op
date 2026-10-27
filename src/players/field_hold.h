@@ -87,14 +87,20 @@ constexpr bool SameIgnoringCase(std::wstring_view a, std::wstring_view b) noexce
     return true;
 }
 
-/// The level settings whose arrival the state manager signals: the four Status names
-/// StateMgr_OnActorSettingArrived_SendArg2Signal 0x14114E100 compares, without case [CONFIRMED code]. A member's
-/// own next state with one of these walks it on after its arrival: a scripted path (Aerith's run, then her lead,
-/// Ch. 8).
-constexpr bool ArrivalSetting(std::wstring_view status) noexcept
+/// The Lead setting by its row's Status (the name StateMgr_OnActorSettingArrived_SendArg2Signal 0x14114E100
+/// compares, without case [CONFIRMED code]): the "follow this character" script the user's rule hands a member back
+/// for. A Lead ahead in a member's own chain of states (its run to a mark, a stay, then the lead: Aerith, Ch. 8,
+/// live 2026-10-27) makes the whole chain the level's path for the member.
+constexpr bool LeadSetting(std::wstring_view status) noexcept
 {
-    return SameIgnoringCase(status, L"Lead") || SameIgnoringCase(status, L"MoveToTarget") ||
-           SameIgnoringCase(status, L"FollowActor") || SameIgnoringCase(status, L"RouteMove");
+    return SameIgnoringCase(status, L"Lead");
+}
+
+/// The Stable setting: the member stands again and its scripted path is over; a Lead after it is the level's next
+/// script (a later beat's), not this path's, so the walk stops here.
+constexpr bool PathEnd(std::wstring_view status) noexcept
+{
+    return SameIgnoringCase(status, L"Stable");
 }
 
 enum class Hold : std::uint8_t

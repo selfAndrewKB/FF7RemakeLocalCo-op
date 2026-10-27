@@ -33,6 +33,8 @@ constexpr std::uint32_t kCensusEveryTicks = 60;
 constexpr std::uint32_t kMaxIconRecords   = 64;
 constexpr std::size_t   kMaxNameChars     = 96;
 constexpr std::size_t   kMaxStateChars    = 1024;  // a next-state name (the FName limit): read whole, or its lookup misses
+constexpr std::size_t   kPathLinks        = 16;    // how many of the member's own states ahead are walked for a Lead
+constexpr std::size_t   kPathNexts        = 8;     // next states read per row (the game reads 8 triggers per row)
 
 std::uintptr_t   g_triggerTables     = 0;
 std::uintptr_t   g_stateChangeTables = 0;
@@ -69,7 +71,7 @@ struct Judgment
     std::int64_t  object = 0, state = 0;
     std::uint8_t  kind       = 0;
     bool          guide      = false;
-    bool          waiter     = false;  // another waiter, a direct set on another object, or the member's own next setting (a scripted path)
+    bool          waiter     = false;  // another waiter, a direct set on another object, or a Lead ahead in the member's own chain
     bool          marker     = false;  // the story's marker rides on the member
     std::uint32_t censusTick = 0;
     std::uint32_t calls      = 0;
@@ -239,16 +241,126 @@ catch (...)
     *out = 0;
 }
 
-/// The Status text of the state row named `state` (the game's state-change tables); empty if unknown.
-std::wstring StatusOf(const std::wstring& state) noexcept
+/// The state row named `state` (the game's state-change tables); null if unknown.
+const std::uint8_t* StateRow(const std::wstring& state) noexcept
 {
     std::int64_t name = 0;
     if (state.empty() || !platform::CallGuarded(&FindName, state.c_str(), &name) || name == 0)
     {
-        return L"";
+        return nullptr;
     }
-    const std::uint8_t* row = TableRow(g_stateChangeTables, name);
-    return row == nullptr ? L"" : Text(row + facts::kStateRowStatus);
+    return TableRow(g_stateChangeTables, name);
+}
+
+/// A row's next states (NextStateChange, FStrings of 16 bytes), capped; the empty ones skipped.
+std::vector<std::wstring> NextStates(const std::uint8_t* row) noexcept
+{
+    std::vector<std::wstring> out;
+    const std::uint8_t*       data = nullptr;
+    std::int32_t              num  = 0;
+    if (!Read(row + facts::kStateRowNextStates, data) || !Read(row + facts::kStateRowNextStates + 8, num) || data == nullptr)
+    {
+        return out;
+    }
+    for (std::int32_t i = 0; i < num && static_cast<std::size_t>(i) < kPathNexts; ++i)
+    {
+        std::wstring next = Text(data + 16 * i, kMaxStateChars);
+        if (!next.empty())
+        {
+            out.push_back(std::move(next));
+        }
+    }
+    return out;
+}
+
+struct Path
+{
+    bool         lead = false;  // a Lead among the states ahead
+    std::wstring text;          // the states walked, to the Lead if one was found
+};
+
+/// The member's own states ahead of `first`, breadth first through each row's next states (kPathLinks rows at
+/// most, each once; a Stable ends a branch: the member stands again, and a Lead after it is a later script's): a
+/// Lead among them makes the chain the level's path for the member.
+Path PathAhead(const std::wstring& first) noexcept
+try
+{
+    Path path;
+    if (first.empty())
+    {
+        path.text = L"?";
+        return path;
+    }
+    struct Link
+    {
+        std::wstring name, status;
+        std::size_t  parent;
+    };
+    std::vector<Link> links{{first, L"", 0}};
+    bool              truncated = false;
+    for (std::size_t i = 0; i < links.size(); ++i)
+    {
+        const std::uint8_t* row = StateRow(links[i].name);
+        if (row == nullptr)
+        {
+            links[i].status = L"status unread";
+            continue;
+        }
+        links[i].status = Text(row + facts::kStateRowStatus);
+        if (field_hold::LeadSetting(links[i].status))
+        {
+            // The path to it, parent by parent.
+            std::vector<std::size_t> trail;
+            for (std::size_t at = i;; at = links[at].parent)
+            {
+                trail.push_back(at);
+                if (at == 0)
+                {
+                    break;
+                }
+            }
+            for (auto it = trail.rbegin(); it != trail.rend(); ++it)
+            {
+                path.text += std::format(L"{}{} ({})", it == trail.rbegin() ? L"" : L" -> ", links[*it].name, links[*it].status);
+            }
+            path.text += L": a lead ahead, the level walks the member on";
+            path.lead = true;
+            return path;
+        }
+        if (field_hold::PathEnd(links[i].status))
+        {
+            continue;  // the member stands again: the path ends here; a later Lead is another script
+        }
+        for (std::wstring& next : NextStates(row))
+        {
+            bool seen = false;
+            for (const Link& link : links)
+            {
+                seen = seen || link.name == next;
+            }
+            if (seen)
+            {
+                continue;
+            }
+            if (links.size() >= kPathLinks)
+            {
+                truncated = true;
+                break;
+            }
+            links.push_back({std::move(next), L"", i});
+        }
+    }
+    // No lead: every state walked, so the log shows the whole chain and where a lead would have to come from.
+    for (std::size_t i = 0; i < links.size(); ++i)
+    {
+        path.text += std::format(L"{}{} ({})", i == 0 ? L"" : L", ", links[i].name, links[i].status.empty() ? L"no status" : links[i].status);
+    }
+    path.text += truncated ? L": the walk's limit, no lead among them" : L": the path's end, no lead";
+    return path;
+}
+catch (...)
+{
+    return Path{.text = L"the walk raised an exception"};
 }
 
 struct Census
@@ -256,7 +368,7 @@ struct Census
     bool         read    = false;
     std::int64_t trigger = 0;
     bool         self    = false;  // the member's own step waits (always, with a trigger)
-    bool         chain   = false;  // the member's own next state is another arrival setting: the level walks it on
+    bool         chain   = false;  // a Lead ahead in the member's own chain of states: the level walks it on
     int          others  = 0;      // other waiters (scope) plus direct sets on other objects
     std::wstring text;
 };
@@ -343,12 +455,10 @@ try
             const std::wstring next  = known ? Text(nextStates + 16 * i, kMaxStateChars) : L"?";
             if (&s == self)
             {
-                census.self = true;
-                const std::wstring status = known ? StatusOf(next) : L"";
-                census.chain              = field_hold::ArrivalSetting(status);
-                census.text += std::format(L"; self -> {}{}", next,
-                                           census.chain ? std::format(L" ({}: the level walks the member on)", status)
-                                                        : std::format(L" ({})", status.empty() ? L"status unread" : status));
+                census.self     = true;
+                const Path path = PathAhead(known ? next : L"");
+                census.chain    = path.lead;
+                census.text += std::format(L"; self -> {}", path.text);
             }
             else
             {
@@ -468,10 +578,10 @@ bool Install(const platform::GameImage& image) noexcept
     g_storyFlagIsSet    = reinterpret_cast<StoryFlagIsSetFn>(*flag);
     control::Register({.name = L"lead.gate", .shape = control::Shape::Text,
                        .help = L"the last LEAD or run to a mark on a further player's member judged: its arrival trigger, the level's waiters, the story's "
-                               L"marker, the member's own next setting, and the verdict (guide: to its AI; staging: the player's)",
+                               L"marker, the member's own states ahead, and the verdict (guide: to its AI; staging: the player's)",
                        .get  = [] { return control::Value{Reading()}; }});
     platform::Log(L"lead gate: installed; a LEAD or a run to a mark on a further player's member goes to its AI when a level step "
-                  L"waits on its arrival, the story's marker rides on it, or its own next setting walks it on");
+                  L"waits on its arrival, the story's marker rides on it, or a lead is ahead in its own chain of states");
     return true;
 }
 
