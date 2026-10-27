@@ -280,6 +280,13 @@ target_include_directories(FieldHoldTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/s
 target_compile_features(FieldHoldTests PRIVATE cxx_std_20)
 add_test(NAME field_hold COMMAND FieldHoldTests)
 
+add_executable(StatePathTests
+    tests/state_path_test.cpp
+)
+target_include_directories(StatePathTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(StatePathTests PRIVATE cxx_std_20)
+add_test(NAME state_path COMMAND StatePathTests)
+
 add_executable(AnimChoiceTests
     tests/anim_choice_test.cpp
 )

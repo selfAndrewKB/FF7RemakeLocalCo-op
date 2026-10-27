@@ -217,6 +217,8 @@ src/
     split_switch            The game viewport's stock split switch, UGameViewportClient::bDisableSplitScreenOverride:
                             while it is set, UpdateActiveSplitscreenType picks the None layout whatever the player
                             count, player 1's view fills the screen and every …
+    state_path.h            A member's own chain of level states ahead of its current setting, walked as the game's data
+                            lays it out
     unreal_call             A reflected engine call (UObject::ProcessEvent) under a structured-exception guard, shared
                             by the modules that drive the game's reflected setters (players/session, hud/root_placement)
     weak_object             UE4 weak object pointers as the game stores them: {the object's index in GUObjectArray, its
@@ -393,5 +395,5 @@ src/
                             (tests/listener_rules_test.cpp)
     listeners               Every player hears the sounds near them: each SEAD sound is measured from the nearest
                             player's listener
-tests/                      48 host-side test programs (ctest), one per pure header or code stub; run without the game
+tests/                      49 host-side test programs (ctest), one per pure header or code stub; run without the game
 ```

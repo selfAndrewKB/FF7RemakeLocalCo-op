@@ -1506,6 +1506,11 @@ inline constexpr std::uint32_t  kStateSlotState          = 0x08;
 inline constexpr std::uint32_t  kStateSlotRow            = 0x10;
 inline constexpr std::uint32_t  kStateRowStatus          = 0x50;  // the Status FString (count +0x58): "Lead", "MoveToTarget", "Stable", ...
 inline constexpr std::uint32_t  kStateRowStringArgs      = 0x78;
+/// A move setting's destination: StringArgumentList[1] of a MoveToTarget or Lead row names a field point
+/// (FieldAISetting_MoveToTarget 0x1411663B0 looks it up and does not run without it; FieldAISetting_Lead_L1 the
+/// same). For FollowActor it names the actor followed, for RouteMove the route's base name (points base+n).
+/// [CONFIRMED code 2026-10-27, RE-lead-arrival-wait.md §6]
+inline constexpr std::uint32_t  kStateRowDestinationArg  = 1;
 inline constexpr std::uint32_t  kStateRowTriggers        = 0x98;
 inline constexpr std::uint32_t  kStateRowNextStates      = 0xA8;
 inline constexpr std::uint32_t  kStateRowTriggersRead    = 8;
@@ -1564,6 +1569,18 @@ inline constexpr std::uint32_t  kStoryRowIconSlots       = 3;
 inline constexpr std::array<std::uint8_t, 16> kStoryFlagIsSetEntry{
     0x48, 0x89, 0x5C, 0x24, 0x18, 0x48, 0x89, 0x74, 0x24, 0x20, 0x57, 0x48, 0x83, 0xEC, 0x20, 0x48};
 inline constexpr platform::FunctionFact kStoryFlagIsSet{L"StoryFlag_IsSet", 0x140B05060, kStoryFlagIsSetEntry};
+/// The field points: a native manager at [root+0x140] holding the loaded levels' named points (actors register under
+/// their first tag at BeginPlay, layout packs their TargetPoints; EndPlay removes them).
+/// FieldPoint_FindByName(manager, const FName*) returns the point's FTransform (translation at +0x10) or null; a
+/// pure hash probe on the game thread, the result copied at once (the table moves as levels stream). The objective
+/// marker resolves its target through it first and draws at the record's shown position (+0x34, world cm).
+/// [CONFIRMED code 2026-10-27, RE-lead-arrival-wait.md §6, RE-navi-icon-target.md §1.3]
+inline constexpr std::uint32_t  kRootFieldPoints         = 0x140;
+inline constexpr std::uint32_t  kFieldPointLocation      = 0x10;
+inline constexpr std::uint32_t  kObjectiveIconRecordAt   = 0x34;  // the shown position (FVector, world cm)
+inline constexpr std::array<std::uint8_t, 16> kFieldPointFindByNameEntry{
+    0x40, 0x53, 0x48, 0x83, 0xEC, 0x20, 0x4C, 0x8B, 0x02, 0x48, 0x8D, 0x59, 0x08, 0x48, 0x8B, 0xCB};
+inline constexpr platform::FunctionFact kFieldPointFindByName{L"FieldPoint_FindByName", 0x140FF89C0, kFieldPointFindByNameEntry};
 
 // --- The battle target cursor (RE-target-cursor-two.md) --------------------------------------------------------
 /// The one cursor widget's pointer on the battle system (outside the target fields), and the HUD keys the cursor

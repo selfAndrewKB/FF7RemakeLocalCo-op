@@ -8,13 +8,16 @@
 #include "platform/verified_code.h"
 #include "players/field_hold.h"
 #include "players/field_root.h"
+#include "players/state_path.h"
 
 #include <Unreal/NameTypes.hpp>
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <format>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -27,6 +30,7 @@ using platform::ReadPointer;
 
 using StoryFlagIsSetFn = char (*)(const std::int64_t* flag);
 using FindRowFn        = void* (*)(void* table, std::int64_t name);
+using FieldPointFindFn = const std::uint8_t* (*)(void* points, const std::int64_t* name);
 
 // A staging lead's or run's waiters are read again this often (the marker each call).
 constexpr std::uint32_t kCensusEveryTicks = 60;
@@ -40,6 +44,7 @@ constexpr std::size_t   kPathNexts        = 8;     // next states read per row (
 std::uintptr_t   g_triggerTables     = 0;
 std::uintptr_t   g_stateChangeTables = 0;
 StoryFlagIsSetFn g_storyFlagIsSet    = nullptr;
+FieldPointFindFn g_fieldPointFind    = nullptr;
 
 /// The field AI whose handler last failed to read, and the kind: the failure is logged once (Debug) and then at
 /// Trace while it lasts.
@@ -275,16 +280,104 @@ std::vector<std::wstring> NextStates(const std::uint8_t* row) noexcept
     return out;
 }
 
+/// A world location (UE centimetres), as the game's FVector lays it out.
+struct Vec3
+{
+    float x = 0, y = 0, z = 0;
+};
+
+/// A shown objective marker's target and where the game draws it (the record's shown position, world centimetres).
+struct MarkerPoint
+{
+    std::int64_t target = 0;
+    Vec3         at;
+};
+
+/// A named point's world location: the level's field point of that name, the lookup the objective marker makes
+/// first (RE-lead-arrival-wait.md §6); false when the name is no field point of the loaded level.
+bool PointLocation(std::int64_t name, Vec3& out) noexcept
+{
+    std::uint8_t*       root      = field_root::Root();
+    void*               points    = root != nullptr ? ReadPointer(root, facts::kRootFieldPoints) : nullptr;
+    const std::uint8_t* transform = nullptr;
+    if (g_fieldPointFind == nullptr || points == nullptr ||
+        !platform::CallGuarded(g_fieldPointFind, transform, points, &name) || transform == nullptr)
+    {
+        return false;
+    }
+    return Read(transform + facts::kFieldPointLocation, out);  // copied at once: the table moves as levels stream
+}
+
+/// Where a move goes, in words: its destination's name and location and the distance to the nearest shown marker.
+std::wstring Where(std::int64_t destination, const std::vector<MarkerPoint>& markers) noexcept
+try
+{
+    if (destination == 0)
+    {
+        return L"no destination named";
+    }
+    Vec3 at;
+    if (!PointLocation(destination, at))
+    {
+        return std::format(L"{} (not a field point: an actor or route name, or another level's point)", Name(destination));
+    }
+    std::wstring text =
+        std::format(L"{} at ({:.1f}, {:.1f}, {:.1f}) m", Name(destination), at.x / 100, at.y / 100, at.z / 100);
+    const MarkerPoint* nearest = nullptr;
+    float              best    = 0;
+    for (const MarkerPoint& m : markers)
+    {
+        const float d = std::hypot(at.x - m.at.x, at.y - m.at.y, at.z - m.at.z);
+        if (nearest == nullptr || d < best)
+        {
+            nearest = &m;
+            best    = d;
+        }
+    }
+    if (nearest != nullptr)
+    {
+        text += std::format(L", {:.1f} m from the marker on {}", best / 100, Name(nearest->target));
+    }
+    return text;
+}
+catch (...)
+{
+    return L"?";
+}
+
+/// A state row as the walk needs it, through the game's own lookup (the state-change tables); nullopt when unknown.
+std::optional<state_path::Row> PathRow(const std::wstring& name) noexcept
+try
+{
+    const std::uint8_t* row = StateRow(name);
+    if (row == nullptr)
+    {
+        return std::nullopt;
+    }
+    state_path::Row out{.status = Text(row + facts::kStateRowStatus), .next = NextStates(row)};
+    const std::vector<std::int64_t> args = Names(row + facts::kStateRowStringArgs, facts::kStateRowDestinationArg + 1);
+    if (args.size() > facts::kStateRowDestinationArg)
+    {
+        out.destination = args[facts::kStateRowDestinationArg];
+    }
+    return out;
+}
+catch (...)
+{
+    return std::nullopt;
+}
+
 struct Path
 {
     bool         move = false;  // a further move among the states ahead, before the member stands
-    std::wstring text;          // the states walked, to the move if one was found
+    std::wstring text;          // the states walked, to the move if one was found, and where each run goes
 };
 
-/// The member's own states ahead of `first`, breadth first through each row's next states (kPathLinks rows at
-/// most, each once; a Stable ends a branch: the member stands again, and a move after it is a later script's): a
-/// further move among them makes the chain the level's path for the member.
-Path PathAhead(const std::wstring& first) noexcept
+/// The member's own states ahead of `first` (players/state_path.h: breadth first, each once, a Stable ending a
+/// branch, kPathLinks at most): a further move among them makes the chain the level's path for the member. Every
+/// run on the path is named with its destination and the distance to the nearest shown marker (logging; the
+/// verdict does not read it).
+Path PathAhead(const std::wstring& first, const std::vector<MarkerPoint>& markers) noexcept
 try
 {
     Path path;
@@ -293,71 +386,39 @@ try
         path.text = L"?";
         return path;
     }
-    struct Link
-    {
-        std::wstring name, status;
-        std::size_t  parent;
+    const state_path::Walk walk = state_path::WalkFrom(first, &PathRow, kPathLinks);
+    const auto status = [&walk](std::size_t i) -> std::wstring {
+        const state_path::Link& link = walk.links[i];
+        return !link.read ? L"status unread" : link.status.empty() ? L"no status" : link.status;
     };
-    std::vector<Link> links{{first, L"", 0}};
-    bool              truncated = false;
-    for (std::size_t i = 0; i < links.size(); ++i)
+    if (walk.firstMove)
     {
-        const std::uint8_t* row = StateRow(links[i].name);
-        if (row == nullptr)
+        const std::vector<std::size_t> trail = state_path::Trail(walk, *walk.firstMove);
+        for (std::size_t k = 0; k < trail.size(); ++k)
         {
-            links[i].status = L"status unread";
-            continue;
+            path.text += std::format(L"{}{} ({})", k == 0 ? L"" : L" -> ", walk.links[trail[k]].name, status(trail[k]));
         }
-        links[i].status = Text(row + facts::kStateRowStatus);
-        if (field_hold::MoveSetting(links[i].status))
+        path.text += L": a further move ahead, the level walks the member on";
+        path.move = true;
+    }
+    else
+    {
+        // No further move: every state walked, so the log shows the whole chain.
+        for (std::size_t i = 0; i < walk.links.size(); ++i)
         {
-            // The path to it, parent by parent.
-            std::vector<std::size_t> trail;
-            for (std::size_t at = i;; at = links[at].parent)
-            {
-                trail.push_back(at);
-                if (at == 0)
-                {
-                    break;
-                }
-            }
-            for (auto it = trail.rbegin(); it != trail.rend(); ++it)
-            {
-                path.text += std::format(L"{}{} ({})", it == trail.rbegin() ? L"" : L" -> ", links[*it].name, links[*it].status);
-            }
-            path.text += L": a further move ahead, the level walks the member on";
-            path.move = true;
-            return path;
+            path.text += std::format(L"{}{} ({})", i == 0 ? L"" : L", ", walk.links[i].name, status(i));
         }
-        if (field_hold::PathEnd(links[i].status))
+        path.text += walk.truncated ? L": the walk's limit, no further move among them"
+                                    : L": the path's end, no further move";
+    }
+    // Where the path goes: every move reached, in walking order.
+    for (const state_path::Link& link : walk.links)
+    {
+        if (link.read && field_hold::MoveSetting(link.status))
         {
-            continue;  // the member stands again: the path ends here; a later move is another script
-        }
-        for (std::wstring& next : NextStates(row))
-        {
-            bool seen = false;
-            for (const Link& link : links)
-            {
-                seen = seen || link.name == next;
-            }
-            if (seen)
-            {
-                continue;
-            }
-            if (links.size() >= kPathLinks)
-            {
-                truncated = true;
-                break;
-            }
-            links.push_back({std::move(next), L"", i});
+            path.text += std::format(L"; {} moves to {}", link.name, Where(link.destination, markers));
         }
     }
-    // No lead: every state walked, so the log shows the whole chain and where a lead would have to come from.
-    for (std::size_t i = 0; i < links.size(); ++i)
-    {
-        path.text += std::format(L"{}{} ({})", i == 0 ? L"" : L", ", links[i].name, links[i].status.empty() ? L"no status" : links[i].status);
-    }
-    path.text += truncated ? L": the walk's limit, no further move among them" : L": the path's end, no further move";
     return path;
 }
 catch (...)
@@ -377,7 +438,8 @@ struct Census
 
 /// The waiters on the setting's arrival trigger: the slots whose current state lists it (in the trigger's scope), and
 /// the trigger row's own direct sets on other objects. RE-lead-arrival-wait.md §3.
-Census Waiters(const std::uint8_t* sm, std::int64_t object, std::int64_t state) noexcept
+Census Waiters(const std::uint8_t* sm, std::int64_t object, std::int64_t state,
+               const std::vector<MarkerPoint>& markers) noexcept
 try
 {
     Census                  census;
@@ -404,6 +466,8 @@ try
         return census;
     }
     census.trigger = args[2];
+    // Where this move goes (logging).
+    census.text = std::format(L"; this move goes to {}", Where(args[facts::kStateRowDestinationArg], markers));
     // The trigger row: its scope and direct sets.
     const std::uint8_t* trigger = TableRow(g_triggerTables, census.trigger);
     std::uint8_t        scope   = 0xFF;
@@ -458,7 +522,7 @@ try
             if (&s == self)
             {
                 census.self     = true;
-                const Path path = PathAhead(known ? next : L"");
+                const Path path = PathAhead(known ? next : L"", markers);
                 census.chain    = path.move;
                 census.text += std::format(L"; self -> {}", path.text);
             }
@@ -483,9 +547,10 @@ catch (...)
 
 struct Marker
 {
-    bool         read     = false;
-    bool         onMember = false;
-    std::wstring text;
+    bool                     read     = false;
+    bool                     onMember = false;
+    std::wstring             text;
+    std::vector<MarkerPoint> points;  // where the shown markers are drawn
 };
 
 /// The objective markers shown now and what they ride on: RE-navi-icon-target.md §2, the game's own slot choice.
@@ -546,7 +611,16 @@ try
             }
         }
         ++shown;
-        marker.text += std::format(L"{}{} -> {}", shown == 1 ? L"" : L", ", Name(key), Name(target));
+        MarkerPoint point{.target = target};
+        const bool  placed = Read(record + facts::kObjectiveIconRecordAt, point.at);
+        if (placed)
+        {
+            marker.points.push_back(point);
+        }
+        const wchar_t* comma = shown == 1 ? L"" : L", ";
+        marker.text += placed ? std::format(L"{}{} -> {} at ({:.1f}, {:.1f}, {:.1f}) m", comma, Name(key), Name(target),
+                                            point.at.x / 100, point.at.y / 100, point.at.z / 100)
+                              : std::format(L"{}{} -> {}", comma, Name(key), Name(target));
         if (target != 0 && target == object)
         {
             marker.onMember = true;
@@ -578,10 +652,36 @@ bool Install(const platform::GameImage& image) noexcept
     g_triggerTables     = *tables;
     g_stateChangeTables = *states;
     g_storyFlagIsSet    = reinterpret_cast<StoryFlagIsSetFn>(*flag);
+    if (const auto find = platform::FindFunction(image, facts::kFieldPointFindByName))
+    {
+        g_fieldPointFind = reinterpret_cast<FieldPointFindFn>(*find);
+    }
+    else
+    {
+        platform::Log(L"lead gate: the field point lookup failed its check; a move's destination is logged by name "
+                      L"only");
+    }
     control::Register({.name = L"lead.gate", .shape = control::Shape::Text,
                        .help = L"the last LEAD or run to a mark on a further player's member judged: its arrival trigger, the level's waiters, the story's "
                                L"marker, the member's own states ahead, and the verdict (guide: to its AI; staging: the player's)",
                        .get  = [] { return control::Value{Reading()}; }});
+    control::Register({.name = L"lead.path", .shape = control::Shape::Text,
+                       .help = L"walks a level state's chain as the lead gate does, from the state named: each "
+                               L"state's setting, where every move goes, and the objective markers shown now with "
+                               L"their positions (read only)",
+                       .set  = [](const control::Value& value) {
+                           const std::wstring* state = std::get_if<std::wstring>(&value);
+                           std::uint8_t*       root  = field_root::Root();
+                           if (state == nullptr || state->empty() || root == nullptr)
+                           {
+                               return control::Outcome{.ok = false, .detail = L"name a level state, in the field"};
+                           }
+                           const Marker marker = Markers(root, 0);
+                           const Path   path   = PathAhead(*state, marker.points);
+                           const std::wstring text = std::format(L"{}; markers: {}", path.text, marker.text);
+                           platform::Log(L"lead gate: lead.path {}: {}", *state, text);
+                           return control::Outcome{.detail = text};
+                       }});
     platform::Log(L"lead gate: installed; a LEAD or a run to a mark on a further player's member goes to its AI when a level step "
                   L"waits on its arrival, the story's marker rides on it, or a further move is ahead in its own chain of states");
     return true;
@@ -659,7 +759,7 @@ try
     Census       waiters;
     if (census)
     {
-        waiters         = Waiters(sm, object, state);
+        waiters         = Waiters(sm, object, state, marker.points);
         last.censusTick = last.calls;
         last.waiter     = waiters.others > 0 || waiters.chain;
     }
