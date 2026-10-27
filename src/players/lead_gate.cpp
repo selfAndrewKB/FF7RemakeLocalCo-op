@@ -19,6 +19,7 @@
 #include <format>
 #include <optional>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 namespace lss::players::lead_gate {
@@ -153,8 +154,9 @@ std::wstring Text(const std::uint8_t* fstring, std::size_t cap = kMaxNameChars) 
     return text;
 }
 
-/// An FName array field (`ptr` at `base`, `num` at `base + 8`): its elements, capped.
-std::vector<std::int64_t> Names(const std::uint8_t* base, std::uint32_t cap) noexcept
+/// An FName array field (`ptr` at `base`, `num` at `base + 8`): its elements, capped. May throw (allocation): every
+/// caller catches.
+std::vector<std::int64_t> Names(const std::uint8_t* base, std::uint32_t cap)
 {
     const std::uint8_t* data = nullptr;
     std::int32_t        num  = 0;
@@ -367,6 +369,126 @@ catch (...)
     return std::nullopt;
 }
 
+/// A number array field (`ptr` at `base`, `num` at `base + 8`) of `T`, capped. May throw (allocation): every caller
+/// catches.
+template <typename T>
+std::vector<T> Numbers(const std::uint8_t* base, std::uint32_t cap)
+{
+    static_assert(std::is_trivially_copyable_v<T>, "copied as raw bytes");
+    const std::uint8_t* data = nullptr;
+    std::int32_t        num  = 0;
+    std::vector<T>      out;
+    if (!Read(base, data) || !Read(base + 8, num) || data == nullptr || num <= 0)
+    {
+        return out;
+    }
+    out.resize(std::min<std::uint32_t>(static_cast<std::uint32_t>(num), cap));
+    if (!platform::CopyGuarded(out.data(), data, out.size() * sizeof(T)))
+    {
+        out.clear();
+    }
+    return out;
+}
+
+/// A trigger's special type by the game's name (EEndStateTriggerSpecialType).
+constexpr const wchar_t* SpecialTypeName(std::uint8_t type) noexcept
+{
+    switch (type)
+    {
+    case 0:
+        return L"None";
+    case 1:
+        return L"EnvironmentAnimationLastFrame";
+    case 2:
+        return L"IgnoreDelay";
+    case 3:
+        return L"IgnoreSe";
+    }
+    return L"?";
+}
+
+/// What ends a step that is not a move (a stay, an animation, a nameless step), in words: each trigger it waits on,
+/// with its row's scope, special types and receivers and the step it leads to; the actions the step starts on entry;
+/// its non-zero arguments (logging: which of these is the player's approach is read from the log, not judged here).
+std::wstring Ends(const std::wstring& state) noexcept
+try
+{
+    const std::uint8_t* row = StateRow(state);
+    if (row == nullptr)
+    {
+        return L"row unread";
+    }
+    std::wstring                    text;
+    const std::vector<std::int64_t> triggers = Names(row + facts::kStateRowTriggers, facts::kStateRowTriggersRead);
+    const std::uint8_t*             nexts    = nullptr;
+    std::int32_t                    count    = 0;
+    Read(row + facts::kStateRowNextStates, nexts);
+    Read(row + facts::kStateRowNextStates + 8, count);
+    for (std::size_t i = 0; i < triggers.size() && triggers[i] != 0; ++i)
+    {
+        const bool          known   = nexts != nullptr && static_cast<std::int32_t>(i) < count;
+        const std::wstring  next    = known ? Text(nexts + 16 * i, kMaxStateChars) : L"?";
+        const std::uint8_t* trigger = TableRow(g_triggerTables, triggers[i]);
+        std::wstring        detail  = L"row NOT found";
+        if (trigger != nullptr)
+        {
+            std::int32_t scope = -1;
+            Read(trigger + facts::kTriggerRowScope, scope);
+            detail = std::format(L"scope {}", scope);
+            const std::vector<std::uint8_t> types = Numbers<std::uint8_t>(trigger + facts::kTriggerRowSpecialTypes, 8);
+            if (!types.empty())
+            {
+                detail += L", special types";
+                for (const std::uint8_t type : types)
+                {
+                    detail += std::format(L" {}", SpecialTypeName(type));
+                }
+            }
+            const std::vector<std::int64_t> sends = Names(trigger + facts::kTriggerRowSendObjects, 4);
+            for (std::size_t s = 0; s < sends.size(); ++s)
+            {
+                detail += std::format(L"{}{}", s == 0 ? L", sends to " : L" ", Name(sends[s]));
+            }
+        }
+        text += std::format(L"{}{} ({}) -> {}", i == 0 ? L"" : L", ", Name(triggers[i]), detail, next.empty() ? L"None" : next);
+    }
+    if (text.empty())
+    {
+        text = L"no trigger";
+    }
+    const std::vector<std::int64_t> actions = Names(row + facts::kStateRowEnterActions, 4);
+    for (std::size_t a = 0; a < actions.size(); ++a)
+    {
+        text += std::format(L"{}{}", a == 0 ? L"; starts " : L" ", Name(actions[a]));
+    }
+    const std::vector<std::int64_t> strings = Names(row + facts::kStateRowStringArgs, 12);
+    const std::vector<std::int32_t> ints    = Numbers<std::int32_t>(row + facts::kStateRowIntArgs, 16);
+    std::wstring                    args;
+    for (std::size_t a = 0; a < strings.size(); ++a)
+    {
+        if (strings[a] != 0)
+        {
+            args += std::format(L" s{}={}", a, Name(strings[a]));
+        }
+    }
+    for (std::size_t a = 0; a < ints.size(); ++a)
+    {
+        if (ints[a] != 0)
+        {
+            args += std::format(L" i{}={}", a, ints[a]);
+        }
+    }
+    if (!args.empty())
+    {
+        text += L"; args" + args;
+    }
+    return text;
+}
+catch (...)
+{
+    return L"?";
+}
+
 struct Path
 {
     bool         move = false;  // a further move among the states ahead, before the member stands
@@ -417,6 +539,15 @@ try
         if (link.read && field_hold::MoveSetting(link.status))
         {
             path.text += std::format(L"; {} moves to {}", link.name, Where(link.destination, markers));
+        }
+    }
+    // What ends every other step reached (a stay, an animation, a nameless step): the stand ends the path, so skipped.
+    for (const state_path::Link& link : walk.links)
+    {
+        if (link.read && !field_hold::MoveSetting(link.status) && !field_hold::PathEnd(link.status))
+        {
+            path.text += std::format(L"; {} ({}) ends on {}", link.name, link.status.empty() ? L"no status" : link.status,
+                                     Ends(link.name));
         }
     }
     return path;

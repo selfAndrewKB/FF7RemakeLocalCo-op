@@ -1504,6 +1504,7 @@ inline constexpr std::uint32_t  kStateManagerSlotCount   = 0x33F00;
 inline constexpr std::uint32_t  kStateSlotObject         = 0x00;
 inline constexpr std::uint32_t  kStateSlotState          = 0x08;
 inline constexpr std::uint32_t  kStateSlotRow            = 0x10;
+inline constexpr std::uint32_t  kStateRowEnterActions    = 0x40;  // EnterActionList (FName*, count +0x48): the actions started on entry
 inline constexpr std::uint32_t  kStateRowStatus          = 0x50;  // the Status FString (count +0x58): "Lead", "MoveToTarget", "Stable", ...
 inline constexpr std::uint32_t  kStateRowStringArgs      = 0x78;
 /// A move setting's destination: StringArgumentList[1] of a MoveToTarget or Lead row names a field point
@@ -1511,6 +1512,7 @@ inline constexpr std::uint32_t  kStateRowStringArgs      = 0x78;
 /// same). For FollowActor it names the actor followed, for RouteMove the route's base name (points base+n).
 /// [CONFIRMED code 2026-10-27, RE-lead-arrival-wait.md §6]
 inline constexpr std::uint32_t  kStateRowDestinationArg  = 1;
+inline constexpr std::uint32_t  kStateRowIntArgs         = 0x88;  // IntegerArgumentList (int32*, count +0x90)
 inline constexpr std::uint32_t  kStateRowTriggers        = 0x98;
 inline constexpr std::uint32_t  kStateRowNextStates      = 0xA8;
 inline constexpr std::uint32_t  kStateRowTriggersRead    = 8;
@@ -1538,6 +1540,9 @@ inline constexpr ArrivalHandlerNames kArrivalHandlerNames[]{{7, 0x154, 0x15C}, {
 inline constexpr std::uintptr_t kStateTriggerTablesGlobal = 0x1458441F0;
 inline constexpr std::uint32_t  kDataTableFindRowSlot    = 0x250;
 inline constexpr std::uint32_t  kTriggerRowScope         = 0x0C;
+// SpecialTypeList (uint8*, count +0x18): EEndStateTriggerSpecialType (1 EnvironmentAnimationLastFrame, 2 IgnoreDelay,
+// 3 IgnoreSe) [CONFIRMED dump, EndGame_enums.hpp]
+inline constexpr std::uint32_t  kTriggerRowSpecialTypes  = 0x10;
 inline constexpr std::uint32_t  kTriggerRowObjects       = 0x30;
 inline constexpr std::uint32_t  kTriggerRowAttributes    = 0x40;
 inline constexpr std::uint32_t  kTriggerRowStates        = 0x50;
