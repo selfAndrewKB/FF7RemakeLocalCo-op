@@ -53,10 +53,39 @@ void Remove() noexcept;
 /// hud/second_image.h; the columns beyond are the whole window).
 void Tick(bool splitShown, const ViewShares& shares, int count) noexcept;
 
-/// Writes column `column`'s marker host set, as that column's pass last laid it out, into the overlay
-/// (+0x388..+0x3A8), for marker placements made outside the render (hud/marker_replay.h); the render writes the same
-/// values again in that column's pass. False before that pass has run with the band. Game thread.
-bool WriteHostSet(int column) noexcept;
+/// The overlay's marker host set (+0x388..+0x3A8: the UI rect's Min, the host origin, the UI size, the host size, the
+/// host scale), which every HUD placement reads.
+struct HostValues
+{
+    float min[2] = {}, origin[2] = {}, ui[2] = {}, size[2] = {}, scale = 0.0f;
+};
+
+/// A further column's host set lent to placements made outside the render (hud/marker_replay.h, the minimap's seat
+/// tick), and the set that stood before put back after them. The standing set is what the game's own placements of
+/// this tick read (the last render left it), so putting it back serves player 1's placements whether or not its
+/// column has laid out in the band yet. Game thread.
+class HostSetScope
+{
+public:
+    /// Saves the standing set (nothing is lent without it).
+    HostSetScope() noexcept;
+    /// Puts the standing set back if a column's was lent and not yet put back.
+    ~HostSetScope();
+    HostSetScope(const HostSetScope&)            = delete;
+    HostSetScope& operator=(const HostSetScope&) = delete;
+
+    /// Writes column `column`'s set, as that column's pass last laid it out, into the overlay. False, writing nothing,
+    /// without the standing set saved, before the column's pass has run with the band, or once its layout is not
+    /// applied (the band off or unusable) or the split ends: the placements then stand aside.
+    bool Lend(int column) noexcept;
+    /// Puts the standing set back now. True when it is in the overlay again (or none was lent).
+    bool Restore() noexcept;
+
+private:
+    HostValues saved_{};
+    bool       hasSaved_ = false;
+    bool       lent_     = false;
+};
 
 /// Whether the last overlay render laid the HUD out in a band. Game thread.
 bool BandApplies() noexcept;

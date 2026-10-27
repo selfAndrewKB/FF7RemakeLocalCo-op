@@ -20,6 +20,7 @@
 #include <Windows.h>
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <format>
@@ -83,13 +84,20 @@ struct Pending
 Pending g_pending;
 
 /// Each column's whole marker host set (overlay +0x388..+0x3A8) as that column's pass last laid it out, for writing
-/// outside the render (WriteHostSet).
+/// outside the render (HostSetScope); invalid while the column's layout is not applied or the split is not shown.
 struct HostSet
 {
-    bool  valid = false;
-    float min[2] = {}, origin[2] = {}, ui[2] = {}, size[2] = {}, scale = 0.0f;
+    bool       valid = false;
+    HostValues values{};
 };
 HostSet g_hostSet[kMaxColumns];
+
+// HostValues is the overlay's block as it lies, so it is read and written in one guarded copy.
+static_assert(sizeof(HostValues) == facts::kOverlayHostScale + sizeof(float) - facts::kOverlayLayoutMin);
+static_assert(offsetof(HostValues, origin) == facts::kOverlayHostOrigin - facts::kOverlayLayoutMin);
+static_assert(offsetof(HostValues, ui) == facts::kOverlayUiSize - facts::kOverlayLayoutMin);
+static_assert(offsetof(HostValues, size) == facts::kOverlayHostSize - facts::kOverlayLayoutMin);
+static_assert(offsetof(HostValues, scale) == facts::kOverlayHostScale - facts::kOverlayLayoutMin);
 
 /// The entry the layer-entry call placed in this render, for the submit call at its end: the per-child matrices
 /// the paint pushed are complete only then.
@@ -143,20 +151,21 @@ IntRect* LayoutRect(IntRect* out)
     g_pending.active = false;
     g_submit.active  = false;
     g_bandApplies    = 0;
-    if (!g_splitShown || out == nullptr || out->minX != 0 || out->minY != 0 || GetCurrentThreadId() != g_gameThread)
+    if (!g_splitShown || GetCurrentThreadId() != g_gameThread)
     {
-        return result;  // one view, an unexpected rect, or another thread: the engine's own result
+        return result;  // one view (its sets dropped by Tick), or another thread: the engine's own result
     }
+    // The single render (the mirror in, no further pass) lays out for column 0, player 1's, as its own pass does.
+    const int            column  = std::max(overlay_pass::Column(), 0);
     const std::uintptr_t overlay = Overlay();
-    if (overlay == 0)
+    if (out == nullptr || out->minX != 0 || out->minY != 0 || overlay == 0)
     {
+        g_hostSet[column].valid = false;  // an unexpected rect or no overlay: no band in this pass either
         return result;
     }
     // The host size the render stored just before this call: the game viewport widget's size, in window pixels.
     const float   hostW   = ReadFloat(overlay + facts::kOverlayHostSize);
     const float   hostH   = ReadFloat(overlay + facts::kOverlayHostSize + 4);
-    // The single render (the mirror in, no further pass) lays out for column 0, player 1's, as its own pass does.
-    const int        column  = std::max(overlay_pass::Column(), 0);
     const ViewShare& share   = g_shares[column];
     const float   viewW   = share.sizeX * hostW;
     const float   viewH   = share.sizeY * hostH;
@@ -192,11 +201,15 @@ IntRect* LayoutRect(IntRect* out)
         g_pending = {true, place, share.originX * hostW, share.originY * hostH, viewW, viewH, host,
                      BandClipMap(band, image.Width(), image.Height())};
         g_hostSet[column] = {true,
-                             {static_cast<float>(band.minX), static_cast<float>(band.minY)},
-                             {share.originX * hostW, share.originY * hostH},
-                             {static_cast<float>(band.Width()), static_cast<float>(band.Height())},
-                             {viewW, viewH},
-                             host};
+                             {{static_cast<float>(band.minX), static_cast<float>(band.minY)},
+                              {share.originX * hostW, share.originY * hostH},
+                              {static_cast<float>(band.Width()), static_cast<float>(band.Height())},
+                              {viewW, viewH},
+                              host}};
+    }
+    else
+    {
+        g_hostSet[column].valid = false;  // no band in this pass: nothing is placed outside the render with its set
     }
     return result;
 }
@@ -476,29 +489,65 @@ void Tick(bool splitShown, const ViewShares& shares, int count) noexcept
         }
     }
     g_splitShown = splitShown && g_rectCall.IsInstalled();
+    if (!g_splitShown)
+    {
+        // Every view lays out again before anything is placed with its set (the window may have changed meanwhile).
+        bool dropped = false;
+        for (HostSet& set : g_hostSet)
+        {
+            dropped   = dropped || set.valid;
+            set.valid = false;
+        }
+        if (dropped)
+        {
+            platform::LogDebug(L"HUD layout: the split is not shown; the columns' host sets dropped (each lays out again "
+                               L"before anything is placed with it)");
+        }
+    }
 }
 
-bool WriteHostSet(int column) noexcept
+HostSetScope::HostSetScope() noexcept
 {
-    if (column < 0 || column >= kMaxColumns)
-    {
-        return false;
-    }
-    const HostSet&       set     = g_hostSet[column];
     const std::uintptr_t overlay = Overlay();
-    if (!set.valid || overlay == 0 || GetCurrentThreadId() != g_gameThread)
+    hasSaved_ = overlay != 0 && GetCurrentThreadId() == g_gameThread &&
+                platform::CopyGuarded(&saved_, reinterpret_cast<const void*>(overlay + facts::kOverlayLayoutMin), sizeof(saved_));
+}
+
+HostSetScope::~HostSetScope()
+{
+    Restore();
+}
+
+bool HostSetScope::Lend(int column) noexcept
+{
+    if (!hasSaved_ || column < 0 || column >= kMaxColumns || !g_hostSet[column].valid ||
+        GetCurrentThreadId() != g_gameThread)
     {
         return false;
     }
-    WriteFloat(overlay + facts::kOverlayLayoutMin, set.min[0]);
-    WriteFloat(overlay + facts::kOverlayLayoutMin + 4, set.min[1]);
-    WriteFloat(overlay + facts::kOverlayHostOrigin, set.origin[0]);
-    WriteFloat(overlay + facts::kOverlayHostOrigin + 4, set.origin[1]);
-    WriteFloat(overlay + facts::kOverlayUiSize, set.ui[0]);
-    WriteFloat(overlay + facts::kOverlayUiSize + 4, set.ui[1]);
-    WriteFloat(overlay + facts::kOverlayHostSize, set.size[0]);
-    WriteFloat(overlay + facts::kOverlayHostSize + 4, set.size[1]);
-    WriteFloat(overlay + facts::kOverlayHostScale, set.scale);
+    const std::uintptr_t overlay = Overlay();
+    if (overlay == 0)
+    {
+        return false;
+    }
+    lent_ = true;  // before the write: a write that faults part-way is put back too
+    return platform::WriteGuarded(reinterpret_cast<void*>(overlay + facts::kOverlayLayoutMin), &g_hostSet[column].values,
+                                  sizeof(HostValues));
+}
+
+bool HostSetScope::Restore() noexcept
+{
+    if (!lent_)
+    {
+        return true;
+    }
+    const std::uintptr_t overlay = Overlay();
+    if (overlay == 0 ||
+        !platform::WriteGuarded(reinterpret_cast<void*>(overlay + facts::kOverlayLayoutMin), &saved_, sizeof(saved_)))
+    {
+        return false;
+    }
+    lent_ = false;
     return true;
 }
 

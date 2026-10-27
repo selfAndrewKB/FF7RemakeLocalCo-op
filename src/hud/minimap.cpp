@@ -312,7 +312,11 @@ public:
                 return;
             }
             const int column = overlay_pass::ColumnOf(seat);  // the seat's column
-            hostSet_ = column >= 1 && overlay_layout::WriteHostSet(column);
+            if (column >= 1)
+            {
+                hostSet_.emplace();
+                hostSet_->Lend(column);  // refused: the compass reads player 1's set, as before the band
+            }
         }
         platform::WriteGuarded(g.slot29, &s.manager, sizeof(void*));
         g_forSeat = seat;
@@ -325,10 +329,7 @@ public:
             return;
         }
         platform::WriteGuarded(g.slot29, &slot_, sizeof(void*));
-        if (hostSet_)
-        {
-            overlay_layout::WriteHostSet(0);
-        }
+        hostSet_.reset();  // the set that stood before, back
         g_forSeat = 0;
         // contexts_ closes after this body (a member's destructor): the reverse of the opening order.
     }
@@ -340,9 +341,9 @@ public:
 private:
     void*                                 slot_       = nullptr;
     bool                                  withPlayer_ = false;
-    bool                                  hostSet_    = false;  // the seat's column's host set written (put back after)
     bool                                  held_       = false;
     std::optional<players::scopes::Scope> contexts_;
+    std::optional<overlay_layout::HostSetScope> hostSet_;  // the seat's column's host set lent (put back first)
 };
 
 // --- Redirected calls ------------------------------------------------------------------------------------------------

@@ -223,11 +223,13 @@ void Driver(void* delegate)
     if (further)
     {
         // The further columns' passes, the highest column first: the markers placed through that column's camera, then
-        // its render; then back to player 1's placements for player 1's render (only needed once a replay moved them).
-        bool replayed = false;
+        // its render; then back to player 1's placements for player 1's render (only needed once a replay moved them),
+        // with the host set the game's own placements read this tick put back first.
+        overlay_layout::HostSetScope hostSet;
+        bool                         replayed = false;
         for (int column = g_columns.count - 1; column >= 1; --column)
         {
-            if (overlay_layout::WriteHostSet(column))
+            if (hostSet.Lend(column))
             {
                 replayed = true;
                 marker_replay::Replay(column, g_columns.localPlayer[column], g_columns.controller[column]);
@@ -242,7 +244,7 @@ void Driver(void* delegate)
                 break;
             }
         }
-        if (replayed && overlay_layout::WriteHostSet(0))
+        if (replayed && hostSet.Restore())
         {
             marker_replay::Replay(0, g_columns.localPlayer[0], g_columns.controller[0]);
             field_icons::Replay(0, g_columns.controller[0], nullptr);
