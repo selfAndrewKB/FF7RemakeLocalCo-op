@@ -2,6 +2,7 @@
 
 #include "players/field_hold.h"
 
+#include <cstdint>
 #include <cstdio>
 #include <initializer_list>
 
@@ -24,10 +25,10 @@ using fh::Hold;
 
 void LevelStagingIsFree()
 {
-    // Everything the level writes on layer 1 during gameplay: the stay, the run to a mark, the stand at the end of
-    // a path, the follow, the kinds that never read the player.
-    for (const fh::Kind kind : {fh::kNone, fh::kStay, fh::kFollowTarget, fh::kFollowPosition, fh::kWandering, fh::kPatrol,
-                                fh::kAccompany, fh::kInterest, fh::kUnique})
+    // Everything the level writes on layer 1 during gameplay: the stay, the stand at the end of a path, the follow,
+    // the kinds that never read the player (the run to a mark asks the game, below).
+    for (const fh::Kind kind : {fh::kNone, fh::kStay, fh::kFollowTarget, fh::kWandering, fh::kPatrol, fh::kAccompany,
+                                fh::kInterest, fh::kUnique})
     {
         EXPECT(fh::Of(fh::kLayerLevel, kind) == Hold::Free);
         EXPECT(fh::Of(fh::kLayerStream, kind) == Hold::Free);
@@ -35,14 +36,29 @@ void LevelStagingIsFree()
     EXPECT(fh::Of(fh::kLayerLevel, fh::kEmpty) == Hold::Free);  // nothing asked
 }
 
-void LeadAsksTheGame()
+void ArrivalAsksTheGame()
 {
     // LEAD on the level layer walks a member to a mark in step with the player as often as it makes a guide; the
-    // kind cannot tell the two apart, so the rule hands the question on (the user, 2026-10-21). Elsewhere it is
-    // what its layer says: the stream's default never leads, the cinema copy is the actor mode's.
-    EXPECT(fh::Of(fh::kLayerLevel, fh::kLead) == Hold::Lead);
+    // kind cannot tell the two apart, so the rule hands the question on (the user, 2026-10-21). The run to a mark
+    // is the same question (the user, 2026-10-27: Aerith's run ahead of Cloud stalled the level under a further player).
+    // Elsewhere it is what its layer says: the stream's default never leads, the cinema copy is the actor mode's.
+    EXPECT(fh::Of(fh::kLayerLevel, fh::kLead) == Hold::Arrival);
     EXPECT(fh::Of(fh::kLayerStream, fh::kLead) == Hold::Free);
     EXPECT(fh::Of(5, fh::kLead) == Hold::Layer);
+    EXPECT(fh::Of(fh::kLayerLevel, fh::kFollowPosition) == Hold::Arrival);
+    EXPECT(fh::Of(fh::kLayerStream, fh::kFollowPosition) == Hold::Free);
+    EXPECT(fh::Of(5, fh::kFollowPosition) == Hold::Layer);
+}
+
+void OnlyTheArrivalKindsAskTheGame()
+{
+    // The gate reads a handler only for the kinds whose arrival the level can wait on; the rule and the gate share
+    // the one list.
+    for (std::uint8_t kind = 0; kind <= fh::kUnique; ++kind)
+    {
+        EXPECT(fh::SignalsArrival(kind) == (kind == fh::kLead || kind == fh::kFollowPosition));
+    }
+    EXPECT(!fh::SignalsArrival(0xFF));
 }
 
 void AnimationsAreWatched()
@@ -111,7 +127,8 @@ void NamesCoverTheEnum()
 int main()
 {
     LevelStagingIsFree();
-    LeadAsksTheGame();
+    ArrivalAsksTheGame();
+    OnlyTheArrivalKindsAskTheGame();
     AnimationsAreWatched();
     EscapeNeedsTheAi();
     ScriptLayersHold();

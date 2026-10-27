@@ -237,7 +237,7 @@ constexpr std::array kModules{
     Module{.name = L"pad buttons", .install = Call<&players::pad_buttons::Install>, .remove = &players::pad_buttons::Remove},
     // diagnostics: which XInput users have a pad
     Module{.name = L"pads reading", .install = Call<&players::pad_presence::Register>},
-    // without it a LEAD on a further player's member stays the player's
+    // without it a LEAD or a run to a mark on a further player's member stays the player's
     Module{.name = L"lead gate", .install = Call<&players::lead_gate::Install>},
     // the game's single slots answered for a seat for one call: the battle modules need it
     Module{.name = L"scopes", .install = Call<&players::scopes::Install>},

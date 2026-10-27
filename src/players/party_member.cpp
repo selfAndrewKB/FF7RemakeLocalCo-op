@@ -117,8 +117,8 @@ Wait FieldWait(void* member) noexcept
         return Wait::None;
     case field_hold::Hold::Animation:
         return Wait::Animation;
-    case field_hold::Hold::Lead:
-        return lead_gate::Guide(member, ai) ? Wait::Guide : Wait::None;
+    case field_hold::Hold::Arrival:
+        return lead_gate::Guide(ai, kind) ? Wait::Guide : Wait::None;
     case field_hold::Hold::NoState:
         return Wait::NoFieldAi;
     default:
@@ -370,7 +370,7 @@ const wchar_t* WhyHeldByScript(void* member) noexcept
     case Wait::Animation:
         return L"in a scripted animation (an ANIMATION or one-shot kind): its AI plays it";
     case Wait::Guide:
-        return L"a guide lead (a level step waits on its arrival, or the story's marker rides on it): its AI walks it";
+        return L"a guide (a lead or a run to a mark: a level step waits on its arrival, or the story's marker rides on it): its AI walks it";
     default:
         return nullptr;  // an event lock or the game's leader handed is the game's own hand (party_events); the rest holds nothing
     }
@@ -482,7 +482,7 @@ const wchar_t* Describe(Wait wait) noexcept
     case Wait::Animation:
         return L"its AI plays a scripted animation (an ANIMATION or one-shot kind)";
     case Wait::Guide:
-        return L"its AI walks a guide lead (a level step waits on its arrival, or the story's marker rides on it)";
+        return L"its AI walks a guide (a lead or a run to a mark: a level step waits on its arrival, or the story's marker rides on it)";
     case Wait::NoFieldAi:
         return L"its field AI has no state yet";
     case Wait::Unread:

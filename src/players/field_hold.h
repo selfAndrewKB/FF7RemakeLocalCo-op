@@ -14,13 +14,16 @@
 // ANIMATION on the level layer is a scripted animation too (the user, 2026-10-21, after player 2 seated on Tifa in
 // the middle of one and cut it short): both animation kinds hand the member to its AI with the player's view kept
 // on it, until the animation ends.
-// LEAD on the level layer is the one kind this rule cannot settle (the user, 2026-10-21): the level writes it as
-// often to walk a member to a mark in step with the player ("walk up to the console", twice on the Ch. 7 reactor
-// walk) as to make the member a guide the player follows ("follow Tifa", Ch. 3). The handler is the same code either
-// way; what differs is level data: whether a level step waits on the lead's arrival, and whether the story marks
-// the member. A guide on a held member stalls the level (its runner never ticks, the arrival never fires: seen live
-// 2026-10-21), so the rule answers Lead and the caller asks the game's own data (players/lead_gate.h): a guide goes
-// to its AI with the player's view on it, staging stays the player's.
+// LEAD on the level layer is a kind this rule cannot settle (the user, 2026-10-21): the level writes it as often
+// to walk a member to a mark in step with the player ("walk up to the console", twice on the Ch. 7 reactor walk) as
+// to make the member a guide the player follows ("follow Tifa", Ch. 3). The run to a mark (FOLLOW_POSITION,
+// "MoveToTarget") on the level layer is the same case (the user, 2026-10-27: Aerith's run ahead of Cloud in Ch. 8
+// stalled the level while a further player held her, until that player left): a run the level merely stages, or
+// one a level step waits on. The handler is the same code either way; what differs is level data: whether a level
+// step waits on the arrival, and whether the story marks the member. A guide on a held member stalls the level (its
+// runner never ticks, the arrival never fires: seen live 2026-10-21 and 2026-10-27), so the rule answers Arrival
+// and the caller asks the game's own data (players/lead_gate.h): a guide goes to its AI with the player's view on
+// it, staging stays the player's.
 //
 // Pure (host-tested in tests/field_hold_test.cpp); the actor modes and the event lock are the caller's tests.
 
@@ -41,7 +44,7 @@ enum Kind : std::uint8_t
     kNone            = 1,   // stand (the "Stable" data setting)
     kStay            = 2,
     kFollowTarget    = 3,   // follow another actor ("FollowActor")
-    kFollowPosition  = 4,   // the run to a mark ("MoveToTarget")
+    kFollowPosition  = 4,   // the run to a mark ("MoveToTarget"); its arrival signals the level as a LEAD's does
     kAnimation       = 5,
     kSingleAnimation = 6,   // the scripts' one-shot move; its exit reports finished
     kLead            = 7,   // walk to a point and wait for the party leader, beckon, fetch: staging or a guide
@@ -53,13 +56,24 @@ enum Kind : std::uint8_t
     kUnique          = 13,  // the base controller's route move
 };
 
+/// The kinds whose arrival signals the level, so a level step can wait on it: a LEAD and the run to a mark
+/// (engine_facts.h kArrivalHandlerNames names their handlers' fields; lead_gate.cpp asserts the two lists agree).
+/// FOLLOW_TARGET (3) and the route move (13) signal through the same path, PATROL (10) sends its own triggers at
+/// its points [CONFIRMED code, research/RE-fieldai-kinds.md §2]; their handlers' names are unread and none has been
+/// seen on a party member: free, the same latent stall [UNKNOWN].
+constexpr bool SignalsArrival(std::uint8_t kind) noexcept
+{
+    return kind == kLead || kind == kFollowPosition;
+}
+
 enum class Hold : std::uint8_t
 {
     Free,       // the player's: the level's staging or the follow
     Animation,  // a scripted animation (ANIMATION, SINGLE_ANIMATION): its AI plays it, the player watches
     Layer,      // a script layer is active
     Kind,       // a kind that needs the AI: the unread ESCAPE_POSITION
-    Lead,       // a LEAD on the level layer: staging or a guide, the game's data decides (players/lead_gate.h)
+    Arrival,    // a LEAD or a run to a mark on the level layer: staging or a guide, the game's data decides
+                // (players/lead_gate.h)
     NoState,    // the field AI has no state yet (wait)
 };
 
@@ -82,9 +96,9 @@ constexpr Hold Of(std::uint8_t layer, std::uint8_t kind) noexcept
     {
         return Hold::Kind;
     }
-    if (kind == kLead && layer == kLayerLevel)
+    if (SignalsArrival(kind) && layer == kLayerLevel)
     {
-        return Hold::Lead;
+        return Hold::Arrival;
     }
     return Hold::Free;
 }

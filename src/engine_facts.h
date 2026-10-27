@@ -1488,7 +1488,8 @@ inline constexpr std::array<std::uint8_t, 16> kSetActorTypeEntry{
     0x48, 0x8B, 0x81, 0x00, 0x0A, 0x00, 0x00, 0x88, 0x90, 0xB8, 0x00, 0x00, 0x00, 0x80, 0xFA, 0x02};
 inline constexpr platform::FunctionFact kSetActorType{L"EndCharacter800_SetActorType", 0x14164DE50, kSetActorTypeEntry};
 
-// --- A guide lead: the level's waiters and the story's marker (RE-lead-arrival-wait.md, RE-navi-icon-target.md) ---
+// --- A guide (a lead or a run to a mark): the level's waiters and the story's marker (RE-lead-arrival-wait.md,
+// RE-navi-icon-target.md) ---
 /// The level state manager ([root+0x138]) keeps one slot per level object and attribute (an object's attribute-4
 /// slot holds its AI setting state); the active slots are a linked list (head at +0x67E1E8, node +8 next, +0x18 the
 /// slot index into the array at +0xEE4A30). A slot: +0 the object FName, +8 the current state FName, +0x10 the
@@ -1507,11 +1508,22 @@ inline constexpr std::uint32_t  kStateRowStringArgs      = 0x78;
 inline constexpr std::uint32_t  kStateRowTriggers        = 0x98;
 inline constexpr std::uint32_t  kStateRowNextStates      = 0xA8;
 inline constexpr std::uint32_t  kStateRowTriggersRead    = 8;
-/// The field AI's LEAD handler ([fa+0xDC0], the kind-7 slot of the handler table at +0xD88): the member's level object
-/// FName (+0x154) and the Lead setting's state FName (+0x15C), the two values its arrival signal passes.
-inline constexpr std::uint32_t  kFieldAiLeadHandler      = 0xDC0;
-inline constexpr std::uint32_t  kLeadHandlerObject       = 0x154;
-inline constexpr std::uint32_t  kLeadHandlerState        = 0x15C;
+/// The field AI's handler table (+0xD88, one pointer per kind, FieldAI_CreateKindHandlers 0x140FBFA90 fills it in
+/// kind order). The kinds whose arrival the level can wait on keep the member's level object FName and the setting's
+/// state FName in their handler, the two values their arrival signal passes (FieldAI_NotifySettingArrived_Signal):
+/// LEAD (7) at +0x154/+0x15C (FieldAI_K07Lead_OnMoveDone_Signal 0x1406C1BC0); the run to a mark (4, "MoveToTarget")
+/// at +0x144/+0x14C (FieldAISetting_MoveToTarget writes them at +0x64/+0x6C of the record block that the kind's
+/// enter copies to handler+0xE0; FieldAI_K04FollowPosition_OnMoveDone_Signal 0x1406BE390 and its goal-turn update
+/// 0x1406BEE40 pass handler+324/+332) [CONFIRMED code 2026-10-27]. A run a state-manager command writes
+/// (StateMgrCmd_FieldAIRequest_Exec) names no object (0): nothing can wait on it.
+inline constexpr std::uint32_t  kFieldAiHandlers         = 0xD88;
+struct ArrivalHandlerNames
+{
+    std::uint8_t  kind;    // FFieldAiType (players/field_hold.h names it)
+    std::uint32_t object;  // the level object FName in the kind's handler
+    std::uint32_t state;   // the setting's state FName
+};
+inline constexpr ArrivalHandlerNames kArrivalHandlerNames[]{{7, 0x154, 0x15C}, {4, 0x144, 0x14C}};
 /// The three state-trigger data tables (g_DT_StateTrigger; a row looked up through the table's virtual at +0x250
 /// with the FName by value, as StateMgr_FireStateTrigger and StoryFlag_IsSet do) and the FEndDataTableStateTrigger
 /// row: Target scope (+0x0C: 0 Self, 1 Location, 2 ResidentAndLocation, 3 SpecificObject), the direct sets

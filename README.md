@@ -175,9 +175,9 @@ src/
     game_state              The game's own state, read for the console and the log: Square Enix's EGameState byte on
                             AEndGameState (title, loading, play, pause, menu, leaving), its menu kind and pause flag,
                             and the field step machine on the field root (13 = …
-    lead_gate               Whether a LEAD the level wrote on a further player's member is a guide (the member goes to
-                            its AI, the player's view stays on it) or staging (the player keeps it), from the game's own
-                            data
+    lead_gate               Whether a LEAD or a run to a mark (MoveToTarget) the level wrote on a further player's
+                            member is a guide (the member goes to its AI, the player's view stays on it) or staging (the
+                            player keeps it), from the game's own data
     local_player_list       The engine's list of local players, for the modules that add a local player of the mod's own
                             (players/session: player 2; views/mirror_player: the mirror in an empty column) through UE's
                             own paths, on the game thread

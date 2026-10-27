@@ -1047,7 +1047,7 @@ try
         return;  // a hand for the member's own hold ends with the hold (FollowSlot), not with the game's leader
     }
     // The game's leader is back; the member follows once nothing holds it (a scene's own layers can outlast the
-    // lock, a guide lead written at the scene's end runs to its mark). The periodic check retries while the game's
+    // lock, a guide lead or run written at the scene's end goes to its mark). The periodic check retries while the game's
     // leader stays with its player.
     if (const wchar_t* why = party_member::WhyHeldByScript(member))
     {

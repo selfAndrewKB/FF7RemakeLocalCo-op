@@ -44,7 +44,7 @@ enum class Wait : std::uint8_t
     LeaderHanded, // the game's own leader is with its AI (a scene, a field action, the control lock), or unread
     AiHeld,       // a script holds its field AI (a script layer, or the unread ESCAPE_POSITION kind: field_hold.h)
     Animation,    // its AI plays a scripted animation (ANIMATION or the one-shot SINGLE_ANIMATION: field_hold.h)
-    Guide,        // its AI walks a guide lead (a level step waits on its arrival, or the story marks it: lead_gate.h)
+    Guide,        // its AI walks a guide: a lead or a run to a mark the level waits on, or the story marks it (lead_gate.h)
     NoFieldAi,    // its field AI has no state yet
     Unread,       // the party could not be read
 };
@@ -91,9 +91,9 @@ std::uint8_t GameLeaderType() noexcept;
 bool IsFieldLeader(const void* character) noexcept;
 
 /// Why a held `member` must be with its AI now (a ScriptHold wait: a cutscene or event mode, a script's hold on its
-/// field AI, an animation, a guide lead). Null while it may stay. (The battle mode holds nothing: the battle AI
-/// never runs a player-held member; an event lock or the game's leader handed is the game's own hand, heard by
-/// party_events.)
+/// field AI, an animation, a guide the level waits on). Null while it may stay. (The battle mode holds nothing: the
+/// battle AI never runs a player-held member; an event lock or the game's leader handed is the game's own hand, heard
+/// by party_events.)
 const wchar_t* WhyHeldByScript(void* member) noexcept;
 
 /// The field take test's wait for a `member` whoever holds it (None: free, or in battle), the reason itself: the

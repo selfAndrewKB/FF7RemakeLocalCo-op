@@ -64,7 +64,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.111.0-event-camera";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.112.0-run-to-mark";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
@@ -160,7 +160,7 @@ void RegisterSeatCommands(lss::players::Session& session, int seat, const std::w
               .help  = L"out, awaiting (asked for; joins once its member is free), rejoining (taken out by a world change; joins "
                        L"again once the field is back), in (between a seat and the next, momentary), playing (holds its member), "
                        L"or handed (its member is with its AI while the game's leader is: a scene, a field action, the lock; or "
-                       L"for the member's own hold: a script, an animation, a guide lead; the seat is kept)",
+                       L"for the member's own hold: a script, an animation, a guide the level waits on; the seat is kept)",
               .get   = [&session, seat] { return Value{std::wstring(lss::players::StateName(session.State(seat)))}; }});
 }
 

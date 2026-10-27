@@ -22,9 +22,10 @@
 // (an event, a field action, the field control lock) the member is handed to its AI and taken back when the game
 // takes its leader back, once no script still holds the member (a periodic check backs both funnels up on the
 // game's own leader state); a story script that takes the member (a script layer of its field AI, an animation, the
-// cinema modes: players/field_hold.h) or a guide lead (players/lead_gate.h) gets it the same way the game's leader
-// hand does, the seat and the player's camera kept on it, until the hold ends. A member destroyed under the player
-// (a retry rebuilds the party without a field exit) is let go of without a call.
+// cinema modes: players/field_hold.h) or a guide the level waits on (a lead or a run to a mark: players/lead_gate.h)
+// gets it the same way the game's leader hand does, the seat and the player's camera kept on it, until the hold
+// ends. A member destroyed under the player (a retry rebuilds the party without a field exit) is let go of without
+// a call.
 // Leave: the member given back first, then the actors the player's controller and camera manager spawned, which the
 // engine never destroys, are destroyed, then UGameInstance::RemoveLocalPlayer. The engine's own list is the
 // evidence of both.
@@ -198,8 +199,8 @@ private:
     /// The seat's member is no longer its to play: given back; the row's member is seated next tick, or the player
     /// leaves to wait for one.
     void ReleaseMember(Seat& seat, const wchar_t* why) noexcept;
-    /// A scripted hold on the member (a script layer, an animation, a cutscene mode, a guide lead): the member to
-    /// its AI with the seat kept (the game's own hand), and back when the hold ends.
+    /// A scripted hold on the member (a script layer, an animation, a cutscene mode, a guide the level waits on): the
+    /// member to its AI with the seat kept (the game's own hand), and back when the hold ends.
     void HandForHold(Seat& seat, void* member, party_member::Wait hold) noexcept;
     void ReturnFromHold(Seat& seat, void* member) noexcept;
     /// The party order, the member's existence and its AI's hold, checked while the seat holds a member.
