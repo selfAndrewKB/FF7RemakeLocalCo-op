@@ -607,6 +607,16 @@ void SetEnabled(bool on) noexcept
     platform::Log(L"env sets {}", on ? L"on" : L"off (a further player's view hides nothing of its own from the next read)");
 }
 
+std::wstring SeatSetText(int seat) noexcept
+try
+{
+    return SeatBuilt(seat) ? IdsText(g_seats[seat].ids) : std::wstring(L"none");
+}
+catch (...)
+{
+    return L"?";
+}
+
 std::wstring Reading() noexcept
 try
 {

@@ -52,6 +52,9 @@ void Tick() noexcept;
 /// next read.
 void SetEnabled(bool on) noexcept;
 
+/// A further player's last ground set (its three ids: area, environment set, planner level set) as text; game thread.
+std::wstring SeatSetText(int seat) noexcept;
+
 /// The `world.env-sets` reading: each further player's set, the actors hidden in their view, what could not be.
 std::wstring Reading() noexcept;
 

@@ -1856,6 +1856,40 @@ inline constexpr std::uint32_t  kEnvSetBlockActors    = 0x40;   //   {FName, u32
 inline constexpr std::uint32_t  kEnvSetBlockActorsHeap = 0x1C0; //   the heap data when grown, num +0x1C8, max +0x1CC
 inline constexpr std::uint32_t  kEnvSetBlockActorsNum = 0x1C8;
 inline constexpr std::uint32_t  kEnvSetBlockActorsMax = 0x1CC;
+
+// --- The world's levels: what loads and shows them (research/RE-world-streaming-players.md, pass S-RMK-STREAM; the call
+// sites, argument shapes and the load bits checked by hand in IDA 2026-10-27) ---------------------------------------------
+/// EnvSetMgr_TickEvaluate_LeaderDownTrace's two calls on a change of player 1's area set: the set's level list for the
+/// visibility slot 4 (`EnvSet_RequestLevelList_cand(u8 slot, int prio, TArray<FName>* names, TArray<u8>* unvisible)`,
+/// the bytes parallel to the names and possibly null; the callee sorts the names in place), and the area's planner level
+/// set into residency slot 32 (`PlannerLevelSetSlots_SetSlot_LoadRelease(holder, slot, FName id)`: the loader adds the
+/// new set, then releases the old). The first call's five bytes cross a 16-byte block (placed from the game thread).
+inline constexpr std::uintptr_t kEnvSetLevelListCall   = 0x14166010C;  // E8 2F F5 07 00
+inline constexpr std::uintptr_t kEnvSetPlannerSlotCall = 0x141660137;  // E8 D4 4D 9B FF
+inline constexpr std::array<std::uint8_t, 16> kLevelListRequestEntry{
+    0x4C, 0x8B, 0xDC, 0x55, 0x53, 0x49, 0x8D, 0x6B, 0xA1, 0x48, 0x81, 0xEC, 0xB8, 0x00, 0x00, 0x00};
+inline constexpr platform::FunctionFact kLevelListRequest{L"EnvSet_RequestLevelList", 0x1416DF640, kLevelListRequestEntry};
+inline constexpr std::array<std::uint8_t, 16> kPlannerSetSlotEntry{
+    0x40, 0x53, 0x57, 0x41, 0x55, 0x48, 0x83, 0xEC, 0x20, 0x48, 0x63, 0xC2, 0x49, 0x8B, 0xD8, 0x4C};
+inline constexpr platform::FunctionFact kPlannerSetSlot{L"PlannerLevelSetSlots_SetSlot_LoadRelease", 0x141014F10,
+                                                        kPlannerSetSlotEntry};
+inline constexpr std::uint32_t kPlannerSlotIds   = 0x14;  // holder: FName id per slot, 8 bytes each (37 slots)
+inline constexpr std::int32_t  kPlannerAreaSlot  = 32;    // the EnvironmentSet's slot (the leader's area)
+inline constexpr std::int32_t  kPlannerSlots     = 37;    // story 0-31, area 32, field entry 33-36
+/// EndLevelReq_Enqueue(int prio, FName level (by value), bool load, bool hide, bool flag): the global level request
+/// queue every load and unload goes through (the loader's first reference enqueues a load, its last an unload).
+inline constexpr std::array<std::uint8_t, 16> kLevelRequestEnqueueEntry{
+    0x48, 0x89, 0x54, 0x24, 0x10, 0x53, 0x55, 0x56, 0x57, 0x41, 0x56, 0x48, 0x83, 0xEC, 0x30, 0x44};
+inline constexpr std::array<std::uint8_t, 5> kLevelRequestEnqueueFirst{0x48, 0x89, 0x54, 0x24, 0x10};  // mov [rsp+10h], rdx
+inline constexpr platform::FunctionFact kLevelRequestEnqueue{L"EndLevelReq_Enqueue", 0x1416D9700, kLevelRequestEnqueueEntry};
+/// Stock 4.18 (Engine.hpp): UWorld::StreamingLevels and ULevelStreaming's fields. The flags word: 0x20 should be loaded,
+/// 0x40 should be visible (the game's load action ORs 0x60 at 0x1416DC10C, its unload tests 0x20 at 0x1416DB5AE).
+inline constexpr std::uint32_t kWorldStreamingLevels    = 0x88;   // TArray<ULevelStreaming*>
+inline constexpr std::uint32_t kLevelStreamingPackage   = 0x28;   // FName PackageName
+inline constexpr std::uint32_t kLevelStreamingFlags     = 0xB0;   // u32 bit flags
+inline constexpr std::uint32_t kLevelStreamingShouldLoad = 0x20;
+inline constexpr std::uint32_t kLevelStreamingShouldShow = 0x40;
+inline constexpr std::uint32_t kLevelStreamingLoaded    = 0x138;  // ULevel* LoadedLevel
 /// How the game's apply finds a listed actor: for each level of the set's list that is in the manager's lookup set,
 /// CharaRegistry_FindActorByName(level, name) (the per-level name map of Square Enix's character registry).
 inline constexpr std::array<std::uint8_t, 16> kTSetNameFindEntry{

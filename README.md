@@ -336,6 +336,9 @@ src/
     field_targets           A further player opens chests, picks up the shining items on the ground, opens doors and
                             curtains and fires the grappling hook with their own pad, as player 1 does
     forced_walk             Every player walks where the story makes player 1 walk
+    level_watch             Logging only: what loads, shows, hides and unloads the world's levels, so the further
+                            players' areas can be held by the game's own loader (the user, 2026-10-27: "we'll take the
+                            native path for world loading
     npc_crowd               The game's NPC crowd follows every player: each NPC is scored from the nearest player
     npc_detail              The NPCs a further player is near keep the detail the game would give them from that
                             player's own camera

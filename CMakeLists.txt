@@ -124,6 +124,7 @@ add_library(LocalSplitScreen SHARED
     src/world/actor_place.cpp
     src/world/anim_views.cpp
     src/world/env_sets.cpp
+    src/world/level_watch.cpp
     src/world/npc_crowd.cpp
     src/world/npc_detail.cpp
     src/world/npc_senses.cpp

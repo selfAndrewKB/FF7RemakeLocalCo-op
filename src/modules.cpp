@@ -66,6 +66,7 @@
 #include "views/window_span.h"
 #include "world/anim_views.h"
 #include "world/env_sets.h"
+#include "world/level_watch.h"
 #include "world/field_targets.h"
 #include "world/forced_walk.h"
 #include "world/npc_crowd.h"
@@ -318,6 +319,8 @@ constexpr std::array kModules{
     Module{.name = L"npc senses", .install = Call<&world::npc_senses::Install>},
     // without it only player 1's ground hides the area's actors
     Module{.name = L"env sets", .install = Call<&world::env_sets::Install>},
+    // logging only; without it the world's levels are not watched
+    Module{.name = L"level watch", .install = Call<&world::level_watch::Install>, .remove = &world::level_watch::Remove},
     // The field hooks the seats' members use, removed only with every further player out (the field-action tick back
     // on any thread; the seats' triggers no longer reach the dispatcher; the presses and chest opens back to the
     // game's; the consumers of the presses first).
@@ -579,6 +582,7 @@ void TickWorld(const Frame& frame) noexcept
     world::npc_senses::Tick(anyIn ? frame.pawnOne : nullptr);
     world::npc_detail::Tick(anyIn ? frame.managerOne : nullptr);
     world::env_sets::Tick();
+    world::level_watch::Tick(anyIn);
     audio::listeners::Tick(frame.map.count);
 }
 
