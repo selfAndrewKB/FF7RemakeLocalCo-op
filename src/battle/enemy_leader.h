@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 // Enemies follow the human whose member stands when the game's leader is down (RE-enemy-leader-reads.md §2, §5.1).
 //
 // The game's leader is one character. Enemies whose battle-AI spec says "follow the leader" (TargetSelectType 10)
@@ -27,6 +29,12 @@
 // collector behind GetActionCharacter and kin; none tests that the leader stands) were answered here too from
 // v0.19.1 (the re-target alone left Rude's script re-picking the downed Cloud each action [CONFIRMED live]); since
 // v0.36.0 battle/enemy_coin answers them from each enemy's coin, whose toss skips a downed member.
+// In co-op the game's forced switch is refused altogether (battle/party_switch; the user's rule 2026-10-28: a downed
+// player stays on their character until revived), so with no human's member standing the enemy-facing leader is the
+// standing AI ally that switch would have taken (the next deployed slot from the leader's, wrap-around, no human's,
+// no battle support guest), and the same re-target and OnChangeLeader run for it. `Instead` publishes that member for
+// the coin: an enemy whose coin finds no standing human answers its "the player" actor reads with it, as a single
+// player game would after its switch.
 // Game thread only: a read off it gets the game's answer and is counted. Logged on each change (Debug) with the
 // number of enemies re-targeted; `enemy-leader` reads the state.
 
@@ -41,5 +49,10 @@ void Remove() noexcept;
 
 /// Each engine tick, on the game thread: the enemy-facing leader, and the re-target when it changes.
 void Tick() noexcept;
+
+/// The standing member enemies follow while the game's leader is down (a human's, else in co-op the AI ally), and
+/// its player type; null while the leader stands or nobody does. Any thread (battle/enemy_coin's fallback for an
+/// enemy whose coin has no standing human).
+void* Instead(std::uint8_t* type = nullptr) noexcept;
 
 }  // namespace lss::battle::enemy_leader

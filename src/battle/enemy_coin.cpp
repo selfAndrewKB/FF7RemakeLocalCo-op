@@ -9,6 +9,7 @@
 
 #include "battle/coin_choice.h"
 #include "battle/coin_table.h"
+#include "battle/enemy_leader.h"
 #include "battle/enemy_watch.h"
 #include "battle/type_answer_code.h"
 #include "control/registry.h"
@@ -352,6 +353,15 @@ void* MemberOf(int player) noexcept
     return player >= 2 ? g_members[static_cast<std::size_t>(player - 1)].load(std::memory_order_relaxed) : nullptr;
 }
 
+/// The answer for an enemy whose coin names no further player: the game's, unless the game's leader lies down (in
+/// co-op its forced switch is refused) while another member stands; then that member (battle/enemy_leader), as the
+/// single-player game's switch would have made it the leader.
+void* GamesOrInstead(void* game) noexcept
+{
+    void* const instead = enemy_leader::Instead();
+    return instead != nullptr ? instead : game;
+}
+
 // --- The toss: the decision gate ---------------------------------------------------------------------------------
 
 char GateFor(platform::EntryRedirect& redirect, void* controller) noexcept
@@ -459,7 +469,7 @@ void* AnswerRead(void* game, ReadKind kind, void* enemy) noexcept
     void* member = MemberOf(player);
     platform::LogTrace(L"enemy coin: {} answered player {} for enemy {:#x}", kReadNames[kind], player == 0 ? 1 : player,
                        reinterpret_cast<std::uintptr_t>(enemy));
-    return member != nullptr ? member : game;
+    return member != nullptr ? member : GamesOrInstead(game);
 }
 
 /// The enemy whose move struct `t_move` names (its first field is the controller), or null.
@@ -598,7 +608,7 @@ void* AnswerScript(void* game, const wchar_t* what) noexcept
     void* member = MemberOf(player);
     platform::LogTrace(L"enemy coin: {} answered player {} for enemy {:#x}", what, player == 0 ? 1 : player,
                        reinterpret_cast<std::uintptr_t>(t_enemy));
-    return member != nullptr ? member : game;
+    return member != nullptr ? member : GamesOrInstead(game);
 }
 
 void* ScriptLeader(void* partyManager, std::uint8_t variant)
@@ -674,20 +684,25 @@ void Exec(UObject* context, RC::Unreal::FFrame& frame, void* result)
     {
         if (enemy != nullptr && result != nullptr)
         {
-            const int player = CoinOf(enemy);
-            if (void* member = MemberOf(player); member != nullptr)
+            const int    player      = CoinOf(enemy);
+            std::uint8_t insteadType = facts::kPlayerTypeNone;
+            void* const  member      = MemberOf(player);
+            void* const  instead     = member == nullptr ? enemy_leader::Instead(&insteadType) : nullptr;
+            if (member != nullptr || instead != nullptr)
             {
                 Count(g_counts.apiAnswers, g_totals.apiAnswers);
                 if constexpr (kNatives[I].kind == Kind::LeaderApi)
                 {
-                    std::memcpy(result, &member, sizeof(member));
+                    void* const answer = member != nullptr ? member : instead;
+                    std::memcpy(result, &answer, sizeof(answer));
                 }
                 else
                 {
-                    const std::uint8_t type = g_fakes[player - 2][type_answer_code::kTypeOffset];
+                    const std::uint8_t type = member != nullptr ? g_fakes[player - 2][type_answer_code::kTypeOffset] : insteadType;
                     std::memcpy(result, &type, sizeof(type));
                 }
-                platform::LogTrace(L"enemy coin: {} answered player {} for enemy {:#x}", kNatives[I].path, player,
+                platform::LogTrace(L"enemy coin: {} answered {} for enemy {:#x}", kNatives[I].path,
+                                   member != nullptr ? std::format(L"player {}", player) : std::wstring(L"the standing member in the downed leader's place"),
                                    reinterpret_cast<std::uintptr_t>(enemy));
             }
         }

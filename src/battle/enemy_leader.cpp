@@ -10,6 +10,7 @@
 #include "players/field_root.h"
 #include "players/weak_object.h"
 #include "players/scopes.h"
+#include "players/seats.h"
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -20,6 +21,7 @@
 #include <Windows.h>
 
 #include <array>
+#include <atomic>
 #include <cstdint>
 #include <cstring>
 #include <format>
@@ -35,6 +37,9 @@ using IterBeginFn      = void (*)(void* iterator, void* registry, void* owner, s
 using IterNextFn       = void (*)(void* iterator);
 using SetTargetFn      = void (*)(void* component, void* character);
 using FreeFn           = void (*)(void* memory);
+using GetPlayerActorFn = void* (*)(void* partyManager, std::uint8_t variant, std::uint8_t type, bool alternate);
+
+constexpr int kAllySeat = -1;  // g_enemySeat: the standing AI ally the game's forced switch would have taken
 
 // The game's registry iterator as BattleSystem_CycleLeader keeps it on its stack: the owner at +8, the index at
 // +16, then a TArray with 128 inline 40-byte entries (the character pointer first), its heap pointer, count and
@@ -53,7 +58,14 @@ IterBeginFn            g_iterBegin   = nullptr;
 IterNextFn             g_iterNext    = nullptr;
 SetTargetFn            g_setTarget   = nullptr;
 FreeFn                 g_free        = nullptr;
+GetPlayerActorFn       g_getActor    = nullptr;
+std::uint8_t**         g_data        = nullptr;  // the data singleton's global (its player status bytes)
 platform::CallRedirect g_leaderCall;
+
+// The member enemies follow in place of the game's downed leader (null while the leader stands or nobody does), and
+// its player type: written by Tick, read by battle/enemy_coin on any thread.
+std::atomic<void*>        g_instead{nullptr};
+std::atomic<std::uint8_t> g_insteadType{facts::kPlayerTypeNone};
 
 // Game thread.
 DWORD         g_thread       = 0;
@@ -187,7 +199,61 @@ void* LeaderForBattleAI(void* partyManager, std::uint8_t variant)
 
 const wchar_t* Describe(int seat) noexcept
 {
-    return seat == 0 ? L"the game's leader" : seat == 1 ? L"player 2's member" : seat == 2 ? L"player 3's member" : L"player 4's member";
+    return seat == kAllySeat ? L"the standing AI ally"
+           : seat == 0       ? L"the game's leader"
+           : seat == 1       ? L"player 2's member"
+           : seat == 2       ? L"player 3's member"
+                             : L"player 4's member";
+}
+
+/// The member the game's forced switch would take from the downed leader when no human's member stands: the next
+/// deployed slot from the leader's, with wrap-around (the cycle's direction 1), that no human plays and passes the
+/// cycle's own candidate test (0x1409BAC99..: an actor, a battle component not KO'd, not a battle-support guest; no
+/// trap or sync-action test). Null if none. The cycle's tests after its pick (inside the battle area, party side) are
+/// not repeated [ASSUMPTION: an ally in the party's battle is inside it]. Game thread.
+void* AllyInstead(std::uint8_t& type) noexcept
+{
+    const std::uintptr_t manager = players::scopes::PartyManagerAddress();
+    std::uint8_t         slots[3]{};
+    std::uint8_t         leaderType = facts::kPlayerTypeNone;
+    const std::uint8_t*  data = g_data != nullptr ? *g_data : nullptr;
+    if (manager == 0 || data == nullptr || !Read(reinterpret_cast<const void*>(manager + facts::kPartySlotTypes), slots) ||
+        !Read(reinterpret_cast<const void*>(manager + facts::kPartyLeaderType), leaderType))
+    {
+        return nullptr;
+    }
+    int from = -1;
+    for (int i = 0; i < 3; ++i)
+    {
+        from = slots[i] == leaderType ? i : from;
+    }
+    if (from < 0)
+    {
+        return nullptr;
+    }
+    for (int step = 1; step < 3; ++step)
+    {
+        const std::uint8_t candidate = slots[(from + step) % 3];
+        std::uint8_t       status    = 0;
+        bool               human     = false;
+        for (int seat = 1; seat < players::scopes::kMaxPlayers; ++seat)
+        {
+            human = human || players::scopes::MemberType(seat) == candidate;
+        }
+        if (candidate == facts::kPlayerTypeNone || candidate >= 8 || human ||
+            !Read(data + facts::kDataPlayerStatus + candidate, status) || status == facts::kStatusBattleSupport)
+        {
+            continue;
+        }
+        void* actor = nullptr;
+        if (platform::CallGuarded(g_getActor, actor, reinterpret_cast<void*>(manager), std::uint8_t{0}, candidate, false) && actor != nullptr &&
+            !Downed(actor))
+        {
+            type = candidate;
+            return actor;
+        }
+    }
+    return nullptr;
 }
 
 }  // namespace
@@ -200,7 +266,9 @@ bool Install(const platform::GameImage& image) noexcept
     const auto iterNext  = platform::FindFunction(image, facts::kCharaRegistryIterNext);
     const auto setTarget = platform::FindFunction(image, facts::kBattleCompSetTargetChar);
     const auto free      = platform::FindFunction(image, facts::kGameFree);
-    if (!players::field_root::Installed() || !getLeader || !site || !iterBegin || !iterNext || !setTarget || !free)
+    const auto getActor  = platform::FindFunction(image, facts::kGetPlayerActor);
+    const auto data      = image.Rebase(facts::kDataSingletonGlobal, sizeof(void*));
+    if (!players::field_root::Installed() || !getLeader || !site || !iterBegin || !iterNext || !setTarget || !free || !getActor || !data)
     {
         platform::Log(L"enemy leader: an engine check failed; enemies keep following a downed leader");
         return false;
@@ -210,17 +278,21 @@ bool Install(const platform::GameImage& image) noexcept
     g_iterNext  = reinterpret_cast<IterNextFn>(*iterNext);
     g_setTarget = reinterpret_cast<SetTargetFn>(*setTarget);
     g_free      = reinterpret_cast<FreeFn>(*free);
+    g_getActor  = reinterpret_cast<GetPlayerActorFn>(*getActor);
+    g_data      = reinterpret_cast<std::uint8_t**>(*data);
     if (!g_leaderCall.Install(*site, g_getLeader, reinterpret_cast<std::uintptr_t>(&LeaderForBattleAI)))
     {
         platform::Log(L"enemy leader: the battle AI tick's leader read could not be redirected; enemies are re-targeted but get no leader-change event");
     }
     control::Register({.name = L"enemy-leader", .shape = control::Shape::Text,
-                       .help = L"whom enemies follow (the game's leader, or the standing human's member while it is down); re-targets, leader-read answers",
+                       .help = L"whom enemies follow (the game's leader, or while it is down the standing human's member, else in co-op the standing AI ally); "
+                               L"re-targets, leader-read answers",
                        .get  = [] {
                            return control::Value{std::format(L"enemies follow {}; re-targets {} (last {} enemies); leader-read answers {}, off-thread {}",
                                                              Describe(g_enemySeat), g_retargets, g_lastEnemies, g_answers, g_offThread)};
                        }});
-    platform::Log(L"enemy leader: installed; enemies turn on the standing human's member when the game's leader is down");
+    platform::Log(L"enemy leader: installed; enemies turn on the standing human's member when the game's leader is down (in co-op, else the "
+                  L"standing AI ally)");
     return true;
 }
 
@@ -236,6 +308,7 @@ void Tick() noexcept
     {
         g_leader = g_enemyLeader = nullptr;
         g_enemySeat = 0;
+        g_instead.store(nullptr, std::memory_order_relaxed);
         return;
     }
     void* leader = GameLeader();
@@ -243,11 +316,14 @@ void Tick() noexcept
     {
         g_leader = g_enemyLeader = nullptr;
         g_enemySeat = 0;
+        g_instead.store(nullptr, std::memory_order_relaxed);
         return;
     }
-    // The enemy-facing leader: the game's while it stands, else the first other human's standing member.
-    void* enemyLeader = leader;
-    int   seat        = 0;
+    // The enemy-facing leader: the game's while it stands, else the first other human's standing member, else (in
+    // co-op, where the game's forced switch is refused) the standing AI ally that switch would have taken.
+    void*        enemyLeader = leader;
+    int          seat        = 0;
+    std::uint8_t type        = facts::kPlayerTypeNone;
     if (Downed(leader))
     {
         for (int candidate = 1; candidate < players::scopes::kMaxPlayers; ++candidate)
@@ -257,7 +333,16 @@ void Tick() noexcept
             {
                 enemyLeader = member;
                 seat        = candidate;
+                type        = players::scopes::MemberType(candidate);
                 break;
+            }
+        }
+        if (seat == 0 && players::AnyFurtherMember())
+        {
+            if (void* ally = AllyInstead(type); ally != nullptr)
+            {
+                enemyLeader = ally;
+                seat        = kAllySeat;
             }
         }
     }
@@ -282,6 +367,33 @@ void Tick() noexcept
     g_leader      = leader;
     g_enemyLeader = enemyLeader;
     g_enemySeat   = seat;
+    void* const        instead     = seat != 0 ? enemyLeader : nullptr;
+    const std::uint8_t insteadType = seat != 0 ? type : facts::kPlayerTypeNone;
+    if (instead != g_instead.load(std::memory_order_relaxed) || insteadType != g_insteadType.load(std::memory_order_relaxed))
+    {
+        g_instead.store(nullptr, std::memory_order_release);  // the pair changes: a reader between the stores reads again
+        g_insteadType.store(insteadType, std::memory_order_release);
+        g_instead.store(instead, std::memory_order_release);
+    }
+}
+
+void* Instead(std::uint8_t* type) noexcept
+{
+    // The member, its type, then the member again: a pair Tick changed in between is read again, so the type always
+    // belongs to the member returned.
+    for (;;)
+    {
+        void* const        instead = g_instead.load(std::memory_order_acquire);
+        const std::uint8_t kind    = g_insteadType.load(std::memory_order_acquire);
+        if (g_instead.load(std::memory_order_acquire) == instead)
+        {
+            if (type != nullptr)
+            {
+                *type = kind;
+            }
+            return instead;
+        }
+    }
 }
 
 }  // namespace lss::battle::enemy_leader

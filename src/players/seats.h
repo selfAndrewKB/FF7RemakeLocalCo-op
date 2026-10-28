@@ -20,6 +20,20 @@ inline constexpr int kSeatsBuilt = 2;
 static_assert(kSeatsBuilt >= 1 && kSeatsBuilt < scopes::kMaxPlayers, "the seats are numbered within the scopes' players");
 
 /// "player 2" for seat 1: the name every line of a seat's uses, so three players read apart in the log.
+/// Whether a further player holds a member (co-op, as the battle levers read it). A plain pointer read per seat, so
+/// any thread may ask (the seats are bound on the game thread).
+inline bool AnyFurtherMember() noexcept
+{
+    for (int seat = 1; seat <= kSeatsBuilt; ++seat)
+    {
+        if (scopes::Member(seat) != nullptr)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
 constexpr const wchar_t* SeatName(int seat) noexcept
 {
     constexpr const wchar_t* kNames[scopes::kMaxPlayers] = {L"player 1", L"player 2", L"player 3", L"player 4"};

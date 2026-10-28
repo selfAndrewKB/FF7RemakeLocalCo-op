@@ -1498,6 +1498,14 @@ inline constexpr platform::FunctionFact kSeqCutPrimary{L"PrimaryPCM_SetCameraCut
 // cycle's call sits inside a block; CanSwitch's crosses one (placed from the game thread, outside the function).
 inline constexpr std::uintptr_t kCycleLeaderCandidateCall = 0x1409BAC99;
 inline constexpr std::uintptr_t kCanSwitchCandidateCall   = 0x1409BA98C;
+/// The one forced leader change in battle (research/RE-pyramid-trap-control.md): the KO'd leader's dead-state tick
+/// (BattlePlayerComp_TickDeadState_KOAutoSwitch 0x1409864C0) calls BattleSystem_CycleLeader(sys, 1, forced 1,
+/// input 0) every tick while it lies down (E8 6D 44 03 00, crossing its block; a jmp follows, the result unused). The
+/// cycle's other callers are the d-pad (twice) and its retry buffer, which only a refused forced call writes.
+inline constexpr std::uintptr_t kKoAutoSwitchCall = 0x14098660E;
+inline constexpr std::array<std::uint8_t, 16> kCycleLeaderEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x10, 0x55, 0x56, 0x57, 0x41, 0x54, 0x41, 0x55, 0x41, 0x56, 0x41, 0x57};
+inline constexpr platform::FunctionFact kCycleLeader{L"BattleSystem_CycleLeader", 0x1409BAA80, kCycleLeaderEntry};
 
 // --- The battle warps (RE-battle-warp.md §3) --------------------------------------------------------------------
 // EncountMgr_BattleIn_DefaultLeaderAndTeleport's member loop fetches each present member with

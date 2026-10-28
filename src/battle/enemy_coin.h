@@ -36,6 +36,10 @@
 //     dropping toward "the player"). The follow ticks record their enemy around the game's tick; the flyers' point
 //     evaluation and the move type choice record their move struct at their one call (the latter crosses its block:
 //     placed at on_unreal_init). A mine's roll is a Debug line; the per-tick reads are counted (Trace each).
+// While the game's leader lies down with no human's member standing (in co-op its forced switch is refused,
+// battle/party_switch), an enemy whose coin names no further player gets the member battle/enemy_leader follows in
+// the leader's place (the AI ally the switch would have taken) from its actor and party API reads, not the downed
+// leader. The type reads (the hate rows' and expectation counts' leader type) keep their answers.
 // Nothing is written to the game's state: every answer passes through the game's own call. Any thread for the toss,
 // the type answers and the area answer (the AI tick is written to run off the game thread); the natives run on the
 // game thread; hits and sensing are scoped on the game thread only (else counted and left as the game's).
