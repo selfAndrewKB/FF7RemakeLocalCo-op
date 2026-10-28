@@ -8,6 +8,7 @@
 
 #include "control/registry.h"
 #include "engine_facts.h"
+#include "platform/entry_redirect.h"
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
@@ -19,10 +20,21 @@
 #include <atomic>
 #include <chrono>
 #include <climits>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <format>
+#include <intrin.h>
 #include <string>
+
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <Windows.h>
+#include <Psapi.h>
 
 namespace lss::battle::enemy_watch {
 
@@ -33,6 +45,10 @@ using players::weak_object::Weak;
 using PawnCompFn    = void* (*)(void* controller);
 using IsAFn         = bool (*)(void* object, void* b, void* c);
 using CharacterOfFn = void* (*)(const void* targetObject);
+using ComponentTest = bool (*)(void* component);           // BattlePlayerComp_IsPartySide, BattleComp_IsHateEnemy
+using OwnerFn       = void* (*)(void* component);           // the battle component's owner character (vtable +0x20)
+using SetTargetFn   = void (*)(void* component, void* character);
+using ReadyFn       = char (*)(void* component);            // 0, 1 light, 2 heavy
 
 constexpr std::size_t  kEntries    = 32;       // enemies watched at once (a battle has a handful)
 constexpr std::int64_t kSeenMs     = 1000;     // a gate not run for this long: the enemy left the battle, or the game paused
@@ -40,6 +56,8 @@ constexpr std::int64_t kReclaimMs  = 5000;     // a gate may take over an entry 
 constexpr std::int64_t kFirstWait  = 5000;     // between actions this long: logged
 constexpr std::int64_t kNextWait   = 10000;    // and again every this long
 constexpr int          kAreaUnset  = INT_MIN;  // no area read since the enemies were last seen
+constexpr std::int64_t kSetSeenMs  = 250;      // a polled target change this soon after a target call: that call made it
+constexpr unsigned     kFrames     = 3;        // the callers named for a target call
 
 // Written by the gates on any thread; an entry is claimed by a compare-and-swap on its controller from the value the
 // claimant saw (empty, or an entry not written for kReclaimMs). The game thread only reads. Two gates racing for one
@@ -51,6 +69,16 @@ struct Entry
     std::atomic<std::uint64_t>  action{0};
     std::atomic<std::uintptr_t> target{0};  // the component's own target object: identity only, never dereferenced here
     std::atomic<std::int64_t>   seenMs{0};
+    std::atomic<std::uintptr_t> component{0};     // its battle component: the key the two hooks find the entry by
+    std::atomic<int>            ready{0};         // the attack-ready test's last answer (0, 1 light, 2 heavy)
+    std::atomic<std::int64_t>   readySinceMs{0};  // when it last turned ready (written before `ready`)
+    std::atomic<std::int64_t>   setMs{0};         // the last target call into its component
+    // The last target call logged at Debug (its caller's return, the character asked, the one held after), and the
+    // exact repeats of it since (logged at Trace; the next differing call's Debug line counts them).
+    std::atomic<std::uintptr_t> setCaller{0};
+    std::atomic<std::uintptr_t> setAsked{0};
+    std::atomic<std::uintptr_t> setHeld{0};
+    std::atomic<int>            setRepeats{0};
 };
 std::array<Entry, kEntries> g_entries;
 
@@ -65,6 +93,8 @@ struct Reported
     void*          character  = nullptr;  // the character it named when logged (compared only)
     std::int64_t   sinceMs    = 0;  // when the action (or the wait between actions) began
     std::int64_t   nextWaitMs = 0;  // when the next "no action" line is due
+    int            ready       = 0;  // the ready answer last logged
+    std::int64_t   readyNextMs = 0;  // when the next "ready without acting" line is due
     std::wstring   name;
 };
 std::array<Reported, kEntries> g_reported;  // game thread
@@ -74,6 +104,15 @@ std::array<std::int64_t, kEntries> g_goneSeenMs{};
 std::atomic<bool>                  g_installed{false};
 PawnCompFn                         g_pawnComp = nullptr;  // set at install (published by g_installed), then only read
 IsAFn                              g_isAi     = nullptr;
+ComponentTest                      g_isPartySide = nullptr;
+ComponentTest                      g_isHate      = nullptr;
+std::uintptr_t                     g_gameBase    = 0;  // the game module's live range, for naming callers
+std::uintptr_t                     g_gameEnd     = 0;
+platform::EntryRedirect            g_setTarget, g_ready;
+
+// Each human's member (player 1: the game's leader), refreshed by the game thread each tick for the hooks on any
+// thread. Compared only, never dereferenced from here.
+std::array<std::atomic<void*>, players::scopes::kMaxPlayers> g_members{};
 
 // Each human's member's battle area as last logged (points; 0 empty; -1 unreadable; kAreaUnset none yet), and when it
 // was last read. Game thread.
@@ -131,8 +170,8 @@ std::wstring ClassName(void* object) noexcept
 }
 
 /// Player `seat + 1`'s member: the game's leader for player 1 (as battle/enemy_coin's Tick reads it), the bound member
-/// for the others; null if none. Game thread.
-void* MemberOf(int seat) noexcept
+/// for the others; null if none. Game thread (Tick copies it into g_members for the hooks).
+void* ReadMember(int seat) noexcept
 {
     if (seat > 0)
     {
@@ -143,6 +182,73 @@ void* MemberOf(int seat) noexcept
     return manager != 0 && Read(reinterpret_cast<const void*>(manager + facts::kPartyLeaderWeak), leader)
                ? players::weak_object::ObjectOf(leader)
                : nullptr;
+}
+
+/// Player `seat + 1`'s member as the game thread last copied it. Any thread.
+void* MemberOf(int seat) noexcept
+{
+    return g_members[static_cast<std::size_t>(seat)].load(std::memory_order_relaxed);
+}
+
+/// A battle component's owner character, through the component's own getter. Null if unreadable.
+void* OwnerOf(void* component) noexcept
+{
+    void**  vtable = nullptr;
+    OwnerFn get    = nullptr;
+    void*   owner  = nullptr;
+    return component != nullptr && Read(component, vtable) && Read(vtable + facts::kComponentOwnerGetterSlot, get) &&
+                   platform::CallGuarded(get, owner, component)
+               ? owner
+               : nullptr;
+}
+
+struct Point
+{
+    float x = 0, y = 0, z = 0;
+};
+
+/// A character's location (its root component's world translation).
+bool LocationOf(const void* actor, Point& at) noexcept
+{
+    const void* root = actor != nullptr ? platform::ReadPointer(actor, facts::kActorRootComponent) : nullptr;
+    return root != nullptr && Read(static_cast<const std::uint8_t*>(root) + facts::kComponentWorldLocation, at);
+}
+
+/// The 3D distance between two characters in metres, as text.
+std::wstring Metres(const void* from, const void* to) noexcept
+{
+    Point a, b;
+    if (!LocationOf(from, a) || !LocationOf(to, b))
+    {
+        return L"an unread distance";
+    }
+    const double dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z;
+    return std::format(L"{:.1f} m", std::sqrt(dx * dx + dy * dy + dz * dz) / 100.0);
+}
+
+/// A caller of the target call, as IDA names it: a known setter by name, else the IDA address of the return.
+std::wstring FrameText(void* frame) noexcept
+{
+    const auto live = reinterpret_cast<std::uintptr_t>(frame);
+    if (live < g_gameBase || live >= g_gameEnd)
+    {
+        return L"code outside the game";
+    }
+    const std::uintptr_t ida   = platform::IdaAddress(live);
+    DWORD64              base  = 0;
+    const auto*          entry = RtlLookupFunctionEntry(live, &base, nullptr);
+    if (entry != nullptr)
+    {
+        const std::uintptr_t start = platform::IdaAddress(static_cast<std::uintptr_t>(base) + entry->BeginAddress);
+        for (const auto& setter : facts::kTargetSetters)
+        {
+            if (setter.start == start)
+            {
+                return std::format(L"{} ({:#x})", setter.name, ida);
+            }
+        }
+    }
+    return std::format(L"{:#x}", ida);
 }
 
 /// The live controller of a reported enemy, or null once the engine destroyed it (the weak pointer resolves to that
@@ -162,21 +268,26 @@ bool LiveController(std::uintptr_t key) noexcept
     return players::weak_object::Live(address) && platform::CallGuarded(g_isAi, isAi, address, nullptr, nullptr) && isAi;
 }
 
-/// The character a live enemy controller's pawn targets: its battle component through the game's getter, then the
-/// component's own target (the object at +0x38, live while its reference block's strong count is above 0; the
-/// object's vtable +0x20 names the character, as BattlePlayerComp_GetCurrentTarget's callers read it). The game's
-/// getter itself is not called: it takes a reference on the pair, which only the game's own release may drop. Null if
-/// none. Game thread.
-void* TargetOf(void* controller) noexcept
+/// The live controller's battle component, through the game's getter; null if none.
+void* ComponentOf(void* controller) noexcept
 {
     void* component = nullptr;
-    if (controller == nullptr || !platform::CallGuarded(g_pawnComp, component, controller) || component == nullptr)
+    return controller != nullptr && platform::CallGuarded(g_pawnComp, component, controller) ? component : nullptr;
+}
+
+/// The character a battle component targets: the component's own target (the object at +0x38, live while its
+/// reference block's strong count is above 0; the object's vtable +0x20 names the character, as
+/// BattlePlayerComp_GetCurrentTarget's callers read it). The game's getter itself is not called: it takes a reference
+/// on the pair, which only the game's own release may drop. Null if none. The game thread between AI ticks, or the
+/// thread writing the pair (the target-call hook, around the game's own write).
+void* TargetCharacterOf(const void* component) noexcept
+{
+    if (component == nullptr)
     {
         return nullptr;
     }
-    // Safe because no AI writer replaces the pair during this pre-tick (the AI tick may run off the game thread,
-    // ASSUMPTION: only inside the world tick). The block, object, block read only adds a check for a writer that stores
-    // the object before the block; one storing the block first would pass it.
+    // The block, object, block read only adds a check for a writer that stores the object before the block; one
+    // storing the block first would pass it.
     const auto*  base   = static_cast<const std::uint8_t*>(component);
     void*        object = nullptr;
     const auto*  block  = static_cast<const std::uint8_t*>(platform::ReadPointer(base, facts::kBattleCompOwnTargetRef));
@@ -195,6 +306,19 @@ void* TargetOf(void* controller) noexcept
                : nullptr;
 }
 
+/// The character a live enemy controller's pawn targets. Game thread: safe because no AI writer replaces the pair
+/// during this pre-tick (the AI tick may run off the game thread, ASSUMPTION: only inside the world tick).
+void* TargetOf(void* controller) noexcept
+{
+    return TargetCharacterOf(ComponentOf(controller));
+}
+
+/// The enemy character a live controller drives (its battle component's owner).
+void* EnemyOf(void* controller) noexcept
+{
+    return OwnerOf(ComponentOf(controller));
+}
+
 /// A character as a player would name it: whose member it is, else its class. Game thread.
 std::wstring CharacterName(void* character) noexcept
 {
@@ -210,6 +334,122 @@ std::wstring CharacterName(void* character) noexcept
         }
     }
     return ClassName(character);
+}
+
+/// How far `enemy` is from `target` and from each other human's member: "<target> at 8.2 m; player 2's member at
+/// 23.1 m".
+std::wstring Distances(const void* enemy, void* target) noexcept
+{
+    std::wstring text = target != nullptr ? std::format(L"{} at {}", CharacterName(target), Metres(enemy, target)) : L"no target";
+    for (int seat = 0; seat < players::scopes::kMaxPlayers; ++seat)
+    {
+        if (void* member = MemberOf(seat); member != nullptr && member != target)
+        {
+            text += std::format(L"; player {}'s member at {}", seat + 1, Metres(enemy, member));
+        }
+    }
+    return text;
+}
+
+/// The entry holding `component`, or null.
+Entry* EntryOf(const void* component) noexcept
+{
+    const auto key = reinterpret_cast<std::uintptr_t>(component);
+    for (auto& e : g_entries)
+    {
+        if (e.component.load(std::memory_order_relaxed) == key)
+        {
+            return &e;
+        }
+    }
+    return nullptr;
+}
+
+// --- The two hooks (any thread) ----------------------------------------------------------------------------------
+
+/// The Debug line of a target call that differs from the enemy's last one (its frames captured here, off the
+/// repeat path). Allocates: the caller catches. Never inlined: its frame count skips itself and SetTarget.
+__declspec(noinline) void LogTargetCall(void* component, void* character, void* before, void* after, int repeats)
+{
+    void*          frames[kFrames]{};
+    const unsigned count = RtlCaptureStackBackTrace(2, kFrames, frames, nullptr);  // from SetTarget's caller on
+    std::wstring   by    = count > 0 ? FrameText(frames[0]) : std::wstring(L"an unread caller");
+    for (unsigned i = 1; i < count; ++i)
+    {
+        by += L", from " + FrameText(frames[i]);
+    }
+    bool hate = false;
+    platform::CallGuarded(g_isHate, hate, component);
+    void* const enemy      = OwnerOf(component);
+    void* const controller = enemy != nullptr ? platform::ReadPointer(enemy, facts::kCharacterBattleAI) : nullptr;
+    platform::LogDebug(L"enemy watch: {} {:#x} target call by {}: asked {}, holds {}{}, held {}; {}{}", ClassName(controller),
+                       reinterpret_cast<std::uintptr_t>(controller), by, CharacterName(character), CharacterName(after),
+                       hate ? L" (a hate enemy: the call takes its hate pick)" : L"", CharacterName(before), Distances(enemy, after),
+                       repeats > 0 ? std::format(L" (the call before it repeated {} times)", repeats) : std::wstring());
+}
+
+/// BattleComp_SetTargetChar: the game's call unchanged; for an enemy's component, who called it and what it holds.
+/// A call repeating the enemy's last one exactly (same caller, asked and held character; a script asking each tick)
+/// is a Trace line; any other is a Debug line.
+void SetTarget(void* component, void* character)
+{
+    const auto original = reinterpret_cast<SetTargetFn>(g_setTarget.Original());
+    bool       party    = true;
+    if (!Watching() || !platform::CallGuarded(g_isPartySide, party, component) || party)
+    {
+        original(component, character);
+        return;
+    }
+    const auto  caller = reinterpret_cast<std::uintptr_t>(_ReturnAddress());
+    void* const before = TargetCharacterOf(component);
+    original(component, character);
+    try
+    {
+        void* const    after  = TargetCharacterOf(component);
+        const auto     asked  = reinterpret_cast<std::uintptr_t>(character);
+        const auto     held   = reinterpret_cast<std::uintptr_t>(after);
+        Entry* const   entry  = EntryOf(component);
+        int            repeats = 0;
+        if (entry != nullptr)
+        {
+            entry->setMs.store(NowMs(), std::memory_order_relaxed);
+            if (entry->setCaller.load(std::memory_order_relaxed) == caller && entry->setAsked.load(std::memory_order_relaxed) == asked &&
+                entry->setHeld.load(std::memory_order_relaxed) == held)
+            {
+                entry->setRepeats.fetch_add(1, std::memory_order_relaxed);
+                platform::LogTrace(L"enemy watch: target call {:#x} repeated (caller {:#x})", reinterpret_cast<std::uintptr_t>(component),
+                                   platform::IdaAddress(caller));
+                return;
+            }
+            entry->setCaller.store(caller, std::memory_order_relaxed);
+            entry->setAsked.store(asked, std::memory_order_relaxed);
+            entry->setHeld.store(held, std::memory_order_relaxed);
+            repeats = entry->setRepeats.exchange(0, std::memory_order_relaxed);
+        }
+        LogTargetCall(component, character, before, after, repeats);
+    }
+    catch (...)
+    {
+        // A failed log line (an allocation) never unwinds into the game's frames.
+    }
+}
+
+/// The enemy component's attack-ready test: the game's answer unchanged, recorded for its entry.
+char AttackReady(void* component)
+{
+    const char ready = reinterpret_cast<ReadyFn>(g_ready.Original())(component);
+    if (Watching())
+    {
+        if (Entry* entry = EntryOf(component); entry != nullptr)
+        {
+            if (ready != 0 && entry->ready.load(std::memory_order_relaxed) == 0)
+            {
+                entry->readySinceMs.store(NowMs(), std::memory_order_relaxed);
+            }
+            entry->ready.store(ready, std::memory_order_release);
+        }
+    }
+    return ready;
 }
 
 /// The points of `member`'s first area query (the area enemies read around the character they target); -1 when
@@ -287,8 +527,10 @@ std::wstring Reading() noexcept
         {
             continue;
         }
-        text += std::format(L"{}{} {:#x}: {} for {:.1f} s on {}", text.empty() ? L"" : L"; ", r.name, r.controller, ActionName(r.action),
-                            Seconds(now - r.sinceMs), CharacterName(TargetOf(controller)));
+        const int ready = g_entries[i].ready.load(std::memory_order_acquire);
+        text += std::format(L"{}{} {:#x}: {} for {:.1f} s on {}{}", text.empty() ? L"" : L"; ", r.name, r.controller, ActionName(r.action),
+                            Seconds(now - r.sinceMs), Distances(EnemyOf(controller), TargetOf(controller)),
+                            ready == 0 ? L"" : ready == 2 ? L", ready (heavy)" : L", ready (light)");
     }
     if (text.empty())
     {
@@ -335,15 +577,25 @@ void Observe(void* controller, const void* component, std::uint64_t action) noex
         {
             continue;  // another enemy's, written lately
         }
-        if (e.controller.compare_exchange_strong(seen, key, std::memory_order_relaxed) || seen == key)
+        if (e.controller.compare_exchange_strong(seen, key, std::memory_order_relaxed))
         {
-            entry = &e;  // claimed, or the same enemy claimed it on another thread meanwhile
+            entry = &e;  // claimed: the previous enemy's hook fields start over, its component key first
+            e.component.store(0, std::memory_order_relaxed);
+            e.ready.store(0, std::memory_order_relaxed);
+            e.setMs.store(0, std::memory_order_relaxed);
+            e.setCaller.store(0, std::memory_order_relaxed);
+            e.setRepeats.store(0, std::memory_order_relaxed);
+        }
+        else if (seen == key)
+        {
+            entry = &e;  // the same enemy claimed it on another thread meanwhile
         }
     }
     if (entry == nullptr)
     {
         return;  // more enemies than entries: the extra ones go unwatched
     }
+    entry->component.store(reinterpret_cast<std::uintptr_t>(component), std::memory_order_relaxed);
     entry->action.store(action, std::memory_order_relaxed);
     entry->target.store(target, std::memory_order_relaxed);
     entry->seenMs.store(now, std::memory_order_release);
@@ -366,6 +618,36 @@ bool Install(const platform::GameImage& image) noexcept
     g_pawnComp = reinterpret_cast<PawnCompFn>(*pawnComp);
     g_isAi     = reinterpret_cast<IsAFn>(*isAi);
     g_areaPoints.fill(kAreaUnset);
+
+    // Who aims an enemy, and when it is ready: two entry redirects, each optional (the watch runs without them).
+    MODULEINFO module{};
+    if (K32GetModuleInformation(GetCurrentProcess(), GetModuleHandleW(L"ff7remake_.exe"), &module, sizeof(module)) != 0)
+    {
+        g_gameBase = reinterpret_cast<std::uintptr_t>(module.lpBaseOfDll);
+        g_gameEnd  = g_gameBase + module.SizeOfImage;
+    }
+    else
+    {
+        platform::LogWarning(L"enemy watch: the game module's range is unread; target calls name no caller");
+    }
+    const auto setTarget   = platform::FindFunction(image, facts::kBattleCompSetTargetChar);
+    const auto isPartySide = platform::FindFunction(image, facts::kBattleCompIsPartySide);
+    const auto isHate      = platform::FindFunction(image, facts::kBattleCompIsHateEnemy);
+    const auto ready       = platform::FindFunction(image, facts::kBattleEnemyAttackReady);
+    if (isPartySide && isHate)
+    {
+        g_isPartySide = reinterpret_cast<ComponentTest>(*isPartySide);
+        g_isHate      = reinterpret_cast<ComponentTest>(*isHate);
+    }
+    if (!g_isPartySide || !setTarget ||
+        !g_setTarget.Install(*setTarget, facts::kBattleCompSetTargetCharFirst, reinterpret_cast<std::uintptr_t>(&SetTarget)))
+    {
+        platform::LogWarning(L"enemy watch: the target call could not be redirected; who aims an enemy is not logged");
+    }
+    if (!ready || !g_ready.Install(*ready, facts::kBattleEnemyAttackReadyFirst, reinterpret_cast<std::uintptr_t>(&AttackReady)))
+    {
+        platform::LogWarning(L"enemy watch: the attack-ready test could not be redirected; ready enemies are not logged");
+    }
     control::Register({.name  = L"enemy-watch",
                        .shape = control::Shape::Text,
                        .help  = L"each enemy's running action and target, and each human's member's battle area, while the log writes "
@@ -375,11 +657,21 @@ bool Install(const platform::GameImage& image) noexcept
     return true;
 }
 
+void Remove() noexcept
+{
+    g_setTarget.Restore();
+    g_ready.Restore();
+}
+
 void Tick() noexcept
 {
     if (!Watching())
     {
         return;
+    }
+    for (int seat = 0; seat < players::scopes::kMaxPlayers; ++seat)
+    {
+        g_members[static_cast<std::size_t>(seat)].store(ReadMember(seat), std::memory_order_relaxed);
     }
     const auto now    = NowMs();
     bool       anyone = false;
@@ -434,7 +726,8 @@ void Tick() noexcept
             r.character = TargetOf(live);
             r.sinceMs   = now;
             r.nextWaitMs = now + kFirstWait;
-            platform::LogDebug(L"enemy watch: {} {:#x} is in the battle: {} on {}", r.name, key, ActionName(action), CharacterName(r.character));
+            platform::LogDebug(L"enemy watch: {} {:#x} is in the battle: {} on {}", r.name, key, ActionName(action),
+                               Distances(EnemyOf(live), r.character));
             continue;
         }
         void* const live = ControllerOf(r);
@@ -446,7 +739,12 @@ void Tick() noexcept
             r               = Reported{};
             continue;
         }
-        anyone = true;
+        anyone            = true;
+        void* const enemy = EnemyOf(live);
+        // The ready answer as the hook last wrote it (its time written before it); an action start reads it first, so
+        // the start line can say how long the enemy was ready.
+        const int          ready      = e.ready.load(std::memory_order_acquire);
+        const std::int64_t readySince = e.readySinceMs.load(std::memory_order_relaxed);
         if (action != r.action)
         {
             if (r.action != 0)
@@ -457,7 +755,9 @@ void Tick() noexcept
             r.character = TargetOf(live);
             if (action != 0)
             {
-                platform::LogDebug(L"enemy watch: {} {:#x} starts {} on {}", r.name, key, ActionName(action), CharacterName(r.character));
+                const std::wstring after = r.ready != 0 ? std::format(L", ready for {:.1f} s", Seconds(now - readySince)) : std::wstring();
+                platform::LogDebug(L"enemy watch: {} {:#x} starts {} on {}{}", r.name, key, ActionName(action), Distances(enemy, r.character),
+                                   after);
             }
             r.action     = action;
             r.sinceMs    = now;
@@ -470,14 +770,42 @@ void Tick() noexcept
             if (character != r.character)  // a new target object can name the same character
             {
                 r.character = character;
-                platform::LogDebug(L"enemy watch: {} {:#x} now targets {} ({})", r.name, key, CharacterName(character),
-                                   action != 0 ? ActionName(action) : std::wstring(L"between actions"));
+                const bool called = now - e.setMs.load(std::memory_order_relaxed) <= kSetSeenMs;
+                platform::LogDebug(L"enemy watch: {} {:#x} now targets {} ({}){}", r.name, key, Distances(enemy, character),
+                                   action != 0 ? ActionName(action) : std::wstring(L"between actions"),
+                                   called ? L"" : L"; no target call seen: set by a path the call does not cover");
             }
+        }
+        if (ready != r.ready)
+        {
+            if (ready != 0 && r.ready == 0)
+            {
+                platform::LogDebug(L"enemy watch: {} {:#x} is ready for a {} attack on {}", r.name, key, ready == 2 ? L"heavy" : L"light",
+                                   Distances(enemy, TargetOf(live)));
+                r.readyNextMs = now + kFirstWait;
+            }
+            else if (ready == 2)
+            {
+                platform::LogDebug(L"enemy watch: {} {:#x} is ready for a heavy attack (its ATB is full) after {:.1f} s ready", r.name, key,
+                                   Seconds(now - readySince));
+            }
+            else if (ready == 0)
+            {
+                platform::LogDebug(L"enemy watch: {} {:#x} is no longer ready ({})", r.name, key,
+                                   action != 0 ? L"it started " + ActionName(action) : std::wstring(L"its decision gate closed"));
+            }
+            r.ready = ready;
+        }
+        else if (ready != 0 && action == 0 && now >= r.readyNextMs)
+        {
+            platform::LogDebug(L"enemy watch: {} {:#x} has been ready for {:.1f} s without acting; {}", r.name, key, Seconds(now - readySince),
+                               Distances(enemy, TargetOf(live)));
+            r.readyNextMs = now + kNextWait;
         }
         if (action == 0 && now >= r.nextWaitMs)
         {
-            platform::LogDebug(L"enemy watch: {} {:#x} has started no action for {:.1f} s (target {})", r.name, key, Seconds(now - r.sinceMs),
-                               CharacterName(TargetOf(live)));
+            platform::LogDebug(L"enemy watch: {} {:#x} has started no action for {:.1f} s; {}", r.name, key, Seconds(now - r.sinceMs),
+                               Distances(enemy, TargetOf(live)));
             r.nextWaitMs = now + kNextWait;
         }
     }

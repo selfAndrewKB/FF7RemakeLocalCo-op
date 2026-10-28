@@ -20,8 +20,23 @@
 //     once a second while enemies are seen;
 //   - `enemy-watch` reads every enemy seen in the last second: its action, for how long, and its target; then each
 //     human's member's area points.
-// Runs only while the log writes Debug lines (the reading says so otherwise); each gate call then costs two guarded
-// calls and two guarded reads.
+// Who aims an enemy, and when it is ready but holds back (the Laser Cannons idling on far players, 2026-10-27;
+// research/RE-enemy-attack-cadence.md §6, live check L1), from two entry redirects that call the game's function
+// unchanged:
+//   - BattleComp_SetTargetChar, every target call into an enemy's component (party members' calls pass untouched):
+//     Debug, who called it (up to three frames, the known callers named: the hate update, the script's SetTarget /
+//     SetTargetByType, the battle's start, the leader change), the character asked for, the one it holds after the
+//     call (a hate enemy's call takes its hate pick instead) and before it, and how far the enemy is from it and from
+//     each human's member. A target change the polled watch sees with no such call in the last 250 ms is marked as
+//     made by a path the call does not cover;
+//   - the attack-ready test the enemy component asks each tick (vtable +0x1A8; on 1 the game fires the Blueprint's
+//     OnATBLightAttackEvent, on 2 OnATBHardAttackEvent): Debug when an enemy becomes ready (light, or heavy with its
+//     ATB full) with its target and the distances, every 5 s then 10 s while it stays ready without acting, and in
+//     the action's start line how long it was ready. A ready enemy that never acts on a far target is the case.
+// Distances are 3D, between the characters' root components, in metres. The hooks run on any thread: they read the
+// humans' members from copies the game thread refreshes each tick. Runs only while the log writes Debug lines (the
+// reading says so otherwise); each gate call then costs two guarded calls and two guarded reads, each ready test one
+// table scan.
 
 #include <cstdint>
 
@@ -37,8 +52,12 @@ bool Watching() noexcept;
 /// An enemy's gate call: its controller, its battle component and its running action (0: none). Any thread.
 void Observe(void* controller, const void* component, std::uint64_t action) noexcept;
 
-/// Finds the game's controller-to-component getter and registers the reading. False (logged) if the getter differs.
+/// Finds the game's controller-to-component getter, places the target-call and ready-test redirects (either may be
+/// left out, logged) and registers the reading. False (logged) if the getter differs.
 bool Install(const platform::GameImage& image) noexcept;
+
+/// Puts the two redirects back.
+void Remove() noexcept;
 
 /// Game thread, once per frame: names and logs what changed.
 void Tick() noexcept;

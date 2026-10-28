@@ -286,7 +286,8 @@ constexpr std::array kModules{
     Module{.name = L"enemy coin", .install = Call<&battle::enemy_coin::Install>, .remove = &battle::enemy_coin::Remove,
            .needs = {Need<&battle::command_menu::Install>()}},
     // logging only: fed by the coin's decision gate
-    Module{.name = L"enemy watch", .install = Call<&battle::enemy_watch::Install>, .needs = {Need<&battle::enemy_coin::Install>()}},
+    Module{.name = L"enemy watch", .install = Call<&battle::enemy_watch::Install>, .remove = &battle::enemy_watch::Remove,
+           .needs = {Need<&battle::enemy_coin::Install>()}},
     // battle camera sequences on each player's own view
     Module{.name = L"sequence camera", .install = Call<&battle::sequence_camera::Install>, .remove = &battle::sequence_camera::Remove,
            .needs = {Need<&battle::command_menu::Install>()}},

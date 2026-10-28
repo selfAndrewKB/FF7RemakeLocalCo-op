@@ -1255,6 +1255,44 @@ inline constexpr platform::FunctionFact kCharaRegistryIterNext{L"EndCharaRegistr
 inline constexpr std::array<std::uint8_t, 16> kBattleCompSetTargetCharEntry{
     0x48, 0x89, 0x5C, 0x24, 0x10, 0x57, 0x48, 0x83, 0xEC, 0x40, 0x83, 0xB9, 0x10, 0x03, 0x00, 0x00};
 inline constexpr platform::FunctionFact kBattleCompSetTargetChar{L"BattleComp_SetTargetChar", 0x14096BFA0, kBattleCompSetTargetCharEntry};
+inline constexpr std::array<std::uint8_t, 5> kBattleCompSetTargetCharFirst{0x48, 0x89, 0x5C, 0x24, 0x10};  // mov [rsp+10h], rbx
+/// Who sets an enemy's target (battle/enemy_watch; research/RE-enemy-attack-cadence.md §3): the functions that call
+/// BattleComp_SetTargetChar, by their IDA start, named for the log. sub_140922310 jumps to it (its caller's frame shows).
+struct TargetSetter
+{
+    std::uintptr_t start;
+    const wchar_t* name;
+};
+inline constexpr std::array<TargetSetter, 13> kTargetSetters{{
+    {0x1408816D0, L"the script's SetTarget (variant)"},
+    {0x14088E5A0, L"the script's SetTarget"},
+    {0x14089D6A0, L"a normal attack"},
+    {0x140922310, L"a script target call (sub_140922310)"},
+    {0x1409223A0, L"the script's SetTargetByType"},
+    {0x140931880, L"the valid-target check's hate re-pick"},
+    {0x14093ED90, L"the hate update"},
+    {0x1409B1A80, L"the battle's start"},
+    {0x1409BAA80, L"the leader change"},
+    {0x140A4E3F0, L"sub_140A4E3F0"},
+    {0x140E5CAE0, L"sub_140E5CAE0"},
+    {0x140E5DCF0, L"sub_140E5DCF0"},
+    {0x141171C60, L"sub_141171C60"},
+}};
+/// BattleComp_IsHateEnemy(comp): true while the enemy targets by hate (BattleComp_SetTargetChar then takes the hate
+/// pick instead of its argument). Reads only.
+inline constexpr std::array<std::uint8_t, 16> kBattleCompIsHateEnemyEntry{
+    0x4C, 0x8B, 0x89, 0xB8, 0x05, 0x00, 0x00, 0x4D, 0x85, 0xC9, 0x0F, 0x84, 0xA4, 0x00, 0x00, 0x00};
+inline constexpr platform::FunctionFact kBattleCompIsHateEnemy{L"BattleComp_IsHateEnemy", 0x140982E30, kBattleCompIsHateEnemyEntry};
+/// The enemy component's attack-ready test (vtable +0x1A8 of the 13 enemy component vtables; called each tick by
+/// vt+0x1A0, which fires the Blueprint's OnATBLightAttackEvent on 1 and OnATBHardAttackEvent on 2): 0 unless the
+/// decision gate is open; 2 when the ATB is full; 1 when it gained a unit (LightAttachATBIntervalTime of charge)
+/// since the last ability ended. Reads only (research/RE-enemy-attack-cadence.md §2.6, §13).
+inline constexpr std::array<std::uint8_t, 16> kBattleEnemyAttackReadyEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x74, 0x24, 0x10, 0x57, 0x48, 0x83, 0xEC, 0x30, 0x48};
+inline constexpr platform::FunctionFact kBattleEnemyAttackReady{L"BattleEnemyComp_Vt1A8_ATBAttackReady_2Hard_1Light", 0x14096EDC0,
+                                                                kBattleEnemyAttackReadyEntry};
+inline constexpr std::array<std::uint8_t, 5> kBattleEnemyAttackReadyFirst{0x48, 0x89, 0x5C, 0x24, 0x08};  // mov [rsp+8], rbx
+inline constexpr std::uint32_t kComponentOwnerGetterSlot = 0x20 / 8;  // battle component vtable: its owner character
 inline constexpr std::array<std::uint8_t, 16> kGameFreeEntry{
     0x48, 0x85, 0xC9, 0x74, 0x2E, 0x53, 0x48, 0x83, 0xEC, 0x20, 0x48, 0x8B, 0xD9, 0x48, 0x8B, 0x0D};
 inline constexpr platform::FunctionFact kGameFree{L"FMemory::Free", 0x1416C0370, kGameFreeEntry};
