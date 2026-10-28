@@ -1,6 +1,7 @@
 #include "players/seat_camera.h"
 
 #include "engine_facts.h"
+#include "platform/call_redirect.h"
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
@@ -44,7 +45,6 @@ using SetOwnerCharaFn  = void (*)(void* cameraOperator, void* character);
 using ActorVoidFn      = void (*)(void* self);
 using ActorFloatFn     = void (*)(void* self, float deltaSeconds);
 using InputFn          = void (*)(void* self, float deltaSeconds, bool gamePaused);
-using PhaseHookFn      = void (*)(void* world, void* context, std::int32_t phase, bool start);
 
 constexpr int kPlayers = scopes::kMaxPlayers;  // index 0 = player 1, index s = seat s
 
@@ -70,13 +70,11 @@ InputFn               g_processInput      = nullptr;
 ActorFloatFn          g_fieldMove         = nullptr;
 ActorFloatFn          g_cameraUpdate      = nullptr;
 
-// The game's input tick for the primary controller (RE-input-p2.md §1): its phase hook is reached through a
-// global function pointer the game sets at runtime, so the pointer is checked every engine tick.
-std::uintptr_t* g_phaseHookPointer = nullptr;
-PhaseHookFn     g_phaseHook        = nullptr;
-InputFn         g_tickPlayerInput  = nullptr;
-int             g_tickingSeat      = 0;  // the seat whose own operator ticks, else 0
-bool            g_phaseHookLogged  = false;
+// The game's input step for the primary controller (RE-input-p2.md §1, RE-camera-jump-combo.md): the one call the
+// game makes during play, redirected so each seat's step follows it at the same point of the frame.
+platform::CallRedirect g_inputTickCall;
+bool                   g_seatInputOff = false;  // a seat's step raised an exception: the seats' steps stay off
+int                    g_tickingSeat  = 0;      // the seat whose own operator ticks, else 0
 
 // Game thread only (set by Start from the engine tick; the wrappers act only on that thread).
 DWORD g_gameThread = 0;
@@ -107,15 +105,6 @@ struct CallCounts
     std::uint32_t cameraUpdate = 0;  // the camera manager's UpdateCamera under the player's scopes
 };
 std::array<CallCounts, kPlayers> g_counts;  // index 0 = player 1, s = seat s
-
-/// Player 1's input step this frame: the game's arguments, for each seat's step right after it.
-struct PrimaryInput
-{
-    bool  ran    = false;
-    float dt     = 0.0f;
-    bool  paused = false;
-};
-PrimaryInput g_primaryInput;
 
 bool OnGameThread() noexcept
 {
@@ -427,7 +416,6 @@ void ProcessPlayerInput(void* self, float deltaSeconds, bool gamePaused)
     if (self == PlayerOne())
     {
         ++g_counts[0].input;
-        g_primaryInput = {true, deltaSeconds, gamePaused};
         const StickScope stick(0, false);
         g_processInput(self, deltaSeconds, gamePaused);
         return;
@@ -491,32 +479,30 @@ void FieldMove(void* self, float deltaSeconds)
     g_fieldMove(self, deltaSeconds);
 }
 
-/// The game's world-tick phase hook. At phase 1's start it ticks the primary controller's input (the only
-/// controller whose input the game ticks during play). Right after it, each seat's controller gets the same input
-/// step with the same arguments, in seat order; the ProcessPlayerInput replacement then scopes it to the seat's
-/// operator and pad.
-void PhaseHook(void* world, void* context, std::int32_t phase, bool start)
+/// The game's input step for the primary controller (the only controller whose input the game ticks during play).
+/// Right after it, at the same point of the frame and with the same arguments, each seat's controller gets the same
+/// step in seat order; the ProcessPlayerInput replacement then scopes it to the seat's operator and pad. The point
+/// matters: the field step that follows changes the game-speed slots (the hit stop of player 1's hits, the command
+/// menu's slow-down), and the right stick's turn divides by the game speed of the moment while DeltaTime carries the
+/// last frame's, so a step run after the field step turned a held stick up to a hundred times too far in one frame
+/// (RE-camera-jump-combo.md).
+void TickInputs(void* controller, float deltaSeconds, bool gamePaused)
 {
-    g_phaseHook(world, context, phase, start);
-    if (phase != facts::kInputTickPhase || !start || !g_primaryInput.ran || g_tickPlayerInput == nullptr)
+    const auto tickPlayerInput = reinterpret_cast<InputFn>(g_inputTickCall.Original());
+    tickPlayerInput(controller, deltaSeconds, gamePaused);
+    if (g_seatInputOff || !AnySeatIn())
     {
         return;
     }
-    const PrimaryInput primary = g_primaryInput;
-    g_primaryInput             = {};
-    if (!AnySeatIn())
+    for (int seat = 1; seat <= kSeatsBuilt && !g_seatInputOff; ++seat)
     {
-        return;
-    }
-    for (int seat = 1; seat <= kSeatsBuilt && g_tickPlayerInput != nullptr; ++seat)
-    {
-        void* controller  = SeatActive(seat) ? seat_objects::Controller(seat) : nullptr;
-        void* playerInput = nullptr;
-        if (controller == nullptr)
+        void* seatController = SeatActive(seat) ? seat_objects::Controller(seat) : nullptr;
+        void* playerInput    = nullptr;
+        if (seatController == nullptr)
         {
             continue;  // no member yet, or gone: the seat's input step waits, as it did before the member was seated
         }
-        if (!Read(static_cast<std::uint8_t*>(controller) + facts::kControllerPlayerInput, playerInput) || playerInput == nullptr)
+        if (!Read(static_cast<std::uint8_t*>(seatController) + facts::kControllerPlayerInput, playerInput) || playerInput == nullptr)
         {
             if (!g_seats[seat].noPlayerInputLogged)
             {
@@ -527,10 +513,10 @@ void PhaseHook(void* world, void* context, std::int32_t phase, bool start)
         }
         // Unlike the replacements above, the engine never makes this call itself (it ticks only the primary
         // controller's input), so it is guarded like the mod's other calls: a fault turns the seats' input step off.
-        if (!platform::CallGuarded(g_tickPlayerInput, controller, primary.dt, primary.paused))
+        if (!platform::CallGuarded(tickPlayerInput, seatController, deltaSeconds, gamePaused))
         {
-            g_tickPlayerInput = nullptr;
-            platform::Log(L"{}'s input: the input step RAISED AN EXCEPTION; every seat's input step is off until the game restarts",
+            g_seatInputOff = true;
+            platform::Log(L"{}'s input: the input step RAISED AN EXCEPTION; every seat's input step is off until the game restarts (that player's scopes may stay open for the rest of this frame's field step)",
                           SeatName(seat));
         }
     }
@@ -609,51 +595,25 @@ bool Install(const platform::GameImage& image) noexcept
     operator_battle_mode::Install(image);  // optional: without it a seat's camera plays battles on the field setting
     nav_area::Install(image);          // optional: without it a seat's InDoor settings reach player 1's operator
     // Optional: without it a seat's right stick does nothing, and everything else still works.
-    if (!Global(image, facts::kWorldTickPhaseHookGlobal, g_phaseHookPointer) ||
-        !FindInto(image, facts::kWorldTickPhaseHook, g_phaseHook) || !FindInto(image, facts::kTickPlayerInput, g_tickPlayerInput))
+    const auto tickPlayerInput = platform::FindFunction(image, facts::kTickPlayerInput);
+    const auto inputCall       = image.Rebase(facts::kPrimaryInputTickCall, 5);
+    if (tickPlayerInput && inputCall &&
+        g_inputTickCall.Install(*inputCall, *tickPlayerInput, reinterpret_cast<std::uintptr_t>(&TickInputs)))
     {
-        g_phaseHookPointer = nullptr;
-        platform::Log(L"the seats' input: the game's input tick could not be verified; a seat's right stick stays unused");
+        platform::Log(L"the seats' input: each seat's input step follows player 1's at the game's own input call");
+    }
+    else
+    {
+        platform::Log(L"the seats' input: the game's input call could not be verified; a seat's right stick stays unused");
     }
     return true;
 }
 
-void MaintainInputTick() noexcept
-{
-    if (g_phaseHookPointer == nullptr)
-    {
-        return;
-    }
-    std::uintptr_t current = 0;
-    const auto     ours    = reinterpret_cast<std::uintptr_t>(&PhaseHook);
-    if (!Read(g_phaseHookPointer, current) || current == ours)
-    {
-        return;
-    }
-    if (current == reinterpret_cast<std::uintptr_t>(g_phaseHook))
-    {
-        const bool swapped = platform::WriteGuarded(g_phaseHookPointer, &ours, sizeof(ours));
-        if (swapped || !g_phaseHookLogged)
-        {
-            platform::Log(L"the seats' input: the game's world-tick phase hook {}", swapped ? L"is wrapped (each seat's input step follows player 1's)" : L"could NOT be wrapped");
-        }
-        g_phaseHookLogged = !swapped;
-    }
-    else if (current != 0 && !g_phaseHookLogged)
-    {
-        platform::Log(L"the seats' input: the world-tick phase hook points somewhere unexpected; left alone");
-        g_phaseHookLogged = true;
-    }
-}
-
 void RemoveInputTick() noexcept
 {
-    std::uintptr_t current = 0;
-    if (g_phaseHookPointer != nullptr && Read(g_phaseHookPointer, current) &&
-        current == reinterpret_cast<std::uintptr_t>(&PhaseHook))
+    if (g_inputTickCall.IsInstalled() && !g_inputTickCall.Restore())
     {
-        const auto original = reinterpret_cast<std::uintptr_t>(g_phaseHook);
-        platform::WriteGuarded(g_phaseHookPointer, &original, sizeof(original));
+        platform::Log(L"the seats' input: the game's input call was changed after the mod's; left alone");
     }
 }
 

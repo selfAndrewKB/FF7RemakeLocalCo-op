@@ -45,11 +45,9 @@ bool Start(int seat, void* playerOneController, void* seatController, void* memb
 /// null if it is gone) for the caller to destroy.
 void* Take(int seat) noexcept;
 
-/// Game thread, every engine tick: keeps the game's world-tick phase hook wrapped, so that each seat's
-/// controller gets the game's input step right after player 1's (the game ticks only the primary controller's
-/// input; RE-input-p2.md §1). The game sets that hook pointer at runtime, hence the per-tick check.
-void MaintainInputTick() noexcept;
-/// Puts the game's phase hook back (unload).
+/// Puts the game's input call back (unload). Install redirects it so that each seat's controller gets the game's
+/// input step right after player 1's, at the same point of the frame (the game ticks only the primary controller's
+/// input; RE-input-p2.md §1, RE-camera-jump-combo.md). One aligned block, so any thread may restore it.
 void RemoveInputTick() noexcept;
 
 /// Test input (control scripts): while held, `user`'s stick record reads these values (LX, LY, RX, RY,

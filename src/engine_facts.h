@@ -495,15 +495,15 @@ inline constexpr std::uint32_t kSceneInfoProxy       = 0x08;
 // AEndPlayerController's constructor turns off the stock per-controller input tick in PlayerTick for gameplay;
 // the game ticks only PartyManager+0's input, from its world-tick phase hook (phase 1, start), through a global
 // function pointer set at runtime.
-inline constexpr std::uintptr_t kWorldTickPhaseHookGlobal = 0x145994E28;  // void (*)(UWorld*, void*, int32 phase, bool start)
-inline constexpr std::int32_t   kInputTickPhase           = 1;
-inline constexpr std::uint32_t  kControllerPlayerInput    = 0x498;        // APlayerController::PlayerInput
-inline constexpr std::array<std::uint8_t, 16> kWorldTickPhaseHookEntry{
-    0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x6C, 0x24, 0x10, 0x48, 0x89, 0x74, 0x24, 0x18, 0x48};
+/// The game's one input step during play: EndGame_TickFieldSystems (0x1416BF150) calls the primary controller's
+/// TickPlayerInput here, at the start of the field step, before that step changes the game-speed slots (the hit
+/// stop's end and start, the command menu's slow-down). The right stick's turn is scaled by DeltaTime over the
+/// game speed of the moment, so an input step run after those changes reads a mismatched pair
+/// (RE-camera-jump-combo.md).
+inline constexpr std::uintptr_t kPrimaryInputTickCall  = 0x1416BF1A4;  // E8 -> APlayerController::TickPlayerInput
+inline constexpr std::uint32_t  kControllerPlayerInput = 0x498;        // APlayerController::PlayerInput
 inline constexpr std::array<std::uint8_t, 16> kTickPlayerInputEntry{
     0x48, 0x8B, 0xC4, 0x56, 0x41, 0x56, 0x48, 0x81, 0xEC, 0xD8, 0x00, 0x00, 0x00, 0x0F, 0x29, 0x70};
-inline constexpr platform::FunctionFact kWorldTickPhaseHook{L"EndGame_WorldTickPhaseHook", 0x1416BF9D0,
-                                                            kWorldTickPhaseHookEntry};
 /// Stock APlayerController::TickPlayerInput(float DeltaSeconds, bool bGamePaused): PlayerInput tick, then
 /// ProcessPlayerInput (slot 376). Does not check PlayerInput for null in shipping.
 inline constexpr platform::FunctionFact kTickPlayerInput{L"APlayerController::TickPlayerInput", 0x1431BC2B0,
