@@ -34,7 +34,7 @@ namespace UObjectGlobals = RC::Unreal::UObjectGlobals;
 
 using SpawnActorFn = void* (*)(void* world, void* type, const void* transform, const void* parameters);
 
-constexpr std::uint32_t kTrigger = 0x6E0;  // AEndPlayerController::PlayerTrigger
+constexpr std::uint32_t kTrigger = facts::kControllerPlayerTrigger;
 
 SpawnActorFn  g_spawnActor = nullptr;
 std::uint32_t* g_nameNone  = nullptr;

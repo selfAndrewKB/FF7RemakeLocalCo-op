@@ -279,15 +279,15 @@ bool ResolveRhi(const platform::GameImage& image, std::uintptr_t rhiGlobal) noex
     std::uintptr_t rhiVtable = 0;
     if (!platform::Read(reinterpret_cast<const void*>(rhiGlobal), rhi) || rhi == nullptr || !platform::Read(rhi, rhiVtable))
     {
-        platform::Log(L"SSR origin: the renderer is not up yet; player 2's reflections keep the next column's surfaces");
+        platform::Log(L"SSR origin: the renderer is not up yet; the further views' reflections keep the next column's surfaces");
         return false;
     }
     const auto vtable      = image.Rebase(facts::kVtblD3D12DynamicRHI);
     const auto pixelVtable = image.Rebase(facts::kVtblD3D12PixelShader);
     if (!vtable || *vtable != rhiVtable || !pixelVtable)
     {
-        platform::Log(L"SSR origin: the renderer is not D3D12 (D3D11 keeps no copy of a shader's code); player 2's "
-                      L"reflections keep the next column's surfaces");
+        platform::Log(L"SSR origin: the renderer is not D3D12 (D3D11 keeps no copy of a shader's code); the "
+                      L"further views' reflections keep the next column's surfaces");
         return false;
     }
     const auto slot   = image.ReadPointer(facts::kVtblD3D12DynamicRHI + facts::kRhiSlotCreatePixelShaderRT * 8);
@@ -314,7 +314,7 @@ bool Install(const platform::GameImage& image) noexcept
     const auto immediateList = image.Rebase(facts::kGRHICommandListImmediate);
     if (!getPipeline || !ps0 || !ps1 || !rhiGlobal || !immediateList)
     {
-        platform::Log(L"SSR origin: an engine check failed; player 2's reflections keep the next column's surfaces");
+        platform::Log(L"SSR origin: an engine check failed; the further views' reflections keep the next column's surfaces");
         return false;
     }
     if (!ResolveRhi(image, *rhiGlobal))
@@ -330,8 +330,8 @@ bool Install(const platform::GameImage& image) noexcept
     {
         g_ps1Call.Restore();
         g_ps0Call.Restore();
-        platform::Log(L"SSR origin: a call site is not the call the research read; player 2's reflections keep the next "
-                      L"column's surfaces");
+        platform::Log(L"SSR origin: a call site is not the call the research read; the further views' reflections keep "
+                      L"the next column's surfaces");
         return false;
     }
     g_installed.store(true);

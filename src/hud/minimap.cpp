@@ -720,16 +720,16 @@ std::wstring Describe(void* manager)
     float        alpha = 0.0f, rotation[2]{};
     void*        mapData = nullptr;
     float        arrow   = -999.0f;  // Icon_Player's RenderTransform.Angle: the leader's facing on this map
-    if (void* icon = ResolveWeak(At(manager, 0x20)); icon != nullptr)
+    if (void* icon = ResolveWeak(At(manager, f::kNaviManagerPlayerIcon)); icon != nullptr)
     {
-        Read(At(icon, 0xA8), arrow);
+        Read(At(icon, f::kWidgetRenderAngle), arrow);
     }
     Read(At(manager, f::kNaviManagerFlags), flags);
     Read(At(manager, f::kNaviManagerModes), modes);
-    Read(At(manager, 0x18C), animation);
-    Read(At(manager, 0x198), fade);
-    Read(At(manager, 0x1A0), alpha);
-    Read(At(manager, 0x1A4), rotation);
+    Read(At(manager, f::kNaviManagerAnimation), animation);
+    Read(At(manager, f::kNaviManagerFade), fade);
+    Read(At(manager, f::kNaviManagerAlpha), alpha);
+    Read(At(manager, f::kNaviManagerRotation), rotation);
     Read(At(manager, f::kNaviManagerMapData), mapData);
     return std::format(L"{} root {} (a {:.2f} vis {}) compass {} octagon {} property {} target {} paint {:#x} | hidden {} "
                        L"visible {} enabled {} rotate {} anim {} fade {} alpha {:.2f} rot ({:.1f}, {:.1f}) arrow {:.1f} map {} modes {}/{}",

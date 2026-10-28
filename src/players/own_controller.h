@@ -1,6 +1,6 @@
 #pragma once
 
-// Player 2's own PlayerController: the End camera manager's BeginPlay, made safe for a second player.
+// A further player's own PlayerController: the End camera manager's BeginPlay, made safe for a joining player.
 //
 // When a player joins during play, the engine spawns its controller and camera manager, and the camera
 // manager's BeginPlay (AEndPlayerCameraManager, vtable slot 94) runs inside that spawn. For a second
@@ -9,7 +9,7 @@
 //     through it (the crash CreatePlayer(1, true) produces);
 //   - it spawns its main camera actor with the fixed name "EndCameraActor", and UE 4.18's spawn silently
 //     reuses an existing object of that name: player 1's camera actor would be destroyed and rebuilt as
-//     player 2's.
+//     the joining player's.
 // The replacement for that slot, only while a join is under way and only for a camera manager whose owner
 // is not player 1's controller:
 //   - fills PCOwner from the actor's Owner, the controller that spawned it, which is what the engine
@@ -36,16 +36,16 @@ void Remove() noexcept;
 bool CanRename() noexcept;
 
 /// True if player 1's controller and its camera manager carry the End classes' native vtables. The
-/// replacement recognises player 2's controller by that vtable; Blueprint subclasses share it.
+/// replacement recognises a joining player's controller by that vtable; Blueprint subclasses share it.
 bool UsesNativeClasses(const void* playerOneController) noexcept;
 
-/// What the replacement did for the most recent player-2 camera manager.
+/// What the replacement did for the most recent joining player's camera manager.
 struct Report
 {
     void* cameraManager = nullptr;
     bool  ownerFilled   = false;  // PCOwner was null and was set from Owner
     bool  ownerRefused  = false;  // PCOwner was null but Owner was not a fitting controller
-    bool  renamed       = false;  // the camera actor got player 2's name
+    bool  renamed       = false;  // the camera actor got the joining player's name
 };
 
 /// Marks a join as under way for its lifetime: only then does the replacement act. `controllerId` is the joining

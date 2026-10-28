@@ -63,11 +63,11 @@ UObject* Field(const void* object, std::uint32_t offset) noexcept
     return static_cast<UObject*>(platform::ReadPointer(object, offset));
 }
 
-/// An object's class pointer (UObjectBase::ClassPrivate, +0x10 in this build's UE4SS layout), read under a guard: a
-/// cheap check that an object read earlier is still the same kind of object.
+/// An object's class pointer (UObjectBase::ClassPrivate), read under a guard: a cheap check that an object read
+/// earlier is still the same kind of object.
 const void* ClassOf(const void* object) noexcept
 {
-    return Field(object, 0x10);
+    return Field(object, facts::kObjectClass);
 }
 
 // UE4SS's object lookups can throw (a malformed path, or running out of memory), so every function here that makes

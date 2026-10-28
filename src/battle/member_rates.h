@@ -2,8 +2,8 @@
 
 // Each further player's member at the player's rates (RE-battle-member-two.md §2, L1; Rebirth's player_two/player_hits).
 //
-// Every "is this the player's character" test in battle is the leader test, `comp+0x58 == PM+0x233`, so player
-// 2's member counts as an AI ally wherever the test runs outside player 2's scopes: its passive ATB fills at
+// Every "is this the player's character" test in battle is the leader test, `comp+0x58 == PM+0x233`, so a further
+// player's member counts as an AI ally wherever the test runs outside that player's scopes: its passive ATB fills at
 // the AI-ally coefficient (half), its guard ATB too, its abilities carry no "player's ability" bit (the on-hit ATB
 // coefficient and the enemy's reaction read it), and its normal-attack staggers earn no reward. The game's own
 // functions run unchanged, inside the seat's leader scope answering that seat's member, for exactly the calls made on

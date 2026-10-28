@@ -186,8 +186,8 @@ void Captured(void* sequence, const wchar_t* why) noexcept
 }
 
 /// BattleCamRequests_ApplySequenceOverride at the operator tick: every operator after the frame's first is seeded
-/// with the first's active camera, so the game's tail applies the first's and its own world state (two players: the
-/// union; three: the first's and each later one's, revisited when seat 2 is wired, plan/seats.md step 6).
+/// with the first's active camera, so the game's tail applies the first's and its own world state (the union of the
+/// two; with three players, the first's and each later one's).
 std::int64_t Apply(void* requests, void* outPose, void* aimLeap, void* eyeLeap, std::uint32_t dt, void* owner, void* view)
 {
     const int   seat   = players::seat_camera::TickingSeat();  // 0: player 1's operator

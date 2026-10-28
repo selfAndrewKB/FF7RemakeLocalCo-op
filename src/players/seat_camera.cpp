@@ -712,7 +712,7 @@ bool Start(int seat, void* playerOneController, void* seatController, void* memb
     }
     std::memcpy(parameters.data(), &none, sizeof(none));
     const std::uint32_t flags = facts::kOperatorObjectFlags;
-    std::memcpy(parameters.data() + 0x2C, &flags, sizeof(flags));
+    std::memcpy(parameters.data() + facts::kSpawnParamsObjectFlags, &flags, sizeof(flags));
 
     // The operator's constructor resets two globals player 1's operator uses; they are put back after,
     // unconditionally: undoing the constructor's write is the point.

@@ -1,6 +1,6 @@
 #pragma once
 
-// Player 2 leaves before the game leaves the field (Remake/Documentation/research/RE-lifecycle-world.md §3, §8).
+// Every further player leaves before the game leaves the field (Remake/Documentation/research/RE-lifecycle-world.md §3, §8).
 //
 // A retry, a save load, a chapter or story jump and the return to the title all leave the field inside the same
 // world, with no map load: the game state enters "leaving" (9), whose entry calls the field root's exit request.

@@ -13,9 +13,9 @@
 //    column's pair in both arguments; for every other entry it runs the replaced load. rax and the flags change,
 //    nothing else.
 //
-// 2. The navi map's own ring in player 2's pass (game thread). SEndNaviMapOctagon__OnPaint_Pool0 renders the map into
+// 2. The navi map's own ring in a further player's pass (game thread). SEndNaviMapOctagon__OnPaint_Pool0 renders the map into
 //    pool 0 (acquire 0x1414FDDA9 .. submit 0x1414FDFBB) inside the overlay paint; a second overlay paint would turn
-//    pool 0's ring twice a frame (Rebirth's 32 KB leak). In player 2's pass the span is skipped, as Rebirth's
+//    pool 0's ring twice a frame (Rebirth's 32 KB leak). In a further player's pass the span is skipped, as Rebirth's
 //    minimap_once: the map widget paints the texture player 1's pass rendered.
 //    Replaced: the `call AcquireLayerSlot` (5 bytes at 0x1414FDDA9). There rsi = the painting octagon's paint
 //    interface (recorded for the mod's readings). If it is one of those named for this pass (every other player's

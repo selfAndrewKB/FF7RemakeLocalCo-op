@@ -85,9 +85,9 @@ const wchar_t* Refusal(void* battleSystem, void* member) noexcept
     {
         return L"the game is paused or a menu is up";
     }
-    if (players::party_member::EventLocked())
+    if (players::party_member::PushButtonLocked())
     {
-        return L"a scripted event holds the party";
+        return L"a push-button event (a switch, a lever, a terminal) holds the party";
     }
     std::uint8_t  noRecovery = 1, action = 0, flags = 0;
     std::uint32_t ready = 0;

@@ -29,7 +29,7 @@ constexpr std::uint8_t kGameImmediate = 1;     // EWindowMode::WindowedFullscree
 constexpr std::uint8_t kNeverImmediate = 7;    // no window mode (0 Fullscreen, 1 WindowedFullscreen, 2 Windowed)
 
 bool                        g_installed = false;
-bool                        g_on        = true;   // the switch: the patch follows the want (player 2 in, or the span held) while on
+bool                        g_on        = true;   // the switch: the patch follows the want (a further player in, or the span held) while on
 bool                        g_applied   = false;
 std::vector<std::uintptr_t> g_sites;              // live addresses of the immediates: the 321 compares', then the
                                                   // view-rect override's (CalcSceneView)

@@ -10,8 +10,6 @@ namespace lss::platform {
 
 namespace {
 
-/// jmp qword ptr [rip+0] ; dq <address>
-constexpr std::uint8_t kAbsoluteJump[]  = {0xFF, 0x25, 0x00, 0x00, 0x00, 0x00};
 constexpr std::size_t  kTrampolineStart = 0x10;  // after the thunk's 14 bytes
 
 constexpr std::size_t  kMaxCopied       = 2 * kCodeBlockSize;  // the instructions a trampoline replays

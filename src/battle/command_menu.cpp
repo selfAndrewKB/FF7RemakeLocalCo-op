@@ -201,7 +201,7 @@ bool Build(int seat) noexcept
     void*    memory    = nullptr;
     void*    built     = nullptr;
     if (!Read(g_gmalloc, allocator) || allocator == nullptr || !Read(allocator, vtable) ||
-        !Read(reinterpret_cast<std::uint8_t*>(vtable) + 0x10, malloc) ||
+        !Read(reinterpret_cast<std::uint8_t*>(vtable) + facts::kMallocSlotMalloc, malloc) ||
         !platform::CallGuarded(malloc, memory, allocator, std::uint64_t{facts::kCommandCtrlSize}, std::uint32_t{0}) ||
         memory == nullptr || !platform::CallGuarded(g_ctor, built, memory) || built == nullptr)
     {

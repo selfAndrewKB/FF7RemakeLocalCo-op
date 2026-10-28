@@ -34,7 +34,7 @@ namespace lss::render::bloom_origin {
 /// differs or the RHI is neither D3D12 nor D3D11; bloom must then stay off in split (show-flag bit 0x2).
 bool Install(const platform::GameImage& image) noexcept;
 
-/// True once installed: player 2's bloom reads its own rows, so the split rule's bloom bit may be forced on.
+/// True once installed: each further view's bloom reads its own rows, so the split rule's bloom bit may be forced on.
 bool Installed() noexcept;
 
 /// On by default; off leaves the original shader in every view (for A/B checks). Any thread.

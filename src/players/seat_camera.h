@@ -21,10 +21,9 @@
 // manager), so one set of replacements serves every seat. All of this runs on the game thread.
 // Seats: players/seats.h (the seats built, each a further player). State owned here: the stick holds and the call counts; each
 // seat's controller and operator are the registry's (players/seat_objects.h: the session binds the controller at the
-// join, Start binds the operator it spawns, Take unbinds it). The battle modules this one
-// calls around a tick (the lock camera, the sequence cameras, the targeting copy) are one instance each until
-// their own step of plan/seats.md; the operator's satellites (nav areas, battle mode, the override route) are
-// per seat.
+// join, Start binds the operator it spawns, Take unbinds it). The battle modules this one calls around a tick (the
+// lock camera, the sequence cameras, the targeting copy) and the operator's satellites (nav areas, battle mode, the
+// override route) are per seat.
 
 namespace lss::platform {
 class GameImage;

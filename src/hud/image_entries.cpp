@@ -59,7 +59,7 @@ void* MakeBuffer(std::uintptr_t vtable, std::uint32_t capacity) noexcept
     std::uintptr_t malloc = 0;
     void**         table  = nullptr;
     if (!platform::CopyGuarded(&table, allocator, sizeof(table)) ||
-        !platform::CopyGuarded(&malloc, reinterpret_cast<const std::uint8_t*>(table) + 0x10, sizeof(malloc)))
+        !platform::CopyGuarded(&malloc, reinterpret_cast<const std::uint8_t*>(table) + facts::kMallocSlotMalloc, sizeof(malloc)))
     {
         return nullptr;
     }

@@ -80,7 +80,7 @@ bool Install(const platform::GameImage& image) noexcept
     const auto tapsB         = image.Rebase(facts::kAoTapsCallB, 5);
     if (!setParameters || !setVec4 || !stage0 || !tapsA || !tapsB)
     {
-        platform::Log(L"AO origin: an engine check failed; player 2's half keeps the AO ghost");
+        platform::Log(L"AO origin: an engine check failed; the further views keep the AO ghost");
         return false;
     }
     g_setParameters = reinterpret_cast<SetParametersFn>(*setParameters);
@@ -95,7 +95,7 @@ bool Install(const platform::GameImage& image) noexcept
         g_stage0Call.Restore();
         g_tapsCallB.Restore();
         g_tapsCallA.Restore();
-        platform::Log(L"AO origin: a call site is not the call the research read; player 2's half keeps the AO ghost");
+        platform::Log(L"AO origin: a call site is not the call the research read; the further views keep the AO ghost");
         return false;
     }
     g_installed.store(true);
@@ -108,7 +108,7 @@ bool Install(const platform::GameImage& image) noexcept
                            return control::Outcome{};
                        },
                        .get = [] { return control::Value{Enabled()}; }});
-    platform::Log(L"AO origin: installed; player 2's AO downsample will read its own rows");
+    platform::Log(L"AO origin: installed; each further view's AO downsample will read its own rows");
     return true;
 }
 

@@ -19,7 +19,7 @@ using platform::ReadPointer;
 
 using BeginPlayFn = void (*)(void* cameraManager);
 
-/// Raised inside the spawn when player 2's camera manager cannot be made safe; the join's structured-
+/// Raised inside the spawn when a joining player's camera manager cannot be made safe; the join's structured-
 /// exception guard around CreatePlayer catches it and reports the join as failed.
 constexpr DWORD kJoinRefused = 0xE0535032;  // an application code ('SP2')
 
@@ -85,7 +85,7 @@ bool WriteName(const std::array<char, 14>& text) noexcept
     return true;
 }
 
-/// Runs the engine's BeginPlay with player 2's camera-actor name. The name is put back on every way out,
+/// Runs the engine's BeginPlay with the joining player's camera-actor name. The name is put back on every way out,
 /// including a structured exception raised inside the engine (the join's guard further up catches it and
 /// the game carries on, so every later camera manager must find the name intact). This function holds no
 /// objects with destructors, so the __try/__finally never has to interleave with C++ unwinding.
@@ -105,7 +105,9 @@ void BeginPlayWithOwnName(void* cameraManager)  // not noexcept: the exception m
 /// replace player 1's camera actor. The exception travels to the join's guard, which reports the failure.
 [[noreturn]] void RefuseJoin(const wchar_t* why)  // not noexcept: the exception must pass through
 {
-    platform::Log(L"join: player 2's camera manager cannot begin play safely ({}); the join is stopped", why);
+    platform::Log(L"join: the camera manager of the joining player (controller id {}) cannot begin play safely ({}); the "
+                  L"join is stopped",
+                  g_joiningId, why);
     RaiseException(kJoinRefused, 0, 0, nullptr);
     __assume(false);
 }

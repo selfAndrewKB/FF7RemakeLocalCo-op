@@ -2,7 +2,7 @@
 
 // The further columns' HUD images: the game's own overlay rendered again each frame for each further column
 // (hud/overlay_pass.h), before the game's own render, into a layer entry per column of the same pool-2 ring slot
-// (RE-hud-overlay-pass.md §10; Rebirth's hud/second_image, the same mechanism re-found; built for player 2's column,
+// (RE-hud-overlay-pass.md §10; Rebirth's hud/second_image, the same mechanism re-found; built for one further column,
 // keyed by column in plan/seats.md step 4).
 //
 // The overlay's render delegate (vtable slot 0x144BF4DB0, the thunk 0x14151BAF0 that calls

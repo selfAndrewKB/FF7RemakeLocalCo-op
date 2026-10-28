@@ -6,7 +6,7 @@
 // flag (and two more bits, most likely Bloom and MotionBlur) for every view; Square Enix's anti-aliasing setup
 // then picks no anti-aliasing at all, so dithered hair and foliage stay raw in both halves. Each player's view
 // already has its own view state and history. The engine's own lever is the show-flag force mask its override
-// applies last (a global only its static initialiser writes, zero): while player 2 is in, it holds exactly the
+// applies last (a global only its static initialiser writes, zero): while a further player is in, it holds exactly the
 // bits the split rule clears, and it goes back to zero at the leave. Research: RE-render-views.md.
 
 #include <cstdint>
@@ -32,9 +32,9 @@ void Tick(bool furtherViews) noexcept;
 /// are out (a reinstall would otherwise find the mask in use and refuse).
 void Remove() noexcept;
 
-/// The bits forced on while player 2 is in. Default 0x1008 (TAA and 0x1000); the mod raises it to 0x100A (bloom too)
-/// when render/bloom_origin installs, since bloom leaks player 1's rows into player 2's half without it. Applied at
-/// once if player 2 is in. Game thread.
+/// The bits forced on while a further player is in. Default 0x1008 (TAA and 0x1000); the mod raises it to 0x100A
+/// (bloom too) when render/bloom_origin installs, since bloom leaks player 1's rows into the further views without it.
+/// Applied at once if a further player is in. Game thread.
 void SetMask(std::uint32_t mask, bool furtherPlayerIn) noexcept;
 std::uint32_t Mask() noexcept;
 

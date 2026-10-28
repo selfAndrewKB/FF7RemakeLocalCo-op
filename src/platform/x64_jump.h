@@ -13,6 +13,9 @@ namespace lss::platform {
 
 inline constexpr std::size_t kJumpLength = 5;
 
+/// `jmp qword ptr [rip+0]`, followed in the placed code by the 8-byte address it jumps to (any distance).
+inline constexpr std::uint8_t kAbsoluteJump[] = {0xFF, 0x25, 0x00, 0x00, 0x00, 0x00};
+
 /// The bytes of a `jmp` placed at `from` that lands on `to`, or empty if `to` is out of the
 /// instruction's ±2 GiB reach.
 constexpr std::optional<std::array<std::uint8_t, kJumpLength>> EncodeJump(std::uintptr_t from, std::uintptr_t to) noexcept

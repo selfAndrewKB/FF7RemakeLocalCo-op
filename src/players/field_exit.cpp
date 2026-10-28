@@ -21,7 +21,7 @@ platform::CallRedirect g_blueprintJump;
 LeaveFn                g_leave   = nullptr;
 void*                  g_context = nullptr;
 
-/// One request: player 2 leaves first if the field still runs (the game's request does nothing otherwise), then
+/// One request: every further player leaves first if the field still runs (the game's request does nothing otherwise), then
 /// the game's request.
 std::uintptr_t Request(void* root, const platform::CallRedirect& call, const wchar_t* caller) noexcept
 {
@@ -68,7 +68,7 @@ bool Install(const platform::GameImage& image, LeaveFn leave, void* context) noe
         platform::Log(L"field exit: a call site is not the call the research read; only the field-step check catches a field exit");
         return false;
     }
-    platform::Log(L"field exit: player 2 leaves before a retry, load, jump or return to the title leaves the field");
+    platform::Log(L"field exit: every further player leaves before a retry, load, jump or return to the title leaves the field");
     return true;
 }
 

@@ -64,7 +64,7 @@ public:
     RoomRunScope(int seat, void* controller) noexcept : outer_(g_roomRun)
     {
         void* character = nullptr;
-        Read(static_cast<std::uint8_t*>(controller) + facts::kControllerFieldCharacter, character);
+        Read(static_cast<std::uint8_t*>(controller) + facts::kControllerLeaderCharacter, character);
         g_roomRun = {seat, character};
     }
     ~RoomRunScope() { g_roomRun = outer_; }
@@ -117,7 +117,7 @@ RoomRun UnmarkedRun(void* partyManager) noexcept
         return {};
     }
     void* character = nullptr;
-    Read(static_cast<std::uint8_t*>(controller) + facts::kControllerFieldCharacter, character);
+    Read(static_cast<std::uint8_t*>(controller) + facts::kControllerLeaderCharacter, character);
     return {seat, character};
 }
 

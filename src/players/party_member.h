@@ -3,15 +3,16 @@
 // Which deployed party member a further player plays, and when it is the player's to take (the user's rule,
 // 2026-10-01, carried from Rebirth's player_two/party_member; RE-slot-member.md).
 //
-// Player 2 plays the member in the 2nd slot of the game's own party order: the row after the field leader in the
-// deployed formation (PartyManager+0x230..+0x232, the deployed types in ascending order, the order the party panel
-// shows and the battle switch cycles), stepping past player 1's character and the battle-support status as that
-// cycle does; a third player would take the next row. The game's order is the only control: a story party change
+// The first further player plays the member in the 2nd slot of the game's own party order: the row after the field
+// leader in the deployed formation (PartyManager+0x230..+0x232, the deployed types in ascending order, the order the
+// party panel shows and the battle switch cycles), stepping past player 1's character and the battle-support status
+// as that cycle does; the next player takes the next row. The game's order is the only control: a story party change
 // moves the slot and the session follows it. The row's member is taken only while it is free the way the game
 // hands members to players: nobody else's controller holds it; in the field its AI runs the level's staging or the
 // party's follow (players/field_hold.h: no script layer active, no animation or one-shot kind), it is in the FIELD
-// or CAUTION actor mode, no event holds the field and the game's own leader is with its player (not handed to its
-// AI for a scene, a field action or the control lock); in battle the BATTLE mode. A story script that takes a held
+// or CAUTION actor mode, no push-button event holds the field with another lock and the game's own leader is with its
+// player (not handed to its AI for a scene, a field action or the control lock), a treasure or push-button lock alone
+// excepted (field_hold::InteractionLock: the member is then judged by its own state); in battle the BATTLE mode. A story script that takes a held
 // member (a script layer, an animation, the cinema modes) gets it the way the game hands its leader to its AI, the
 // seat and the player's view kept on it, until the hold ends (the user, 2026-10-21). A LEAD the level writes on
 // the member is the player's while it is staging and the AI's while it is a guide (the game's own data decides:
@@ -40,7 +41,7 @@ enum class Wait : std::uint8_t
     NotLoaded,   // the row names a type with no actor
     Held,        // another controller holds the row's member (its PLAYER slot)
     Cinema,       // in a cutscene or an event (the cinema actor modes)
-    EventLock,    // an event holds the field
+    PushButtonEvent, // a push-button event (a switch, a lever, a terminal) holds the field with another lock
     LeaderHanded, // the game's own leader is with its AI (a scene, a field action, the control lock), or unread
     AiHeld,       // a script holds its field AI (a script layer, or the unread ESCAPE_POSITION kind: field_hold.h)
     Animation,    // its AI plays a scripted animation (ANIMATION or the one-shot SINGLE_ANIMATION: field_hold.h)
@@ -51,7 +52,7 @@ enum class Wait : std::uint8_t
 
 /// The waits a seated member's own scripted hold makes: a cutscene mode, a script layer or kind, an animation, a
 /// guide lead. The session answers each with the game's own hand (the member to its AI, the seat and the player's
-/// view kept) and takes the member back when the hold ends. The rest (the event lock, the game's leader handed) is
+/// view kept) and takes the member back when the hold ends. The rest (a push-button event, the game's leader handed) is
 /// the game's own hand of its leader, heard by party_events.
 constexpr bool ScriptHold(Wait wait) noexcept
 {
@@ -92,7 +93,7 @@ bool IsFieldLeader(const void* character) noexcept;
 
 /// Why a held `member` must be with its AI now (a ScriptHold wait: a cutscene or event mode, a script's hold on its
 /// field AI, an animation, a guide the level waits on). Null while it may stay. (The battle mode holds nothing: the
-/// battle AI never runs a player-held member; an event lock or the game's leader handed is the game's own hand, heard
+/// battle AI never runs a player-held member; a push-button event or the game's leader handed is the game's own hand, heard
 /// by party_events.)
 const wchar_t* WhyHeldByScript(void* member) noexcept;
 
@@ -106,9 +107,9 @@ std::uint8_t ActorMode(const void* member) noexcept;
 /// The member's party status is in the formation (PARTY or battle support).
 bool InFormation(std::uint8_t type) noexcept;
 
-/// The field control lock mask (0 when free or unread), and whether its event bit is set.
+/// The field control lock mask (0 when free or unread), and whether its push-button event bit is set.
 std::uint32_t ControlLockMask() noexcept;
-bool          EventLocked() noexcept;
+bool          PushButtonLocked() noexcept;
 
 /// The game's own leader is with a player controller (its PLAYER slot filled): the game has not handed it to its
 /// AI, or has returned it. False while handed, and when the leader cannot be read.

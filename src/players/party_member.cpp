@@ -26,7 +26,6 @@ using SetActorTypeFn   = void (*)(void* character800, std::uint8_t type);
 
 constexpr std::int32_t  kRows             = 3;      // the deployed formation's rows
 constexpr std::uint8_t  kStatusSlots      = 8;      // the player types with a party status (EPlayerType below MAX)
-constexpr std::uint32_t kControllerLeader = 0x6F8;  // AEndPlayerController::LeaderCharacter
 
 GetPlayerActorFn g_getPlayerActor = nullptr;
 ReconcileFn      g_reconcile      = nullptr;
@@ -54,7 +53,7 @@ bool ReadParty(void* playerOneController, Party& out) noexcept
     {
         return false;
     }
-    out.leaderOne = ReadPointer(playerOneController, kControllerLeader);
+    out.leaderOne = ReadPointer(playerOneController, facts::kControllerLeaderCharacter);
     out.pawnOne   = ReadPointer(playerOneController, facts::kControllerPawn);
     return true;
 }
@@ -98,9 +97,9 @@ Wait FieldWait(void* member) noexcept
     // is judged by its own state below (an event's listed actor is already in the cinema mode above).
     if (!field_hold::InteractionLock(ControlLockMask()))
     {
-        if (EventLocked())
+        if (PushButtonLocked())
         {
-            return Wait::EventLock;
+            return Wait::PushButtonEvent;
         }
         // The game's own leader handed to its AI: the game is in a scene, a field action or the control lock, and it
         // hands every player's member the same way (the funnel, or its backstop in the session). A seat that landed
@@ -377,7 +376,7 @@ const wchar_t* WhyHeldByScript(void* member) noexcept
     case Wait::Guide:
         return L"a guide (a lead or a run to a mark: a level step waits on its arrival, or the story's marker rides on it): its AI walks it";
     default:
-        return nullptr;  // an event lock or the game's leader handed is the game's own hand (party_events); the rest holds nothing
+        return nullptr;  // a push-button event or the game's leader handed is the game's own hand (party_events); the rest holds nothing
     }
 }
 
@@ -394,12 +393,12 @@ std::uint32_t ControlLockMask() noexcept
     return field_root::ControlLockMask();
 }
 
-static_assert(field_hold::kLockPushButton == facts::kControlLockEvent && field_hold::kLockTreasure == facts::kControlLockTreasure,
+static_assert(field_hold::kLockPushButton == facts::kControlLockPushButton && field_hold::kLockTreasure == facts::kControlLockTreasure,
               "the interaction lock bits are the game's EndFieldExclusion bits");
 
-bool EventLocked() noexcept
+bool PushButtonLocked() noexcept
 {
-    return (ControlLockMask() & facts::kControlLockEvent) != 0;
+    return (ControlLockMask() & facts::kControlLockPushButton) != 0;
 }
 
 bool LeaderWithPlayer() noexcept
@@ -481,8 +480,8 @@ const wchar_t* Describe(Wait wait) noexcept
         return L"another controller holds it";
     case Wait::Cinema:
         return L"in a cutscene or event (the cinema actor mode)";
-    case Wait::EventLock:
-        return L"an event holds the field";
+    case Wait::PushButtonEvent:
+        return L"a push-button event (a switch, a lever, a terminal) holds the field with another lock";
     case Wait::LeaderHanded:
         return L"the game's leader is with its AI (a scene, a field action, the control lock), or unread";
     case Wait::AiHeld:

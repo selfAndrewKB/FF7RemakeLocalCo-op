@@ -45,8 +45,8 @@ std::string ToUtf8(const std::wstring& wide)
 Level ReplyLevel(const std::wstring& reply)
 {
     return reply.starts_with(L"value ") || reply.starts_with(L"help ") || reply.starts_with(L"note ") ||
-                   reply.starts_with(L"ok ") && (reply.find(L" get ") != std::wstring::npos ||
-                                                 reply.ends_with(L" status") || reply.find(L" help") != std::wstring::npos)
+                   (reply.starts_with(L"ok ") && (reply.find(L" get ") != std::wstring::npos ||
+                                                  reply.ends_with(L" status") || reply.find(L" help") != std::wstring::npos))
                ? Level::Debug
                : Level::Info;
 }

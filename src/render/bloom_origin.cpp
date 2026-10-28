@@ -143,7 +143,7 @@ void CreateFixed() noexcept
         shaderRef == nullptr)
     {
         g_createFailed.store(true);
-        platform::Log(L"bloom origin: the engine did not create the corrected shader; player 2's bloom keeps player 1's rows");
+        platform::Log(L"bloom origin: the engine did not create the corrected shader; the further views' bloom keeps player 1's rows");
         return;
     }
     g_fixedShader.store(shaderRef);  // the creation's reference: kept, since pipeline-cache keys hold the raw pointer
@@ -309,7 +309,7 @@ bool Install(const platform::GameImage& image) noexcept
                            return control::Outcome{};
                        },
                        .get = [] { return control::Value{Enabled()}; }});
-    platform::Log(L"bloom origin: installed ({}); player 2's bloom will read its own rows", g_rhiName);
+    platform::Log(L"bloom origin: installed ({}); each further view's bloom will read its own rows", g_rhiName);
     return true;
 }
 

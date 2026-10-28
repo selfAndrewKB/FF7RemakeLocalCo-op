@@ -117,7 +117,7 @@ std::wstring ObjectName(const void* object) noexcept
 {
     std::int64_t bits = 0;
     std::wstring text;
-    if (!Read(static_cast<const std::uint8_t*>(object) + 0x18, bits) ||
+    if (!Read(static_cast<const std::uint8_t*>(object) + facts::kObjectName, bits) ||
         !platform::CallGuarded(&NameText, bits, &text) || text.empty())
     {
         return L"?";

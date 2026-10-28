@@ -1,5 +1,6 @@
 #include "platform/verified_code.h"
 
+#include "platform/guarded.h"
 #include "platform/log.h"
 
 #include <format>
@@ -13,13 +14,16 @@ std::optional<std::uintptr_t> FindFunction(const GameImage& image, const Functio
     if (!live || !image.BytesMatch(fact.address, fact.entryBytes))
     {
         // The live bytes go in the line: a jump there means another hook (UE4SS, a Lua mod) took the function first.
+        // Read under a guard: the check also fails for a page that cannot be read.
+        std::uint8_t first[8]{};
+        const bool   read = live && CopyGuarded(first, reinterpret_cast<const void*>(*live), sizeof(first));
         std::wstring bytes;
-        for (std::size_t i = 0; live && i < 8; ++i)
+        for (std::size_t i = 0; read && i < sizeof(first); ++i)
         {
-            bytes += std::format(L"{:02X} ", *reinterpret_cast<const std::uint8_t*>(*live + i));
+            bytes += std::format(L"{:02X} ", first[i]);
         }
         Log(L"check failed: {} (IDA 0x{:X}) does not start with the expected bytes (live: {})", fact.what, fact.address,
-            live ? bytes : L"outside the image");
+            !live ? L"outside the image" : read ? bytes : L"not readable");
         return std::nullopt;
     }
     return live;

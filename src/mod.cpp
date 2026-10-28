@@ -64,7 +64,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.115.0-hud-host-set";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.116.0-names-and-comments";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;

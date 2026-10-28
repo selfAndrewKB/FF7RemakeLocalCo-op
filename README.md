@@ -71,16 +71,17 @@ The language's own verbs (`src/control/script.h`): `get <name>`, `status`, `help
 `wait <ticks>`, `wait-until <name> <op> <value> [<ticks>]`, `hold <player> stick <lx> <ly> <rx> <ry> <ticks>`,
 `note <text>`, `abort`. A failure drops the commands queued behind it; queries answer even during a wait.
 
-While player 2 is in, the mod also gives player 2's controller the game's input step right after player 1's (the game ticks only the primary controller's input), and forces back on the effects stock UE 4.18 turns off for split screen (show flags `0x100A`: TAA, bloom and bit `0x1000`). It makes Square Enix's AO downsample and first bloom reduce read each view's own rows; both read player 1's rows for player 2's view in the stock game (the split-screen ghost and its moving traces). The bloom fix works on D3D12 (the default renderer) and D3D11 (`-dx11`); where it cannot install, bloom stays off in split (`0x1008`).
+While a further player is in, the mod also gives each further player's controller the game's input step right after player 1's (the game ticks only the primary controller's input), and forces back on the effects stock UE 4.18 turns off for split screen (show flags `0x100A`: TAA, bloom and bit `0x1000`). It makes Square Enix's AO downsample and first bloom reduce read each view's own rows; both read player 1's rows for the further views in the stock game (the split-screen ghost and its moving traces). The bloom fix works on D3D12 (the default renderer) and D3D11 (`-dx11`); where it cannot install, bloom stays off in split (`0x1008`).
 
-While player 2 is in, the HUD is laid out for each half: the whole single-player HUD of a 32:9 screen in each half
-(minimap top right, command menu bottom left), with world markers on their objects in player 1's half. Player 2's half has its own HUD image; player 1's talk and
-examine cursors stay out of it. Its content is still player 1's otherwise (minimap, prompts): player 2's own is next.
+While a further player is in, the HUD is laid out for each view: the whole single-player HUD in each (minimap top
+right, command menu bottom left), with world markers on their objects in every view. Each further view has its own HUD
+image, with its own minimap, markers, arrows, target bar and battle menu; player 1's talk and examine cursors stay out
+of it.
 
-While player 2 is in, each player's sticks and buttons are their own pad's (pad 1 = XInput user 0, also the
-keyboard; pad 2 = user 1): pad 2's presses never open player 1's menus or release its held actions. In battle player
-2 fights through its own command controller: its own command menu and party panel in its half, attacks, guard, dodge
-and its Tactical Mode from pad 2, the world slowed by either menu, its own lock-on (R3) and target with the lock camera
+While a further player is in, each player's sticks and buttons are their own pad's (pad 1 = XInput user 0, also
+the keyboard; pad 2 = user 1; pad 3 = user 2): a further pad's presses never open player 1's menus or release its held
+actions. In battle each further player fights through its own command controller: its own command menu and party
+panel in its view, attacks, guard, dodge and its Tactical Mode from its own pad, the world slowed by any menu, its own lock-on (R3) and target with the lock camera
 on its own view, and its member fills ATB and staggers at the player's rates; neither player's switch lands on the other's
 member. A virtual pad 2 for unattended tests: `python ../tools/pad2.py serve`, then `press A`, `hold RB --ms 2000`,
 `stick L 0 1`.
@@ -115,7 +116,7 @@ and add `LocalSplitScreen : 1` to `Mods/mods.txt`. Close the game first. `LocalS
 `dlls` folder (`tools/game.py relaunch --deploy` copies it when none is there): `[Views] multi-monitor = off | on |
 auto`. `on` spans a row of equal monitors from the start and keeps the span whatever the player count (the title,
 loading screens, the field and the menus on every monitor; every column no player fills mirrors player 1's picture
-until a player joins); `auto` (the default) spans while player 2 is in; `off` leaves it to the console and Ctrl+F2.
+until a player joins); `auto` (the default) spans while a further player is in; `off` leaves it to the console and Ctrl+F2.
 `[Views] column-order = 1 2 3 | 1 3 2` picks which screen players 2 and 3 take. `[Battle] menu-slow = on | off`: off,
 an open battle command menu no longer slows the world or greys the screen (Ctrl+F9 switches it in play). `[Battle] battle-warps =
 players-stay | off | game`: who the game warps at a battle's start and end (players-stay, the default: every player's
@@ -208,7 +209,7 @@ src/
     action_tables.h         A pad's own copy of the game's action state (RE-input.md §1.6-§1.7, RE-input-p2.md §2.3)
     camera_override         A seat's member's camera overrides reach that seat's camera (RE-lock-camera-ledger.md row
                             X3)
-    field_exit              Player 2 leaves before the game leaves the field
+    field_exit              Every further player leaves before the game leaves the field
                             (Remake/Documentation/research/RE-lifecycle-world.md §3, §8)
     field_hold.h            When a party member's field AI state leaves it a further player's to hold, and when a script
                             needs it back
@@ -222,15 +223,15 @@ src/
                             member is a guide (the member goes to its AI, the player's view stays on it) or staging (the
                             player keeps it), from the game's own data
     local_player_list       The engine's list of local players, for the modules that add a local player of the mod's own
-                            (players/session: player 2; views/mirror_player: the mirror in an empty column) through UE's
-                            own paths, on the game thread
+                            (players/session: a further player; views/mirror_player: the mirror in an empty column)
+                            through UE's own paths, on the game thread
     menu_pads.h             Where a further pad's key events go while the game's menus need them
                             (RE-pause-menu-any-pad.md §2.2, §3.3)
     nav_area                A seat's nav-area component ticks in that seat's scopes (RE-operator-settings-two.md §2.5)
     operator_battle_mode    Each seat's field camera operator enters and leaves battle mode with player 1's
                             (RE-operator-settings-two.md)
-    own_controller          Player 2's own PlayerController: the End camera manager's BeginPlay, made safe for a second
-                            player
+    own_controller          A further player's own PlayerController: the End camera manager's BeginPlay, made safe for a
+                            joining player
     pad_buttons             Each pad's buttons for its own player (RE-input.md §1, §8; RE-input-p2.md §2: the design, a
                             written exception)
     pad_presence            Which XInput users have a pad, asked of XInput itself once a second on the game thread (the
@@ -381,8 +382,8 @@ src/
     mirror_player           The mirror players: an extra local player of the mod's in every column no player fills,
                             showing player 1's picture, so a spanned window never shows one view across the whole row
     monitor_row             Which monitors a spanned game window may cover: a row of equal monitors
-    scene_camera            The scene camera on player 2's view: a cutscene, a talk scene or an event camera plays on
-                            player 2's view as it does on player 1's
+    scene_camera            The scene camera on every further player's view: a cutscene, a talk scene or an event camera
+                            plays on each further player's view as it does on player 1's
     split_scale             Split views fill their part of the window whatever the game's resolution option
     split_scale_rules.h     The pure rule of views/split_scale: how far the split views must be scaled so they fit the
                             scene buffer

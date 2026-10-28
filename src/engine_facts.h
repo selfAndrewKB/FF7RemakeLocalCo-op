@@ -18,6 +18,7 @@ inline constexpr std::uint32_t kActorOwner                = 0x88;   // AActor::O
 inline constexpr std::uint32_t kActorRootComponent        = 0x160;  // AActor::RootComponent
 inline constexpr std::uint32_t kActorTags                 = 0x198;  // AActor::Tags (TArray<FName>)
 inline constexpr std::uint32_t kObjectClass               = 0x10;   // UObjectBase::ClassPrivate
+inline constexpr std::uint32_t kObjectName                = 0x18;   // UObjectBase::NamePrivate (an FName)
 inline constexpr std::uint32_t kLocalPlayerController     = 0x30;   // UPlayer::PlayerController
 inline constexpr std::uint32_t kControllerPawn            = 0x380;  // AController::Pawn
 inline constexpr std::uint32_t kControllerControlRotation = 0x3A8;  // AController::ControlRotation (pitch, yaw, roll)
@@ -66,7 +67,7 @@ inline constexpr std::array<std::uint8_t, 20> kRemoveLocalPlayerEntry{
 inline constexpr platform::FunctionFact kRemoveLocalPlayer{L"UGameInstance::RemoveLocalPlayer", 0x142F3D3B0,
                                                            kRemoveLocalPlayerEntry};
 
-// --- Player 2's field camera (RE-camera.md §9, RE-impl-facts-v0.2.md) ----------------------------
+// --- A further player's field camera (RE-camera.md §9, RE-impl-facts-v0.2.md) ---------------------
 inline constexpr std::uintptr_t kPartyManagerGlobal   = 0x1457E9A88;  // AEndPartyManager* (heap); +0 = primary PC
 inline constexpr std::uintptr_t kEndGameRootGlobal    = 0x1457E99D0;  // root object*; +0x9B0/+0x9B4 = the operator's weak pair
 inline constexpr std::uint32_t  kRootOperatorWeak     = 0x9B0;
@@ -216,7 +217,7 @@ inline constexpr platform::SlotFact kFieldMove{
 // step is `flags = Force1 | (flags & ~Force0)` with two engine masks that only the static initialiser writes (zero).
 inline constexpr std::uintptr_t kShowFlagForce1Mask   = 0x1453E39D4;  // u32: bits forced on for every view
 inline constexpr std::uint32_t  kSplitDisabledFlags   = 0x100A;       // 0x8 TemporalAA, 0x2 Bloom; 0x1000 [ASSUMPTION] MotionBlur
-/// What the mod forces without the bloom fix: bit 0x2 (Bloom) leaks player 1's moving content into player 2's half
+/// What the mod forces without the bloom fix: bit 0x2 (Bloom) leaks player 1's moving content into the further views
 /// (live A/B, Documentation/plan/topics/render.md) unless render/bloom_origin is installed, which raises the mask to kSplitDisabledFlags.
 inline constexpr std::uint32_t  kSplitForcedFlags     = 0x1008;
 
@@ -583,7 +584,7 @@ inline constexpr platform::FunctionFact kCompositeRelease{L"SceneRenderTargets__
                                                           kCompositeReleaseEntry};
 inline constexpr std::uint32_t  kSceneTargetsCompositeHdr = 0x120;       // TRefCountPtr<FRHITexture>: the movie frame
 
-// Player 2's HUD image (RE-hud-overlay-pass.md §2, §3, §4; RE-hud-two-images.md §2.3, §3).
+// The further players' HUD images (RE-hud-overlay-pass.md §2, §3, §4; RE-hud-two-images.md §2.3, §3).
 inline constexpr std::array<std::uint8_t, 16> kOverlayRenderEntry{
     0x4C, 0x8B, 0xDC, 0x55, 0x41, 0x56, 0x49, 0x8D, 0xAB, 0x68, 0xFF, 0xFF, 0xFF, 0x48, 0x81, 0xEC};
 inline constexpr platform::FunctionFact kOverlayRender{L"SEndRootOverlay__RenderToInGameUILayer", 0x141509D00,
@@ -601,6 +602,7 @@ inline constexpr std::uintptr_t kFrameNumber          = 0x1453A4A00;
 inline constexpr std::uintptr_t kDrawEntryBatchCall   = 0x1439FCFD8;  // DrawLayerEntry: call DrawEntryBatchToTarget
 inline constexpr std::uintptr_t kDrawEntryBatchToTarget = 0x1439FD100;  // 9 arguments, no result
 inline constexpr std::uintptr_t kGMallocGlobal        = 0x145825680;  // FMalloc* GMalloc (vt+0x10 Malloc(size, align))
+inline constexpr std::uint32_t  kMallocSlotMalloc     = 0x10;         // FMalloc's vtable: Malloc(size, alignment)
 inline constexpr std::uintptr_t kMenuVertexBufferVtable = 0x144F766F8;  // FEndMenuRenderer's pool buffers
 inline constexpr std::uintptr_t kMenuIndexBufferVtable  = 0x144F76788;
 
@@ -722,7 +724,7 @@ inline constexpr std::uint32_t kFieldIconEntryHasSlot = 28, kFieldIconEntryAlpha
 inline constexpr std::uint32_t kCanvasChildren   = 0x160;  // SEndCanvas vtable: its children (+0 vtable: count; +8 slot pointers)
 inline constexpr std::uint32_t kCanvasSlotWidget = 0x08, kCanvasSlotOffset = 0x20;  // a slot's SWidget, its Offset {x, y, w, h}
 
-// Player 2's own navi map manager (EndUISystem[29], RE-hud-minimap-two.md §2-§6, §9). Call sites are checked by
+// Each further player's own navi map manager (EndUISystem[29], RE-hud-minimap-two.md §2-§6, §9). Call sites are checked by
 // platform::CallRedirect against their targets.
 inline constexpr std::uintptr_t kNaviSlotGlobal        = 0x1459CAA58;  // EndUISystem[29]: the game's manager
 inline constexpr std::uintptr_t kBannerSlotGlobal      = 0x1459CAA88;  // EndUISystem[35]: the banner fades' lists +0x10, +0x80
@@ -767,6 +769,13 @@ inline constexpr std::uint32_t  kNaviManagerFlags      = 0x180;  // hidden, visi
 inline constexpr std::uint32_t  kNaviManagerMapData    = 0x1B4;  // the map data (a pointer at a 4-aligned offset)
 inline constexpr std::uint32_t  kNaviManagerModes      = 0x258;  // navi-map mode, compass mode, pending
 inline constexpr std::uint32_t  kNaviManagerCompass    = 0x260;  // the compass object (+0: weak Compass_C)
+// Read only for the `hud.minimap` description:
+inline constexpr std::uint32_t  kNaviManagerPlayerIcon = 0x20;   // weak Icon_Player
+inline constexpr std::uint32_t  kNaviManagerAnimation  = 0x18C;  // int
+inline constexpr std::uint32_t  kNaviManagerFade       = 0x198;  // int
+inline constexpr std::uint32_t  kNaviManagerAlpha      = 0x1A0;  // float
+inline constexpr std::uint32_t  kNaviManagerRotation   = 0x1A4;  // float x2
+inline constexpr std::uint32_t  kWidgetRenderAngle     = 0xA8;   // UWidget::RenderTransform.Angle (Icon_Player: the facing)
 inline constexpr std::uint32_t  kOctagonRenderTexture  = 0x118;  // UEndNaviMapOctagon::RenderTexture
 inline constexpr std::uint32_t  kOctagonSlate          = 0x128;  // its Slate object
 inline constexpr std::uint32_t  kOctagonSlateTarget    = 0x5C8;  // the Slate object's render target (its entries draw into it)
@@ -931,7 +940,7 @@ inline constexpr std::uint32_t  kGameStatePauseCounter    = 0x4F0;        // AEn
 inline constexpr std::uint32_t  kCharacterBattleComponent = 0xCB0;        // AEndCharacter: the battle player component (`comp`)
 inline constexpr std::uint32_t  kBattleCompInputBufferSlot = 0xE0;        // comp vtable: the leader-only input buffer (comp, dt)
 
-// --- Targeting for player 2 (RE-battle-member-two.md §5, RE-battle.md §2.9) ---------------------------------------
+// --- Targeting for a further player (RE-battle-member-two.md §5, RE-battle.md §2.9) -------------------------------
 // The battle system's target fields: the lock (+0x388), the displayed and lock-camera targets, the target-list mode,
 // the stick-switch latch, the dummy-lock option, latch and timer, all in +0x370..+0x3E8. The targeting tick is called
 // twice per battle tick, each after the leader's soft-target pre-tick; the second call crosses a block.
@@ -963,7 +972,7 @@ inline constexpr platform::FunctionFact kBattleClearLockAndTarget{L"BattleTarget
 inline constexpr std::uintptr_t kTargetingCallPaused = 0x1409B7009;  // inside a block
 inline constexpr std::uintptr_t kTargetingCallNormal = 0x1409B793F;  // crosses a block
 
-// --- The player's rates for player 2's member (RE-battle-member-two.md §2) -----------------------------------------
+// --- The player's rates for a further player's member (RE-battle-member-two.md §2) ---------------------------------
 // The eight character battle components share one vtable layout: +0x318 the passive ATB tick (its rate getter +0x310
 // and the guard coefficient test the leader inside it), +0x748 the "ability by the player" flag setter. The enemy's
 // stagger-gauge hit takes the attacker as an argument and has one call site.
@@ -1105,9 +1114,10 @@ inline constexpr platform::SlotFact kNavAreaComponentTick{
     {L"EndPlayerExistNavAreaComponent::TickComponent", 0x1415F9F80, kNavAreaComponentTickEntry}};
 inline constexpr std::uint32_t kNavAreaComponentController = 0xF8;  // the owning End player controller, set at BeginPlay
 inline constexpr std::uint32_t kControllerNavAreaComponent = 0x6F0;  // AEndPlayerController.PlayerExistNavAreaComponent
-/// The End player controller's own field character: what its nav-area component's diff projects onto the navmesh and
-/// what its field move reads the walk caps from (research/RE-room-walk-limit.md §1).
-inline constexpr std::uint32_t kControllerFieldCharacter   = 0x6F8;
+/// AEndPlayerController::LeaderCharacter, the controller's own field character: the member it plays (SwitchLeaderInternal
+/// sets it), what its nav-area component's diff projects onto the navmesh and what its field move reads the walk caps
+/// from (research/RE-room-walk-limit.md §1).
+inline constexpr std::uint32_t kControllerLeaderCharacter  = 0x6F8;
 /// The InDoor volume's Enter, Stay and Leave each write the room's walk limit (cap layer 6) onto
 /// PartyManager_GetPartyLeader(PM, 1), the default leader, whichever controller's component runs them
 /// (research/RE-room-walk-limit.md §5.2): the three `mov dl,1; call` sites. Enter and Stay each lie inside their own
@@ -1141,7 +1151,7 @@ inline constexpr std::uintptr_t kScriptLockNearestCall = 0x141873C31;  // E8 7A 
 // The enemy detail window's close delegate restores the lock and asks the Command camera flavor (row X5; named a
 // command-menu state end before pass S-RMK-CMDCAM read it, RE-command-camera-two.md §2.5): the Execute and
 // ExecuteIfSafe slots of the delegate instance the window's open binds (the third slot is the base vtable the
-// constructor overwrites, never called). Which context runs them for player 2 is read first.
+// constructor overwrites, never called). Which context runs them for a further player is read first.
 inline constexpr std::array<std::uint8_t, 16> kCmdMenuRestoreLockEntryA{
     0x40, 0x53, 0x48, 0x83, 0xEC, 0x20, 0x48, 0x8B, 0xD9, 0xE8, 0x42, 0xE8, 0xF8, 0xFF, 0x84, 0xC0};
 inline constexpr std::array<std::uint8_t, 16> kCmdMenuRestoreLockEntryB{
@@ -1439,10 +1449,12 @@ inline constexpr std::uint32_t  kFieldAiLayerRecords   = 0xE00;   // 15 records 
 inline constexpr std::uint32_t  kFieldAiLayerBytes     = 0x4C8;
 inline constexpr std::uint32_t  kFieldAiLayers         = 15;
 /// The field control lock mask on the state manager ([root+0x138]): the reflected EndFieldExclusion bits (bit
-/// 0x100000 while an event holds the field; research/RE-script-release.md §3). The first bit set hands the game's
+/// 0x100000 while a push-button event holds the field; research/RE-script-release.md §3, §10.5). The first bit set hands the game's
 /// leader to its AI, the last bit cleared returns it.
 inline constexpr std::uint32_t  kRootStateManager      = 0x138;
-inline constexpr std::uint32_t  kControlLockEvent      = 0x100000;  // _PushButtonAction (EventControl_Begin_HandLeaderToAI)
+inline constexpr std::uint32_t  kControlLockPushButton = 0x100000;  // _PushButtonAction: the push-button event (a switch, a
+                                                                     // lever, a terminal), set only by
+                                                                     // EventControl_Begin_HandLeaderToAI
 inline constexpr std::uint32_t  kControlLockTreasure   = 0x4;       // _Treasure: a chest opened, an item picked up
 /// Bit 21 of the same mask, EndFieldExclusion DisableController_MiniGame (research/RE-minigame-signal.md §2): held for the
 /// whole of Fort Condor; switched by phase through a VR simulator or colosseum session (on/off 78 ShowColosseumMenu
@@ -1685,7 +1697,7 @@ inline constexpr std::uint32_t kCharacterKbd              = 0x1A90;  // AEndChar
 inline constexpr std::uint32_t kKbdBonamiks               = 0x428;   //   its Bonamik array (data), the first one's mode below
 inline constexpr std::uint32_t kBonamikUpdateMode         = 0x1C9C;  //   0 normal; 1 reduced (out of the camera's cone)
 
-// --- NPCs near player 2: CharaPop (research/RE-npc-near-player-two.md, 2026-10-21) ---------------
+// --- NPCs near a further player: CharaPop (research/RE-npc-near-player-two.md, 2026-10-21) -------
 /// CharaPop_SetEntryMinLODLevel_ByName(const FName* objectName, u8 level, bool evaluateNow) -> found: the entry's
 /// minimum level (3 keeps it awake, shown and fully animated; 0 clears it), the setter event scripts and field-AI
 /// animations use; off the game thread it posts itself to the game thread.
@@ -2025,7 +2037,7 @@ inline constexpr std::array<std::uint8_t, 16> kCameraManagerSetSlotEntry{
 inline constexpr platform::FunctionFact kCameraManagerSetSlot{L"AEndPlayerCameraManager::SetCameraSlot", 0x141687EB0,
                                                               kCameraManagerSetSlotEntry};
 /// PrimaryPCM_SetCameraSlotBlend(u8 slot, const record*): the 60-byte record into the primary manager's table (the
-/// manager the primary controller names: player 2's inside its primary scope); slots 13/16 also refresh +0x2A2D.
+/// manager the primary controller names: a further player's inside its primary scope); slots 13/16 also refresh +0x2A2D.
 inline constexpr std::array<std::uint8_t, 16> kPrimarySetSlotBlendEntry{
     0x48, 0x89, 0x6C, 0x24, 0x10, 0x48, 0x89, 0x74, 0x24, 0x18, 0x57, 0x48, 0x83, 0xEC, 0x20, 0x48};
 inline constexpr platform::FunctionFact kPrimarySetSlotBlend{L"PrimaryPCM_SetCameraSlotBlend", 0x141696990,
@@ -2086,7 +2098,18 @@ inline constexpr std::array<std::uint8_t, 16> kPlayerTriggerSweepEntry{
     0x48, 0x8B, 0xC4, 0x57, 0x48, 0x81, 0xEC, 0x90, 0x00, 0x00, 0x00, 0x48, 0x83, 0xB9, 0xE8, 0x06};
 inline constexpr platform::FunctionFact kPlayerTriggerSweep{L"EndPlayerController_UpdatePlayerTriggerSweep", 0x1415F6980,
                                                             kPlayerTriggerSweepEntry};
+inline constexpr std::uint32_t  kControllerPlayerTrigger    = 0x6E0;  // AEndPlayerController::PlayerTrigger (the actor)
 inline constexpr std::uint32_t  kControllerTriggerComponent = 0x6E8;  // AEndPlayerController: its trigger's overlap component
+/// The game's party setup for a controller (once per controller: the trigger's component bound to it) and its one leader
+/// change, every switch's end (players/party_seat.h).
+inline constexpr std::array<std::uint8_t, 16> kInitPartyLevelEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x18, 0x55, 0x56, 0x57, 0x41, 0x54, 0x41, 0x55, 0x41, 0x56, 0x41, 0x57};
+inline constexpr std::array<std::uint8_t, 16> kSwitchLeaderEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x18, 0x55, 0x56, 0x57, 0x41, 0x56, 0x41, 0x57, 0x48, 0x8B, 0xEC, 0x48};
+inline constexpr platform::FunctionFact kInitPartyLevel{L"EndPlayerController::InitPartyLevel", 0x1415F6E00,
+                                                        kInitPartyLevelEntry};
+inline constexpr platform::FunctionFact kSwitchLeaderInternal{L"EndPlayerController::SwitchLeaderInternal", 0x1415F7DB0,
+                                                              kSwitchLeaderEntry};
 inline constexpr std::uint32_t  kControllerNaviVolumes      = 0x750;  // AEndPlayerController: the navi volumes it is in (TArray)
 /// The pending collider names (TArray<FName>: data, then the count at +8), emptied by the dispatcher.
 inline constexpr std::uintptr_t kPendingOverlapNames = 0x14586A4E0;

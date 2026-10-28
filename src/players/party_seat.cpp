@@ -22,16 +22,9 @@ using platform::ReadPointer;
 using InitPartyLevelFn = void (*)(void* controller, void* trigger);
 using SwitchLeaderFn   = void (*)(void* controller, void* character, bool inputTriggered, bool force);
 
-constexpr std::uint32_t kTrigger        = 0x6E0;  // AEndPlayerController: the PlayerTrigger actor
-constexpr std::uint32_t kTriggerOverlap = 0x6E8;  // its EndCapsuleOverlapComponent
-constexpr std::uint32_t kLeader         = 0x6F8;  // LeaderCharacter
-
-constexpr std::array<std::uint8_t, 16> kInitPartyLevelEntry{
-    0x48, 0x89, 0x5C, 0x24, 0x18, 0x55, 0x56, 0x57, 0x41, 0x54, 0x41, 0x55, 0x41, 0x56, 0x41, 0x57};
-constexpr std::array<std::uint8_t, 16> kSwitchLeaderEntry{
-    0x48, 0x89, 0x5C, 0x24, 0x18, 0x55, 0x56, 0x57, 0x41, 0x56, 0x41, 0x57, 0x48, 0x8B, 0xEC, 0x48};
-constexpr platform::FunctionFact kInitPartyLevel{L"EndPlayerController::InitPartyLevel", 0x1415F6E00, kInitPartyLevelEntry};
-constexpr platform::FunctionFact kSwitchLeader{L"EndPlayerController::SwitchLeaderInternal", 0x1415F7DB0, kSwitchLeaderEntry};
+constexpr std::uint32_t kTrigger        = facts::kControllerPlayerTrigger;
+constexpr std::uint32_t kTriggerOverlap = facts::kControllerTriggerComponent;
+constexpr std::uint32_t kLeader         = facts::kControllerLeaderCharacter;
 
 // Set once at install.
 InitPartyLevelFn g_initPartyLevel = nullptr;
@@ -55,8 +48,8 @@ bool ValidSeat(int seat) noexcept
 
 bool Install(const platform::GameImage& image) noexcept
 {
-    const auto init   = platform::FindFunction(image, kInitPartyLevel);
-    const auto change = platform::FindFunction(image, kSwitchLeader);
+    const auto init   = platform::FindFunction(image, facts::kInitPartyLevel);
+    const auto change = platform::FindFunction(image, facts::kSwitchLeaderInternal);
     if (!init || !change)
     {
         return false;

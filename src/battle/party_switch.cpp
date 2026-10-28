@@ -20,9 +20,9 @@ using GetPlayerActorFn = void* (*)(void* partyManager, std::uint8_t variant, std
 constexpr std::uint8_t kTypeNone = facts::kPlayerTypeNone;
 
 std::uintptr_t         g_target        = 0;
-std::uintptr_t         g_canSwitchCall = 0;
+std::uintptr_t         g_canSwitchSite = 0;
 platform::CallRedirect g_cycleCall;
-platform::CallRedirect g_canSwitchCall_;
+platform::CallRedirect g_canSwitchCall;
 bool                   g_placed = false;
 
 // Game thread.
@@ -81,7 +81,7 @@ bool Install(const platform::GameImage& image) noexcept
         return false;
     }
     g_target        = *target;
-    g_canSwitchCall = *canSwitch;
+    g_canSwitchSite = *canSwitch;
     if (!g_cycleCall.Install(*cycle, g_target, reinterpret_cast<std::uintptr_t>(&Candidate)))
     {
         platform::Log(L"party switch: the cycle's candidate call could not be redirected; a player may switch onto the other's member");
@@ -92,18 +92,18 @@ bool Install(const platform::GameImage& image) noexcept
 
 void Remove() noexcept
 {
-    g_canSwitchCall_.Restore();
+    g_canSwitchCall.Restore();
     g_cycleCall.Restore();
 }
 
 void Tick() noexcept
 {
-    if (g_placed || g_canSwitchCall == 0)
+    if (g_placed || g_canSwitchSite == 0)
     {
         return;
     }
     g_placed = true;
-    if (g_canSwitchCall_.InstallFromOwnThread(g_canSwitchCall, g_target, reinterpret_cast<std::uintptr_t>(&Candidate)))
+    if (g_canSwitchCall.InstallFromOwnThread(g_canSwitchSite, g_target, reinterpret_cast<std::uintptr_t>(&Candidate)))
     {
         platform::Log(L"party switch: installed; neither player's switch lands on the other's member");
     }

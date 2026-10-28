@@ -488,7 +488,7 @@ void Session::LogWait(Seat& seat, const party_member::Choice& choice, const wcha
     platform::Log(L"{} {} (row {} of the party order, type {}): {}; the game's party order chooses it, so a party change ends the wait",
                   seat.Name(), who, choice.ordinal, choice.type, party_member::Describe(choice.wait));
     if (party_member::ScriptHold(choice.wait) || choice.wait == party_member::Wait::NoFieldAi ||
-        choice.wait == party_member::Wait::LeaderHanded || choice.wait == party_member::Wait::EventLock)
+        choice.wait == party_member::Wait::LeaderHanded || choice.wait == party_member::Wait::PushButtonEvent)
     {
         // The member's AI and the lock mask as the take test saw them (the actor of the row, read again).
         auto* players = LocalPlayers(gameInstance_);
@@ -927,14 +927,14 @@ try
         return;
     }
     const party_member::Wait hold = party_member::HoldWait(member);
-    // The event lock answers first while the game's leader is handed (an interaction lock the member stayed through that
-    // gained another bit reads as the event lock when its push-button bit stands): the same backstop. Only while the
+    // The push-button event answers first while the game's leader is handed (an interaction lock the member stayed
+    // through that gained another bit reads as the push-button event when its bit stands): the same backstop. Only while the
     // game's leader is with its AI: a push-button bit standing with the leader on its player would otherwise hand and
     // return the member at every check (no such setter is known; EventControl_Begin hands the leader).
     // A kept member's event cut to its own shot while the lock still stands (slot 18 alone is no reason, v0.111.0).
     const bool eventShot = seat.keptThroughLock && field_hold::InteractionLock(party_member::ControlLockMask()) &&
                            views::scene_camera::EventShot();
-    if (hold == party_member::Wait::LeaderHanded || (hold == party_member::Wait::EventLock && !party_member::LeaderWithPlayer()) ||
+    if (hold == party_member::Wait::LeaderHanded || (hold == party_member::Wait::PushButtonEvent && !party_member::LeaderWithPlayer()) ||
         eventShot)
     {
         if (world::traversal_action::PlayerOneMoveHolds(party_member::ControlLockMask()))

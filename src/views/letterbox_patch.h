@@ -17,8 +17,8 @@
 // fits it); with two players every view covers the whole target and the last drawn wins. The same one-byte rewrite
 // covers that `cmp eax, 1` (engine_facts kViewRectOverrideSite).
 //
-// While player 2 is in, the mod rewrites the immediate of every copy from 1 to a value the mode never takes, so the
-// `jnz` is always taken: the view rects stay the layout's and no view is fitted; when player 2 leaves, the 1 goes
+// While a further player is in, the mod rewrites the immediate of every copy from 1 to a value the mode never takes, so
+// the `jnz` is always taken: the view rects stay the layout's and no view is fitted; when the last one leaves, the 1 goes
 // back, so a solo option resolution below the display's is upscaled as before. Each write is one byte inside an
 // instruction whose length does not change, so a thread running the compare sees the old or the new immediate, never
 // a torn instruction. The sites are found at install by their bytes (the compare's displacement must name the
@@ -39,7 +39,7 @@ namespace lss::views::letterbox_patch {
 /// split in Borderless keeps the game's letterbox.
 bool Install(const platform::GameImage& image) noexcept;
 
-/// Game thread, each engine tick: the patch is on while player 2 is in (and the switch is on), off otherwise.
+/// Game thread, each engine tick: the patch is on while a further player is in (and the switch is on), off otherwise.
 void Tick(bool wanted) noexcept;
 
 /// Puts every immediate back (unload).

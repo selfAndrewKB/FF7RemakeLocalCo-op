@@ -1,7 +1,7 @@
 #pragma once
 
 // The engine's list of local players, for the modules that add a local player of the mod's own (players/session:
-// player 2; views/mirror_player: the mirror in an empty column) through UE's own paths, on the game thread.
+// a further player; views/mirror_player: the mirror in an empty column) through UE's own paths, on the game thread.
 //
 // Add: UGameplayStatics::CreatePlayer(ControllerId, spawn a controller) inside the camera-manager join scope of
 // players/own_controller, so the new player gets a real End player controller and camera manager, the camera

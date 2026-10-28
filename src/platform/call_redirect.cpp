@@ -2,6 +2,7 @@
 
 #include "platform/log.h"
 #include "platform/module_pin.h"
+#include "platform/x64_jump.h"
 
 #include <array>
 #include <cstring>
@@ -15,9 +16,6 @@ namespace {
 constexpr std::uint8_t kCallOpcode = 0xE8;
 constexpr std::uint8_t kJumpOpcode = 0xE9;  // jmp rel32: same length and displacement rule as the call
 constexpr std::size_t  kCallLength = 5;
-
-/// jmp qword ptr [rip+0] ; dq <address>
-constexpr std::uint8_t kAbsoluteJump[] = {0xFF, 0x25, 0x00, 0x00, 0x00, 0x00};
 
 std::uintptr_t CallTarget(std::uintptr_t site, const std::uint8_t* bytes) noexcept
 {

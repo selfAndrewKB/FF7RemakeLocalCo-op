@@ -25,7 +25,7 @@
 // and the caller asks the game's own data (players/lead_gate.h): a guide goes to its AI with the player's view on
 // it, staging stays the player's.
 //
-// Pure (host-tested in tests/field_hold_test.cpp); the actor modes and the event lock are the caller's tests.
+// Pure (host-tested in tests/field_hold_test.cpp); the actor modes and the push-button event are the caller's tests.
 
 #include <cstddef>
 #include <cstdint>
@@ -63,9 +63,9 @@ enum Kind : std::uint8_t
 /// a switch, a lever, a terminal). The game hands only its leader for them, the interactor; an event's other actors
 /// are the ones it lists, which it puts in the cinema actor mode and moves on a script layer (both a member's own
 /// hold). So under such a lock a further player's member is judged by its own state, and stays its player's when
-/// nothing holds it (the user, 2026-10-27: keep moving through a switch, a terminal or a pickup). Today the
-/// interactor is always the game's leader (player 1); when a further player can work one, the lock is still the
-/// interactor's alone.
+/// nothing holds it (the user, 2026-10-27: keep moving through a switch, a terminal or a pickup). The game hands only
+/// its own leader (player 1's character) for these locks, whichever player interacts; a further player's own chest
+/// holds its opener on a script layer of its own (RE-chest-two.md), which the member's own state already answers.
 inline constexpr std::uint32_t kLockTreasure     = 0x4;
 inline constexpr std::uint32_t kLockPushButton   = 0x100000;
 inline constexpr std::uint32_t kInteractionLocks = kLockTreasure | kLockPushButton;

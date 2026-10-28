@@ -26,7 +26,6 @@ using GetWorldFn = void* (*)(void* scene);
 constexpr std::int32_t  kMaxControllers = 4096;  // a longer list is not one this code reads
 constexpr std::size_t   kMaxBanks       = 8;     // view states (local players) kept at once
 constexpr std::uint64_t kBankIdleFrames = 2;     // a view state missing from this many drawn frames is dropped (a leave)
-constexpr std::uint32_t kObjectName     = 0x18;  // UObjectBase::NamePrivate (stock 4.18)
 
 /// One controller's value, kept in the order of the world's list (looked up at the same place first).
 template <class T>
@@ -108,7 +107,7 @@ catch (...)
 
 std::wstring Name(const void* object) noexcept
 {
-    const auto   bits = Field<std::uint64_t>(object, kObjectName);
+    const auto   bits = Field<std::uint64_t>(object, facts::kObjectName);
     std::wstring text;
     if (!platform::CallGuarded(&NameText, static_cast<std::int64_t>(bits), &text) || text.empty())
     {

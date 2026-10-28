@@ -23,8 +23,8 @@
 //     other player's roots are transparent (SetColorAndOpacity, restored after the pass; the manager writes the root
 //     alpha from its fade every tick, so nothing animated is lost), and one other octagon does not render its map
 //     (its pool-0 span skipped, hud/image_code.h: player 1's in a further pass, the first seat's in column 0's; a
-//     third octagon in a pass not its own renders to its own target through the game's acquire; step 5 extends the
-//     skip with the third view);
+//     third octagon in a pass not its own renders to its own target through the game's acquire, its span skipped
+//     too: image_code::kNaviSkips holds one skip per view);
 //   - pool 0 turns once a frame (minimap_rules::PoolHandover): the first further pass's octagon acquires and holds
 //     the slot, every later pass's octagon is handed it and names its entry with its column's number, column 0's
 //     submit sends them all; a slot still held after the frame's last render is sent then.

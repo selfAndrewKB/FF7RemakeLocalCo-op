@@ -116,7 +116,7 @@ bool Install(const platform::GameImage& image) noexcept
     const auto slot    = image.Rebase(facts::kCommandCtrlSlotGlobal, sizeof(void*));
     if (!party || !field_root::Installed() || !input || !filters || !slot)
     {
-        platform::Log(L"scopes: a global is outside the image; nothing of player 2's can run in its own scopes");
+        platform::Log(L"scopes: a global is outside the image; no further player's work can run in its own scopes");
         return false;
     }
     g_partyManager = reinterpret_cast<void**>(*party);
