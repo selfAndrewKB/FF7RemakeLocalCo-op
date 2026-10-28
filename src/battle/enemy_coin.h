@@ -27,7 +27,15 @@
 //     it targets (RE-enemy-circling.md); at that gate a human's member answers as an AI ally, so its area is
 //     refreshed as theirs (the enemy circling player 2's Barret without attacking; `member-area` turns it alone off);
 //   - hits and reaction sensing by or on a further human's member run in that human's Leader and Primary scopes
-//     (the counters aim at who hit; the victim's own camera shakes and pad rumbles; the hit stop as for the player).
+//     (the counters aim at who hit; the victim's own camera shakes and pad rumbles; the hit stop as for the player);
+//   - the remaining leader reads (RE-enemy-coin-remaining-reads.md), answered with the calling enemy's coin's member:
+//     Reno's mines (also the Ch. 12 pyramids and Weiss's black holes: which character a mine follows, whose battle
+//     area it decides in, who triggers its group's roll and where it rolls; Reno's finishing roll answers each mine's
+//     own coin), Ramuh's charge cores and Leviathan's water tornadoes (whom they follow), the flyers' point choice
+//     (Bizarre Bug keeping its distance to "the player") and the height chase (the Hedgehog Pie subspecies climbing or
+//     dropping toward "the player"). The follow ticks record their enemy around the game's tick; the flyers' point
+//     evaluation and the move type choice record their move struct at their one call (the latter crosses its block:
+//     placed at on_unreal_init). A mine's roll is a Debug line; the per-tick reads are counted (Trace each).
 // Nothing is written to the game's state: every answer passes through the game's own call. Any thread for the toss,
 // the type answers and the area answer (the AI tick is written to run off the game thread); the natives run on the
 // game thread; hits and sensing are scoped on the game thread only (else counted and left as the game's).

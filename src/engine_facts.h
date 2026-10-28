@@ -1372,6 +1372,53 @@ inline constexpr std::array<std::uint8_t, 16> kBattleReactionSensingEntry{
     0x4C, 0x8B, 0xDC, 0x4D, 0x89, 0x4B, 0x20, 0x4D, 0x89, 0x43, 0x18, 0x49, 0x89, 0x4B, 0x08, 0x55};
 inline constexpr platform::FunctionFact kBattleReactionSensing{L"BattleReaction_NotifySensingEnemies", 0x140996200, kBattleReactionSensingEntry};
 inline constexpr std::uintptr_t kBattleReactionSensingCall = 0x140974F23;
+/// The remaining leader reads (research/RE-enemy-coin-remaining-reads.md; every read call E8, inside its block):
+/// - the follow ticks (controller vtable +0x408) of Reno's mines (also the Ch. 12 pyramids and Weiss's black holes),
+///   Ramuh's charge cores and Leviathan's water tornadoes, whose controller is recorded around the tick;
+/// - inside them the reads of the leader's actor: a mine's follow, its area test (in the mine gate), its rolling
+///   trigger and goal; a core's and a tornado's follow;
+/// - Reno's FinishRollingAtack starting each mine's roll (the mine in rcx, recorded when nothing is);
+/// - the flyers' point evaluation (its move struct recorded at its one call; its first field is the controller) and
+///   its leader read;
+/// - the height chase (R22) in SelectMoveType (its move struct recorded at its one call, which crosses its block) and
+///   its leader read.
+inline constexpr std::array<std::uint8_t, 16> kMineFollowTickEntry{
+    0xF3, 0x0F, 0x11, 0x4C, 0x24, 0x10, 0x55, 0x53, 0x57, 0x41, 0x56, 0x41, 0x57, 0x48, 0x8D, 0xAC};
+inline constexpr std::array<std::uint8_t, 16> kCoreFollowTickEntry{
+    0x48, 0x8B, 0xC4, 0xF3, 0x0F, 0x11, 0x48, 0x10, 0x55, 0x57, 0x41, 0x55, 0x48, 0x8D, 0xA8, 0x38};
+inline constexpr std::array<std::uint8_t, 16> kTornadoFollowTickEntry{
+    0x40, 0x55, 0x53, 0x56, 0x57, 0x41, 0x56, 0x48, 0x8D, 0x6C, 0x24, 0x80, 0x48, 0x81, 0xEC, 0x80};
+inline constexpr platform::SlotFact kMineFollowTickSlot{L"the mine controller's tick (slot +0x408)", 0x144C4A580 + 0x408,
+                                                        {L"EndBattleAIEB0003Mine_Tick_FollowLeader", 0x14081D860, kMineFollowTickEntry}};
+inline constexpr platform::SlotFact kCoreFollowTickSlot{L"the charge core controller's tick (slot +0x408)", 0x144C63328 + 0x408,
+                                                        {L"EndBattleAISU0009_Tick_FocusLeader (Ramuh's cores)", 0x140850530, kCoreFollowTickEntry}};
+inline constexpr platform::SlotFact kTornadoFollowTickSlot{L"the water tornado controller's tick (slot +0x408)", 0x144C6A668 + 0x408,
+                                                           {L"EndBattleAISU0004_02_Tick_LeaderRead", 0x14084CF70, kTornadoFollowTickEntry}};
+inline constexpr std::uintptr_t kMineFollowActorCall  = 0x14081D8A9;  // E8 A2 2D DD 00
+inline constexpr std::uintptr_t kMineAreaActorCall    = 0x14081F1E6;  // E8 65 14 DD 00 (the mine gate)
+inline constexpr std::uintptr_t kMineTriggerActorCall = 0x14081F478;  // E8 D3 11 DD 00
+inline constexpr std::uintptr_t kMineGoalActorCall    = 0x140820049;  // E8 02 06 DD 00
+inline constexpr std::uintptr_t kCoreFollowActorCall  = 0x1408505B3;  // E8 98 00 DA 00
+inline constexpr std::uintptr_t kTornadoFollowActorCall = 0x14084CFB0;  // E8 9B 36 DA 00
+inline constexpr std::uintptr_t kFlyerPointActorCall  = 0x14080ECE1;  // E8 6A 19 DE 00
+inline constexpr std::uintptr_t kHeightChaseLeaderCall = 0x140805593;  // E8 28 42 12 00
+inline constexpr std::array<std::uint8_t, 16> kMineStartRollingEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x6C, 0x24, 0x10, 0x48, 0x89, 0x74, 0x24, 0x18, 0x57};
+inline constexpr platform::FunctionFact kMineStartRolling{L"EndBattleAIEB0003Mine_StartRollingAttack_AtLeader", 0x140820010,
+                                                          kMineStartRollingEntry};
+inline constexpr std::uintptr_t kRenoFinishRollingCall = 0x141812722;  // E8 E9 D8 00 FF (execFinishRollingAtack)
+inline constexpr std::array<std::uint8_t, 16> kFlyerEvalPointEntry{
+    0x48, 0x8B, 0xC4, 0x48, 0x89, 0x50, 0x10, 0x55, 0x53, 0x56, 0x57, 0x41, 0x54, 0x41, 0x55, 0x41};
+inline constexpr platform::FunctionFact kFlyerEvalPoint{L"EndBattleAI_Aerial_EvalPoint_ByLeader", 0x14080EAE0, kFlyerEvalPointEntry};
+inline constexpr std::uintptr_t kFlyerEvalPointCall = 0x14080DC0B;  // E8 D0 0E 00 00
+inline constexpr std::array<std::uint8_t, 16> kSelectMoveTypeEntry{
+    0x40, 0x55, 0x53, 0x56, 0x48, 0x8D, 0x6C, 0x24, 0xB9, 0x48, 0x81, 0xEC, 0xA0, 0x00, 0x00, 0x00};
+inline constexpr platform::FunctionFact kSelectMoveType{L"EndBattleAIMove_SelectMoveType", 0x140805290, kSelectMoveTypeEntry};
+inline constexpr std::uintptr_t kSelectMoveTypeCall = 0x140803CBF;  // E8 CC 15 00 00, crosses its block
+inline constexpr std::array<std::uint8_t, 16> kGetLeaderEndCharacterEntry{
+    0x40, 0x53, 0x48, 0x83, 0xEC, 0x20, 0xE8, 0xF5, 0xE2, 0xD2, 0xFF, 0x48, 0x8B, 0xC8, 0x33, 0xD2};
+inline constexpr platform::FunctionFact kGetLeaderEndCharacter{L"PartyManager_GetLeaderEndCharacter", 0x1409297C0,
+                                                               kGetLeaderEndCharacterEntry};
 /// The Blueprint natives that name "the player", by their exec functions (checked against UFunction::Func before a
 /// swap), in the order of battle/enemy_coin's path table: the controller's nine (the context is the enemy), then the
 /// library's seven (the calling object is the enemy).

@@ -68,6 +68,29 @@ using HitApplyBFn      = void (*)(std::uint64_t, std::uint64_t, std::uint64_t, s
                              std::uint64_t);
 using SensingFn        = void (*)(std::uint64_t, std::uint64_t, std::uint64_t, std::uint64_t, std::uint64_t, std::uint64_t,
                            std::uint64_t, std::uint64_t);
+using FollowTickFn     = std::uint64_t (*)(void* controller, float deltaSeconds);  // the game's returns a char in al
+using StartRollingFn   = std::int64_t (*)(void* mine, int index, int count);
+using EvalPointFn      = std::int64_t (*)(void* move, void* candidates, float* point);  // integer registers only (its call site, IDA)
+using SelectMoveTypeFn = std::int64_t (*)(void* move);
+using LeaderCharFn     = void* (*)();
+
+// The remaining leader reads (RE-enemy-coin-remaining-reads.md), each counted per player its answer named.
+enum ReadKind : std::size_t
+{
+    kMineFollow,
+    kMineArea,
+    kMineTrigger,
+    kMineGoal,
+    kCoreFollow,
+    kTornadoFollow,
+    kFlyerPoint,
+    kHeightChase,
+    kReadKinds,
+};
+// In ReadKind's order (one name per kind, by the array's size).
+constexpr std::array<const wchar_t*, kReadKinds> kReadNames{
+    L"a mine's follow", L"a mine's area test", L"a mine's rolling trigger", L"a mine's rolling goal",
+    L"a charge core's follow", L"a water tornado's follow", L"a flyer's point", L"the height chase"};
 
 // The script natives, in the order of facts::kBattleCoinNativeExecs. Member: the context is the enemy and the leader
 // read inside answers. Caller: the script's object is the enemy (a library native); the read inside answers. The
@@ -110,6 +133,10 @@ platform::EntryRedirect g_gate, g_mineGate, g_hitApply;
 platform::CallRedirect  g_opening, g_hate, g_isAipc, g_eqs, g_area, g_hitApplyB, g_sensing, g_scriptLeader;
 std::array<platform::CallRedirect, 2> g_tie, g_expect, g_scriptActor;
 platform::VTableEntry   g_battleStart;
+platform::VTableEntry   g_mineTick, g_coreTick, g_tornadoTick;
+platform::CallRedirect  g_mineFollow, g_mineArea, g_mineTrigger, g_mineGoal, g_coreFollow, g_tornadoFollow, g_flyerPoint, g_heightChase;
+platform::CallRedirect  g_renoRolling, g_flyerEval, g_selectMove;
+LeaderCharFn            g_getLeaderChar = nullptr;
 PmGetFn                 g_pmGet       = nullptr;
 GetPartyLeaderFn        g_getLeader   = nullptr;
 GetPlayerActorFn        g_getActor    = nullptr;
@@ -135,9 +162,13 @@ std::atomic<bool>                             g_enabled{true};
 std::atomic<bool>                             g_areaOn{true};  // `member-area`: the area answer alone (an A/B)
 DWORD                                         g_thread = 0;  // the game thread
 
-// The enemy whose script native is running on this thread (null: none, or not an enemy).
+// The enemy whose script native, opening or follow tick is running on this thread (null: none, or not an enemy).
 thread_local void*         t_enemy = nullptr;
 thread_local std::uint64_t t_rng   = 0;
+// The move struct whose flyer point evaluation or move type choice runs on this thread (its first field: the
+// controller), and whether Reno's finishing roll started the roll running now.
+thread_local void* t_move        = nullptr;
+thread_local bool  t_renoRolling = false;
 
 coin_table::CoinTable g_coins;
 
@@ -155,6 +186,7 @@ struct Counts
     std::atomic<unsigned>                     hitsScoped{};
     std::atomic<unsigned>                     sensingsScoped{};
     std::atomic<unsigned>                     offThread{};  // hits or sensings off the game thread: left as the game's
+    std::array<std::array<std::atomic<unsigned>, kSeats>, kReadKinds> reads{};  // the remaining reads, per player named
 };
 Counts g_counts;                                 // since the last summary
 Counts g_totals;                                 // since install
@@ -356,9 +388,18 @@ char Gate(void* controller)
     return GateFor(g_gate, controller);
 }
 
+/// The mines' (and charge cores') gate: the toss, then the game's gate with the enemy recorded for its area read
+/// (also when the gate is reached outside the follow tick).
 char MineGate(void* controller)
 {
-    return GateFor(g_mineGate, controller);
+    void* const previous = t_enemy;
+    if (Tossing() && IsEnemy(controller))
+    {
+        t_enemy = controller;
+    }
+    const char open = GateFor(g_mineGate, controller);
+    t_enemy         = previous;
+    return open;
 }
 
 // --- The opening target ------------------------------------------------------------------------------------------
@@ -398,6 +439,145 @@ void* OpeningLeader(void* partyManager, std::uint8_t variant)
         return member;
     }
     return game;
+}
+
+// --- The remaining reads: mines, charge cores, water tornadoes, flyers, the height chase -------------------------
+
+/// The game's answer to one of the remaining leader reads, or the coin's member when `enemy`'s coin names a further
+/// player. Per-tick reads: Trace only.
+void* AnswerRead(void* game, ReadKind kind, void* enemy) noexcept
+{
+    if (enemy == nullptr)
+    {
+        return game;
+    }
+    const int player = CoinOf(enemy);
+    if (player >= 1)
+    {
+        Count(g_counts.reads[kind][static_cast<std::size_t>(player - 1)], g_totals.reads[kind][static_cast<std::size_t>(player - 1)]);
+    }
+    void* member = MemberOf(player);
+    platform::LogTrace(L"enemy coin: {} answered player {} for enemy {:#x}", kReadNames[kind], player == 0 ? 1 : player,
+                       reinterpret_cast<std::uintptr_t>(enemy));
+    return member != nullptr ? member : game;
+}
+
+/// The enemy whose move struct `t_move` names (its first field is the controller), or null.
+void* EnemyOfMove() noexcept
+{
+    void* const controller = t_move != nullptr ? ReadPointer(t_move, 0) : nullptr;
+    return controller != nullptr && IsEnemy(controller) ? controller : nullptr;
+}
+
+/// A follow tick (the mine, charge core and water tornado controllers' slot +0x408): the controller recorded for the
+/// reads inside, the game's tick unchanged. The base battle AI tick runs inside, so the script reads in it answer the
+/// same enemy's coin, as they do through the swapped natives.
+std::uint64_t FollowTick(const platform::VTableEntry& slot, void* controller, float deltaSeconds) noexcept
+{
+    void* const previous = t_enemy;
+    t_enemy              = Tossing() && IsEnemy(controller) ? controller : nullptr;
+    const auto result    = reinterpret_cast<FollowTickFn>(slot.Original())(controller, deltaSeconds);
+    t_enemy              = previous;
+    return result;
+}
+
+std::uint64_t MineTick(void* controller, float deltaSeconds)
+{
+    return FollowTick(g_mineTick, controller, deltaSeconds);
+}
+
+std::uint64_t CoreTick(void* controller, float deltaSeconds)
+{
+    return FollowTick(g_coreTick, controller, deltaSeconds);
+}
+
+std::uint64_t TornadoTick(void* controller, float deltaSeconds)
+{
+    return FollowTick(g_tornadoTick, controller, deltaSeconds);
+}
+
+void* MineFollowActor(void* partyManager, std::uint8_t variant, std::uint8_t type, bool alternate)
+{
+    return AnswerRead(g_getActor(partyManager, variant, type, alternate), kMineFollow, t_enemy);
+}
+
+void* MineAreaActor(void* partyManager, std::uint8_t variant, std::uint8_t type, bool alternate)
+{
+    return AnswerRead(g_getActor(partyManager, variant, type, alternate), kMineArea, t_enemy);
+}
+
+void* MineTriggerActor(void* partyManager, std::uint8_t variant, std::uint8_t type, bool alternate)
+{
+    return AnswerRead(g_getActor(partyManager, variant, type, alternate), kMineTrigger, t_enemy);
+}
+
+/// The rolling goal: read once per roll start, so each answer is a Debug line.
+void* MineGoalActor(void* partyManager, std::uint8_t variant, std::uint8_t type, bool alternate)
+{
+    void* const game   = g_getActor(partyManager, variant, type, alternate);
+    void* const answer = AnswerRead(game, kMineGoal, t_enemy);
+    if (t_enemy != nullptr)
+    {
+        const int player = answer != game ? SeatOfMember(answer) + 1 : 1;
+        platform::LogDebug(L"enemy coin: mine {:#x} rolls at player {}'s member ({})", reinterpret_cast<std::uintptr_t>(t_enemy), player,
+                           t_renoRolling ? L"Reno's finishing roll" : L"its group's trigger or its own roll");
+    }
+    return answer;
+}
+
+void* CoreFollowActor(void* partyManager, std::uint8_t variant, std::uint8_t type, bool alternate)
+{
+    return AnswerRead(g_getActor(partyManager, variant, type, alternate), kCoreFollow, t_enemy);
+}
+
+void* TornadoFollowActor(void* partyManager, std::uint8_t variant, std::uint8_t type, bool alternate)
+{
+    return AnswerRead(g_getActor(partyManager, variant, type, alternate), kTornadoFollow, t_enemy);
+}
+
+void* FlyerPointActor(void* partyManager, std::uint8_t variant, std::uint8_t type, bool alternate)
+{
+    return AnswerRead(g_getActor(partyManager, variant, type, alternate), kFlyerPoint, Tossing() ? EnemyOfMove() : nullptr);
+}
+
+void* HeightChaseLeader()
+{
+    return AnswerRead(g_getLeaderChar(), kHeightChase, Tossing() ? EnemyOfMove() : nullptr);
+}
+
+/// Reno's finishing roll starts each mine's roll with nothing recorded: that mine's own coin answers its goal.
+std::int64_t RenoStartsRolling(void* mine, int index, int count)
+{
+    const auto original = reinterpret_cast<StartRollingFn>(g_renoRolling.Original());
+    if (t_enemy != nullptr || !Tossing() || !IsEnemy(mine))
+    {
+        return original(mine, index, count);
+    }
+    t_enemy              = mine;
+    t_renoRolling        = true;
+    const auto result    = original(mine, index, count);
+    t_renoRolling        = false;
+    t_enemy              = nullptr;
+    return result;
+}
+
+/// The flyers' point evaluation and the move type choice: the move struct recorded for the read inside.
+std::int64_t FlyerEvalPoint(void* move, void* candidates, float* point)
+{
+    void* const previous = t_move;
+    t_move               = Tossing() ? move : nullptr;
+    const auto result    = reinterpret_cast<EvalPointFn>(g_flyerEval.Original())(move, candidates, point);
+    t_move               = previous;
+    return result;
+}
+
+std::int64_t SelectMoveType(void* move)
+{
+    void* const previous = t_move;
+    t_move               = Tossing() ? move : nullptr;
+    const auto result    = reinterpret_cast<SelectMoveTypeFn>(g_selectMove.Original())(move);
+    t_move               = previous;
+    return result;
 }
 
 // --- The script natives' reads -----------------------------------------------------------------------------------
@@ -731,18 +911,32 @@ void TrySwaps() noexcept
 
 std::wstring Reading(const Counts& counts) noexcept
 {
-    return std::format(L"tosses P1 {} / P2 {} / P3 {} (no further player {}, re-tossed {}); script answers P1 {} / P2 {} / P3 {}; opening {}, "
-                       L"expectation {}, party API {}; EQS kept {}; areas refreshed {}; hits scoped {}, sensings scoped {}, off-thread {}",
-                       counts.tosses[0].load(), counts.tosses[1].load(), counts.tosses[2].load(), counts.gamesOwn.load(), counts.retosses.load(),
-                       counts.scriptAnswers[0].load(), counts.scriptAnswers[1].load(), counts.scriptAnswers[2].load(), counts.openingAnswers.load(),
-                       counts.expectationAnswers.load(), counts.apiAnswers.load(), counts.eqsKept.load(), counts.areasRefreshed.load(), counts.hitsScoped.load(),
-                       counts.sensingsScoped.load(), counts.offThread.load());
+    std::wstring text =
+        std::format(L"tosses P1 {} / P2 {} / P3 {} (no further player {}, re-tossed {}); script answers P1 {} / P2 {} / P3 {}; opening {}, "
+                    L"expectation {}, party API {}; EQS kept {}; areas refreshed {}; hits scoped {}, sensings scoped {}, off-thread {}",
+                    counts.tosses[0].load(), counts.tosses[1].load(), counts.tosses[2].load(), counts.gamesOwn.load(), counts.retosses.load(),
+                    counts.scriptAnswers[0].load(), counts.scriptAnswers[1].load(), counts.scriptAnswers[2].load(), counts.openingAnswers.load(),
+                    counts.expectationAnswers.load(), counts.apiAnswers.load(), counts.eqsKept.load(), counts.areasRefreshed.load(),
+                    counts.hitsScoped.load(), counts.sensingsScoped.load(), counts.offThread.load());
+    for (std::size_t kind = 0; kind < kReadKinds; ++kind)
+    {
+        const auto& per = counts.reads[kind];  // players 1-3 printed: three is the most the mod seats
+        if (per[0].load() + per[1].load() + per[2].load() + per[3].load() != 0)
+        {
+            text += std::format(L"; {} P1 {} / P2 {} / P3 {}", kReadNames[kind], per[0].load(), per[1].load(), per[2].load());
+        }
+    }
+    return text;
 }
 
 void ResetSince() noexcept
 {
     for (auto& t : g_counts.tosses) Take(t);
     for (auto& a : g_counts.scriptAnswers) Take(a);
+    for (auto& kind : g_counts.reads)
+    {
+        for (auto& r : kind) Take(r);
+    }
     Take(g_counts.gamesOwn);
     Take(g_counts.retosses);
     Take(g_counts.openingAnswers);
@@ -762,6 +956,10 @@ bool Any(const Counts& counts) noexcept
     for (std::size_t i = 0; i < kSeats; ++i)
     {
         sum += counts.tosses[i].load() + counts.scriptAnswers[i].load();
+        for (const auto& kind : counts.reads)
+        {
+            sum += kind[i].load();
+        }
     }
     return sum != 0;
 }
@@ -845,6 +1043,49 @@ bool Install(const platform::GameImage& image) noexcept
     placed += PlaceCall(g_hitApplyB, image, facts::kBattleHitApplyBCall, *hitApplyB, &HitApplyB, true, L"the hit apply's second form") ? 1 : 0;
     placed += PlaceCall(g_sensing, image, facts::kBattleReactionSensingCall, *sensing, &Sensing, false, L"the reaction sensing") ? 1 : 0;
 
+    // The remaining reads (RE-enemy-coin-remaining-reads.md): the follow ticks record their enemy for the reads inside;
+    // Reno's finishing roll, the flyers' point evaluation and the move type choice record theirs at their one call.
+    placed += platform::ReplaceSlot(image, facts::kMineFollowTickSlot, reinterpret_cast<std::uintptr_t>(&MineTick), g_mineTick) ? 1 : 0;
+    placed += platform::ReplaceSlot(image, facts::kCoreFollowTickSlot, reinterpret_cast<std::uintptr_t>(&CoreTick), g_coreTick) ? 1 : 0;
+    placed += platform::ReplaceSlot(image, facts::kTornadoFollowTickSlot, reinterpret_cast<std::uintptr_t>(&TornadoTick), g_tornadoTick) ? 1 : 0;
+    placed += PlaceCall(g_mineFollow, image, facts::kMineFollowActorCall, *getActor, &MineFollowActor, false, L"a mine's follow read") ? 1 : 0;
+    placed += PlaceCall(g_mineArea, image, facts::kMineAreaActorCall, *getActor, &MineAreaActor, false, L"a mine's area read") ? 1 : 0;
+    placed += PlaceCall(g_mineTrigger, image, facts::kMineTriggerActorCall, *getActor, &MineTriggerActor, false, L"a mine's rolling trigger read") ? 1 : 0;
+    placed += PlaceCall(g_mineGoal, image, facts::kMineGoalActorCall, *getActor, &MineGoalActor, false, L"a mine's rolling goal read") ? 1 : 0;
+    placed += PlaceCall(g_coreFollow, image, facts::kCoreFollowActorCall, *getActor, &CoreFollowActor, false, L"a charge core's follow read") ? 1 : 0;
+    placed += PlaceCall(g_tornadoFollow, image, facts::kTornadoFollowActorCall, *getActor, &TornadoFollowActor, false,
+                        L"a water tornado's follow read")
+                  ? 1
+                  : 0;
+    placed += PlaceCall(g_flyerPoint, image, facts::kFlyerPointActorCall, *getActor, &FlyerPointActor, false, L"a flyer's point read") ? 1 : 0;
+    const auto startRolling = platform::FindFunction(image, facts::kMineStartRolling);
+    const auto evalPoint    = platform::FindFunction(image, facts::kFlyerEvalPoint);
+    const auto selectMove   = platform::FindFunction(image, facts::kSelectMoveType);
+    const auto leaderChar   = platform::FindFunction(image, facts::kGetLeaderEndCharacter);
+    if (startRolling)
+    {
+        placed += PlaceCall(g_renoRolling, image, facts::kRenoFinishRollingCall, *startRolling, &RenoStartsRolling, false,
+                            L"Reno's finishing roll")
+                      ? 1
+                      : 0;
+    }
+    if (evalPoint)
+    {
+        placed += PlaceCall(g_flyerEval, image, facts::kFlyerEvalPointCall, *evalPoint, &FlyerEvalPoint, false, L"the flyers' point evaluation") ? 1 : 0;
+    }
+    if (selectMove && leaderChar)
+    {
+        g_getLeaderChar = reinterpret_cast<LeaderCharFn>(*leaderChar);
+        // The move type choice's call crosses its block: placed here (on_unreal_init, no battle AI exists yet).
+        if (PlaceCall(g_selectMove, image, facts::kSelectMoveTypeCall, *selectMove, &SelectMoveType, true, L"the move type choice"))
+        {
+            placed += 1 + (PlaceCall(g_heightChase, image, facts::kHeightChaseLeaderCall, *leaderChar, &HeightChaseLeader, false,
+                                     L"the height chase's leader read")
+                               ? 1
+                               : 0);
+        }
+    }
+
     control::Register({.name  = L"enemy-coin.counts",
                        .shape = control::Shape::Text,
                        .help  = L"the equal-attention coin's counts since install (battle/enemy_coin.h)",
@@ -868,7 +1109,7 @@ bool Install(const platform::GameImage& image) noexcept
                        },
                        .get = [] { return control::Value{g_areaOn.load(std::memory_order_relaxed)}; }});
     g_lastSummary = std::chrono::steady_clock::now();
-    platform::Log(L"enemy coin: installed, {} of 18 levers placed; enemies toss a coin per decision between the humans (the script natives "
+    platform::Log(L"enemy coin: installed, {} of 32 levers placed; enemies toss a coin per decision between the humans (the script natives "
                   L"answer once swapped)",
                   placed);
     return true;
@@ -889,6 +1130,14 @@ void Remove() noexcept
             g_functions[i] = nullptr;
         }
     }
+    for (auto* call : {&g_heightChase, &g_flyerEval, &g_renoRolling, &g_flyerPoint, &g_tornadoFollow, &g_coreFollow, &g_mineGoal,
+                       &g_mineTrigger, &g_mineArea, &g_mineFollow})
+    {
+        call->Restore();
+    }
+    g_tornadoTick.Restore();
+    g_coreTick.Restore();
+    g_mineTick.Restore();
     g_sensing.Restore();
     g_hitApply.Restore();
     g_area.Restore();
@@ -908,8 +1157,8 @@ void Remove() noexcept
     g_battleStart.Restore();
     g_mineGate.Restore();
     g_gate.Restore();
-    // The crossing calls (the second tie-break read, IsAIPC, the hit apply's second form) stay: only the thread that
-    // runs them could put them back, and they pass through now.
+    // The crossing calls (the second tie-break read, IsAIPC, the hit apply's second form, the move type choice) stay:
+    // only the thread that runs them could put them back, and they pass through now.
 }
 
 void Tick() noexcept
