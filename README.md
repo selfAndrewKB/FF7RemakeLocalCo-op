@@ -43,8 +43,8 @@ readings are `<switch>.<what>`, and an area's readings `<area>.<what>`. Today:
 - **Views:** `window-span`, `window-span.hold` (off at start: the span with any player count, kept through loading screens),
   `mirror-player` (an extra local player in every column no player fills shows player 1's picture), `view-columns 0..3`
   (the columns the window shows; 0 = as the span and the players decide), `single-view auto|on|off`, `scene-camera`,
-  `split-scale`, `letterbox-patch`; readings `whole-screen`, `split-switch`, `column-layout.state`, `window-span.state`,
-  `mirror-player.state`, `scene-camera.state`, `split-scale.state`, `letterbox-patch.sites`.
+  `split-scale`, `split-fov`, `split-fov.weight`, `letterbox-patch`; readings `whole-screen`, `split-switch`, `column-layout.state`, `window-span.state`,
+  `mirror-player.state`, `scene-camera.state`, `split-scale.state`, `split-fov.state`, `letterbox-patch.sites`.
 - **The field:** `npc-crowd`, `npc-detail`, `npc-senses`, `env-sets`, `forced-walk`, `overlap-fade`, `search-arrows`,
   `anim`, each with its reading `world.<switch>`; `world.fade`, `lead.gate` (the last guide judgment: a LEAD or a run
   ahead on a further player's member), `lead.path <state>` (prints a state's chain), `nav-area`, `camera-override`,
@@ -384,6 +384,11 @@ src/
     monitor_row             Which monitors a spanned game window may cover: a row of equal monitors
     scene_camera            The scene camera on every further player's view: a cutscene, a talk scene or an event camera
                             plays on each further player's view as it does on player 1's
+    split_fov               A view wider than the game's 16:9 image (two players in one window, the top view of three)
+                            keeps a fuller picture: the split FOV rule (views/split_fov_rules.h) written into the view
+                            point each time the engine asks for it
+    split_fov_rules.h       The split FOV rule as arithmetic, apart from the engine so it is tested on the host
+                            (views/split_fov.h applies it)
     split_scale             Split views fill their part of the window whatever the game's resolution option
     split_scale_rules.h     The pure rule of views/split_scale: how far the split views must be scaled so they fit the
                             scene buffer
@@ -439,5 +444,5 @@ src/
                             (tests/listener_rules_test.cpp)
     listeners               Every player hears the sounds near them: each SEAD sound is measured from the nearest
                             player's listener
-tests/                      49 host-side test programs (ctest), one per pure header or code stub; run without the game
+tests/                      50 host-side test programs (ctest), one per pure header or code stub; run without the game
 ```

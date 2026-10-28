@@ -61,6 +61,7 @@
 #include "views/mirror_player.h"
 #include "views/scene_camera.h"
 #include "views/whole_screen.h"
+#include "views/split_fov.h"
 #include "views/split_scale.h"
 #include "views/window_span.h"
 #include "world/anim_views.h"
@@ -226,6 +227,8 @@ constexpr std::array kModules{
     Module{.name = L"column layout", .install = Call<&views::column_layout::Install>, .remove = &views::column_layout::Remove},
     // without it split at a resolution below the window leaves each view's outer part undrawn
     Module{.name = L"split scale", .install = &InstallSplitScale, .remove = &views::split_scale::Remove},
+    // without it a view wider than the game's image keeps the single-player width and half its height
+    Module{.name = L"split FOV", .install = Call<&views::split_fov::Install>, .remove = &views::split_fov::Remove},
     // readings only; fine without
     Module{.name = L"scene camera", .install = Call<&views::scene_camera::Install>, .remove = &views::scene_camera::Remove},
     // without it a held span shows one view across the row while no further player is in (the entry point clears the mirrors

@@ -114,6 +114,7 @@ add_library(LocalSplitScreen SHARED
     src/views/column_layout.cpp
     src/views/column_source.cpp
     src/views/split_scale.cpp
+    src/views/split_fov.cpp
     src/views/display_align.cpp
     src/views/mirror_player.cpp
     src/views/scene_camera.cpp
@@ -467,6 +468,13 @@ add_executable(SplitScaleRulesTests
 target_include_directories(SplitScaleRulesTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_compile_features(SplitScaleRulesTests PRIVATE cxx_std_20)
 add_test(NAME split_scale_rules COMMAND SplitScaleRulesTests)
+
+add_executable(SplitFovRulesTests
+    tests/split_fov_rules_test.cpp
+)
+target_include_directories(SplitFovRulesTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(SplitFovRulesTests PRIVATE cxx_std_20)
+add_test(NAME split_fov_rules COMMAND SplitFovRulesTests)
 
 add_executable(ColumnRulesTests
     tests/column_rules_test.cpp

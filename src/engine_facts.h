@@ -789,6 +789,23 @@ inline constexpr std::uint8_t   kPlayerTypeNone        = 9;      // EPlayerType:
 // +0x58 and LastViewLocation, before AspectRatioAxisConstraint +0x7C).
 inline constexpr std::uint32_t kLocalPlayerOrigin      = 0x60;  // FVector2D
 inline constexpr std::uint32_t kLocalPlayerSize        = 0x68;  // FVector2D
+inline constexpr std::uint32_t kLocalPlayerViewportClient = 0x58;  // ULocalPlayer::ViewportClient (UGameViewportClient*)
+inline constexpr std::uint32_t kLocalPlayerAxisRule       = 0x7C;  // ULocalPlayer::AspectRatioAxisConstraint (u8)
+inline constexpr std::uint8_t  kAxisRuleMaintainXFov      = 1;     // EAspectRatioAxisConstraint::AspectRatio_MaintainXFOV
+
+// The view point (stock 4.18 FMinimalViewInfo; GetProjectionData passes LP+0x7C, the viewport through LP+0x58 -> +0xA0,
+// and FMinimalViewInfo::CalculateProjectionMatrixGivenView 0x142DCDB10 reads these; research/RE-view-size-fov.md §4).
+inline constexpr std::uint32_t kViewInfoFov            = 0x18;  // float, degrees (horizontal for the game's cameras)
+inline constexpr std::uint32_t kViewInfoAspectRatio    = 0x28;  // float, the camera's aspect (16:9 for the game's)
+inline constexpr std::uint32_t kViewInfoFlags          = 0x2C;  // bit 0 bConstrainAspectRatio
+inline constexpr std::uint8_t  kViewInfoConstrainBit   = 0x01;
+/// ULocalPlayer's vtable (vtbl_ULocalPlayer); slot 72 GetViewPoint(this, FMinimalViewInfo& out, EStereoscopicPass),
+/// called by GetProjectionData (`call [rax+240h]` 0x14301946A) and CalcSceneView.
+inline constexpr std::uintptr_t kLocalPlayerVTable     = 0x144E6D668;
+inline constexpr std::array<std::uint8_t, 16> kGetViewPointEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x18, 0x55, 0x56, 0x57, 0x48, 0x83, 0xEC, 0x40, 0x48, 0x8B, 0xF2, 0x48};
+inline constexpr platform::SlotFact kGetViewPoint{L"ULocalPlayer::GetViewPoint (slot 72)", kLocalPlayerVTable + 72 * 8,
+                                                  {L"ULocalPlayer::GetViewPoint", 0x1430185F0, kGetViewPointEntry}};
 
 // UMG, stock 4.18 (UMG.hpp) and UEndUserWidget's own fields (EndGame.hpp, UEndUserWidget__AddToRootOverlay).
 inline constexpr std::uint32_t kWidgetVisibility       = 0xB7;   // UWidget::Visibility (ESlateVisibility)
