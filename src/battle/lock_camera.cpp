@@ -18,7 +18,6 @@
 
 #include <algorithm>
 #include <array>
-#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -108,7 +107,8 @@ struct FrameReadings
     std::uint32_t lastStepTick     = 0;
     std::array<std::uint32_t, 4>          reversalTicks{};  // the latest reversals' ticks (a ring)
     std::size_t                           ring = 0;
-    std::chrono::steady_clock::time_point lastBurstLog{};
+    bool                                  reversalBurst = false;  // four reversals within forty ticks, until forty quiet ticks
+    std::uint32_t                         burstFrom     = 0;      // the reversal count when the burst opened
 };
 
 // Game thread. Index = seat; [0] = player 1's or any other operator where a count has that side (the request hits,
@@ -562,6 +562,14 @@ void AfterOperatorTick(int seat, void* seatOperator, float deltaSeconds, bool ow
     {
         return;
     }
+    constexpr std::uint32_t kBurstTicks = 40;
+    const std::uint32_t     lastReversal = f.ring == 0 ? 0 : f.reversalTicks[(f.ring - 1) % f.reversalTicks.size()];
+    if (f.reversalBurst && f.ticks - lastReversal > kBurstTicks)
+    {
+        f.reversalBurst = false;
+        platform::LogDebug(L"lock camera: {}'s lock camera stopped reversing its yaw ({} reversals in the burst)", SeatName(seat),
+                           f.reversals - f.burstFrom);
+    }
     if (f.haveLast)
     {
         const float step = WrapDegrees(final[1] - f.lastFinalYaw);
@@ -574,12 +582,13 @@ void AfterOperatorTick(int seat, void* seatOperator, float deltaSeconds, bool ow
                 ++f.reversals;
                 f.reversalTicks[f.ring % f.reversalTicks.size()] = f.ticks;
                 ++f.ring;
-                // A burst: the four latest reversals within forty ticks (a stutter, not a single turn-around).
+                // A burst: the four latest reversals within forty ticks (a stutter, not a single turn-around); one line
+                // when it opens, one when forty ticks pass without a reversal.
                 const std::uint32_t oldest = f.reversalTicks[f.ring % f.reversalTicks.size()];
-                const auto          now    = std::chrono::steady_clock::now();
-                if (f.ring >= f.reversalTicks.size() && f.ticks - oldest <= 40 && now - f.lastBurstLog > std::chrono::seconds(2))
+                if (f.ring >= f.reversalTicks.size() && f.ticks - oldest <= kBurstTicks && !f.reversalBurst)
                 {
-                    f.lastBurstLog = now;
+                    f.reversalBurst = true;
+                    f.burstFrom     = f.reversals - static_cast<std::uint32_t>(f.reversalTicks.size());
                     platform::LogDebug(L"lock camera: {}'s lock camera reversed its yaw 4 times in {} ticks (steps {:.2f} then {:.2f} deg; so far "
                                        L"control rewritten {}, write-back skipped {}, character under another controller {}, stick while locked {})",
                                        SeatName(seat), f.ticks - oldest, f.lastStep, step, f.controlRewritten, f.writeBackSkipped, f.ownerNotSeat,

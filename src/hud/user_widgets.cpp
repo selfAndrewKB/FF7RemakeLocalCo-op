@@ -66,8 +66,14 @@ bool Install() noexcept
                 UObject* object = info.GetCurrentResolvedReturnValue();
                 if (object != nullptr && object->IsA(g_userWidgetClass))
                 {
-                    const std::lock_guard lock(g_lock);
-                    g_constructed.push_back(Record(object));
+                    try  // inside the game's construction: a record lost to no memory is found by the next walk instead
+                    {
+                        const std::lock_guard lock(g_lock);
+                        g_constructed.push_back(Record(object));
+                    }
+                    catch (...)
+                    {
+                    }
                 }
             },
             options);

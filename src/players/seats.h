@@ -6,7 +6,9 @@
 // is its local player's index in the engine's list, which a join appends to: player 2 and player 3 in that order take
 // columns 1 and 2, but with player 2 out player 3 takes column 1 (the HUD asks overlay_pass::ColumnOf, never assumes
 // the seat). Where a column shows on screen is the column order's (views/column_rules.h, `column-order`): by default
-// the join order, the list's (column 2 the right-hand screen); `1 3 2` puts player 2's on the right whatever its column. Pure constants and names, no game.
+// the join order, the list's (column 2 the right-hand screen); `1 3 2` puts player 2's on the right whatever its column.
+// The code counts columns from 0 (player 1's); the log lines count them from 1 ("column 2" is the first further one).
+// Pure constants and names, no game.
 
 #include "players/scopes.h"
 

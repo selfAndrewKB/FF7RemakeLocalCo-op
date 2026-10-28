@@ -57,6 +57,8 @@ std::vector<Hidden> g_hidden;
 UFunction*   g_setter      = nullptr;  // /Script/UMG.UserWidget:SetColorAndOpacity
 std::int32_t g_paramOffset = -1;
 bool         g_lookedUp    = false;
+// Keyed by the class pointer for the process, as root_placement's: the cursor classes load with the game and stay
+// [ASSUMPTION: never unloaded in play].
 std::unordered_map<const void*, Cursor> g_cursorClass;
 
 bool LookUp()

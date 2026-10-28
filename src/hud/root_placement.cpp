@@ -162,6 +162,8 @@ bool IsFill(const ViewportLayout& layout) noexcept
            layout.offsets[0] == 0.0f && layout.offsets[1] == 0.0f && layout.offsets[2] == 0.0f && layout.offsets[3] == 0.0f;
 }
 
+// Keyed by the class pointer for the process: the HUD's widget classes load with the game and stay [ASSUMPTION: never
+// unloaded in play]; a class freed and its address reused would be judged by the old class's name (IsFill still gates).
 std::unordered_map<const void*, const Placement*> g_placementOfClass;
 
 const Placement* PlacementOf(UObject* widget)

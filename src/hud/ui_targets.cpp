@@ -178,7 +178,7 @@ std::uint64_t UiPass(void* sceneTargets, void* commandList, void* view, platform
     {
         const render::family_now::Family family = render::family_now::For(view);
         platform::Log(L"HUD targets: UI pass view {} (column {}, family {} of {}, rect {},{}-{},{}) target {} -> {}{}", view,
-                      column, family.index, family.count, rect[0], rect[1], rect[2], rect[3], before, after,
+                      column + 1, family.index, family.count, rect[0], rect[1], rect[2], rect[3], before, after,
                       moved ? L" (moved)" : L"");
     }
     return bound;
@@ -211,7 +211,7 @@ void PostProcess(void* postProcessing, void* commandList, void* view, void* velo
     }
     if (Logging())
     {
-        platform::Log(L"HUD targets: post-process view {} (column {}) samples {}", view, column, Member());
+        platform::Log(L"HUD targets: post-process view {} (column {}) samples {}", view, column + 1, Member());
     }
     // The movie frame's release at the end of this call runs only for the frame's last view (render/movie_frame.h): the
     // last family of a split frame, else the family's last view; a view the UI loop did not list releases as the game

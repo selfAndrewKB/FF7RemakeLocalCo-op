@@ -13,7 +13,10 @@
 #include "players/scopes.h"
 #include "players/seats.h"
 
+#include <Windows.h>
+
 #include <array>
+#include <atomic>
 #include <cstdint>
 #include <cstring>
 #include <format>
@@ -58,7 +61,9 @@ struct Active
 
 // Set at install, then only read.
 std::uintptr_t         g_apply        = 0;
-bool                   g_installed    = false;  // every check passed and every redirect placed
+std::atomic<bool>      g_installed{false};      // every check passed and every redirect placed (Remove may run off the
+                                                // game thread)
+std::atomic<DWORD>     g_gameThread{0};          // Tick's thread (the unload restores the crossing call only there)
 std::uintptr_t         g_eval         = 0;
 std::uintptr_t         g_cutChange    = 0;
 std::uintptr_t         g_jumpToCut    = 0;
@@ -301,7 +306,7 @@ char JumpToCut(void* sequence, std::uint8_t kind, void* a3, void* a4)
 std::int64_t Cut()
 {
     const int seat = players::seat_camera::TickingSeat();
-    if (!players::SeatBuilt(seat))
+    if (!g_installed.load(std::memory_order_relaxed) || !players::SeatBuilt(seat))
     {
         return reinterpret_cast<CutFn>(g_cut)();
     }
@@ -395,13 +400,19 @@ bool Install(const platform::GameImage& image) noexcept
                                L"world-state seeds and active-byte unions",
                        .get  = [] { return control::Value{Reading()}; }});
     platform::Log(L"sequence camera: installed; each seat's operator evaluates sequence cameras on its own copy of their state");
-    g_installed = true;
+    g_installed.store(true, std::memory_order_relaxed);
     return true;
 }
 
 void Remove() noexcept
 {
-    g_cutCall.Restore();
+    g_installed.store(false, std::memory_order_relaxed);  // anything left in place passes the game's state through
+    // The cut call crosses a 16-byte block: put back only from the game thread, outside the camera update (Tick's).
+    if (g_cutCall.IsInstalled() && (GetCurrentThreadId() != g_gameThread.load(std::memory_order_relaxed) || !g_cutCall.Restore()))
+    {
+        platform::Log(L"sequence camera: the cut call is left in place (not on the game thread, or changed after us); it "
+                      L"passes the game's cut through");
+    }
     g_applyCall.Restore();
     g_jumpToCutCall.Restore();
     g_cutChangeCall.Restore();
@@ -410,6 +421,7 @@ void Remove() noexcept
 
 void Tick() noexcept
 {
+    g_gameThread.store(GetCurrentThreadId(), std::memory_order_relaxed);
     ++g_frame;
     g_firstSeat = -1;
     if (!g_cutPlaced && g_cutSite != 0)
@@ -424,7 +436,7 @@ void Tick() noexcept
 
 void AfterOperatorTick(int seat) noexcept
 {
-    if (!g_installed || seat < 0 || seat >= kMaxPlayers)  // not installed: the game keeps its one state
+    if (!g_installed.load(std::memory_order_relaxed) || seat < 0 || seat >= kMaxPlayers)  // not installed: the game keeps its one state
     {
         return;
     }

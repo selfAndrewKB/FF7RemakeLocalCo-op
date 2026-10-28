@@ -63,6 +63,8 @@ namespace UObjectGlobals = RC::Unreal::UObjectGlobals;
 /// The field is back after a world change (RE-lifecycle-world.md §8): play state, the steady step, running. The
 /// entry's step 12 re-reconciles every non-leader controller, so a join before step 13 would be undone.
 constexpr std::uint8_t kStatePlay  = 6;
+constexpr std::uint8_t kStateLoading = 5;
+constexpr std::uint8_t kStateLeaving = 9;
 constexpr std::int32_t kStepSteady = 13;
 
 /// How long the field must stay back, with player 1 on a character, before a seat rejoins; and how many joins
@@ -139,6 +141,7 @@ void Session::Seat::ResetMember() noexcept
     handedToAi      = false;
     holdHand        = false;
     keptThroughLock = false;
+    returnWaitLogged = false;  // the next member's "stays with its AI" line is its own
     hold            = party_member::Wait::None;
 }
 
@@ -389,9 +392,12 @@ try
     if (!ready)
     {
         seat.rejoin.steady = false;
-        if (seat.awaiting && !seat.rejoin.pending)
+        // The field left under the wait (or cannot be read): the join after it settles as after any world change. A
+        // pause, a menu or a battle step leaves the field running: the wait goes on and joins once it is ready again.
+        if (seat.awaiting && !seat.rejoin.pending &&
+            (!game.valid || !game.hasRoot || !game.running || game.state == kStateLoading || game.state == kStateLeaving))
         {
-            seat.rejoin.pending = true;  // the field left under the wait: the join after it settles as after any world change
+            seat.rejoin.pending = true;
         }
         return;
     }
@@ -704,7 +710,10 @@ try
     // manager has no EndPlay or Destroyed override). Read before the removal destroys their owners.
     UObject*   controller = Controller(seat);
     const auto leftovers  = local_player_list::ReadLeftovers(seat.localPlayer);
-    EndMemberModules(seat);  // while the seat's controller and member still exist
+    // While the seat's controller and member still exist, and the member still the seat's (the modules end the seat's
+    // lock and menu in its own scopes). A leave the funnel refuses below costs one lock and one menu rebuild: the
+    // command menu sets the seat up again on its next tick, the lock is pressed again.
+    EndMemberModules(seat);
     // The seat's member goes back to its AI first, through the game's leader funnel.
     if (seatInstalled_ && !party_seat::Unseat(seat.index, Field((*players)[0], facts::kLocalPlayerController), controller))
     {

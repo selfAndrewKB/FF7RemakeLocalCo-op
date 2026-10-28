@@ -15,7 +15,10 @@
 #include "players/scopes.h"
 #include "players/seats.h"
 
+#include <Windows.h>
+
 #include <array>
+#include <atomic>
 #include <cstdint>
 #include <format>
 #include <span>
@@ -59,7 +62,8 @@ struct Seat
     std::uint32_t         runs     = 0;
 };
 std::array<Seat, players::scopes::kMaxPlayers> g_seats;
-bool                                           g_enabled  = true;
+std::atomic<bool>                              g_enabled{true};  // Remove may run off the game thread
+std::atomic<DWORD>                             g_gameThread{0};  // Tick's thread (the unload restores the crossing call only there)
 bool                                           g_placed   = false;
 bool                                           g_inBattle = false;
 
@@ -175,7 +179,7 @@ void RunSeat(int seat, void* system, float deltaTime) noexcept
 void Targeting(void* system, float deltaTime)
 {
     reinterpret_cast<SysDtFn>(g_target)(system, deltaTime);
-    if (!g_enabled)
+    if (!g_enabled.load(std::memory_order_relaxed))
     {
         return;
     }
@@ -241,11 +245,11 @@ bool Install(const platform::GameImage& image) noexcept
                        .shape = control::Shape::OnOff,
                        .help  = L"the game's targeting tick runs again for each seat (battle/targeting.h; on)",
                        .set   = [](const control::Value& value) {
-                           g_enabled = std::get<bool>(value);
-                           platform::Log(L"targeting {}", g_enabled ? L"on" : L"off");
+                           g_enabled.store(std::get<bool>(value), std::memory_order_relaxed);
+                           platform::Log(L"targeting {}", std::get<bool>(value) ? L"on" : L"off");
                            return control::Outcome{};
                        },
-                       .get = [] { return control::Value{g_enabled}; }});
+                       .get = [] { return control::Value{g_enabled.load(std::memory_order_relaxed)}; }});
     control::Register({.name = L"targeting.runs", .shape = control::Shape::Integer, .max = INT32_MAX,
                        .help = L"the seats' targeting runs so far, together",
                        .get  = [] { return control::Value{static_cast<std::int64_t>(Runs())}; }});
@@ -257,12 +261,20 @@ bool Install(const platform::GameImage& image) noexcept
 
 void Remove() noexcept
 {
-    g_normalCallRedirect.Restore();
+    g_enabled.store(false, std::memory_order_relaxed);  // anything left in place runs the game's targeting alone
+    // The normal call crosses a 16-byte block: put back only from the game thread, outside the battle tick (Tick's).
+    if (g_normalCallRedirect.IsInstalled() &&
+        (GetCurrentThreadId() != g_gameThread.load(std::memory_order_relaxed) || !g_normalCallRedirect.Restore()))
+    {
+        platform::Log(L"targeting: the battle tick's call is left in place (not on the game thread, or changed after us); "
+                      L"it runs the game's targeting alone");
+    }
     g_pausedCall.Restore();
 }
 
 void Tick() noexcept
 {
+    g_gameThread.store(GetCurrentThreadId(), std::memory_order_relaxed);
     if (!g_placed && g_normalCall != 0)
     {
         g_placed = true;

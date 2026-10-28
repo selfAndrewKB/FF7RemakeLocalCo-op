@@ -37,6 +37,8 @@ struct Seat
     std::uint32_t targets       = 0;  // the flavor's stored target changed since the last aim on this seat
     std::uint32_t scopesHeld    = 0;  // the UI scope around the operator tick, held
     std::uint32_t scopesRefused = 0;  // ... refused while the seat's menu was in battle
+    bool          refusing      = false;  // the last tick in battle was refused (logged on each change; the counts
+                                          // above are the seat's since the start, whoever plays it)
     void*         lastTarget    = nullptr;  // the stored target at the last aim (set by the flavor's first tick, changed with the row)
     std::uint8_t  active        = 0;
     std::uint8_t  started       = 0;
@@ -110,31 +112,47 @@ std::wstring Reading()
 
 TickScope::TickScope(int seat) noexcept
 {
-    if (!g_enabled || seat < 1 || seat > kSeatsBuilt || !command_menu::Ready(seat))
+    if (seat < 1 || seat > kSeatsBuilt)
     {
         return;
     }
+    Seat&        s      = g_seats[seat];
     std::uint8_t battle = 0;
-    if (!Read(static_cast<std::uint8_t*>(command_menu::Controller(seat)) + facts::kCommandCtrlBattleHudMode, battle) ||
+    if (!g_enabled || !command_menu::Ready(seat) ||
+        !Read(static_cast<std::uint8_t*>(command_menu::Controller(seat)) + facts::kCommandCtrlBattleHudMode, battle) ||
         battle == 0)
     {
+        // Out of battle (or no menu: a leave): a run of refusals ends here, so the next battle or player starts afresh.
+        if (s.refusing)
+        {
+            s.refusing = false;
+            platform::Log(L"command camera: {}'s refusals end with its menu out of battle ({} refused tick(s) so far)",
+                          SeatName(seat), s.scopesRefused);
+        }
         return;
     }
-    Seat& s = g_seats[seat];
     scope_.emplace(seat, players::scopes::UiSlot | players::scopes::Focus);
     if (scope_->Held())
     {
         ++s.scopesHeld;
+        if (s.refusing)
+        {
+            s.refusing = false;
+            platform::Log(L"command camera: {}'s operator ticks in {}'s UI context again ({} refused tick(s) so far)",
+                          SeatName(seat), SeatName(seat), s.scopesRefused);
+        }
         return;
     }
     scope_.reset();  // closes what opened
     const std::uint32_t refused = ++s.scopesRefused;
-    if (refused <= 5 || refused % 600 == 0)
+    if (!s.refusing)
     {
-        platform::Log(L"command camera: {}'s operator ticked without {}'s UI context ({} time(s)); its Command camera reads "
-                      L"player 1's menu this frame",
-                      SeatName(seat), SeatName(seat), refused);
+        s.refusing = true;
+        platform::Log(L"command camera: {}'s operator ticks without {}'s UI context; its Command camera reads player 1's "
+                      L"menu until the context is held again (the count is in the command-camera.aims reading)",
+                      SeatName(seat), SeatName(seat));
     }
+    platform::LogTrace(L"command camera: {}'s operator ticked without its UI context ({} time(s))", SeatName(seat), refused);
 }
 
 bool Install(const platform::GameImage& image) noexcept

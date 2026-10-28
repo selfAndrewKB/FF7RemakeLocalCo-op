@@ -265,9 +265,10 @@ bool Alive(void* widget, const std::int32_t (&weak)[2]) noexcept
     return widget != nullptr && players::weak_object::ObjectOf(weak) == widget;
 }
 
-/// Last call per widget wins (the tick may place a bar twice: creation and frame).
+/// Last call per widget wins (the tick may place a bar twice: creation and frame). Runs inside the game's call: a record
+/// that cannot be kept (no memory) leaves that widget at player 1's placement in the further views.
 template <class Call>
-void Keep(std::vector<Call>& calls, const Call& call)
+void Keep(std::vector<Call>& calls, const Call& call) noexcept
 {
     for (auto& known : calls)
     {
@@ -277,7 +278,13 @@ void Keep(std::vector<Call>& calls, const Call& call)
             return;
         }
     }
-    calls.push_back(call);
+    try
+    {
+        calls.push_back(call);
+    }
+    catch (...)
+    {
+    }
 }
 
 void Untargeted(void* manager, void* widget, const Vector3* location)
@@ -375,7 +382,15 @@ void Text(Vector2* out, void* controller, const SharedPtr* canvas, const SharedP
         }
         if (!kept)
         {
-            g_texts.push_back(call);
+            try
+            {
+                g_texts.push_back(call);
+            }
+            catch (...)  // no memory: the text stays at player 1's placement in the further views
+            {
+                Unpin(call.canvas);
+                Unpin(call.widget);
+            }
         }
         ++g_seen.texts;
         ++g_seen.textKinds[static_cast<int>(kind)];
@@ -383,8 +398,8 @@ void Text(Vector2* out, void* controller, const SharedPtr* canvas, const SharedP
     reinterpret_cast<PlaceTextFn>(g_text.Original())(out, controller, canvas, widget, location, offset, clamp, projected);
 }
 
-/// Last call per widget wins.
-void KeepPoint(std::vector<PointCall>& calls, const PointCall& call)
+/// Last call per widget wins (inside the game's call: as Keep).
+void KeepPoint(std::vector<PointCall>& calls, const PointCall& call) noexcept
 {
     for (auto& known : calls)
     {
@@ -394,7 +409,13 @@ void KeepPoint(std::vector<PointCall>& calls, const PointCall& call)
             return;
         }
     }
-    calls.push_back(call);
+    try
+    {
+        calls.push_back(call);
+    }
+    catch (...)
+    {
+    }
 }
 
 bool Cursor(void* controller, void* widget, const Vector3* location)

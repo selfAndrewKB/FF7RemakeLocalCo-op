@@ -892,7 +892,7 @@ void TickSeats(const std::array<Vec3, kColumns>& entries, int count) noexcept
             {
                 platform::Log(L"sound listeners: {}'s listener follows its view (column {}); sounds near it are "
                               L"measured from it",
-                              players::SeatName(seat), column);
+                              players::SeatName(seat), column + 1);
             }
             else
             {
@@ -938,14 +938,14 @@ std::wstring Summary()
         const float apart = g_live[i] && g_live[0] ? listener_rules::Distance(g_at[i], g_at[0]) : -1.0f;
         text += std::format(L"; {}: column {}, {} from player 1, listener {} (its view's listener up to {} from its "
                             L"controller's)",
-                            players::SeatName(seat), column, Metres(apart),
+                            players::SeatName(seat), column + 1, Metres(apart),
                             g_onSeen[i].load(std::memory_order_relaxed) ? L"on" : L"off", Metres(g_controllerGap[i]));
     }
     for (int column = 1; column < kColumns; ++column)
     {
         if (g_mirrorGap[static_cast<std::size_t>(column)] >= 0.0f)
         {
-            text += std::format(L"; mirror column {} up to {} from player 1's listener", column,
+            text += std::format(L"; mirror column {} up to {} from player 1's listener", column + 1,
                                 Metres(g_mirrorGap[static_cast<std::size_t>(column)]));
         }
     }

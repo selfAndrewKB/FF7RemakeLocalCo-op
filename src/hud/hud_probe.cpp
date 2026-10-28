@@ -8,12 +8,15 @@
 
 #include "control/registry.h"
 #include "engine_facts.h"
+#include "hud/overlay_pass.h"
 #include "hud/user_widgets.h"
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
 
+#include <algorithm>
 #include <cstdint>
+#include <iterator>
 #include <format>
 #include <string>
 #include <string_view>
@@ -21,6 +24,8 @@
 namespace lss::hud::hud_probe {
 
 namespace {
+
+constexpr int kColumns = overlay_pass::kMaxColumns;
 
 using RC::Unreal::UClass;
 using RC::Unreal::UObject;
@@ -55,16 +60,17 @@ const wchar_t* VisibilityName(std::uint8_t visibility) noexcept
     }
 }
 
-/// The two local players' GUObjectArray indexes (-1 where absent), for naming a widget's PlayerContext.
-void LocalPlayerIndexes(std::int32_t (&indexes)[2]) noexcept
+/// The engine list's local players' GUObjectArray indexes (-1 where absent), for naming a widget's PlayerContext: the
+/// list's place is the column (players/seats.h).
+void LocalPlayerIndexes(std::int32_t (&indexes)[kColumns]) noexcept
 try
 {
-    indexes[0] = indexes[1] = -1;
+    std::fill(std::begin(indexes), std::end(indexes), -1);
     UObject* instance = UObjectGlobals::FindFirstOf(STR("GameInstance"));
     auto*    players  = instance == nullptr
                             ? nullptr
                             : instance->GetValuePtrByPropertyNameInChain<RC::Unreal::TArray<UObject*>>(STR("LocalPlayers"));
-    for (std::int32_t i = 0; players != nullptr && i < players->Num() && i < 2; ++i)
+    for (std::int32_t i = 0; players != nullptr && i < players->Num() && i < kColumns; ++i)
     {
         if ((*players)[i] != nullptr)
         {
@@ -74,7 +80,26 @@ try
 }
 catch (...)
 {
-    indexes[0] = indexes[1] = -1;
+    std::fill(std::begin(indexes), std::end(indexes), -1);
+}
+
+/// Whose a widget's PlayerContext is: "p1", a seat's "p2"/"p3", "mirror" for a mirror's column, else "none"/"other".
+const wchar_t* ContextName(std::int32_t context, const std::int32_t (&players)[kColumns]) noexcept
+{
+    if (context < 0)
+    {
+        return L"none";
+    }
+    constexpr const wchar_t* kSeatTags[] = {L"p1", L"p2", L"p3", L"p4"};
+    for (int column = 0; column < kColumns; ++column)
+    {
+        if (players[column] == context)
+        {
+            const int seat = column == 0 ? 0 : overlay_pass::SeatOf(column);
+            return seat >= 0 && seat < static_cast<int>(std::size(kSeatTags)) ? kSeatTags[seat] : L"mirror";
+        }
+    }
+    return L"other";
 }
 
 std::wstring Names(UObject* object)
@@ -99,7 +124,7 @@ enum class Mode
 /// One line per widget that passes the mode and the filter. Returns how many were logged.
 int Dump(Mode mode, std::wstring_view filter)
 {
-    std::int32_t players[2];
+    std::int32_t players[kColumns];
     LocalPlayerIndexes(players);
     int listed = 0, seen = 0;
     for (const auto& widget : user_widgets::Live())
@@ -133,7 +158,7 @@ int Dump(Mode mode, std::wstring_view filter)
         {
             continue;
         }
-        const wchar_t* owner = context < 0 ? L"none" : context == players[0] ? L"p1" : context == players[1] ? L"p2" : L"other";
+        const wchar_t* owner = ContextName(context, players);
         platform::Log(L"hud: {} {} z={} ctx={} {} a={:.2f} pos=({:.0f},{:.0f}) size=({:.0f},{:.0f}) anchors=({:.2f},{:.2f},{:.2f},{:.2f}) "
                       L"align=({:.2f},{:.2f})",
                       root ? L"root " : L"child", names, root ? zOrder : 0, owner, VisibilityName(visibility), color[3],
