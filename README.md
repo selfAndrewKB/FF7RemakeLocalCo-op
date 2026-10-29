@@ -212,6 +212,7 @@ src/
                             a copy of an action key, as the game calls them: the key is 24 bytes (FName, details object,
                             reference controller), passed by value, and …
     action_tables.h         A pad's own copy of the game's action state (RE-input.md §1.6-§1.7, RE-input-p2.md §2.3)
+    ai_move_guard           A further player's member is never given an AI-only move while its player holds it
     camera_override         A seat's member's camera overrides reach that seat's camera (RE-lock-camera-ledger.md row
                             X3)
     field_exit              Every further player leaves before the game leaves the field

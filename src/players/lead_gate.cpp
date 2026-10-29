@@ -11,6 +11,7 @@
 #include "players/field_root.h"
 #include "players/lead_keep_rules.h"
 #include "players/leash_rules.h"
+#include "players/party_member.h"
 #include "players/state_path.h"
 #include "world/actor_place.h"
 
@@ -1240,14 +1241,14 @@ catch (...)
 bool KeptMark(const void* member, Mark& out) noexcept
 try
 {
-    const auto*  ai    = static_cast<const std::uint8_t*>(ReadPointer(member, facts::kCharacterFieldAi));
-    std::uint8_t layer = field_hold::kNoLayer, kind = 0;
-    if (ai == nullptr || !Read(ai + facts::kFieldAiActiveLayer, layer) || !Read(ai + facts::kFieldAiActiveKind, kind) ||
-        field_hold::Of(layer, kind) != field_hold::Hold::Arrival)
+    const auto*        ai = static_cast<const std::uint8_t*>(ReadPointer(member, facts::kCharacterFieldAi));
+    field_hold::Judged judged;  // as the hold judges it: a kept interest walk on top leaves the move beneath it marked
+    if (!party_member::JudgedState(ai, judged) || field_hold::Of(judged.layer, judged.kind) != field_hold::Hold::Arrival)
     {
         return false;
     }
-    std::int64_t object = 0, state = 0;
+    const std::uint8_t kind   = judged.kind;
+    std::int64_t       object = 0, state = 0;
     if (!MoveOf(ai, kind, object, state) || object == 0)
     {
         return false;

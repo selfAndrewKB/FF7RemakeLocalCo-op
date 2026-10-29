@@ -21,6 +21,8 @@
 //
 // Seat-indexed (seat 1 = player 2); game thread only; every read guarded (a reload tears the party down under them).
 
+#include "players/field_hold.h"
+
 #include <cstdint>
 #include <string>
 
@@ -101,6 +103,14 @@ const wchar_t* WhyHeldByScript(void* member) noexcept;
 /// The field take test's wait for a `member` whoever holds it (None: free, or in battle), the reason itself: the
 /// session hands a ScriptHold wait's member to its AI keeping its seat, and takes it back at None.
 Wait HoldWait(void* member) noexcept;
+
+/// The layer and kind a field AI's hold is judged by: its active request, or, while players/ai_move_guard is active,
+/// the one beneath an INTEREST (the companion's ambient interest walk: field_hold::JudgedState). False when unread.
+bool JudgedState(const void* fieldAi, field_hold::Judged& out) noexcept;
+
+/// The member's active request is an INTEREST (an ambient interest walk). A hold judged beneath it still hands the
+/// member to its AI, which then runs the walk first, as in single player: the session says so in its hand line.
+bool InterestOnTop(const void* member) noexcept;
 
 /// The member's actor mode byte (facts::kActorMode*; 0 unread).
 std::uint8_t ActorMode(const void* member) noexcept;

@@ -64,7 +64,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.128.0-player-keeps-the-lead";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.128.1-no-interest-walk-loop";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;

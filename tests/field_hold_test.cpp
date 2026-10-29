@@ -133,6 +133,32 @@ void NoStateWaits()
     EXPECT(fh::Of(0xFF, fh::kAccompany) == Hold::NoState);
 }
 
+void AnInterestIsJudgedBeneathIt()
+{
+    // Live 2026-10-29: Aerith's layers [1 11 0 0 0 0 0 0 0 12 0 0 0 0 0], active layer 9 kind 12: the follow beneath.
+    const std::uint8_t aerith[fh::kLayers] = {1, 11, 0, 0, 0, 0, 0, 0, 0, 12, 0, 0, 0, 0, 0};
+    const fh::Judged   judged              = fh::JudgedState(9, fh::kInterest, aerith);
+    EXPECT(judged.layer == fh::kLayerLevel && judged.kind == fh::kAccompany);
+    EXPECT(fh::Of(judged.layer, judged.kind) == Hold::Free);
+    // A lead written on the level layer meanwhile is still the gate's to judge.
+    const std::uint8_t lead[fh::kLayers] = {1, 7, 0, 0, 0, 0, 0, 0, 0, 12, 0, 0, 0, 0, 0};
+    const fh::Judged   leadJudged        = fh::JudgedState(9, fh::kInterest, lead);
+    EXPECT(fh::Of(leadJudged.layer, leadJudged.kind) == Hold::Arrival);
+    // A script on a lower script layer still holds.
+    const std::uint8_t script[fh::kLayers] = {1, 11, 0, 0, 0, 2, 0, 0, 0, 12, 0, 0, 0, 0, 0};
+    const fh::Judged   scriptJudged        = fh::JudgedState(9, fh::kInterest, script);
+    EXPECT(scriptJudged.layer == 5 && fh::Of(scriptJudged.layer, scriptJudged.kind) == Hold::Layer);
+    // An INTEREST on layer 2 under one on layer 9 is skipped too.
+    const std::uint8_t twice[fh::kLayers] = {1, 11, 12, 0, 0, 0, 0, 0, 0, 12, 0, 0, 0, 0, 0};
+    EXPECT(fh::JudgedState(9, fh::kInterest, twice).kind == fh::kAccompany);
+    // Nothing beneath it: no state yet.
+    const std::uint8_t alone[fh::kLayers] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 12, 0, 0, 0, 0, 0};
+    EXPECT(fh::Of(fh::JudgedState(9, fh::kInterest, alone).layer, 0) == Hold::NoState);
+    // Any other active kind is judged as it is.
+    EXPECT(fh::JudgedState(9, fh::kStay, aerith).layer == 9);
+    EXPECT(fh::JudgedState(fh::kNoLayer, fh::kInterest, aerith).layer == fh::kNoLayer);
+}
+
 void NamesCoverTheEnum()
 {
     for (std::uint8_t kind = 0; kind <= fh::kUnique; ++kind)
@@ -172,6 +198,7 @@ int main()
     ScriptLayersHold();
     CinemaCopyFollowsItsKind();
     NoStateWaits();
+    AnInterestIsJudgedBeneathIt();
     NamesCoverTheEnum();
     InteractionLocksFreezeTheInteractor();
     if (g_failures == 0)

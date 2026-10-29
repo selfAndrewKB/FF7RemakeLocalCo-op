@@ -81,6 +81,7 @@ add_library(LocalSplitScreen SHARED
     src/players/local_player_list.cpp
     src/players/own_controller.cpp
     src/players/action_key.cpp
+    src/players/ai_move_guard.cpp
     src/players/pad_buttons.cpp
     src/players/pad_presence.cpp
     src/players/party_events.cpp

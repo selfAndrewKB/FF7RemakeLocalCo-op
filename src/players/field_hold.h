@@ -135,6 +135,43 @@ enum class Hold : std::uint8_t
     NoState,    // the field AI has no state yet (wait)
 };
 
+/// The request layers (fa+0xE00 + layer * 0x4C8, the kind byte first).
+inline constexpr std::size_t kLayers = 15;
+
+/// The layer and kind a hold is judged by.
+struct Judged
+{
+    std::uint8_t layer = kNoLayer;
+    std::uint8_t kind  = kEmpty;
+};
+
+/// The active request, or the one beneath an INTEREST. INTEREST is the companion's ambient walk to, or look at, an
+/// interest point the level placed (AEndInterestPoint, e.g. "run aside and watch Cloud cross the monkey bars"; its only
+/// writer is the AI model's interest intention, which reacts to any member but the leader inside the point's sphere,
+/// in single player too). Nothing waits on it: no arrival signal, no script step. With players/ai_move_guard placed
+/// its walk cannot start under a player, so it never takes the member from its player: the hold is the next non-empty
+/// layer's below it, a lead or a script written meanwhile included (the user, 2026-10-29: Aerith handed to her AI for
+/// 5 minutes, her interest walk looping on a ladder; research/RE-interest-ladder-loop.md). `kinds`: the 15 layers'
+/// kind bytes.
+constexpr Judged JudgedState(std::uint8_t activeLayer, std::uint8_t activeKind, const std::uint8_t (&kinds)[kLayers]) noexcept
+{
+    if (activeKind != kInterest || activeLayer >= kLayers)
+    {
+        return {activeLayer, activeKind};
+    }
+    for (int layer = static_cast<int>(activeLayer) - 1; layer >= 0; --layer)
+    {
+        const std::uint8_t kind = kinds[static_cast<std::size_t>(layer)];
+        if (kind != kEmpty && kind != kInterest)
+        {
+            return {static_cast<std::uint8_t>(layer), kind};
+        }
+    }
+    // Nothing beneath it: read as no state yet. A held member is not handed for it; a waiting further player does not
+    // take the member until the interest clears (its AI is walking it).
+    return {};
+}
+
 /// The hold of a field AI state: its active layer and that layer's kind.
 constexpr Hold Of(std::uint8_t layer, std::uint8_t kind) noexcept
 {

@@ -32,6 +32,7 @@
 #include "hud/ui_targets.h"
 #include "platform/guarded.h"
 #include "platform/log.h"
+#include "players/ai_move_guard.h"
 #include "players/game_state.h"
 #include "players/lead_gate.h"
 #include "players/nav_area.h"
@@ -246,6 +247,8 @@ constexpr std::array kModules{
     Module{.name = L"pads reading", .install = Call<&players::pad_presence::Register>},
     // without it a LEAD or a run to a mark on a further player's member stays the player's
     Module{.name = L"lead gate", .install = Call<&players::lead_gate::Install>},
+    // without it an ambient interest walk hands a further player's member to its AI (which can loop on a ladder)
+    Module{.name = L"AI move guard", .install = Call<&players::ai_move_guard::Install>, .remove = &players::ai_move_guard::Remove},
     // the game's single slots answered for a seat for one call: the battle modules need it
     Module{.name = L"scopes", .install = Call<&players::scopes::Install>},
 
@@ -577,6 +580,7 @@ void TickWorld(const Frame& frame) noexcept
         world::anim_views::TickSeat(seat, camera, member);
         world::npc_crowd::TickSeat(seat, member);
         world::npc_senses::TickSeat(seat, member);
+        players::ai_move_guard::TickSeat(seat, member);
         world::npc_detail::TickSeat(seat, camera);
         world::env_sets::TickSeat(seat, member, controller);
         world::traversal_walkup::TickSeat(seat, controller, member);
@@ -588,6 +592,7 @@ void TickWorld(const Frame& frame) noexcept
         audio::listeners::TickSeat(seat, controller);
     }
     world::traversal_action::Tick(anyIn);
+    players::ai_move_guard::Tick();
     world::field_targets::Tick();
     world::search_arrows::Tick();
     world::anim_views::Tick();

@@ -1551,6 +1551,12 @@ inline constexpr std::uint8_t   kStatusBattleSupport   = 5;
 /// (reached as char800+0xA00 by the game); on that object the actor type (EActorType, 0 PLAYER, 1 PARTY) and the
 /// actor mode (EActorMode: 1 FIELD, 3 FIELD_CINEMA, 4 CAUTION, 5 BATTLE, 7 CINEMA).
 inline constexpr std::uint32_t  kCharacterPlayerSlot   = 0xCE8;
+inline constexpr std::uint32_t  kCharacterAiModel      = 0x820;  // the character's own FEndAIModel (research/RE-interest-ladder-loop.md §7)
+/// EndAIModel_CanRequestBehavior(model, u8 slot, u8 priority) -> bool: may an AI-model intention add a behaviour in
+/// `slot` (0 = the move slot). Manual control adds its behaviours directly and never asks. Its first two instructions,
+/// `mov r11, rsp` and `mov [r11+18h], r8b` (7 bytes, one aligned block, position-independent), read from IDA.
+inline constexpr std::uintptr_t kAiModelCanRequestBehavior = 0x14064D790;
+inline constexpr std::array<std::uint8_t, 7> kAiModelCanRequestBehaviorFirst{0x4C, 0x8B, 0xDC, 0x45, 0x88, 0x43, 0x18};
 inline constexpr std::uint32_t  kCharacterFieldAi      = 0xC88;
 inline constexpr std::uint32_t  kCharacter800          = 0x800;   // the EndCharacter800 interface the game's calls take
 inline constexpr std::uint32_t  kCharacterActorMode    = 0x1200;  // the actor-mode object

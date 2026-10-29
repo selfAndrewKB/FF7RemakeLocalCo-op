@@ -5,6 +5,7 @@
 #include "platform/image.h"
 #include "platform/log.h"
 #include "platform/verified_code.h"
+#include "players/ai_move_guard.h"
 #include "players/field_hold.h"
 #include "players/field_root.h"
 #include "players/lead_gate.h"
@@ -109,13 +110,14 @@ Wait FieldWait(void* member) noexcept
             return Wait::LeaderHanded;
         }
     }
-    const std::uint8_t* ai   = static_cast<const std::uint8_t*>(ReadPointer(member, facts::kCharacterFieldAi));
-    std::uint8_t        layer = field_hold::kNoLayer, kind = 0;
-    if (ai == nullptr || !Read(ai + facts::kFieldAiActiveLayer, layer) || !Read(ai + facts::kFieldAiActiveKind, kind))
+    const std::uint8_t* ai = static_cast<const std::uint8_t*>(ReadPointer(member, facts::kCharacterFieldAi));
+    field_hold::Judged  state;
+    if (!JudgedState(ai, state))
     {
         return Wait::NoFieldAi;
     }
-    switch (field_hold::Of(layer, kind))
+    const std::uint8_t kind = state.kind;
+    switch (field_hold::Of(state.layer, kind))
     {
     case field_hold::Hold::Free:
         return Wait::None;
@@ -160,6 +162,40 @@ std::uint8_t GameLeaderType() noexcept
     std::uint8_t  type    = facts::kPlayerTypeNone;
     return Read(g_partyManager, manager) && manager != nullptr && Read(manager + facts::kPartyLeaderType, type) ? type
                                                                                                                : facts::kPlayerTypeNone;
+}
+
+bool JudgedState(const void* fieldAi, field_hold::Judged& out) noexcept
+{
+    const auto*  ai    = static_cast<const std::uint8_t*>(fieldAi);
+    std::uint8_t layer = field_hold::kNoLayer, kind = 0;
+    if (ai == nullptr || !Read(ai + facts::kFieldAiActiveLayer, layer) || !Read(ai + facts::kFieldAiActiveKind, kind))
+    {
+        return false;
+    }
+    std::uint8_t kinds[field_hold::kLayers] = {};
+    // Only with the guard: without it an interest walk could start under the player and fault (it hands, as before).
+    if (kind == field_hold::kInterest && ai_move_guard::Active())
+    {
+        static_assert(field_hold::kLayers == facts::kFieldAiLayers, "the request stack's layers");
+        for (std::size_t i = 0; i < field_hold::kLayers; ++i)
+        {
+            if (!Read(ai + facts::kFieldAiLayerRecords + i * facts::kFieldAiLayerBytes, kinds[i]))
+            {
+                return false;
+            }
+        }
+        out = field_hold::JudgedState(layer, kind, kinds);
+        return true;
+    }
+    out = {layer, kind};
+    return true;
+}
+
+bool InterestOnTop(const void* member) noexcept
+{
+    const auto*  ai   = static_cast<const std::uint8_t*>(ReadPointer(member, facts::kCharacterFieldAi));
+    std::uint8_t kind = 0;
+    return ai != nullptr && Read(ai + facts::kFieldAiActiveKind, kind) && kind == field_hold::kInterest;
 }
 
 Wait HoldWait(void* member) noexcept
