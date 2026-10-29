@@ -30,6 +30,7 @@
 #include <atomic>
 #include <cmath>
 #include <cstdint>
+#include <cwchar>
 #include <format>
 #include <iterator>
 #include <limits>
@@ -713,8 +714,13 @@ const wchar_t* ActionName(std::uint8_t action) noexcept
         case facts::kFieldActionWireFence: return L"wire-fence climb";
         case facts::kFieldActionHookShot: return L"grappling hook";
         case facts::kFieldActionCurtain: return L"curtain";
-        default: return L"field action";
+        default: break;
     }
+    // A kind the table does not name (the guide's gate, 2026-10-29) gives its number. The text lives in this thread's
+    // buffer until its next unnamed kind; every caller uses it in one log line at once.
+    thread_local wchar_t text[32]{};
+    swprintf_s(text, L"field action (kind %u)", static_cast<unsigned>(action));
+    return text;
 }
 
 /// Camera flavor 20 is on its way out (its current phase is the leaving one).

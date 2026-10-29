@@ -1995,7 +1995,11 @@ inline constexpr platform::FunctionFact kLevelRequestEnqueue{L"EndLevelReq_Enque
 /// Stock 4.18 (Engine.hpp): UWorld::StreamingLevels and ULevelStreaming's fields. The flags word: 0x20 should be loaded,
 /// 0x40 should be visible (the game's load action ORs 0x60 at 0x1416DC10C, its unload tests 0x20 at 0x1416DB5AE).
 inline constexpr std::uint32_t kWorldStreamingLevels    = 0x88;   // TArray<ULevelStreaming*>
-inline constexpr std::uint32_t kLevelStreamingPackage   = 0x28;   // FName PackageName
+inline constexpr std::uint32_t kLevelStreamingPackage   = 0x28;   // FName PackageName (empty in this build)
+inline constexpr std::uint32_t kLevelStreamingPackageToLoad = 0x58;  // FName PackageNameToLoad
+/// TSoftObjectPtr<UWorld> WorldAsset at 0x30 (0x28 bytes): a weak pointer and a tag (0x10), then its FSoftObjectPath,
+/// whose FName AssetPathName comes first [ASSUMPTION: stock 4.18 TPersistentObjectPtr layout; the dump's size agrees].
+inline constexpr std::uint32_t kLevelStreamingWorldAssetPath = 0x40;
 inline constexpr std::uint32_t kLevelStreamingFlags     = 0xB0;   // u32 bit flags
 inline constexpr std::uint32_t kLevelStreamingShouldLoad = 0x20;
 inline constexpr std::uint32_t kLevelStreamingShouldShow = 0x40;

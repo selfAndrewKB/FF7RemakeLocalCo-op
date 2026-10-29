@@ -303,8 +303,38 @@ const wchar_t* Because(coin_choice::Why why) noexcept
     return L"no further player";
 }
 
-/// Tosses `controller`'s coin and keeps it: the player it names (1..4), or 0 (the game's own answer).
-int Toss(void* controller, const wchar_t* when) noexcept
+/// When a coin is tossed.
+enum class Occasion : std::uint8_t
+{
+    FirstQuestion,
+    MemberDown,
+    Decision,
+};
+
+const wchar_t* OccasionText(Occasion when) noexcept
+{
+    switch (when)
+    {
+    case Occasion::FirstQuestion:
+        return L"first question";
+    case Occasion::MemberDown:
+        return L"its player's member is down";
+    case Occasion::Decision:
+        break;
+    }
+    return L"decision";
+}
+
+std::uint32_t NowMs32() noexcept
+{
+    return static_cast<std::uint32_t>(
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
+}
+
+/// Tosses `controller`'s coin and keeps it: the player it names (1..4), or 0 (the game's own answer). Its Debug line
+/// is written unless it says what the enemy's last one said within a second (coin_table's repeat rule: then a Trace
+/// line, and the next differing line counts the repeats).
+int Toss(void* controller, Occasion when) noexcept
 {
     const auto key      = reinterpret_cast<std::uintptr_t>(controller);
     const auto seated   = g_seated.load(std::memory_order_relaxed);
@@ -326,8 +356,25 @@ int Toss(void* controller, const wchar_t* when) noexcept
     const int player = choice.player + 1;
     g_coins.Set(key, player, Seconds());
     Count(g_counts.tosses[static_cast<std::size_t>(choice.player)], g_totals.tosses[static_cast<std::size_t>(choice.player)]);
-    platform::LogDebug(L"enemy coin: enemy {:#x} counts player {} as the player until its next action ({}; {})", key, player, when,
-                       Because(choice.why));
+    const auto said = static_cast<std::uint32_t>(player) | static_cast<std::uint32_t>(choice.why) << 3 |
+                      static_cast<std::uint32_t>(when) << 6;
+    unsigned repeated = 0;
+    if (g_coins.Repeat(key, said, NowMs32(), repeated))
+    {
+        platform::LogTrace(L"enemy coin: enemy {:#x} tossed again, as before (player {}; {}; {})", key, player, OccasionText(when),
+                           Because(choice.why));
+    }
+    else if (repeated > 0)
+    {
+        platform::LogDebug(L"enemy coin: enemy {:#x} counts player {} as the player until its next action ({}; {}) (the toss before "
+                           L"it repeated {} times within a second each)",
+                           key, player, OccasionText(when), Because(choice.why), repeated);
+    }
+    else
+    {
+        platform::LogDebug(L"enemy coin: enemy {:#x} counts player {} as the player until its next action ({}; {})", key, player,
+                           OccasionText(when), Because(choice.why));
+    }
     return player;
 }
 
@@ -338,12 +385,12 @@ int CoinOf(void* controller) noexcept
     const int  held = g_coins.PlayerOf(key);
     if (held == 0)
     {
-        return Toss(controller, L"first question");
+        return Toss(controller, Occasion::FirstQuestion);
     }
     if (!Standing(held - 1))
     {
         Count(g_counts.retosses, g_totals.retosses);
-        return Toss(controller, L"its player's member is down");
+        return Toss(controller, Occasion::MemberDown);
     }
     return held;
 }
@@ -387,7 +434,7 @@ char GateFor(platform::EntryRedirect& redirect, void* controller) noexcept
             }
             else if (g_coins.PlayerOf(key) == 0 || g_coins.Marked(key))
             {
-                Toss(controller, L"decision");
+                Toss(controller, Occasion::Decision);
             }
             enemy_stall::BeforeGate(controller, enemy, action);  // a stalled hate enemy: the gate's own update picks again
         }

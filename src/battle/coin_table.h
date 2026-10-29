@@ -7,7 +7,8 @@
 // empty one, else the one tossed longest ago (a live enemy tosses at each decision, every few seconds; the oldest is
 // a gone enemy's). Two threads placing coins in the same slot at once leave one of them: the other tosses again at
 // its next question. Pure over its arrays with the clock passed in, so it is tested on the host
-// (tests/coin_table_test.cpp). Any thread. Taken from Rebirth's player_two/coin_table.h; the mark is new.
+// (tests/coin_table_test.cpp). Any thread. Taken from Rebirth's player_two/coin_table.h; the mark and the log line's
+// repeat rule (a toss saying the same within a second is counted, not written) are new.
 
 #include <atomic>
 #include <cstddef>
@@ -54,14 +55,47 @@ public:
     }
 
     /// `key` counts `player` (1..4) from `now` (seconds): in its own slot, else an empty one, else the one tossed
-    /// longest ago among its four. The mark is cleared: this toss has seen no action yet.
+    /// longest ago among its four. The mark is cleared: this toss has seen no action yet. A slot taken from another
+    /// key starts its log line record over.
     void Set(std::uintptr_t key, int player, std::uint32_t now) noexcept
     {
+        const bool        own  = Find(key) != kNoSlot;
         const std::size_t slot = Place(key, now);
+        if (!own)
+        {
+            said_[slot].store(0, std::memory_order_relaxed);
+            repeats_[slot].store(0, std::memory_order_relaxed);
+        }
         tossedAt_[slot].store(now, std::memory_order_relaxed);
         marked_[slot].store(0, std::memory_order_relaxed);
         coins_[slot].store(key | static_cast<std::uintptr_t>(player & kMask), std::memory_order_relaxed);
     }
+
+    /// The log rule for `key`'s toss line, after its Set: `said` codes what the line says (not 0). A line saying the
+    /// same as the key's last one within kRepeatMs of it (`nowMs`, milliseconds) repeats it: counted, true. Otherwise
+    /// false, the line recorded, and `repeated` takes the previous line's repeat count (then 0). Without a coin: false,
+    /// 0. A frame-rate churn of the game's own request and cancel (a far turret's) then writes one line, not 120 a
+    /// second; a toss that happens to name the same player seconds later still writes its own.
+    bool Repeat(std::uintptr_t key, std::uint32_t said, std::uint32_t nowMs, unsigned& repeated) noexcept
+    {
+        repeated              = 0;
+        const std::size_t slot = Find(key);
+        if (slot == kNoSlot)
+        {
+            return false;
+        }
+        const std::uint32_t last = saidAt_[slot].exchange(nowMs, std::memory_order_relaxed);
+        if (said_[slot].load(std::memory_order_relaxed) == said && nowMs - last <= kRepeatMs)
+        {
+            repeats_[slot].fetch_add(1, std::memory_order_relaxed);
+            return true;
+        }
+        said_[slot].store(said, std::memory_order_relaxed);
+        repeated = repeats_[slot].exchange(0, std::memory_order_relaxed);
+        return false;
+    }
+
+    static constexpr std::uint32_t kRepeatMs = 1000;
 
     /// Forgets `key`'s coin, if it still holds one (a compare-and-swap: a coin placed there meanwhile stays).
     void Clear(std::uintptr_t key) noexcept
@@ -122,6 +156,9 @@ private:
     std::atomic<std::uintptr_t> coins_[kSlots]{};
     std::atomic<std::uint32_t>  tossedAt_[kSlots]{};  // seconds on the steady clock
     std::atomic<std::uint8_t>   marked_[kSlots]{};
+    std::atomic<std::uint32_t>  said_[kSlots]{};     // what the key's last toss line said (0: none)
+    std::atomic<std::uint32_t>  saidAt_[kSlots]{};   // when its last toss was (milliseconds, wrapping)
+    std::atomic<std::uint32_t>  repeats_[kSlots]{};  // tosses repeating that line since it was written
 };
 
 }  // namespace lss::battle::coin_table

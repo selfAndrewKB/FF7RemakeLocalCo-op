@@ -80,6 +80,41 @@ std::wstring NameText(std::uint64_t bits)
     }
 }
 
+/// A streaming level's name as the game's queue lines give it. Its PackageName, else its PackageNameToLoad, else the
+/// asset name of its WorldAsset's path ("/Game/…/030-SLUM7_Layout_045.030-SLUM7_Layout_045": the part after the last
+/// dot, or after the last slash). This build leaves PackageName empty (2026-10-29: 563 census lines named None).
+std::wstring LevelName(const void* streaming) noexcept
+try
+{
+    const auto*   base = static_cast<const std::uint8_t*>(streaming);
+    std::uint64_t bits = 0;
+    for (const std::uint32_t offset : {facts::kLevelStreamingPackage, facts::kLevelStreamingPackageToLoad})
+    {
+        if (Read(base + offset, bits) && static_cast<std::uint32_t>(bits) != 0)  // the comparison index: 0 is None
+        {
+            return NameText(bits);
+        }
+    }
+    if (!Read(base + facts::kLevelStreamingWorldAssetPath, bits) || static_cast<std::uint32_t>(bits) == 0)
+    {
+        return L"None";
+    }
+    std::wstring path = NameText(bits);
+    if (const auto dot = path.rfind(L'.'); dot != std::wstring::npos && dot + 1 < path.size())
+    {
+        return path.substr(dot + 1);
+    }
+    if (const auto slash = path.rfind(L'/'); slash != std::wstring::npos && slash + 1 < path.size())
+    {
+        return path.substr(slash + 1);
+    }
+    return path;
+}
+catch (...)
+{
+    return L"?";
+}
+
 std::uint64_t CommittedMegabytes() noexcept
 {
     PROCESS_MEMORY_COUNTERS_EX counters{};
@@ -236,9 +271,7 @@ try
         }
         if (found == g_levels.end())
         {
-            std::uint64_t package = 0;
-            Read(static_cast<const std::uint8_t*>(streaming) + facts::kLevelStreamingPackage, package);
-            Level level{NameText(package), wanted, loaded, g_pass};
+            Level level{LevelName(streaming), wanted, loaded, g_pass};
             if (!fresh)
             {
                 platform::LogDebug(L"level watch: level {} listed: {}", level.name, StateText(wanted, loaded));
