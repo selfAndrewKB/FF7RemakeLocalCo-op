@@ -52,10 +52,10 @@ readings are `<switch>.<what>`, and an area's readings `<area>.<what>`. Today:
   `shop-act`, `talk-gather`, `traversal.action`, `traversal.walkup`.
 - **Pads:** `pad-buttons`, `pad-menus`; readings `pad.events`, `pad.to-game` (each further pad's counts),
   `pad.menu-opens`.
-- **Battle:** `command-menu`, `command-camera`, `targeting`, `member-rates`, `enemy-coin`, `member-area`; readings
+- **Battle:** `command-menu`, `command-camera`, `targeting`, `member-rates`, `enemy-coin`, `enemy-stall`, `member-area`; readings
   `command-menu.state`, `.leader`, `.gates`, `.route`, `command-camera.aims`, `targeting.runs`, `targeting.lock`,
   `target-cursor`, `lock-camera.jumps`, `.frames`, `.requests`, `.restore`, `sequence-camera`, `menu-grey`,
-  `enemy-coin.counts`, `enemy-leader`, `enemy-watch`, `arena-warp`, `operator-battle-mode`.
+  `enemy-coin.counts`, `enemy-stall.counts`, `enemy-leader`, `enemy-watch`, `arena-warp`, `operator-battle-mode`.
 - **The HUD:** `hud-band`, `hud-image`, `hud-catch-up`, `hud-minimap`, `hud-markers`, `hud-field-icons`,
   `hud-outside-icons`, `hud-targets` (off at start: the HUD image turns it on when the screen splits),
   `hud-targets-log <renders>`; readings `hud.layout`, `hud.overlay`, `hud.minimap`,
@@ -431,6 +431,7 @@ src/
     enemy_coin              Enemies share their attention between the humans: one coin per enemy decision
     enemy_leader            Enemies follow the human whose member stands when the game's leader is down
                             (RE-enemy-leader-reads.md §2, §5.1)
+    enemy_stall             An enemy aimed at a human it cannot reach picks again
     enemy_watch             What each enemy is doing, for the live reads behind the circling report
     lock_camera             Each seat's lock camera at the edges outside the operator's tick (RE-lock-camera-ledger.md;
                             the seats follow plan/seats.md step 3)
@@ -443,6 +444,8 @@ src/
                             restore, at a flip of the switch and at the tick …
     party_switch            Neither player switches onto a member the other human plays
     sequence_camera         The battle sequence cameras (abilities, enemy specials, summons) on each player's own camera
+    stall_rules.h           When an enemy that is ready to attack but declines counts as stalled, and whether the game
+                            may pick again for it
     target_cursor           Each seat's own battle target cursor: the game's cursor driver run again per seat
     targeting               Each seat's targeting: the game's own targeting tick run again, once per seat
     type_answer_code.h      The bytes of a small function that answers the game's inlined "is this member the player"
@@ -452,5 +455,5 @@ src/
                             (tests/listener_rules_test.cpp)
     listeners               Every player hears the sounds near them: each SEAD sound is measured from the nearest
                             player's listener
-tests/                      51 host-side test programs (ctest), one per pure header or code stub; run without the game
+tests/                      52 host-side test programs (ctest), one per pure header or code stub; run without the game
 ```

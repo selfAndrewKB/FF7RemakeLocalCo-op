@@ -37,6 +37,7 @@ add_library(LocalSplitScreen SHARED
     src/battle/menu_grey.cpp
     src/battle/enemy_coin.cpp
     src/battle/enemy_leader.cpp
+    src/battle/enemy_stall.cpp
     src/battle/enemy_watch.cpp
     src/battle/lock_camera.cpp
     src/battle/member_rates.cpp
@@ -326,6 +327,13 @@ add_executable(AreaLevelsRulesTests
 target_include_directories(AreaLevelsRulesTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_compile_features(AreaLevelsRulesTests PRIVATE cxx_std_20)
 add_test(NAME area_levels_rules COMMAND AreaLevelsRulesTests)
+
+add_executable(StallRulesTests
+    tests/stall_rules_test.cpp
+)
+target_include_directories(StallRulesTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(StallRulesTests PRIVATE cxx_std_20)
+add_test(NAME stall_rules COMMAND StallRulesTests)
 
 add_executable(CoinTableTests
     tests/coin_table_test.cpp

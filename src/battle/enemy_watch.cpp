@@ -48,7 +48,6 @@ using CharacterOfFn = void* (*)(const void* targetObject);
 using ComponentTest = bool (*)(void* component);           // BattlePlayerComp_IsPartySide, BattleComp_IsHateEnemy
 using OwnerFn       = void* (*)(void* component);           // the battle component's owner character (vtable +0x20)
 using SetTargetFn   = void (*)(void* component, void* character);
-using ReadyFn       = char (*)(void* component);            // 0, 1 light, 2 heavy
 
 constexpr std::size_t  kEntries    = 32;       // enemies watched at once (a battle has a handful)
 constexpr std::int64_t kSeenMs     = 1000;     // a gate not run for this long: the enemy left the battle, or the game paused
@@ -108,7 +107,7 @@ ComponentTest                      g_isPartySide = nullptr;
 ComponentTest                      g_isHate      = nullptr;
 std::uintptr_t                     g_gameBase    = 0;  // the game module's live range, for naming callers
 std::uintptr_t                     g_gameEnd     = 0;
-platform::EntryRedirect            g_setTarget, g_ready;
+platform::EntryRedirect            g_setTarget;
 
 // Each human's member (player 1: the game's leader), refreshed by the game thread each tick for the hooks on any
 // thread. Compared only, never dereferenced from here.
@@ -434,23 +433,6 @@ void SetTarget(void* component, void* character)
     }
 }
 
-/// The enemy component's attack-ready test: the game's answer unchanged, recorded for its entry.
-char AttackReady(void* component)
-{
-    const char ready = reinterpret_cast<ReadyFn>(g_ready.Original())(component);
-    if (Watching())
-    {
-        if (Entry* entry = EntryOf(component); entry != nullptr)
-        {
-            if (ready != 0 && entry->ready.load(std::memory_order_relaxed) == 0)
-            {
-                entry->readySinceMs.store(NowMs(), std::memory_order_relaxed);
-            }
-            entry->ready.store(ready, std::memory_order_release);
-        }
-    }
-    return ready;
-}
 
 /// The points of `member`'s first area query (the area enemies read around the character they target); -1 when
 /// unreadable or the member has no query.
@@ -553,6 +535,37 @@ bool Watching() noexcept
     return g_installed.load(std::memory_order_acquire) && platform::Enabled(platform::Level::Debug);
 }
 
+void Ready(const void* component, char ready) noexcept
+{
+    if (!Watching())
+    {
+        return;
+    }
+    if (Entry* entry = EntryOf(component); entry != nullptr)
+    {
+        if (ready != 0 && entry->ready.load(std::memory_order_relaxed) == 0)
+        {
+            entry->readySinceMs.store(NowMs(), std::memory_order_relaxed);
+        }
+        entry->ready.store(ready, std::memory_order_release);
+    }
+}
+
+void* TargetCharacter(const void* component) noexcept
+{
+    return TargetCharacterOf(component);
+}
+
+std::wstring TargetAndDistances(void* component) noexcept
+try
+{
+    return Distances(OwnerOf(component), TargetCharacterOf(component));
+}
+catch (...)
+{
+    return L"an unread target";
+}
+
 void Observe(void* controller, const void* component, std::uint64_t action) noexcept
 {
     const auto     key    = reinterpret_cast<std::uintptr_t>(controller);
@@ -633,7 +646,6 @@ bool Install(const platform::GameImage& image) noexcept
     const auto setTarget   = platform::FindFunction(image, facts::kBattleCompSetTargetChar);
     const auto isPartySide = platform::FindFunction(image, facts::kBattleCompIsPartySide);
     const auto isHate      = platform::FindFunction(image, facts::kBattleCompIsHateEnemy);
-    const auto ready       = platform::FindFunction(image, facts::kBattleEnemyAttackReady);
     if (isPartySide && isHate)
     {
         g_isPartySide = reinterpret_cast<ComponentTest>(*isPartySide);
@@ -643,10 +655,6 @@ bool Install(const platform::GameImage& image) noexcept
         !g_setTarget.Install(*setTarget, facts::kBattleCompSetTargetCharFirst, reinterpret_cast<std::uintptr_t>(&SetTarget)))
     {
         platform::LogWarning(L"enemy watch: the target call could not be redirected; who aims an enemy is not logged");
-    }
-    if (!ready || !g_ready.Install(*ready, facts::kBattleEnemyAttackReadyFirst, reinterpret_cast<std::uintptr_t>(&AttackReady)))
-    {
-        platform::LogWarning(L"enemy watch: the attack-ready test could not be redirected; ready enemies are not logged");
     }
     control::Register({.name  = L"enemy-watch",
                        .shape = control::Shape::Text,
@@ -660,7 +668,6 @@ bool Install(const platform::GameImage& image) noexcept
 void Remove() noexcept
 {
     g_setTarget.Restore();
-    g_ready.Restore();
 }
 
 void Tick() noexcept

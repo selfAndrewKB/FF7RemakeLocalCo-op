@@ -1349,6 +1349,20 @@ inline constexpr std::uintptr_t kBattleIsAipcTypeCall = 0x14187D25D;            
 inline constexpr std::array<std::uintptr_t, 2> kBattleExpectationTypeCalls{0x1409598F1, 0x14095A3A7};  // E8 CA E1 CF FF, E8 14 D7 CF FF
 /// The enemy EQS target context keeps a party non-leader only if its controller IsA battle AI controller (E8 82 6A CD FF).
 inline constexpr std::uintptr_t kBattleEqsIsACall = 0x1409B0229;
+
+// --- A stalled hate enemy picks again (RE-enemy-stall-repick.md §3.3-§3.5, §5, §6; battle/enemy_stall) -------------
+// The gate (kBattleAIDecisionGate) calls EndBattleAI_UpdateHate_ApplyTarget(aic, 9) at 0x14091F261, before its delay
+// test. That update returns unless BattleComp_IsHateEnemy and the pending byte are set; it then adds the hate rows,
+// picks (EndBattleAI_Hate_PickTarget) and sets the target (0x14093F71D) only while the component's target lock is 0,
+// and clears the byte (0x14093F722). Blueprint SetHateUpdateFlag's whole body is the byte's write (0x1417B1525).
+inline constexpr std::uint32_t kBattleAIHateUpdatePending = 0x1A60;  // u8 on the controller
+inline constexpr std::uint32_t kBattleAIForcedHateCount   = 0x1B28;  // i32: above 0, the update only picks again from its list
+inline constexpr std::uint32_t kBattleAIRequestFlags      = 0x1590;  // the controller's request flags (a pointer, as Accept reads it)
+inline constexpr std::uint32_t kBattleAIRequestsBlocked   = 5;       // its byte +5: eBlockRequest, Accept refuses every request
+inline constexpr std::uint32_t kBattleAILookChangeValues  = 0x15A0;  // a pointer the give-up tick reads at its start
+inline constexpr std::uint32_t kBattleAILookChangeMode    = 0x20;    // its u32 +0x20: btlvalue[8], LookChange (0 off)
+inline constexpr std::uint32_t kBattleAILightInterval     = 0x1FE4;  // float s: LightAttachATBIntervalTime
+inline constexpr std::uint32_t kBattleCompTargetLock      = 0x310;   // u32 on the component: LockTargetCharaBase (0 unlocked)
 /// A character's own area queries (its EnvironmentQueryComponent, char+0x1AA8) run in battle only for the leader or a
 /// character whose controller IsA battle AI controller (EndEnvQueryComponent_TickQueries_BattleGate, E8 55 D0 00 FF;
 /// rcx = char+0xCF0, only al used after): enemies read the area of the character they target (RE-enemy-circling.md).

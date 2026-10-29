@@ -8,6 +8,7 @@
 #include "battle/command_menu.h"
 #include "battle/enemy_coin.h"
 #include "battle/enemy_leader.h"
+#include "battle/enemy_stall.h"
 #include "battle/enemy_watch.h"
 #include "battle/lock_camera.h"
 #include "battle/member_rates.h"
@@ -286,7 +287,10 @@ constexpr std::array kModules{
     // without it enemies name player 1 as the player
     Module{.name = L"enemy coin", .install = Call<&battle::enemy_coin::Install>, .remove = &battle::enemy_coin::Remove,
            .needs = {Need<&battle::command_menu::Install>()}},
-    // logging only: fed by the coin's decision gate
+    // without it an enemy aimed at a far human it cannot reach waits until that human comes near
+    Module{.name = L"enemy stall", .install = Call<&battle::enemy_stall::Install>, .remove = &battle::enemy_stall::Remove,
+           .needs = {Need<&battle::enemy_coin::Install>()}},
+    // logging only: fed by the coin's decision gate and the stall's ready test
     Module{.name = L"enemy watch", .install = Call<&battle::enemy_watch::Install>, .remove = &battle::enemy_watch::Remove,
            .needs = {Need<&battle::enemy_coin::Install>()}},
     // battle camera sequences on each player's own view
@@ -675,6 +679,7 @@ void TickBattle(const Frame& frame) noexcept
     battle::member_rates::Tick();
     battle::enemy_leader::Tick();
     battle::enemy_coin::Tick();
+    battle::enemy_stall::Tick();
     battle::enemy_watch::Tick();
     battle::sequence_camera::Tick();
 }

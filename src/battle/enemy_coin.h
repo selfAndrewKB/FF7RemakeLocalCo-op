@@ -40,7 +40,8 @@
 // battle/party_switch), an enemy whose coin names no further player gets the member battle/enemy_leader follows in
 // the leader's place (the AI ally the switch would have taken) from its actor and party API reads, not the downed
 // leader. The type reads (the hate rows' and expectation counts' leader type) keep their answers.
-// Nothing is written to the game's state: every answer passes through the game's own call. Any thread for the toss,
+// The gate also hands each enemy to battle/enemy_stall before the game's gate runs (a stalled hate enemy picks again).
+// Nothing is written to the game's state: every answer passes through the game's own call (enemy_stall's one byte aside). Any thread for the toss,
 // the type answers and the area answer (the AI tick is written to run off the game thread); the natives run on the
 // game thread; hits and sensing are scoped on the game thread only (else counted and left as the game's).
 // Logged: the install (Info), each toss (Debug), a 60 s summary (Debug), each answer (Trace). `enemy-coin.counts`
@@ -60,5 +61,18 @@ void Remove() noexcept;
 
 /// Game thread, once per frame: the seats' members, the native swaps until they are in place, the summary.
 void Tick() noexcept;
+
+/// Whether the coin's rules run: installed, switched on, and a further player holds a member. Any thread.
+bool Active() noexcept;
+
+/// The human seat (0: player 1, the game's leader) whose member `character` is, as the game thread last saw the
+/// seats; -1 for anyone else. Any thread.
+int HumanSeat(const void* character) noexcept;
+
+/// Whether `seat`'s member stands in the battle (not knocked out). Any thread.
+bool HumanStands(int seat) noexcept;
+
+/// Whether a human other than `seat` has a standing member. Any thread.
+bool OtherHumanStands(int seat) noexcept;
 
 }  // namespace lss::battle::enemy_coin

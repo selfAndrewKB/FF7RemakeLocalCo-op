@@ -22,7 +22,7 @@
 //     human's member's area points.
 // Who aims an enemy, and when it is ready but holds back (the Laser Cannons idling on far players, 2026-10-27;
 // research/RE-enemy-attack-cadence.md §6, live check L1), from two entry redirects that call the game's function
-// unchanged:
+// unchanged (the ready test's is battle/enemy_stall's since v0.126.0, which hands each answer here):
 //   - BattleComp_SetTargetChar, every target call into an enemy's component (party members' calls pass untouched):
 //     Debug, who called it (up to three frames, the known callers named: the hate update, the script's SetTarget /
 //     SetTargetByType, the battle's start, the leader change), the character asked for, the one it holds after the
@@ -39,6 +39,7 @@
 // table scan.
 
 #include <cstdint>
+#include <string>
 
 namespace lss::platform {
 class GameImage;
@@ -52,11 +53,22 @@ bool Watching() noexcept;
 /// An enemy's gate call: its controller, its battle component and its running action (0: none). Any thread.
 void Observe(void* controller, const void* component, std::uint64_t action) noexcept;
 
-/// Finds the game's controller-to-component getter, places the target-call and ready-test redirects (either may be
-/// left out, logged) and registers the reading. False (logged) if the getter differs.
+/// An enemy component's attack-ready answer (0, 1 light, 2 heavy), from battle/enemy_stall's redirect. Any thread.
+void Ready(const void* component, char ready) noexcept;
+
+/// The character a battle component targets (its own target pair, read without taking a reference); null if none.
+/// The game thread between AI ticks, or the battle AI thread that writes the pair.
+void* TargetCharacter(const void* component) noexcept;
+
+/// "<its target> at 8.2 m; player 2's member at 23.1 m": an enemy component's target and the humans' members, by
+/// distance from the enemy, for a log line. Allocates; never throws.
+std::wstring TargetAndDistances(void* component) noexcept;
+
+/// Finds the game's controller-to-component getter, places the target-call redirect (left out if it differs, logged)
+/// and registers the reading. False (logged) if the getter differs.
 bool Install(const platform::GameImage& image) noexcept;
 
-/// Puts the two redirects back.
+/// Puts the redirect back.
 void Remove() noexcept;
 
 /// Game thread, once per frame: names and logs what changed.

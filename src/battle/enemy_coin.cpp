@@ -10,6 +10,7 @@
 #include "battle/coin_choice.h"
 #include "battle/coin_table.h"
 #include "battle/enemy_leader.h"
+#include "battle/enemy_stall.h"
 #include "battle/enemy_watch.h"
 #include "battle/type_answer_code.h"
 #include "control/registry.h"
@@ -388,6 +389,7 @@ char GateFor(platform::EntryRedirect& redirect, void* controller) noexcept
             {
                 Toss(controller, L"decision");
             }
+            enemy_stall::BeforeGate(controller, enemy, action);  // a stalled hate enemy: the gate's own update picks again
         }
     }
     return reinterpret_cast<GateFn>(redirect.Original())(controller);
@@ -1221,6 +1223,41 @@ void Tick() noexcept
         }
         ResetSince();
     }
+}
+
+bool Active() noexcept
+{
+    return Tossing();
+}
+
+int HumanSeat(const void* character) noexcept
+{
+    const unsigned seated = g_seated.load(std::memory_order_acquire);
+    for (int seat = 0; character != nullptr && seat < kSeats; ++seat)
+    {
+        if ((seated & (1u << seat)) != 0 && g_members[static_cast<std::size_t>(seat)].load(std::memory_order_relaxed) == character)
+        {
+            return seat;
+        }
+    }
+    return -1;
+}
+
+bool HumanStands(int seat) noexcept
+{
+    return seat >= 0 && seat < kSeats && (g_seated.load(std::memory_order_acquire) & (1u << seat)) != 0 && Standing(seat);
+}
+
+bool OtherHumanStands(int seat) noexcept
+{
+    for (int other = 0; other < kSeats; ++other)
+    {
+        if (other != seat && HumanStands(other))
+        {
+            return true;
+        }
+    }
+    return false;
 }
 
 }  // namespace lss::battle::enemy_coin
