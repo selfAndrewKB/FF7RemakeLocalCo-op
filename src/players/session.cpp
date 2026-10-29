@@ -966,11 +966,13 @@ try
         return;
     }
     // A walk declined during the player's own ladder or climb is its AI's again once the member is off it, back on the
-    // floor the walk began on (it then starts where single player's companion would: no ladder on its way).
-    if (party_member::EndDeclineBackOnItsFloor(member, world::traversal_action::InAction(seat.index)))
+    // floor the walk began on (it then starts where single player's companion would: no ladder on its way), and player
+    // 1's character has begun its own field action (the scene's moment; until then the member stays its player's).
+    if (party_member::EndDeclineBackOnItsFloor(member, world::traversal_action::InAction(seat.index),
+                                               world::traversal_action::PlayerOneInAction()))
     {
-        platform::Log(L"{}'s member is off the ladder or climb, back on the floor its interest walk began on: the walk is its AI's "
-                      L"again",
+        platform::Log(L"{}'s member is back on the floor its interest walk began on and player 1 has begun a field action: the walk "
+                      L"is its AI's again",
                       seat.Name());
     }
     const party_member::Wait hold = party_member::HoldWait(member);

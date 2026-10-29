@@ -138,6 +138,8 @@ bool InAction(int seat) noexcept;
 /// The member's height (cm, its root) when its running action started: the floor a ladder or climb began on. False
 /// with no action running or the start's height unread. Game thread.
 bool StartHeight(int seat, float& z) noexcept;
+/// Player 1's character runs a field action now (a ladder, a climb, the monkey bars): its component's action. Game thread.
+bool PlayerOneInAction() noexcept;
 
 /// A seat's member may use the grappling hook: its member's actions run in its scopes and the hookshot's lock calls are
 /// redirected (any thread).

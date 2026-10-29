@@ -254,10 +254,10 @@ std::uint32_t DeclineInterest(const void* member, bool duringOwnAction, const fl
     return slot->declines;
 }
 
-bool EndDeclineBackOnItsFloor(const void* member, bool inAction) noexcept
+bool EndDeclineBackOnItsFloor(const void* member, bool inAction, bool playerOneActs) noexcept
 {
     Declined* d = DeclinedOf(member);
-    if (d == nullptr || !d->active || !d->duringOwnAction || inAction)
+    if (d == nullptr || !d->active || !d->duringOwnAction || inAction || !playerOneActs)
     {
         return false;
     }

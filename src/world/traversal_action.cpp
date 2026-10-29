@@ -1652,6 +1652,13 @@ bool InAction(int seat) noexcept
     return seat >= 1 && seat <= players::kSeatsBuilt && g_seats[seat].action != 0;
 }
 
+bool PlayerOneInAction() noexcept
+{
+    const std::uint8_t* comp   = nullptr;
+    std::uint8_t        action = 0;
+    return PlayerOneLeader(&comp) != nullptr && comp != nullptr && Read(comp + facts::kFieldActionState, action) && action != 0;
+}
+
 bool StartHeight(int seat, float& z) noexcept
 {
     if (seat < 1 || seat > players::kSeatsBuilt || g_seats[seat].action == 0 || !g_seats[seat].startZKnown)

@@ -118,12 +118,14 @@ bool JudgedState(const void* member, field_hold::Judged& out) noexcept;
 /// height the action started at (traversal_action::StartHeight), else the member's height now. Game thread.
 std::uint32_t DeclineInterest(const void* member, bool duringOwnAction, const float* floorZ = nullptr) noexcept;
 
-/// A decline made during the player's own ladder or climb ends once the member is off it (`inAction` false) and back on
-/// the floor the walk began on (within 2 m in height): from there its AI plays the walk as in single player, where the
-/// companion runs aside on its own floor and never takes the ladder (the user, 2026-10-29: the takeover came late after
-/// player 2 got on and off the ladder; "she's not even built to do the monkey bar"). Off at the ladder's other end, the
-/// member stays its player's. True when it ended one. Game thread.
-bool EndDeclineBackOnItsFloor(const void* member, bool inAction) noexcept;
+/// A decline made during the player's own ladder or climb ends once the member is off it (`inAction` false), back on
+/// the floor the walk began on (within 2 m in height), and player 1's character has begun its own field action
+/// (`playerOneActs`: Cloud's ladder or monkey bars, the moment the scene is about; any field action of player 1's
+/// counts, harmless while the member stands on its starting floor by the point): from there its AI plays the walk as
+/// in single player, running aside on its own floor, never taking the ladder. Until Cloud begins, the member stays its
+/// player's: the scene would otherwise hold it at its spot (the user, 2026-10-29: "she runs to the spot ... locked").
+/// Off at the ladder's other end, it stays its player's. True when it ended one. Game thread.
+bool EndDeclineBackOnItsFloor(const void* member, bool inAction, bool playerOneActs) noexcept;
 
 /// The member's active request is an INTEREST (an ambient interest walk). A hold judged beneath it still hands the
 /// member to its AI, which then runs the walk first, as in single player: the session says so in its hand line.
