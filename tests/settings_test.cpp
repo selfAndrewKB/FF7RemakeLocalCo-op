@@ -51,8 +51,12 @@ void TableConsistent()
         EXPECT(std::wcslen(option->key) > 0);
         EXPECT(std::wcslen(option->help) > 0);
         EXPECT(keys.insert(option->key).second);
+        // An experimental option's default leaves the game as it plays without it (its word is the first: off or guide).
+        EXPECT(!option->experimental || std::wcscmp(option->fallback, option->words[0]) == 0);
     }
-    EXPECT(kOptions.size() == 4);
+    EXPECT(kOptions.size() == 5);
+    EXPECT(kLeadHolder.experimental && std::wcscmp(kLeadHolder.fallback, L"guide") == 0);
+    EXPECT(std::wcscmp(kLeadHolder.section, L"Experimental") == 0);
 }
 
 void JudgeFile()

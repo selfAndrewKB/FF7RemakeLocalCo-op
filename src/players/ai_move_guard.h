@@ -12,8 +12,8 @@
 // PLAYER slot holds a controller. Manual control adds its behaviours directly and never asks, the other slots are
 // passed, and a refusal is the requesters' normal "slot busy" path (they retry or skip). A member handed to its AI
 // (PLAYER slot empty) is asked as the game asks, so its AI walks as an AI ally's.
-// With the guard in place an INTEREST request no longer hands the member to its AI (players/field_hold.h
-// JudgedState): its walk cannot run under the player, and the AI never walks it from the player's hands.
+// With the guard in place a looping interest walk can be declined (the session gives the member back after its AI
+// crossed twice; players/field_hold.h JudgedState): the walk cannot then restart under the player.
 // Entry redirect on the function (two instructions copied): placed by Tick from the game thread, outside the world
 // tick, where no AI tick runs (a thread between the two copied instructions at the swap would land in the jump; keep
 // the install there). Remove may run on any thread: every entry already goes through the jump, and the restore swaps
@@ -37,7 +37,7 @@ void Tick() noexcept;
 /// Game thread, each engine tick, per built seat: the seat's member while its player is in (null otherwise).
 void TickSeat(int seat, void* member) noexcept;
 
-/// The guard is placed and on: an INTEREST may stay with the player (players/party_member JudgedState).
+/// The guard is placed and on: an interest walk may be declined and left with the player (players/party_member).
 bool Active() noexcept;
 
 }  // namespace lss::players::ai_move_guard

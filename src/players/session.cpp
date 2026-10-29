@@ -75,6 +75,8 @@ constexpr int                  kRejoinFailures = 3;
 /// checked under a held member every this many ticks (cheap guarded reads).
 constexpr std::uint32_t kSeatRetryTicks  = 60;
 constexpr std::uint32_t kSwapGraceTicks  = 30;  // after a leader change: the seat's next character may still be held for a moment
+// An interest walk under the member's AI that has crossed this often (a ladder up and back) loops: declined.
+constexpr std::uint32_t kInterestLoopCrossings = 2;
 constexpr std::uint32_t kFollowSlotTicks = 10;
 
 UObject* Field(const void* object, std::uint32_t offset) noexcept
@@ -837,9 +839,10 @@ void Session::HandForHold(Seat& seat, void* member, party_member::Wait hold) noe
     // The game's own hand (what it does for its leader at an event's start), the seat and the player's camera
     // operator kept: the member's AI runs the script, the player watches it, and the seat takes it back when the
     // hold ends.
-    seat.handedToAi = party_member::HandToAi(member);
-    seat.holdHand   = seat.handedToAi;
-    seat.hold       = hold;
+    seat.handedToAi      = party_member::HandToAi(member);
+    seat.holdHand        = seat.handedToAi;
+    seat.hold            = hold;
+    seat.aiActionsAtHand = world::traversal_action::AiActionsStarted(seat.index);
     platform::Log(L"{}'s member (type {}) handed to its AI: {}: {}; {}'s view stays on it, its controller takes it back "
                   L"when the hold ends{}",
                   seat.Name(), party_seat::MemberType(seat.index), party_member::Describe(hold),
@@ -847,7 +850,7 @@ void Session::HandForHold(Seat& seat, void* member, party_member::Wait hold) noe
                   hold == party_member::Wait::Guide || hold == party_member::Wait::AtMark
                       ? std::format(L" (lead gate: {})", lead_gate::Reading())
                       : L"");
-    if (party_member::InterestOnTop(member))
+    if (hold != party_member::Wait::Interest && party_member::InterestOnTop(member))
     {
         // Kept rather than handed, the hold beneath could wait for ever (an interest that clears only at its walk's
         // end, a walk refused while held); handed, its AI runs the walk first. research/RE-interest-ladder-loop.md.
@@ -902,6 +905,23 @@ try
     {
         if (seat.holdHand)
         {
+            // An interest walk whose AI has crossed twice (a ladder up and back, a jump and back) cannot reach its point
+            // from here (seen live 2026-10-29: Aerith on the monkey-bar ladder for 5 minutes): declined, once the
+            // crossing ends; the hold is then judged beneath it and the member goes back to its player, the AI move
+            // guard keeping the walk from starting under the player. research/RE-interest-ladder-loop.md. Every field
+            // action counts (a walk through a door and up a ladder is cut short: cosmetic). Only while the interest is
+            // still on top (a hold beneath that took over, a guide, keeps its doors to itself). With the guard off the
+            // decline is ignored (party_member::JudgedState) and the member stays with its AI, as before the guard.
+            const std::uint32_t crossings = world::traversal_action::AiActionsStarted(seat.index) - seat.aiActionsAtHand;
+            if (seat.hold == party_member::Wait::Interest && crossings >= kInterestLoopCrossings &&
+                !world::traversal_action::InAction(seat.index) && party_member::InterestOnTop(member))
+            {
+                const std::uint32_t inARow = party_member::DeclineInterest(member);
+                platform::Log(L"{}'s member: its AI's interest walk crossed {} times (it cannot reach the point from here): the walk "
+                              L"is declined ({} in a row) and the member goes back to {} until the interest ends",
+                              seat.Name(), crossings, inARow, seat.Name());
+                seat.aiActionsAtHand = world::traversal_action::AiActionsStarted(seat.index);  // counted once
+            }
             // The hold's end decides: the member free again (the level's next setting, the scene's end), the game's
             // leader with its player, and nothing else holding it.
             if (party_member::HoldWait(member) == party_member::Wait::None)

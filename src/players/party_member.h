@@ -49,6 +49,7 @@ enum class Wait : std::uint8_t
     Animation,    // its AI plays a scripted animation (ANIMATION or the one-shot SINGLE_ANIMATION: field_hold.h)
     Guide,        // its AI walks a guide: a lead or a run to a mark the level waits on, or the story marks it (lead_gate.h)
     AtMark,       // its player brought a kept move to its point: its AI finishes the arrival (lead_keep_rules.h)
+    Interest,     // its AI plays an ambient interest walk (an interest point: "run aside and watch"), as in single player
     NoFieldAi,    // its field AI has no state yet
     Unread,       // the party could not be read
 };
@@ -59,7 +60,8 @@ enum class Wait : std::uint8_t
 /// event, the game's leader handed) is the game's own hand of its leader, heard by party_events.
 constexpr bool ScriptHold(Wait wait) noexcept
 {
-    return wait == Wait::Cinema || wait == Wait::AiHeld || wait == Wait::Animation || wait == Wait::Guide || wait == Wait::AtMark;
+    return wait == Wait::Cinema || wait == Wait::AiHeld || wait == Wait::Animation || wait == Wait::Guide || wait == Wait::AtMark ||
+           wait == Wait::Interest;
 }
 
 struct Choice
@@ -104,9 +106,14 @@ const wchar_t* WhyHeldByScript(void* member) noexcept;
 /// session hands a ScriptHold wait's member to its AI keeping its seat, and takes it back at None.
 Wait HoldWait(void* member) noexcept;
 
-/// The layer and kind a field AI's hold is judged by: its active request, or, while players/ai_move_guard is active,
-/// the one beneath an INTEREST (the companion's ambient interest walk: field_hold::JudgedState). False when unread.
-bool JudgedState(const void* fieldAi, field_hold::Judged& out) noexcept;
+/// The layer and kind `member`'s field AI hold is judged by: its active request, or, for a declined interest walk
+/// while players/ai_move_guard is active, the one beneath it (field_hold::JudgedState). False when unread.
+bool JudgedState(const void* member, field_hold::Judged& out) noexcept;
+
+/// The member's current interest walk looped under its AI (the session saw it cross twice): it is declined, judged
+/// beneath while the member has INTEREST requests, ending 10 s without one (times the declines in a row within two
+/// minutes, at most 60 s). Returns the declines in a row (the session logs it). Game thread.
+std::uint32_t DeclineInterest(const void* member) noexcept;
 
 /// The member's active request is an INTEREST (an ambient interest walk). A hold judged beneath it still hands the
 /// member to its AI, which then runs the walk first, as in single player: the session says so in its hand line.

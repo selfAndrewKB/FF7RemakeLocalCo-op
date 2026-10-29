@@ -5,6 +5,7 @@
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
+#include "platform/settings.h"
 #include "platform/sparse_array.h"
 #include "platform/verified_code.h"
 #include "players/field_hold.h"
@@ -56,7 +57,7 @@ std::uintptr_t   g_actionTables      = 0;  // 0: the leash is not read (logged a
 std::uintptr_t   g_actionGroupTables = 0;
 StoryFlagIsSetFn g_storyFlagIsSet    = nullptr;
 FieldPointFindFn g_fieldPointFind    = nullptr;
-bool             g_keeps             = true;  // `lead-holder keeps` (players/lead_keep_rules.h); guide: every needed move to its AI
+bool             g_keeps             = false; // `lead-holder keeps` (experimental, players/lead_keep_rules.h); guide: every needed move to its AI
 bool             g_marking           = false; // hud/lead_mark installed: a kept move's point can be shown
 
 /// The field AI whose handler last failed to read, and the kind: the failure is logged once (Debug) and then at
@@ -1112,22 +1113,23 @@ bool Install(const platform::GameImage& image) noexcept
                            platform::Log(L"lead gate: lead.path {}: {}", *state, text);
                            return control::Outcome{.detail = text};
                        }});
-    control::Register({.name  = L"lead-holder",
-                       .shape = control::Shape::Word,
-                       .words = {L"keeps", L"guide"},
-                       .help  = L"a lead or run to a mark the level needs finished, on a further player's member: keeps (the player keeps "
-                                L"it, its point marked in that player's view, to its AI within 2 m of the point until the level's next "
-                                L"setting; keeps at start) or guide (to its AI for the whole move, as before v0.128.0)",
-                       .set   = [](const control::Value& value) {
-                           g_keeps = std::get<std::wstring>(value) == L"keeps";
-                           platform::Log(L"lead gate: lead-holder {}", g_keeps ? L"keeps" : L"guide");
-                           return control::Outcome{};
-                       },
-                       .get = [] { return control::Value{std::wstring(g_keeps ? L"keeps" : L"guide")}; }});
+    // The experimental option (platform/settings.h kLeadHolder, `guide` by default): the console, the file and later the mod
+    // menu set it through the one setter.
+    g_keeps = platform::settings::Of(platform::settings::kLeadHolder).word == L"keeps";
+    control::RegisterOption(
+        platform::settings::kLeadHolder,
+        [](const std::wstring& word) {
+            g_keeps = word == L"keeps";
+            platform::Log(L"lead gate: lead-holder {} (the console)", word);
+            return control::Outcome{};
+        },
+        [] { return std::wstring(g_keeps ? L"keeps" : L"guide"); });
     platform::Log(L"lead gate: installed; a LEAD or a run to a mark on a further player's member is needed finished when a level step "
                   L"waits on its arrival, the story's marker rides on it, a further move is ahead in its own chain of states, or the "
-                  L"level leashes player 1 to it; the player keeps such a move, guided by a marker, and its AI finishes the arrival "
-                  L"at the point (lead-holder keeps)");
+                  L"level leashes player 1 to it; such a move {} (lead-holder {}, experimental, from {})",
+                  g_keeps ? L"stays the player's, its point marked, its AI finishing the arrival at the point"
+                          : L"goes to the member's AI with the player's view on it",
+                  g_keeps ? L"keeps" : L"guide", platform::settings::Why(platform::settings::kLeadHolder));
     return true;
 }
 
@@ -1242,8 +1244,9 @@ bool KeptMark(const void* member, Mark& out) noexcept
 try
 {
     const auto*        ai = static_cast<const std::uint8_t*>(ReadPointer(member, facts::kCharacterFieldAi));
-    field_hold::Judged judged;  // as the hold judges it: a kept interest walk on top leaves the move beneath it marked
-    if (!party_member::JudgedState(ai, judged) || field_hold::Of(judged.layer, judged.kind) != field_hold::Hold::Arrival)
+    field_hold::Judged judged;  // as the hold judges it: a declined interest walk on top leaves the move beneath it marked
+    if (ai == nullptr || !party_member::JudgedState(member, judged) ||
+        field_hold::Of(judged.layer, judged.kind) != field_hold::Hold::Arrival)
     {
         return false;
     }

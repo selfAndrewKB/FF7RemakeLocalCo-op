@@ -30,6 +30,7 @@ struct Option
     std::span<const wchar_t* const> words;     // the words the option takes, lower case, in the help's order
     const wchar_t*                  fallback;  // the word taken when the file has none: one of `words`
     const wchar_t*                  help;      // one line, the console's help
+    bool                            experimental = false;  // the mod menu shows it as experimental (plan/README.md §9)
 };
 
 // The table. An option's owner (the module named beside it) applies the reading at its install.
@@ -55,8 +56,15 @@ inline constexpr Option kBattleWarps{  // battle/battle_warps
     L"Battle", L"battle-warps", kBattleWarpsWords, L"players-stay",
     L"who the game warps at a battle's start and end: players-stay (every player's own character stays where it is), "
     L"off (nobody is warped), game (the whole party)"};
+inline constexpr std::array<const wchar_t*, 2> kLeadHolderWords{L"guide", L"keeps"};
+inline constexpr Option kLeadHolder{  // players/lead_gate
+    L"Experimental", L"lead-holder", kLeadHolderWords, L"guide",
+    L"a lead or run to a mark the level needs finished, on a further player's character: guide (the default: to its AI for "
+    L"the whole walk, the player's view on it) or keeps (experimental: the player keeps it, the stop marked in that "
+    L"player's view, its AI finishing the arrival within 2 m of the stop)",
+    true};
 
-inline constexpr std::array<const Option*, 4> kOptions{&kMultiMonitor, &kColumnOrder, &kMenuSlow, &kBattleWarps};
+inline constexpr std::array<const Option*, 5> kOptions{&kMultiMonitor, &kColumnOrder, &kMenuSlow, &kBattleWarps, &kLeadHolder};
 
 /// The option is a row of the table (Of and Why answer by the row).
 consteval bool Listed(const Option& option)
@@ -67,7 +75,7 @@ consteval bool Listed(const Option& option)
     }
     return false;
 }
-static_assert(Listed(kMultiMonitor) && Listed(kColumnOrder) && Listed(kMenuSlow) && Listed(kBattleWarps),
+static_assert(Listed(kMultiMonitor) && Listed(kColumnOrder) && Listed(kMenuSlow) && Listed(kBattleWarps) && Listed(kLeadHolder),
               "every option is a row of kOptions");
 
 /// Where an option's word came from.
