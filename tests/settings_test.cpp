@@ -68,7 +68,7 @@ void JudgeFile()
     EXPECT(Judge(kColumnOrder, L"1, 3, 2").word == L"132");  // the form ParseOrder took before the table
     EXPECT(Judge(kBattleWarps, L"Players-Stay").word == L"players-stay");
     // No key, or an empty value: the default.
-    EXPECT(Judge(kMenuSlow, L"").word == L"on");
+    EXPECT(Judge(kMenuSlow, L"").word == L"off");
     EXPECT(Judge(kMenuSlow, L"").source == Source::Default);
     EXPECT(Judge(kMenuSlow, L"   ").source == Source::Default);
     // A word that is none of the option's: the default, the file's text kept for the warning.

@@ -48,9 +48,9 @@ inline constexpr Option kColumnOrder{  // views/column_layout
     L"which screen players 2 and 3 take when three views show: 123 the join order, 132 player 2 on the right and player "
     L"3 in the middle (in one window: bottom right and bottom left); player 1 keeps the left"};
 inline constexpr Option kMenuSlow{  // battle/command_menu_tick
-    L"Battle", L"menu-slow", kMenuSlowWords, L"on",
-    L"on: an open battle command menu slows the world and greys the screen, as the game does; off: no grey, and the "
-    L"world and the ATB gauges run on at full speed while a menu is open (Ctrl+F9 switches it too)"};
+    L"Battle", L"menu-slow", kMenuSlowWords, L"off",
+    L"off (the default): no grey, and the world and the ATB gauges run on at full speed while a battle command menu is "
+    L"open; on: an open menu slows the world and greys the screen, as the game does (Ctrl+F9 switches it too)"};
 inline constexpr Option kBattleWarps{  // battle/battle_warps
     L"Battle", L"battle-warps", kBattleWarpsWords, L"players-stay",
     L"who the game warps at a battle's start and end: players-stay (every player's own character stays where it is), "

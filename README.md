@@ -9,7 +9,7 @@ Two-player split-screen for FINAL FANTASY VII REMAKE (Intergrade, UE 4.18), as a
 |------|------|
 | Ctrl+F7 | Player 2 joins on the member in the 2nd slot of the party order: own End player controller, camera manager and field camera, the member taken through the game's leader funnel (with its own copy of the PlayerTrigger); it follows that slot. With the member not free (a script, an animation, a guide lead, a solo party) nothing is made yet: player 2 joins once it is free, and leaves again when a party change leaves it without one, so no second camera ever floats over an empty half |
 | Ctrl+F8 | Player 2 leaves (also cancels a rejoin after a load, and a wait for a member) |
-| Ctrl+F9 | Switch the battle menus' world slow-down: off, an open command menu no longer slows the world or greys the screen, so the fight and the ATB gauges run on at full speed; on again, the game's slow-down and grey (also `menu-slow on|off` and the settings file) |
+| Ctrl+F9 | Switch the battle menus' world slow-down: off (the default), an open command menu no longer slows the world or greys the screen, so the fight and the ATB gauges run on at full speed; on, the game's slow-down and grey (also `menu-slow on|off` and the settings file) |
 | L3 twice (a further player's pad, in battle) | Bring that player's character into the fight when it is outside the fight's area (locked out behind a crawlspace, say): the game's own recovery warp, in front of player 1's character |
 | Ctrl+F6 | Log every local player's controller, pawn, camera manager and camera actor, and each player's input, movement and camera call counts |
 
@@ -117,8 +117,9 @@ and add `LocalSplitScreen : 1` to `Mods/mods.txt`. Close the game first. `LocalS
 auto`. `on` spans a row of equal monitors from the start and keeps the span whatever the player count (the title,
 loading screens, the field and the menus on every monitor; every column no player fills mirrors player 1's picture
 until a player joins); `auto` (the default) spans while a further player is in; `off` leaves it to the console and Ctrl+F2.
-`[Views] column-order = 1 2 3 | 1 3 2` picks which screen players 2 and 3 take. `[Battle] menu-slow = on | off`: off,
-an open battle command menu no longer slows the world or greys the screen (Ctrl+F9 switches it in play). `[Battle] battle-warps =
+`[Views] column-order = 1 2 3 | 1 3 2` picks which screen players 2 and 3 take. `[Battle] menu-slow = off | on`: off
+(the default), an open battle command menu no longer slows the world or greys the screen; on, the game's slow-down and
+grey (Ctrl+F9 switches it in play). `[Battle] battle-warps =
 players-stay | off | game`: who the game warps at a battle's start and end (players-stay, the default: every player's
 own character stays where it is). The file is read once at the game's start (the log's `settings:` line lists every
 option's word and where it came from; a word the file gets wrong is a warning and the default); a value's case and

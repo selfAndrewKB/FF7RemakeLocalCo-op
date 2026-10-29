@@ -15,9 +15,10 @@
 // The tick's one write of the world's battle-command speed slot (the menu's time slow, written by every tick) is
 // redirected: a seat's tick writes the least of the values the menus asked for so far this frame
 // (battle/command_menu_rules.h; the last write wins, so the frame ends on the least), so any menu slows the world.
-// The user's switch turns the slow off (RE-menu-slow.md): every write then asks for full speed, the game's own value
-// with no menu open, so the world and the ATB gauges run on while a menu is open; the menu's other effects (its
-// screen tint and sound, the rumble mute, the enemies' waits on player 1's menu) stay the game's. One setter,
+// The user's switch turns the slow off (RE-menu-slow.md), and off is the default (the user, 2026-10-29): every write
+// then asks for full speed, the game's own value with no menu open, so the world and the ATB gauges run on while a
+// menu is open; the menu's other effects (its sound, the rumble mute, a summon's wait on player 1's menu) stay the
+// game's. One setter,
 // SetMenuSlow, serves LocalSplitScreen.ini [Battle] menu-slow (platform/settings.h, applied at install), the
 // console's `menu-slow on|off` (built from the table) and Ctrl+F9; logged at Info. The menu's grey follows
 // MenuSlow() at its own tick (battle/menu_grey).
