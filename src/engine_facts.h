@@ -716,10 +716,9 @@ inline constexpr std::array<std::uint8_t, 5> kFieldIconPlaceFirst{0x48, 0x8B, 0x
 inline constexpr std::uintptr_t kOverlayProject = 0x141348940;  // bool EndUI__ProjectWorldToOverlay(pc, const FVector*, FVector2D* out)
 inline constexpr std::array<std::uint8_t, 6> kOverlayProjectFirst{0x40, 0x57, 0x48, 0x83, 0xEC, 0x70};
 inline constexpr std::uint32_t kFieldIconSlot = 51;  // EndUISystem[51]: +0 the one SEndFieldQuestIconCanvas, +0x10 the icon map
-// The icon map, TMap<FName, TUniquePtr<Entry>>: the sparse array's data, its allocation bits (inline, or on the heap when
-// that pointer is set), its bit count; 24 bytes per element, the entry pointer at +8.
-inline constexpr std::uint32_t kFieldIconMapData = 0x10, kFieldIconMapBitsInline = 0x20, kFieldIconMapBitsHeap = 0x30,
-                               kFieldIconMapNumBits = 0x38, kFieldIconMapElement = 24, kFieldIconMapElementEntry = 8;
+// The icon map, TMap<FName, TUniquePtr<Entry>>: its sparse array (platform/sparse_array.h) at +0x10; 24 bytes per
+// element, the entry pointer at +8.
+inline constexpr std::uint32_t kFieldIconMapData = 0x10, kFieldIconMapElement = 24, kFieldIconMapElementEntry = 8;
 inline constexpr std::uint32_t kFieldIconEntryHasSlot = 28, kFieldIconEntryAlpha = 32;  // the entry's has-slot byte; its alpha, the only state the placement carries
 inline constexpr std::uint32_t kCanvasChildren   = 0x160;  // SEndCanvas vtable: its children (+0 vtable: count; +8 slot pointers)
 inline constexpr std::uint32_t kCanvasSlotWidget = 0x08, kCanvasSlotOffset = 0x20;  // a slot's SWidget, its Offset {x, y, w, h}
@@ -1780,13 +1779,10 @@ inline constexpr std::array<std::uint8_t, 16> kOutsideIconTickEntry{
 inline constexpr platform::FunctionFact kOutsideIconTick{L"EndUISlot38_BattleEnemyOutsideIcons_Tick", 0x1413E4240,
                                                          kOutsideIconTickEntry};
 inline constexpr std::array<std::uintptr_t, 2> kOutsideIconContextCalls{0x1413E471E, 0x1413E4742};  // the first crosses
-/// The manager: the gate byte, and its set of arrows (a sparse array: data, the inline allocation bits, the heap bits
-/// when present, the bit count; 0x30 per element: +0 the weak widget, +0x14 the timer, +0x18 the source at creation).
+/// The manager: the gate byte, and its set of arrows (a sparse array at +0x08, platform/sparse_array.h; 0x30 per
+/// element: +0 the weak widget, +0x14 the timer, +0x18 the source at creation).
 inline constexpr std::uint32_t kOutsideIconGate         = 0x80;
 inline constexpr std::uint32_t kOutsideIconSetData      = 0x08;
-inline constexpr std::uint32_t kOutsideIconSetInlineBits = 0x18;
-inline constexpr std::uint32_t kOutsideIconSetHeapBits  = 0x28;
-inline constexpr std::uint32_t kOutsideIconSetNumBits   = 0x30;
 inline constexpr std::uint32_t kOutsideIconStride       = 0x30;
 inline constexpr std::uint32_t kOutsideIconTimer        = 0x14;
 inline constexpr std::uint32_t kOutsideIconSource       = 0x18;
@@ -1955,11 +1951,7 @@ inline constexpr std::uint32_t kCuriosityTargetSerial  = 0x34;  //   the target'
 inline constexpr std::uint32_t kCuriosityInterestThreshold = 0x30;
 inline constexpr std::uint32_t kAiContextCharacter     = 0x00;  // the update's context: the NPC
 inline constexpr std::uint32_t kAiContextBoard         = 0x10;  //   its blackboard (the cognition map at +0x48)
-inline constexpr std::uint32_t kBoardCognitions        = 0x48;  // TSparseArray: data, num (+8), inline bits (+0x10),
-inline constexpr std::uint32_t kSparseNum              = 0x08;  //   heap bits (+0x20), bit count (+0x28)
-inline constexpr std::uint32_t kSparseInlineBits       = 0x10;
-inline constexpr std::uint32_t kSparseHeapBits         = 0x20;
-inline constexpr std::uint32_t kSparseBitCount         = 0x28;
+inline constexpr std::uint32_t kBoardCognitions        = 0x48;  // a TSparseArray (platform/sparse_array.h)
 inline constexpr std::uint32_t kCognitionBytes         = 48;    // an entry: the actor (+0), its last seen place (+8),
 inline constexpr std::uint32_t kCognitionTimer         = 0x14;  //   time since last seen (0 = seen this update),
 inline constexpr std::uint32_t kCognitionInterest      = 0x18;  //   interest,

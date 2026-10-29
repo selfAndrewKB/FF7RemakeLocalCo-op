@@ -806,13 +806,15 @@ struct AutoWalk
 
 /// The level's AutoWalk acts, found by one walk of the act tables' own rows and kept until a table changes: another
 /// object in a slot, another element array or row count (RE-data-table-rows.md: rows are built at the asset's load,
-/// the slots emptied at its unload).
+/// the slots emptied at its unload). A table that cannot be walked leaves the index incomplete for that key: it is
+/// walked again only when the tables change, so a lasting fault never brings back a walk at every census.
 struct AutoWalkIndex
 {
     std::array<std::uintptr_t, 9> key{};  // per table: the object, its element array, its row count
     std::vector<AutoWalk>         acts;
-    std::int32_t                  rows  = 0;  // act rows walked
-    bool                          built = false;
+    std::int32_t                  rows     = 0;  // act rows walked
+    bool                          walked   = false;  // an attempt was made for `key`
+    bool                          complete = false;  // every table walked
 };
 AutoWalkIndex g_autoWalks;
 
@@ -864,19 +866,19 @@ AutoWalk Decode(std::int64_t name, const std::uint8_t* act)
 bool RefreshAutoWalks()
 {
     const std::array<std::uintptr_t, 9> key = ActTablesKey();
-    if (g_autoWalks.built && key == g_autoWalks.key)
+    if (g_autoWalks.walked && key == g_autoWalks.key)
     {
-        return false;
+        return false;  // walked for these tables already (completely or not: see AutoWalkIndex)
     }
     const auto    start = std::chrono::steady_clock::now();
-    AutoWalkIndex index{.key = key, .built = true};
+    AutoWalkIndex index{.key = key, .walked = true, .complete = true};
     for (std::uint32_t k = 0; k < 3; ++k)
     {
         if (key[3 * k] == 0)
         {
             continue;
         }
-        platform::ForEachSparseElement(key[3 * k] + facts::kDataObjectRows, facts::kActionElementBytes, facts::kDataObjectRowsMax,
+        index.complete &= platform::ForEachSparseElement(key[3 * k] + facts::kDataObjectRows, facts::kActionElementBytes, facts::kDataObjectRowsMax,
                                        [&](std::uintptr_t element) {
                                            ++index.rows;
                                            const auto*  row  = reinterpret_cast<const std::uint8_t*>(element + facts::kDataObjectElementRow);
@@ -901,8 +903,10 @@ bool RefreshAutoWalks()
         names += std::format(L"{}{} ({} {})", names.empty() ? L"" : L", ", Name(walk.act), walk.target.empty() ? L"-" : walk.target,
                              walk.turnBack != 0 || walk.lookAtOn != 0 ? L"leashes" : L"speed only");
     }
-    platform::Log(L"lead gate: the level's AutoWalk acts: {} of {} act rows [read in {} us]{}{}", g_autoWalks.acts.size(),
-                  g_autoWalks.rows, us, names.empty() ? L"" : L": ", names);
+    platform::Log(L"lead gate: the level's AutoWalk acts: {} of {} act rows [read in {} us]{}{}{}", g_autoWalks.acts.size(),
+                  g_autoWalks.rows, us,
+                  g_autoWalks.complete ? L"" : L" (a table's rows were unreadable: the acts found so far stand until the tables change)",
+                  names.empty() ? L"" : L": ", names);
     return true;
 }
 

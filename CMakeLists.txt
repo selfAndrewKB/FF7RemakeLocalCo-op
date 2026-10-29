@@ -328,6 +328,14 @@ target_include_directories(AreaLevelsRulesTests PRIVATE "${CMAKE_CURRENT_SOURCE_
 target_compile_features(AreaLevelsRulesTests PRIVATE cxx_std_20)
 add_test(NAME area_levels_rules COMMAND AreaLevelsRulesTests)
 
+add_executable(SparseArrayTests
+    tests/sparse_array_test.cpp
+    src/platform/guarded.cpp
+)
+target_include_directories(SparseArrayTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(SparseArrayTests PRIVATE cxx_std_20)
+add_test(NAME sparse_array COMMAND SparseArrayTests)
+
 add_executable(LeashRulesTests
     tests/leash_rules_test.cpp
 )

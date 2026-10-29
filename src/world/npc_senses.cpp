@@ -6,6 +6,7 @@
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
+#include "platform/sparse_array.h"
 #include "platform/verified_code.h"
 #include "platform/vtable_entry.h"
 #include "players/field_root.h"
@@ -226,60 +227,50 @@ void Update(void* intention, void* context) noexcept
     auto* const   board   = static_cast<std::uint8_t*>(ReadPointer(context, facts::kAiContextBoard));
     auto* const   map     = board != nullptr ? board + facts::kBoardCognitions : nullptr;
     auto* const   data    = static_cast<std::uint8_t*>(ReadPointer(map, 0));
-    std::int32_t  num = 0, bitCount = 0;
     if (!Read(self + facts::kCuriosityLooking, looking) || looking != 0 ||
         !Read(self + facts::kCuriosityTargetSerial, serial) || serial != 0 || setting == nullptr ||
-        !Read(setting + facts::kCuriosityInterestThreshold, threshold) || data == nullptr ||
-        !Read(map + facts::kSparseNum, num) || !Read(map + facts::kSparseBitCount, bitCount))
+        !Read(setting + facts::kCuriosityInterestThreshold, threshold) || data == nullptr)
     {
         g_update(intention, context);  // a look running, or nothing readable: the game's pick
         return;
     }
-    const int count = std::min({num, bitCount, kMaxCognitions});
-    auto*     bits  = static_cast<std::uint8_t*>(ReadPointer(map, facts::kSparseHeapBits));
-    std::array<std::uint32_t, kMaxCognitions / 32> words{};
-    if (count <= 0 || !platform::CopyGuarded(words.data(), bits != nullptr ? bits : map + facts::kSparseInlineBits,
-                                             static_cast<std::size_t>((count + 31) / 32) * sizeof(std::uint32_t)))
-    {
-        g_update(intention, context);
-        return;
-    }
     // Player 1 and a further player must both be candidates for this NPC this update; every other candidate is set
-    // aside for the one call.
+    // aside for the one call. The first kMaxCognitions entries are read.
     std::array<SetAside, kMaxCognitions> aside{};
-    int  asideCount = 0;
-    bool oneSeen    = false;
-    int  seatSeen   = 0;  // the lowest seat whose character is a candidate (0 none)
-    for (int i = 0; i < count; ++i)
-    {
-        if ((words[i / 32] >> (i % 32) & 1u) == 0)
-        {
-            continue;
-        }
-        std::uint8_t* const entry = data + static_cast<std::size_t>(i) * facts::kCognitionBytes;
-        void*               actor = nullptr;
-        float               timer = 1.0f, interest = 0.0f, experience = 0.0f;
-        if (!Read(entry, actor) || !Read(entry + facts::kCognitionTimer, timer) ||
-            !Read(entry + facts::kCognitionInterest, interest) || !Read(entry + facts::kCognitionExperience, experience) ||
-            !Candidate(timer, interest, experience, threshold))
-        {
-            continue;
-        }
-        if (actor == one)
-        {
-            oneSeen = true;
-            continue;
-        }
-        for (int seat = 1; seat <= kSeatsBuilt && seatSeen == 0; ++seat)
-        {
-            if (members[static_cast<std::size_t>(seat)] != nullptr && actor == members[static_cast<std::size_t>(seat)])
+    int        asideCount = 0;
+    bool       oneSeen    = false;
+    int        seatSeen   = 0;  // the lowest seat whose character is a candidate (0 none)
+    const bool read       = platform::ForEachSparseElement(
+        reinterpret_cast<std::uintptr_t>(map), facts::kCognitionBytes, platform::kSmallSetMaxBits, [&](std::uintptr_t address) {
+            if ((address - reinterpret_cast<std::uintptr_t>(data)) / facts::kCognitionBytes >= kMaxCognitions)
             {
-                seatSeen = seat;  // the lowest seat whose character is a candidate
+                return false;
             }
-        }
-        aside[asideCount++] = {entry, timer};
-    }
-    if (!oneSeen || seatSeen == 0)
+            auto* const entry = reinterpret_cast<std::uint8_t*>(address);
+            void*       actor = nullptr;
+            float       timer = 1.0f, interest = 0.0f, experience = 0.0f;
+            if (!Read(entry, actor) || !Read(entry + facts::kCognitionTimer, timer) ||
+                !Read(entry + facts::kCognitionInterest, interest) || !Read(entry + facts::kCognitionExperience, experience) ||
+                !Candidate(timer, interest, experience, threshold))
+            {
+                return true;
+            }
+            if (actor == one)
+            {
+                oneSeen = true;
+                return true;
+            }
+            for (int seat = 1; seat <= kSeatsBuilt && seatSeen == 0; ++seat)
+            {
+                if (members[static_cast<std::size_t>(seat)] != nullptr && actor == members[static_cast<std::size_t>(seat)])
+                {
+                    seatSeen = seat;  // the lowest seat whose character is a candidate
+                }
+            }
+            aside[asideCount++] = {entry, timer};
+            return true;
+        });
+    if (!read || !oneSeen || seatSeen == 0)
     {
         g_update(intention, context);  // the game's pick: player 1 is not competing with a further player here
         return;

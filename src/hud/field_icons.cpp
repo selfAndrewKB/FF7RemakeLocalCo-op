@@ -7,6 +7,7 @@
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
+#include "platform/sparse_array.h"
 #include "players/weak_object.h"
 #include "world/actor_place.h"
 
@@ -179,40 +180,23 @@ std::uint8_t* Manager() noexcept
 /// The entries that are values in the manager's icon map now (an entry freed by the tick's removal would otherwise be
 /// written): the map's sparse array walked by its allocation bits, as the tick walks it.
 void ListEntries(const std::uint8_t* manager) noexcept
+try
 {
     g_listed.clear();
-    const std::uint8_t*  data    = nullptr;
-    const std::uint32_t* heap    = nullptr;
-    std::int32_t         numBits = 0;
-    if (!Read(manager + facts::kFieldIconMapData, data) || !Read(manager + facts::kFieldIconMapBitsHeap, heap) ||
-        !Read(manager + facts::kFieldIconMapNumBits, numBits) || data == nullptr || numBits <= 0 || numBits > 4096)
-    {
-        return;
-    }
-    const std::uint32_t* bits =
-        heap != nullptr ? heap : reinterpret_cast<const std::uint32_t*>(manager + facts::kFieldIconMapBitsInline);
-    std::uint32_t word = 0;
-    for (std::int32_t i = 0; i < numBits; ++i)
-    {
-        const void* value = nullptr;
-        if (i % 32 == 0 && !Read(bits + i / 32, word))
-        {
-            return;
-        }
-        if ((word & (1u << (i % 32))) != 0 &&
-            Read(data + static_cast<std::size_t>(i) * facts::kFieldIconMapElement + facts::kFieldIconMapElementEntry, value) &&
-            value != nullptr)
-        {
-            try
-            {
-                g_listed.push_back(value);
-            }
-            catch (...)
-            {
-                return;
-            }
-        }
-    }
+    platform::ForEachSparseElement(reinterpret_cast<std::uintptr_t>(manager) + facts::kFieldIconMapData, facts::kFieldIconMapElement,
+                                   platform::kSmallSetMaxBits, [](std::uintptr_t element) {
+                                       const void* value = nullptr;
+                                       if (Read(reinterpret_cast<const void*>(element + facts::kFieldIconMapElementEntry), value) &&
+                                           value != nullptr)
+                                       {
+                                           g_listed.push_back(value);
+                                       }
+                                       return true;
+                                   });
+}
+catch (...)
+{
+    // An allocation failure: the entries listed so far stand, as before.
 }
 
 bool Listed(const void* entry) noexcept

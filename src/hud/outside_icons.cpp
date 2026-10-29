@@ -9,6 +9,7 @@
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
+#include "platform/sparse_array.h"
 #include "platform/verified_code.h"
 #include "players/scopes.h"
 #include "players/seats.h"
@@ -122,45 +123,30 @@ enum class Walk
 /// The manager's live arrows (the set's allocated elements).
 Walk LiveArrows(const std::uint8_t* manager, Arrows& out) noexcept
 {
-    constexpr std::int32_t kInlineBits = 128;  // the allocation bits' inline storage (+0x18..+0x27)
-    out.count = 0;
-    std::uint8_t*        data    = nullptr;
-    const std::uint32_t* heap    = nullptr;
-    std::int32_t         numBits = 0;
-    if (!Read(manager + facts::kOutsideIconSetData, data) || !Read(manager + facts::kOutsideIconSetHeapBits, heap) ||
-        !Read(manager + facts::kOutsideIconSetNumBits, numBits) || numBits < 0 || numBits > 4096 ||
-        (heap == nullptr && numBits > kInlineBits) || (numBits > 0 && data == nullptr))
-    {
-        return Walk::Unreadable;
-    }
-    const auto*   bits = heap != nullptr ? heap : reinterpret_cast<const std::uint32_t*>(manager + facts::kOutsideIconSetInlineBits);
-    std::uint32_t word = 0;
-    for (std::int32_t i = 0; i < numBits; ++i)
-    {
-        if (i % 32 == 0 && !Read(bits + i / 32, word))
-        {
-            return Walk::Unreadable;
-        }
-        if ((word & (1u << (i % 32))) == 0)
-        {
-            continue;
-        }
-        if (out.count == out.items.size())
-        {
-            return Walk::TooMany;
-        }
-        std::uint8_t* element = data + static_cast<std::size_t>(i) * facts::kOutsideIconStride;
-        Arrow&        arrow   = out.items[out.count];
-        void*         source  = nullptr;
-        if (!Read(element, arrow.key.widget) || !Read(element + facts::kOutsideIconSource, source))
-        {
-            return Walk::Unreadable;
-        }
-        arrow.element    = element;
-        arrow.key.source = reinterpret_cast<std::uintptr_t>(source);
-        ++out.count;
-    }
-    return Walk::Read;
+    out.count   = 0;
+    Walk result = Walk::Read;
+    const bool read =
+        platform::ForEachSparseElement(reinterpret_cast<std::uintptr_t>(manager) + facts::kOutsideIconSetData, facts::kOutsideIconStride,
+                                       platform::kSmallSetMaxBits, [&](std::uintptr_t address) {
+                                           if (out.count == out.items.size())
+                                           {
+                                               result = Walk::TooMany;
+                                               return false;
+                                           }
+                                           auto*  element = reinterpret_cast<std::uint8_t*>(address);
+                                           Arrow& arrow   = out.items[out.count];
+                                           void*  source  = nullptr;
+                                           if (!Read(element, arrow.key.widget) || !Read(element + facts::kOutsideIconSource, source))
+                                           {
+                                               result = Walk::Unreadable;
+                                               return false;
+                                           }
+                                           arrow.element    = element;
+                                           arrow.key.source = reinterpret_cast<std::uintptr_t>(source);
+                                           ++out.count;
+                                           return true;
+                                       });
+    return read ? result : Walk::Unreadable;
 }
 
 float TimerOf(const Arrow& arrow) noexcept

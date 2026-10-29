@@ -459,5 +459,5 @@ src/
                             (tests/listener_rules_test.cpp)
     listeners               Every player hears the sounds near them: each SEAD sound is measured from the nearest
                             player's listener
-tests/                      53 host-side test programs (ctest), one per pure header or code stub; run without the game
+tests/                      54 host-side test programs (ctest), one per pure header or code stub; run without the game
 ```
