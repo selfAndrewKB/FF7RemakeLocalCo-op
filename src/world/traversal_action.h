@@ -46,6 +46,13 @@
 //     tests (world/traversal_walkup.h), a script's own hold kept;
 //   - a seat's own action takes "no new action" for the seat's own target pick and start tests (NoActionScope), as the
 //     game's start takes it for its leader: a second press cannot restart the seat's running action.
+// A seat's member handed to its AI (a lead, a scene: the game's own hand) is an AI ally as in single player: between
+// actions its component ticks outside the seat's scopes and the animation-side fixes leave it alone, so the tick's
+// non-leader branch starts the nav-link actions its path asks for (the door a guide opens on a lead; inside the seat's
+// Leader scope the member passed the leader test and ran into the closed door, 2026-10-29). Decided once per frame,
+// so a hand or a give-back takes effect from the next frame; an action keeps the mode it started in, and the seat's
+// camera clean-up skips an action its AI ran. The walk-up start and the field-target press refuse a handed member
+// (the player does not hold it).
 // A seat's member is ticked in its scopes only once the four lock calls are redirected (the frame after the tick is
 // first seen on the game thread): until then it runs as the game's member does. The lock redirects stay in place at an
 // unload (three cross a 16-byte block and may only change on the thread that runs them; they pass straight through when

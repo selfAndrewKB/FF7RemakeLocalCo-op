@@ -70,6 +70,8 @@ struct SeatState
     std::uint32_t actions = 0, camerasLeft = 0, camerasOff = 0, locksSkipped = 0;  // left: the game's eased leave
     std::uint32_t leaderResumed = 0;  // Start/Exit calls run with the seat's leader inside the action start
     std::int8_t   ladderKeepYaw = -1;  // an exit phase noted as the climb ended: its leave's keep-yaw flag (-1 none)
+    bool          withAi        = false;  // the member is handed to its AI: its field actions run as the game's member's
+    bool          actionWithAi  = false;  // the running action started while withAi (the AI's, not the player's)
 };
 
 // Set at install, then only read.
@@ -105,6 +107,7 @@ std::atomic<int>   g_ticking{0};       // the seat whose member's component the 
 std::atomic<bool>  g_onGame{false};    // the field-action tick ran on the game thread since the mod moved it
 std::atomic<std::uint32_t> g_workerTicks{0};
 std::array<std::atomic<void*>, kSeats> g_seatComponents{};  // each seat's member's component, for the animation side
+std::array<std::atomic<bool>, kSeats>  g_seatWithAi{};      // the seat's member runs as the game's member (SeatState::withAi)
 // Written on the game thread, read on any (a state's slot can be called on a worker while the tick is not moved).
 std::atomic<int>   g_pausedSeat{0};    // the seat whose action start runs now with player 1's leader
 std::atomic<int>   g_resumedSeat{0};   // the seat whose Start or Exit runs now with its own leader again
@@ -233,11 +236,12 @@ void RunAsSeat(int seat, Call&& call)
     g_ticking.store(0, std::memory_order_relaxed);
 }
 
+/// The seat whose member owns `component` and plays it now (game thread), or 0: a member handed to its AI is the game's.
 int SeatOfComponent(const void* component) noexcept
 {
     for (int seat = 1; seat <= players::kSeatsBuilt; ++seat)
     {
-        if (component != nullptr && component == g_seats[seat].component)
+        if (component != nullptr && component == g_seats[seat].component && !g_seats[seat].withAi)
         {
             return seat;
         }
@@ -271,12 +275,13 @@ void CompTick(void* component, float dt)
     RunAsSeat(seat, [&] { original(component, dt); });
 }
 
-/// A seat's member's component (any thread), or 0.
+/// A seat's member's component (any thread), or 0; as SeatOfComponent, a member handed to its AI is the game's.
 int SeatOfComponentAnyThread(const void* component) noexcept
 {
     for (int seat = 1; seat <= players::kSeatsBuilt; ++seat)
     {
-        if (component != nullptr && component == g_seatComponents[seat].load(std::memory_order_relaxed))
+        if (component != nullptr && component == g_seatComponents[seat].load(std::memory_order_relaxed) &&
+            !g_seatWithAi[seat].load(std::memory_order_relaxed))
         {
             return seat;
         }
@@ -1438,6 +1443,26 @@ void TickSeat(int seat, void* member) noexcept
     {
         Read(static_cast<const std::uint8_t*>(state.component) + facts::kFieldActionState, action);
     }
+    // A member handed to its AI (the game's own hand: a lead, a scene; its PLAYER slot empty) is an AI ally as in
+    // single player: its component ticks outside the seat's scopes, so the tick's "not the leader" branch starts the
+    // nav-link actions its path asks for (a door or gate on a lead). Decided between actions only: a running action
+    // finishes the way it started.
+    if (action == 0)
+    {
+        const bool withAi = member != nullptr && ReadPointer(member, facts::kCharacterPlayerSlot) == nullptr;
+        if (withAi && !state.withAi)
+        {
+            platform::LogDebug(L"traversal: {}'s member is with its AI: its field actions run as the game's AI ally's (a door or gate "
+                               L"on its path opens)",
+                               players::SeatName(seat));
+        }
+        else if (!withAi && state.withAi)
+        {
+            platform::LogDebug(L"traversal: {}'s member is the player's again: its field actions run as the player's", players::SeatName(seat));
+        }
+        state.withAi = withAi;
+        g_seatWithAi[seat].store(withAi, std::memory_order_relaxed);
+    }
     if (const std::uint8_t nearEnd = g_ductNearEnd[seat].exchange(0, std::memory_order_relaxed); nearEnd != 0 && member != nullptr)
     {
         DuctLeaveNearEnd(seat, nearEnd);
@@ -1473,24 +1498,29 @@ void TickSeat(int seat, void* member) noexcept
     }
     if (state.action != 0)
     {
-        platform::LogDebug(L"traversal: {}'s member {} a {}", players::SeatName(seat), member != nullptr ? L"ends" : L"left during",
-                           ActionName(state.action));
-        if (state.action == facts::kFieldActionHookShot)
+        platform::LogDebug(L"traversal: {}'s member {} a {}{}", players::SeatName(seat), member != nullptr ? L"ends" : L"left during",
+                           ActionName(state.action), state.actionWithAi ? L" (its AI's)" : L"");
+        if (state.action == facts::kFieldActionHookShot && !state.actionWithAi)
         {
             LogHookShotCameras(seat, member, L"ended");
         }
-        if (member != nullptr)
+        if (member != nullptr && !state.actionWithAi)
         {
-            CamerasOffAfter(seat, state.action);
+            CamerasOffAfter(seat, state.action);  // an AI's action started no camera of the player's
         }
         g_seatActorUnread[seat] = false;  // the next action's unread actor is logged again
     }
     if (action != 0)
     {
         state.ladderKeepYaw = -1;
-        ++state.actions;
-        platform::LogDebug(L"traversal: {}'s member starts a {}", players::SeatName(seat), ActionName(action));
-        if (action == facts::kFieldActionHookShot)
+        state.actionWithAi  = state.withAi;  // the mode CompTick ran its start in (withAi changes between actions only)
+        if (!state.actionWithAi)
+        {
+            ++state.actions;
+        }
+        platform::LogDebug(L"traversal: {}'s member starts a {}{}", players::SeatName(seat), ActionName(action),
+                           state.actionWithAi ? L" (its AI's)" : L"");
+        if (action == facts::kFieldActionHookShot && !state.actionWithAi)
         {
             LogHookShotCameras(seat, member, L"started");
         }

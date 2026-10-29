@@ -9,6 +9,7 @@
 #include "platform/verified_code.h"
 #include "platform/vtable_entry.h"
 #include "players/field_root.h"
+#include "players/party_member.h"
 #include "players/player_trigger.h"
 #include "players/seat_camera.h"
 #include "players/scopes.h"
@@ -527,6 +528,10 @@ void TryStartFor(int seat, void* actor, std::size_t cls, float dt, TryStartFn or
         players::weak_object::Resolve(UserOf(*shadow)) != state.member || InIgnoreGroup(actor, state.member))
     {
         return;
+    }
+    if (players::party_member::HandedToAi(state.member))
+    {
+        return;  // with its AI (a lead, a scene): the game's member, not the player's (world/traversal_action.h)
     }
     auto*       base   = static_cast<std::uint8_t*>(actor);
     const auto& spot = facts::kWalkUpClasses[cls];

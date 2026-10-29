@@ -13,6 +13,7 @@
 #include "players/action_key.h"
 #include "players/field_root.h"
 #include "players/pad_buttons.h"
+#include "players/party_member.h"
 #include "players/scopes.h"
 #include "players/seats.h"
 #include "world/target_icons.h"
@@ -675,9 +676,9 @@ void NotePending(int seat, std::uint64_t name) noexcept
 void PressFor(int seat, void* mgr, float dt, TickFn original) noexcept
 {
     SeatState& state = g_seats[seat];
-    if (!Ready(seat, state, mgr))
+    if (!Ready(seat, state, mgr) || players::party_member::HandedToAi(state.member))
     {
-        return;
+        return;  // with its AI (a lead, a scene): no press of the player's starts anything on it (world/traversal_action.h)
     }
     auto*                        live = static_cast<std::uint8_t*>(mgr);
     auto*                        push = static_cast<std::uint8_t*>(ReadPointer(Root(), facts::kRootPushButtons));
