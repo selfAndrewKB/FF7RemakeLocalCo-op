@@ -28,8 +28,10 @@
 //      Ch. 4 lead, player 1 turned back with the camera on her). The level writes it as an AutoWalk act (Type 56)
 //      among a running state's enter actions, measured from the default leader to the member: walk-speed bands, a
 //      look at the member when far, a turn-back further on. Nothing waits on the lead's arrival there, but the path
-//      opens only past the member's walk, which its AI makes in single player and a held member never does. The act
-//      tables are read at each census (one lookup per enter action; the time is in the Info line).
+//      opens only past the member's walk, which its AI makes in single player and a held member never does. The
+//      level's AutoWalk acts are found once by walking the act tables' own rows (RE-data-table-rows.md; again when a
+//      table changes); a census tests only those aimed at the member against the active slots (the time is in the Info
+//      line).
 // A lead or run is judged at its first sight and the judgment is logged (one Info line: the trigger, every waiter,
 // the marker, the verdict). A guide verdict holds until the setting ends (its state changes, the level's next
 // setting); a staging verdict is re-read while it lasts (the marker each time, the waiters once a second), so a

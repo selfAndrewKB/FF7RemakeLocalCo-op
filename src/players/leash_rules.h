@@ -46,16 +46,23 @@ constexpr bool SameName(std::wstring_view a, std::wstring_view b) noexcept
     return true;
 }
 
-/// Whether `act`, an enter action of the slot `slotObject` / `slotState`, leashes the leader to the member whose tag
-/// is `memberTag` (AActor::Tags[0]) and whose level object is `memberObject`: the act runs (that slot holds its state),
-/// it measures to the member or looks at it, and it turns the leader back or looks at the member when far.
+/// Whether `act` would leash the leader to the member whose tag is `memberTag` (AActor::Tags[0]) and whose level object
+/// is `memberObject`, were it running: it measures to the member or looks at it, and it turns the leader back or looks
+/// at the member when far. The first filter of the gate's search over the level's AutoWalk acts.
+constexpr bool AimedAndArmed(const AutoWalkAct& act, std::wstring_view memberTag, std::wstring_view memberObject) noexcept
+{
+    const bool aimed = SameName(act.target, memberTag) || SameName(act.lookAt, memberObject);
+    const bool armed = act.turnBack != 0 || act.lookAtOn != 0;
+    return aimed && armed;
+}
+
+/// Whether `act`, an enter action of the slot `slotObject` / `slotState`, leashes the leader to that member: it runs
+/// (that slot holds its state) and it is aimed and armed.
 constexpr bool LeashesMember(const AutoWalkAct& act, std::wstring_view slotObject, std::wstring_view slotState,
                              std::wstring_view memberTag, std::wstring_view memberObject) noexcept
 {
-    const bool runs  = SameName(act.object, slotObject) && SameName(act.state, slotState);
-    const bool aimed = SameName(act.target, memberTag) || SameName(act.lookAt, memberObject);
-    const bool armed = act.turnBack != 0 || act.lookAtOn != 0;
-    return runs && aimed && armed;
+    const bool runs = SameName(act.object, slotObject) && SameName(act.state, slotState);
+    return runs && AimedAndArmed(act, memberTag, memberObject);
 }
 
 }  // namespace lss::players::leash_rules

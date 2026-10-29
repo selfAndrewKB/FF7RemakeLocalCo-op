@@ -92,6 +92,16 @@ void TestNamesCompareWithoutCase()
     EXPECT(!SameName(L"Tifa", L"Tifa2"));
 }
 
+void TestAimedAndArmedNeedsNoSlot()
+{
+    // The reversed search's first filter: the act's aim and arming alone, before its slot is looked for.
+    EXPECT(AimedAndArmed(kTifaCh4, L"Tifa", L"opy030_Tifa"));
+    EXPECT(AimedAndArmed(kAerithCh8, L"", L"opy080_Aerith"));
+    EXPECT(!AimedAndArmed(kTifaCh4, L"Barret", L"opy030_Barret"));
+    constexpr AutoWalkAct speedOnly{L"obj020_PlayerModeManager", L"scg020_PlayerMode_AutoWalk1", L"Barret", L"", 0, 0};
+    EXPECT(!AimedAndArmed(speedOnly, L"Barret", L"opy020_Barret"));
+}
+
 }  // namespace
 
 int main()
@@ -105,5 +115,6 @@ int main()
     TestAWalkOnTheMemberWithoutTurnBackOrLookIsNot();
     TestAnActWhoseStateHasMovedOnDoesNotRun();
     TestNamesCompareWithoutCase();
+    TestAimedAndArmedNeedsNoSlot();
     return lss::test::Report();
 }

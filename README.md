@@ -159,6 +159,8 @@ src/
     settings                The mod's own settings file: LocalSplitScreen.ini in the mod's folder
                             (Mods/LocalSplitScreen/LocalSplitScreen.ini, one level above the dlls folder this module is
                             loaded from), read with the Windows profile API, so a user sets a …
+    sparse_array.h          Walks the allocated elements of an Unreal TSparseArray (the element array of a TSet or TMap)
+                            by reading memory only
     verified_code           Finding engine functions and vtable slots only where the research says they are
     vtable_entry            Replaces one entry of an engine vtable with a function of our own, and puts it back
     x64_jump.h              Encoding of the one x64 instruction the mod writes into game code: `jmp rel32` (E9 + a

@@ -1712,6 +1712,17 @@ inline constexpr std::uint32_t  kAutoWalkIntTurnBack      = 4;
 inline constexpr std::uint32_t  kAutoWalkIntLookAt        = 6;
 inline constexpr std::uint32_t  kAutoWalkIntLookAtBand    = 8;
 inline constexpr std::uint32_t  kAutoWalkFltTurnBack      = 0;
+/// Each of those tables is a Square Enix data object (UEndDataObjectAction, vtable 0x144CA4C48; the act groups'
+/// 0x144CA4778, the state changes' 0x144CDF988), not a reflected UDataTable: its rows by value in a TSet at +0x38 of
+/// elements {FName key +0, row +8, hash links}, a UE 4.18 sparse array (platform/sparse_array.h; its Num at +0x40).
+/// The FindRow (vt+0x250, UEndDataObjectAction__FindRow 0x141988B70) hashes into it and returns element + 8; the game's
+/// own walk (vt+0x258 GetRowNames 0x141988BD0) reads the same bits. Rows are built at the asset's load; the slots are
+/// emptied by UnInitDataTable. [CONFIRMED code 2026-10-29, RE-data-table-rows.md]
+inline constexpr std::uint32_t  kDataObjectRows           = 0x38;
+inline constexpr std::uint32_t  kDataObjectRowCount       = 0x40;
+inline constexpr std::uint32_t  kDataObjectElementRow     = 0x08;
+inline constexpr std::uint32_t  kActionElementBytes       = 0x148;
+inline constexpr std::int32_t   kDataObjectRowsMax        = 1 << 16;  // Ch. 4's act table: 6276 rows
 /// The objective icon registry ([root+0x1F8]: a map of story step FName to a 96-byte record; the sparse array's data
 /// at +8, count +0x10, 24-byte elements with the record at +8): a record's key (+8), its FEndDataTableStory row
 /// (+0x18) and its "icon removed" byte (+0x29, 0 while the icon is shown). The story row's three icon slots:

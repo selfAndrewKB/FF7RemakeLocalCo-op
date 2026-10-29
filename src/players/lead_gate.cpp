@@ -5,6 +5,7 @@
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
+#include "platform/sparse_array.h"
 #include "platform/verified_code.h"
 #include "players/field_hold.h"
 #include "players/field_root.h"
@@ -792,9 +793,150 @@ struct Leash
     std::wstring text;
 };
 
-/// A live AutoWalk act among the active slots' enter actions that leashes player 1 to the member (players/
-/// leash_rules.h; RE-lead-unlock.md §5): each slot's current state's EnterActionList, a group expanded as the game's
-/// queue expands it, each act looked up in the act tables, Type 56 judged. Reads only; timed in its text.
+/// One AutoWalk act of the level's act tables, decoded once (a table's rows are fixed while it is loaded).
+struct AutoWalk
+{
+    std::int64_t act = 0;  // its row name
+    std::wstring object, state, target, lookAt;
+    std::int32_t turnBack = 0, lookAtOn = 0, lookAtBand = 0;
+    float        turnBackDistance = 0.0f;
+
+    leash_rules::AutoWalkAct Rule() const noexcept { return {object, state, target, lookAt, turnBack, lookAtOn}; }
+};
+
+/// The level's AutoWalk acts, found by one walk of the act tables' own rows and kept until a table changes: another
+/// object in a slot, another element array or row count (RE-data-table-rows.md: rows are built at the asset's load,
+/// the slots emptied at its unload).
+struct AutoWalkIndex
+{
+    std::array<std::uintptr_t, 9> key{};  // per table: the object, its element array, its row count
+    std::vector<AutoWalk>         acts;
+    std::int32_t                  rows  = 0;  // act rows walked
+    bool                          built = false;
+};
+AutoWalkIndex g_autoWalks;
+
+std::array<std::uintptr_t, 9> ActTablesKey() noexcept
+{
+    std::array<std::uintptr_t, 9> key{};
+    for (std::uint32_t k = 0; k < 3; ++k)
+    {
+        const std::uint8_t* table = nullptr;
+        if (!Read(reinterpret_cast<const void*>(g_actionTables + 8 * k), table) || table == nullptr)
+        {
+            continue;
+        }
+        std::uintptr_t elements = 0;
+        std::int32_t   count    = 0;
+        Read(table + facts::kDataObjectRows, elements);
+        Read(table + facts::kDataObjectRowCount, count);
+        key[3 * k]     = reinterpret_cast<std::uintptr_t>(table);
+        key[3 * k + 1] = elements;
+        key[3 * k + 2] = static_cast<std::uint32_t>(count);
+    }
+    return key;
+}
+
+AutoWalk Decode(std::int64_t name, const std::uint8_t* act)
+{
+    const std::uint8_t* strings = nullptr;
+    std::int32_t        count   = 0;
+    Read(act + facts::kActionRowStrings, strings);
+    Read(act + facts::kActionRowStrings + 8, count);
+    auto str = [&](std::uint32_t i) {
+        return strings != nullptr && static_cast<std::int32_t>(i) < count ? Text(strings + 16 * i) : std::wstring();
+    };
+    const std::vector<std::int32_t> ints   = Numbers<std::int32_t>(act + facts::kActionRowIntegers, facts::kAutoWalkIntLookAtBand + 1);
+    const std::vector<float>        floats = Numbers<float>(act + facts::kActionRowFloats, facts::kAutoWalkFltTurnBack + 1);
+    auto num = [&](std::uint32_t i) { return i < ints.size() ? ints[i] : 0; };
+    return AutoWalk{.act              = name,
+                    .object           = str(facts::kAutoWalkStrObject),
+                    .state            = str(facts::kAutoWalkStrState),
+                    .target           = str(facts::kAutoWalkStrTarget),
+                    .lookAt           = str(facts::kAutoWalkStrLookAt),
+                    .turnBack         = num(facts::kAutoWalkIntTurnBack),
+                    .lookAtOn         = num(facts::kAutoWalkIntLookAt),
+                    .lookAtBand       = num(facts::kAutoWalkIntLookAtBand),
+                    .turnBackDistance = floats.empty() ? 0.0f : floats[0]};
+}
+
+/// Rebuilds the index when the act tables changed; true if it did (logged with the acts found).
+bool RefreshAutoWalks()
+{
+    const std::array<std::uintptr_t, 9> key = ActTablesKey();
+    if (g_autoWalks.built && key == g_autoWalks.key)
+    {
+        return false;
+    }
+    const auto    start = std::chrono::steady_clock::now();
+    AutoWalkIndex index{.key = key, .built = true};
+    for (std::uint32_t k = 0; k < 3; ++k)
+    {
+        if (key[3 * k] == 0)
+        {
+            continue;
+        }
+        platform::ForEachSparseElement(key[3 * k] + facts::kDataObjectRows, facts::kActionElementBytes, facts::kDataObjectRowsMax,
+                                       [&](std::uintptr_t element) {
+                                           ++index.rows;
+                                           const auto*  row  = reinterpret_cast<const std::uint8_t*>(element + facts::kDataObjectElementRow);
+                                           std::int32_t type = 0;
+                                           std::int64_t name = 0;
+                                           // Kept only if the game's own lookup finds this very row: an earlier
+                                           // table's row of the same name hides it, as FindRow takes the first.
+                                           if (Read(row + facts::kActionRowType, type) && type == facts::kActionTypeAutoWalk &&
+                                               Read(reinterpret_cast<const void*>(element), name) && name != 0 &&
+                                               TableRow(g_actionTables, name) == row)
+                                           {
+                                               index.acts.push_back(Decode(name, row));
+                                           }
+                                           return true;
+                                       });
+    }
+    g_autoWalks   = std::move(index);
+    const auto us = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start).count();
+    std::wstring names;
+    for (const AutoWalk& walk : g_autoWalks.acts)
+    {
+        names += std::format(L"{}{} ({} {})", names.empty() ? L"" : L", ", Name(walk.act), walk.target.empty() ? L"-" : walk.target,
+                             walk.turnBack != 0 || walk.lookAtOn != 0 ? L"leashes" : L"speed only");
+    }
+    platform::Log(L"lead gate: the level's AutoWalk acts: {} of {} act rows [read in {} us]{}{}", g_autoWalks.acts.size(),
+                  g_autoWalks.rows, us, names.empty() ? L"" : L": ", names);
+    return true;
+}
+
+/// Whether the state row `row` enters `act`: among its enter actions, an act group's list (tried first, as
+/// ActSequence_QueueActionOrGroup does) or the name itself.
+bool Enters(const std::uint8_t* row, std::int64_t act)
+{
+    for (const std::int64_t entered : Names(row + facts::kStateRowEnterActions, kEnterActionsRead))
+    {
+        if (entered == 0)
+        {
+            continue;
+        }
+        if (const std::uint8_t* group = TableRow(g_actionGroupTables, entered))
+        {
+            const std::vector<std::int64_t> acts = Names(group + facts::kActionGroupRowActions, facts::kActionGroupRowActionsMax);
+            if (std::find(acts.begin(), acts.end(), act) != acts.end())
+            {
+                return true;
+            }
+        }
+        else if (entered == act)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+/// A live AutoWalk act that leashes player 1 to the member (players/leash_rules.h; RE-lead-unlock.md §5). The search
+/// runs from the level's few AutoWalk acts (the index) rather than from every active slot: an act aimed at the member
+/// and armed is live when an active slot of its object holds its state and that state enters it, as the act runner
+/// tests each tick. The same verdict as v0.127.0's walk over every slot's enter actions, at a few lookups a census
+/// (that walk made some 15,000 on Ch. 4: History 2026-10-29 13:21). Reads only; timed in its text.
 Leash LeashOn(const std::vector<Slot>& slots, const std::wstring& tag, const std::wstring& memberObject) noexcept
 try
 {
@@ -805,69 +947,46 @@ try
         return leash;
     }
     const auto start = std::chrono::steady_clock::now();
-    int        acts  = 0;
-    for (const Slot& s : slots)
+    RefreshAutoWalks();
+    int aimed = 0;
+    for (const AutoWalk& walk : g_autoWalks.acts)
     {
-        if (s.row == nullptr || leash.on)
+        const leash_rules::AutoWalkAct rule = walk.Rule();
+        if (!leash_rules::AimedAndArmed(rule, tag, memberObject))
         {
             continue;
         }
-        for (const std::int64_t entered : Names(s.row + facts::kStateRowEnterActions, kEnterActionsRead))
+        ++aimed;
+        std::int64_t object = 0, state = 0;
+        if (!platform::CallGuarded(&FindName, walk.object.c_str(), &object) || object == 0 ||
+            !platform::CallGuarded(&FindName, walk.state.c_str(), &state) || state == 0)
         {
-            if (entered == 0 || leash.on)
-            {
-                continue;
-            }
-            const std::uint8_t*             group = TableRow(g_actionGroupTables, entered);
-            const std::vector<std::int64_t> names =
-                group != nullptr ? Names(group + facts::kActionGroupRowActions, facts::kActionGroupRowActionsMax) : std::vector<std::int64_t>{entered};
-            for (const std::int64_t name : names)
-            {
-                const std::uint8_t* act  = name != 0 ? TableRow(g_actionTables, name) : nullptr;
-                std::int32_t        type = 0;
-                if (act == nullptr || !Read(act + facts::kActionRowType, type) || type != facts::kActionTypeAutoWalk)
-                {
-                    continue;
-                }
-                ++acts;
-                const std::uint8_t* strings = nullptr;
-                std::int32_t        count   = 0;
-                Read(act + facts::kActionRowStrings, strings);
-                Read(act + facts::kActionRowStrings + 8, count);
-                auto str = [&](std::uint32_t i) {
-                    return strings != nullptr && static_cast<std::int32_t>(i) < count ? Text(strings + 16 * i) : std::wstring();
-                };
-                const std::vector<std::int32_t> ints   = Numbers<std::int32_t>(act + facts::kActionRowIntegers, facts::kAutoWalkIntLookAtBand + 1);
-                const std::vector<float>        floats = Numbers<float>(act + facts::kActionRowFloats, facts::kAutoWalkFltTurnBack + 1);
-                auto num = [&](std::uint32_t i) { return i < ints.size() ? ints[i] : 0; };
-                const std::wstring object = str(facts::kAutoWalkStrObject), state = str(facts::kAutoWalkStrState);
-                const std::wstring target = str(facts::kAutoWalkStrTarget), lookAt = str(facts::kAutoWalkStrLookAt);
-                const leash_rules::AutoWalkAct walk{object, state, target, lookAt, num(facts::kAutoWalkIntTurnBack),
-                                                    num(facts::kAutoWalkIntLookAt)};
-                if (!leash_rules::LeashesMember(walk, Name(s.object), Name(s.state), tag, memberObject))
-                {
-                    continue;
-                }
-                leash.on   = true;
-                leash.text = std::format(L"leash on the member: act {} of {} {} (measured to {}, looks at {}{}{})", Name(name), object, state,
-                                         target.empty() ? L"nothing" : target, lookAt.empty() ? L"nothing" : lookAt,
-                                         num(facts::kAutoWalkIntLookAtBand) > 0
-                                             ? std::format(L" past {:.0f} m", num(facts::kAutoWalkIntLookAtBand) / 100.0)
-                                             : std::wstring(),
-                                         num(facts::kAutoWalkIntTurnBack) != 0
-                                             ? std::format(L", turns player 1 back past {:.0f} m",
-                                                           (floats.empty() ? 0.0 : floats[0]) / 100.0)
-                                             : std::wstring());
-                break;
-            }
+            continue;  // a name the pool does not hold: no slot holds it
         }
+        const auto live = std::find_if(slots.begin(), slots.end(), [&](const Slot& s) {
+            return s.object == object && s.state == state && s.row != nullptr && Enters(s.row, walk.act) &&
+                   leash_rules::LeashesMember(rule, Name(s.object), Name(s.state), tag, memberObject);
+        });
+        if (live == slots.end())
+        {
+            continue;
+        }
+        leash.on   = true;
+        leash.text = std::format(L"leash on the member: act {} of {} {} (measured to {}, looks at {}{}{})", Name(walk.act), walk.object,
+                                 walk.state, walk.target.empty() ? L"nothing" : walk.target, walk.lookAt.empty() ? L"nothing" : walk.lookAt,
+                                 walk.lookAtBand > 0 ? std::format(L" past {:.0f} m", walk.lookAtBand / 100.0) : std::wstring(),
+                                 walk.turnBack != 0 ? std::format(L", turns player 1 back past {:.0f} m", walk.turnBackDistance / 100.0)
+                                                    : std::wstring());
+        break;
     }
     const auto us = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start).count();
     if (!leash.on)
     {
-        leash.text = acts == 0 ? std::format(L"no leash on the member (no AutoWalk act runs among {} active slots)", slots.size())
-                               : std::format(L"no leash on the member ({} AutoWalk act(s) run among {} active slots, none aimed at it)",
-                                             acts, slots.size());
+        leash.text = g_autoWalks.acts.empty() ? std::wstring(L"no leash on the member (no AutoWalk act in the level's act tables)")
+                     : aimed == 0
+                         ? std::format(L"no leash on the member ({} AutoWalk act(s) in the level, none aimed at it)", g_autoWalks.acts.size())
+                         : std::format(L"no leash on the member ({} AutoWalk act(s) aimed at it, none running among {} active slots)",
+                                       aimed, slots.size());
     }
     leash.text += std::format(L" [read in {} us]", us);
     return leash;
@@ -1013,8 +1132,11 @@ try
     Leash        leash;
     if (census)
     {
+        const auto              start = std::chrono::steady_clock::now();
         const std::vector<Slot> slots = ActiveSlots(sm);
-        waiters         = Waiters(slots, object, state, marker.points);
+        waiters                       = Waiters(slots, object, state, marker.points);
+        waiters.text += std::format(L" [slots and waiters read in {} us]",
+                                    std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start).count());
         leash           = LeashOn(slots, MemberTag(member), Name(object));
         last.censusTick = last.calls;
         last.waiter     = waiters.others > 0 || waiters.chain;
