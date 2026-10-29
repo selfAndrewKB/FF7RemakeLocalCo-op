@@ -8,12 +8,14 @@
 #include "platform/verified_code.h"
 #include "players/field_hold.h"
 #include "players/field_root.h"
+#include "players/leash_rules.h"
 #include "players/state_path.h"
 
 #include <Unreal/NameTypes.hpp>
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <format>
@@ -41,9 +43,12 @@ constexpr std::size_t   kMaxStateChars    = 1024;  // a next-state name (the FNa
 // How many of the member's own states ahead are walked for a further move.
 constexpr std::size_t   kPathLinks        = 16;
 constexpr std::size_t   kPathNexts        = 8;     // next states read per row (the game reads 8 triggers per row)
+constexpr std::uint32_t kEnterActionsRead = 64;    // a state's enter actions read for the leash
 
 std::uintptr_t   g_triggerTables     = 0;
 std::uintptr_t   g_stateChangeTables = 0;
+std::uintptr_t   g_actionTables      = 0;  // 0: the leash is not read (logged at install)
+std::uintptr_t   g_actionGroupTables = 0;
 StoryFlagIsSetFn g_storyFlagIsSet    = nullptr;
 FieldPointFindFn g_fieldPointFind    = nullptr;
 
@@ -81,6 +86,7 @@ struct Judgment
     // Another waiter, a direct set on another object, or a further move in the member's own chain.
     bool          waiter     = false;
     bool          marker     = false;  // the story's marker rides on the member
+    bool          leash      = false;  // a live AutoWalk act leashes player 1 to the member
     std::uint32_t censusTick = 0;
     std::uint32_t calls      = 0;
     std::uint32_t touched    = 0;      // the clock at the last call (the least recently used slot is reused)
@@ -569,13 +575,12 @@ struct Census
 
 /// The waiters on the setting's arrival trigger: the slots whose current state lists it (in the trigger's scope), and
 /// the trigger row's own direct sets on other objects. RE-lead-arrival-wait.md §3.
-Census Waiters(const std::uint8_t* sm, std::int64_t object, std::int64_t state,
+Census Waiters(const std::vector<Slot>& slots, std::int64_t object, std::int64_t state,
                const std::vector<MarkerPoint>& markers) noexcept
 try
 {
-    Census                  census;
-    const std::vector<Slot> slots = ActiveSlots(sm);
-    const Slot*             self  = nullptr;
+    Census      census;
+    const Slot* self = nullptr;
     for (const Slot& s : slots)
     {
         if (s.object == object && s.state == state)
@@ -768,6 +773,110 @@ catch (...)
     return Marker{.text = L"the walk raised an exception"};
 }
 
+/// The member's tag (AActor::Tags[0], the name CharaRegistry_FindActorByName keys on and an AutoWalk act's Str[2]
+/// names), or empty.
+std::wstring MemberTag(const void* member) noexcept
+try
+{
+    const std::vector<std::int64_t> tags = Names(static_cast<const std::uint8_t*>(member) + facts::kActorTags, 1);
+    return tags.empty() || tags[0] == 0 ? std::wstring() : Name(tags[0]);
+}
+catch (...)
+{
+    return {};
+}
+
+struct Leash
+{
+    bool         on = false;
+    std::wstring text;
+};
+
+/// A live AutoWalk act among the active slots' enter actions that leashes player 1 to the member (players/
+/// leash_rules.h; RE-lead-unlock.md §5): each slot's current state's EnterActionList, a group expanded as the game's
+/// queue expands it, each act looked up in the act tables, Type 56 judged. Reads only; timed in its text.
+Leash LeashOn(const std::vector<Slot>& slots, const std::wstring& tag, const std::wstring& memberObject) noexcept
+try
+{
+    Leash leash;
+    if (g_actionTables == 0 || g_actionGroupTables == 0)
+    {
+        leash.text = L"leash not read (the act tables were not found at install)";
+        return leash;
+    }
+    const auto start = std::chrono::steady_clock::now();
+    int        acts  = 0;
+    for (const Slot& s : slots)
+    {
+        if (s.row == nullptr || leash.on)
+        {
+            continue;
+        }
+        for (const std::int64_t entered : Names(s.row + facts::kStateRowEnterActions, kEnterActionsRead))
+        {
+            if (entered == 0 || leash.on)
+            {
+                continue;
+            }
+            const std::uint8_t*             group = TableRow(g_actionGroupTables, entered);
+            const std::vector<std::int64_t> names =
+                group != nullptr ? Names(group + facts::kActionGroupRowActions, facts::kActionGroupRowActionsMax) : std::vector<std::int64_t>{entered};
+            for (const std::int64_t name : names)
+            {
+                const std::uint8_t* act  = name != 0 ? TableRow(g_actionTables, name) : nullptr;
+                std::int32_t        type = 0;
+                if (act == nullptr || !Read(act + facts::kActionRowType, type) || type != facts::kActionTypeAutoWalk)
+                {
+                    continue;
+                }
+                ++acts;
+                const std::uint8_t* strings = nullptr;
+                std::int32_t        count   = 0;
+                Read(act + facts::kActionRowStrings, strings);
+                Read(act + facts::kActionRowStrings + 8, count);
+                auto str = [&](std::uint32_t i) {
+                    return strings != nullptr && static_cast<std::int32_t>(i) < count ? Text(strings + 16 * i) : std::wstring();
+                };
+                const std::vector<std::int32_t> ints   = Numbers<std::int32_t>(act + facts::kActionRowIntegers, facts::kAutoWalkIntLookAtBand + 1);
+                const std::vector<float>        floats = Numbers<float>(act + facts::kActionRowFloats, facts::kAutoWalkFltTurnBack + 1);
+                auto num = [&](std::uint32_t i) { return i < ints.size() ? ints[i] : 0; };
+                const std::wstring object = str(facts::kAutoWalkStrObject), state = str(facts::kAutoWalkStrState);
+                const std::wstring target = str(facts::kAutoWalkStrTarget), lookAt = str(facts::kAutoWalkStrLookAt);
+                const leash_rules::AutoWalkAct walk{object, state, target, lookAt, num(facts::kAutoWalkIntTurnBack),
+                                                    num(facts::kAutoWalkIntLookAt)};
+                if (!leash_rules::LeashesMember(walk, Name(s.object), Name(s.state), tag, memberObject))
+                {
+                    continue;
+                }
+                leash.on   = true;
+                leash.text = std::format(L"leash on the member: act {} of {} {} (measured to {}, looks at {}{}{})", Name(name), object, state,
+                                         target.empty() ? L"nothing" : target, lookAt.empty() ? L"nothing" : lookAt,
+                                         num(facts::kAutoWalkIntLookAtBand) > 0
+                                             ? std::format(L" past {:.0f} m", num(facts::kAutoWalkIntLookAtBand) / 100.0)
+                                             : std::wstring(),
+                                         num(facts::kAutoWalkIntTurnBack) != 0
+                                             ? std::format(L", turns player 1 back past {:.0f} m",
+                                                           (floats.empty() ? 0.0 : floats[0]) / 100.0)
+                                             : std::wstring());
+                break;
+            }
+        }
+    }
+    const auto us = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start).count();
+    if (!leash.on)
+    {
+        leash.text = acts == 0 ? std::format(L"no leash on the member (no AutoWalk act runs among {} active slots)", slots.size())
+                               : std::format(L"no leash on the member ({} AutoWalk act(s) run among {} active slots, none aimed at it)",
+                                             acts, slots.size());
+    }
+    leash.text += std::format(L" [read in {} us]", us);
+    return leash;
+}
+catch (...)
+{
+    return Leash{.text = L"the leash read raised an exception"};
+}
+
 }  // namespace
 
 bool Install(const platform::GameImage& image) noexcept
@@ -783,6 +892,18 @@ bool Install(const platform::GameImage& image) noexcept
     g_triggerTables     = *tables;
     g_stateChangeTables = *states;
     g_storyFlagIsSet    = reinterpret_cast<StoryFlagIsSetFn>(*flag);
+    const auto acts   = image.Rebase(facts::kTableAction, 3 * sizeof(void*));
+    const auto groups = image.Rebase(facts::kActionGroupTablesGlobal, 3 * sizeof(void*));
+    if (acts && groups)
+    {
+        g_actionTables      = *acts;
+        g_actionGroupTables = *groups;
+    }
+    else
+    {
+        platform::Log(L"lead gate: the act tables are out of the image; a leash on player 1 is not read (such a lead is judged "
+                      L"by its waiters and the marker alone)");
+    }
     if (const auto find = platform::FindFunction(image, facts::kFieldPointFindByName))
     {
         g_fieldPointFind = reinterpret_cast<FieldPointFindFn>(*find);
@@ -814,11 +935,12 @@ bool Install(const platform::GameImage& image) noexcept
                            return control::Outcome{.detail = text};
                        }});
     platform::Log(L"lead gate: installed; a LEAD or a run to a mark on a further player's member goes to its AI when a level step "
-                  L"waits on its arrival, the story's marker rides on it, or a further move is ahead in its own chain of states");
+                  L"waits on its arrival, the story's marker rides on it, a further move is ahead in its own chain of states, or the "
+                  L"level leashes player 1 to it");
     return true;
 }
 
-bool Guide(const void* fieldAi, std::uint8_t kind) noexcept
+bool Guide(const void* member, const void* fieldAi, std::uint8_t kind) noexcept
 try
 {
     // Not installed, or a kind whose arrival the level cannot wait on (field_hold.h names them): staging.
@@ -888,20 +1010,25 @@ try
     const bool   census = !same || last.calls - last.censusTick >= kCensusEveryTicks / 10;
     const Marker marker = Markers(root, object);
     Census       waiters;
+    Leash        leash;
     if (census)
     {
-        waiters         = Waiters(sm, object, state, marker.points);
+        const std::vector<Slot> slots = ActiveSlots(sm);
+        waiters         = Waiters(slots, object, state, marker.points);
+        leash           = LeashOn(slots, MemberTag(member), Name(object));
         last.censusTick = last.calls;
         last.waiter     = waiters.others > 0 || waiters.chain;
+        last.leash      = leash.on;
     }
     const bool wasMarker = last.marker;
     last.marker          = marker.onMember;
-    last.guide           = last.waiter || last.marker;
+    last.guide           = last.waiter || last.marker || last.leash;
     if (!same || census || last.marker != wasMarker)
     {
-        g_reading = std::format(L"{} on object {} state {}: {}; marker {}: {}; verdict {}", field_hold::KindName(kind), Name(object),
-                                Name(state), census ? waiters.text : L"waiters as before", marker.onMember ? L"on the member" : L"elsewhere",
-                                marker.text, last.guide ? L"GUIDE (to its AI, the player's view on it)" : L"staging (the player's)");
+        g_reading = std::format(L"{} on object {} state {}: {}; {}; marker {}: {}; verdict {}", field_hold::KindName(kind), Name(object),
+                                Name(state), census ? waiters.text : L"waiters as before", census ? leash.text : L"leash as before",
+                                marker.onMember ? L"on the member" : L"elsewhere", marker.text,
+                                last.guide ? L"GUIDE (to its AI, the player's view on it)" : L"staging (the player's)");
         if (!same || last.guide)
         {
             platform::Log(L"lead gate: {}", g_reading);

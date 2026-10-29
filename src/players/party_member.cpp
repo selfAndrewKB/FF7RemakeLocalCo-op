@@ -122,7 +122,7 @@ Wait FieldWait(void* member) noexcept
     case field_hold::Hold::Animation:
         return Wait::Animation;
     case field_hold::Hold::Arrival:
-        return lead_gate::Guide(ai, kind) ? Wait::Guide : Wait::None;
+        return lead_gate::Guide(member, ai, kind) ? Wait::Guide : Wait::None;
     case field_hold::Hold::NoState:
         return Wait::NoFieldAi;
     default:

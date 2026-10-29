@@ -1688,6 +1688,30 @@ inline constexpr std::uint32_t  kTriggerRowDirectSetsMax = 32;
 /// The three state-change data tables (g_DT_StateChange; a state row by its FName through the same virtual, as
 /// StateSlot_SetState 0x141169C00 does when a slot steps to its next state). [CONFIRMED code 2026-10-27]
 inline constexpr std::uintptr_t kStateChangeTablesGlobal = 0x145843FB0;
+/// The level's acts and act groups, each three data tables with the same row lookup: a state's EnterActionList names
+/// either; ActSequence_QueueActionOrGroup 0x140FB6E00 tries the group tables first, a group being an FName list (+0x08,
+/// count +0x10) of which its 32 accessors (0x1442A07E0) read at most 32 acts. An act row (FEndDataTableAction): Type
+/// (+0x0C, i32, the runner kind ActSequence_CreateActRunner_ByActionType 0x140DAB480 switches on), StringArgumentList
+/// (+0xC8, FString*, count +0xD0), IntegerArgumentList (+0xD8, i32*, count +0xE0), FloatArgumentList (+0xE8, float*,
+/// count +0xF0). [CONFIRMED code 2026-10-29, RE-lead-unlock.md §3, §5] The act tables and the Type field are
+/// kTableAction, kActionRowType and kActionRowIntegers (below, with the talk gather's facts).
+inline constexpr std::uintptr_t kActionGroupTablesGlobal  = 0x145839D60;
+inline constexpr std::uint32_t  kActionGroupRowActions    = 0x08;
+inline constexpr std::uint32_t  kActionGroupRowActionsMax = 32;
+inline constexpr std::uint32_t  kActionRowStrings         = 0xC8;
+inline constexpr std::uint32_t  kActionRowFloats          = 0xE8;
+/// The AutoWalk act (Type 56, ActRunner56_AutoWalkType_*): a leash on the default party leader (player 1's character)
+/// measured to Str[2] each frame while the slot of object Str[0] holds state Str[1]: walk-speed bands, past Int[8] cm
+/// the look at Str[4] (when Int[6]), past Flt[0] cm the turn-back (when Int[4]). RE-lead-unlock.md §3.
+inline constexpr std::int32_t   kActionTypeAutoWalk       = 56;
+inline constexpr std::uint32_t  kAutoWalkStrObject        = 0;
+inline constexpr std::uint32_t  kAutoWalkStrState         = 1;
+inline constexpr std::uint32_t  kAutoWalkStrTarget        = 2;
+inline constexpr std::uint32_t  kAutoWalkStrLookAt        = 4;
+inline constexpr std::uint32_t  kAutoWalkIntTurnBack      = 4;
+inline constexpr std::uint32_t  kAutoWalkIntLookAt        = 6;
+inline constexpr std::uint32_t  kAutoWalkIntLookAtBand    = 8;
+inline constexpr std::uint32_t  kAutoWalkFltTurnBack      = 0;
 /// The objective icon registry ([root+0x1F8]: a map of story step FName to a 96-byte record; the sparse array's data
 /// at +8, count +0x10, 24-byte elements with the record at +8): a record's key (+8), its FEndDataTableStory row
 /// (+0x18) and its "icon removed" byte (+0x29, 0 while the icon is shown). The story row's three icon slots:

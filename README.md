@@ -224,6 +224,8 @@ src/
     lead_gate               Whether a LEAD or a run to a mark (MoveToTarget) the level wrote on a further player's
                             member is a guide (the member goes to its AI, the player's view stays on it) or staging (the
                             player keeps it), from the game's own data
+    leash_rules.h           Whether a live AutoWalk act leashes player 1 to a further player's member
+                            (players/lead_gate; research/ RE-lead-unlock.md §3, §5)
     local_player_list       The engine's list of local players, for the modules that add a local player of the mod's own
                             (players/session: a further player; views/mirror_player: the mirror in an empty column)
                             through UE's own paths, on the game thread
@@ -455,5 +457,5 @@ src/
                             (tests/listener_rules_test.cpp)
     listeners               Every player hears the sounds near them: each SEAD sound is measured from the nearest
                             player's listener
-tests/                      52 host-side test programs (ctest), one per pure header or code stub; run without the game
+tests/                      53 host-side test programs (ctest), one per pure header or code stub; run without the game
 ```

@@ -328,6 +328,13 @@ target_include_directories(AreaLevelsRulesTests PRIVATE "${CMAKE_CURRENT_SOURCE_
 target_compile_features(AreaLevelsRulesTests PRIVATE cxx_std_20)
 add_test(NAME area_levels_rules COMMAND AreaLevelsRulesTests)
 
+add_executable(LeashRulesTests
+    tests/leash_rules_test.cpp
+)
+target_include_directories(LeashRulesTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(LeashRulesTests PRIVATE cxx_std_20)
+add_test(NAME leash_rules COMMAND LeashRulesTests)
+
 add_executable(StallRulesTests
     tests/stall_rules_test.cpp
 )

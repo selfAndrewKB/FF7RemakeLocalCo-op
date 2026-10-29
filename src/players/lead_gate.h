@@ -24,6 +24,12 @@
 //   2. The story's marker (research/RE-navi-icon-target.md). The active story step's icon slot names the object the
 //      objective marker rides on; a marker on the member says the game points the player at it: a guide. No code
 //      links it to the LEAD setting, so it is the second signal; its absence proves nothing.
+//   3. A leash on player 1 (research/RE-lead-unlock.md, players/leash_rules.h; the user's report 2026-10-29: Tifa's
+//      Ch. 4 lead, player 1 turned back with the camera on her). The level writes it as an AutoWalk act (Type 56)
+//      among a running state's enter actions, measured from the default leader to the member: walk-speed bands, a
+//      look at the member when far, a turn-back further on. Nothing waits on the lead's arrival there, but the path
+//      opens only past the member's walk, which its AI makes in single player and a held member never does. The act
+//      tables are read at each census (one lookup per enter action; the time is in the Info line).
 // A lead or run is judged at its first sight and the judgment is logged (one Info line: the trigger, every waiter,
 // the marker, the verdict). A guide verdict holds until the setting ends (its state changes, the level's next
 // setting); a staging verdict is re-read while it lasts (the marker each time, the waiters once a second), so a
@@ -45,10 +51,11 @@ namespace lss::players::lead_gate {
 /// (logged) if an engine check fails; a LEAD or a run to a mark is then staging, as before v0.26.0.
 bool Install(const platform::GameImage& image) noexcept;
 
-/// A member's field AI (`fieldAi`) runs `kind` on the level layer: true if the game's data makes it a guide. False
-/// for a kind whose arrival the level cannot wait on (field_hold::SignalsArrival), and for a run that names no level
-/// object (a state-manager command's).
-bool Guide(const void* fieldAi, std::uint8_t kind) noexcept;
+/// A member (`member`, its field AI `fieldAi`) runs `kind` on the level layer: true if the game's data makes it a
+/// guide (a waiter on its arrival, the story's marker on it, a further move in its own chain, or a live AutoWalk act
+/// leashing player 1 to it: players/leash_rules.h). False for a kind whose arrival the level cannot wait on
+/// (field_hold::SignalsArrival), and for a run that names no level object (a state-manager command's).
+bool Guide(const void* member, const void* fieldAi, std::uint8_t kind) noexcept;
 
 /// The last judgment, one line (the reading).
 std::wstring Reading() noexcept;
