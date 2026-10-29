@@ -9,10 +9,12 @@
 #include "players/field_hold.h"
 #include "players/field_root.h"
 #include "players/lead_gate.h"
+#include "world/actor_place.h"
 
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <format>
 #include <string>
@@ -187,7 +189,10 @@ struct Declined
     std::uint64_t  lastDecline = 0;
     std::uint32_t  declines    = 0;  // in a row (each within kRepeatMs of the last)
     bool           active      = false;
+    bool           duringOwnAction = false;  // declined because the walk began during the player's own ladder or climb
+    float          floorZ          = 0;      // the member's height then (cm): the floor the walk began on
 };
+constexpr float kSameFloorCm = 200;  // a ladder joins floors further apart than this
 std::array<Declined, 4> g_declined;
 constexpr std::uint64_t kDeclineWindowMs    = 10'000;
 constexpr std::uint64_t kDeclineWindowMaxMs = 60'000;
@@ -213,7 +218,7 @@ Declined* DeclinedOf(const void* member) noexcept
 
 }  // namespace
 
-std::uint32_t DeclineInterest(const void* member) noexcept
+std::uint32_t DeclineInterest(const void* member, bool duringOwnAction, const float* floorZ) noexcept
 {
     if (member == nullptr)
     {
@@ -238,10 +243,31 @@ std::uint32_t DeclineInterest(const void* member) noexcept
         *slot = Declined{.member = member};
     }
     slot->declines    = slot->declines != 0 && now - slot->lastDecline < kRepeatMs ? slot->declines + 1 : 1;
-    slot->lastDecline = now;
-    slot->lastSeen    = now;
-    slot->active      = true;
+    slot->lastDecline     = now;
+    slot->lastSeen        = now;
+    slot->active          = true;
+    // The floor: the height the player's action started at, else the member's height now; unread: no early end.
+    world::actor_place::Vec3 at;
+    const bool known      = floorZ != nullptr || world::actor_place::ActorLocation(member, at);
+    slot->duringOwnAction = duringOwnAction && known;
+    slot->floorZ          = !slot->duringOwnAction ? 0.0f : floorZ != nullptr ? *floorZ : at.z;
     return slot->declines;
+}
+
+bool EndDeclineBackOnItsFloor(const void* member, bool inAction) noexcept
+{
+    Declined* d = DeclinedOf(member);
+    if (d == nullptr || !d->active || !d->duringOwnAction || inAction)
+    {
+        return false;
+    }
+    world::actor_place::Vec3 at;
+    if (!world::actor_place::ActorLocation(member, at) || std::fabs(at.z - d->floorZ) > kSameFloorCm)
+    {
+        return false;  // still on the action's other floor (the top of the ladder): kept with its player
+    }
+    d->active = false;  // the count stays: a repeat within kRepeatMs still lengthens a later window
+    return true;
 }
 
 bool JudgedState(const void* member, field_hold::Judged& out) noexcept

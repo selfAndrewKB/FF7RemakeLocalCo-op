@@ -917,7 +917,7 @@ try
             if (seat.hold == party_member::Wait::Interest && crossings >= kInterestLoopCrossings &&
                 !world::traversal_action::InAction(seat.index) && party_member::InterestOnTop(member))
             {
-                const std::uint32_t inARow = party_member::DeclineInterest(member);
+                const std::uint32_t inARow = party_member::DeclineInterest(member, false);
                 platform::Log(L"{}'s member: its AI's interest walk crossed {} times (it cannot reach the point from here): the walk "
                               L"is declined ({} in a row) and the member goes back to {} until the interest ends",
                               seat.Name(), crossings, inARow, seat.Name());
@@ -965,6 +965,14 @@ try
         }
         return;
     }
+    // A walk declined during the player's own ladder or climb is its AI's again once the member is off it, back on the
+    // floor the walk began on (it then starts where single player's companion would: no ladder on its way).
+    if (party_member::EndDeclineBackOnItsFloor(member, world::traversal_action::InAction(seat.index)))
+    {
+        platform::Log(L"{}'s member is off the ladder or climb, back on the floor its interest walk began on: the walk is its AI's "
+                      L"again",
+                      seat.Name());
+    }
     const party_member::Wait hold = party_member::HoldWait(member);
     // The push-button event answers first while the game's leader is handed (an interaction lock the member stayed
     // through that gained another bit reads as the push-button event when its bit stands): the same backstop. Only while the
@@ -1011,7 +1019,9 @@ try
     // player's, the AI move guard keeping the walk from starting under the player.
     if (hold == party_member::Wait::Interest && world::traversal_action::InAction(seat.index))
     {
-        const std::uint32_t inARow = party_member::DeclineInterest(member);
+        float               startZ  = 0;  // the floor the climb began on, wherever on it the interest came
+        const bool          started = world::traversal_action::StartHeight(seat.index, startZ);
+        const std::uint32_t inARow  = party_member::DeclineInterest(member, true, started ? &startZ : nullptr);
         platform::Log(L"{}'s member: an interest walk began during {}'s own field action (a ladder or a climb, where the game never "
                       L"sends its AI): declined at once ({} in a row); the member stays {}'s",
                       seat.Name(), seat.Name(), inARow, seat.Name());

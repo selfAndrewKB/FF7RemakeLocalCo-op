@@ -113,8 +113,17 @@ bool JudgedState(const void* member, field_hold::Judged& out) noexcept;
 /// The member's current interest walk cannot be played from where it is (the session saw its AI take a crossing, or the
 /// walk begin during the player's own ladder or climb): it is declined, judged
 /// beneath while the member has INTEREST requests, ending 10 s without one (times the declines in a row within two
-/// minutes, at most 60 s). Returns the declines in a row (the session logs it). Game thread.
-std::uint32_t DeclineInterest(const void* member) noexcept;
+/// minutes, at most 60 s). Returns the declines in a row (the session logs it). `duringOwnAction`: declined because the
+/// walk began during the player's own ladder or climb; its floor is kept for EndDeclineBackOnItsFloor: `floorZ`, the
+/// height the action started at (traversal_action::StartHeight), else the member's height now. Game thread.
+std::uint32_t DeclineInterest(const void* member, bool duringOwnAction, const float* floorZ = nullptr) noexcept;
+
+/// A decline made during the player's own ladder or climb ends once the member is off it (`inAction` false) and back on
+/// the floor the walk began on (within 2 m in height): from there its AI plays the walk as in single player, where the
+/// companion runs aside on its own floor and never takes the ladder (the user, 2026-10-29: the takeover came late after
+/// player 2 got on and off the ladder; "she's not even built to do the monkey bar"). Off at the ladder's other end, the
+/// member stays its player's. True when it ended one. Game thread.
+bool EndDeclineBackOnItsFloor(const void* member, bool inAction) noexcept;
 
 /// The member's active request is an INTEREST (an ambient interest walk). A hold judged beneath it still hands the
 /// member to its AI, which then runs the walk first, as in single player: the session says so in its hand line.

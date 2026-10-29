@@ -135,6 +135,9 @@ bool PlayerOneMoveHolds(std::uint32_t mask) noexcept;
 std::uint32_t AiActionsStarted(int seat) noexcept;
 /// Seat `seat`'s member is in a field action now (as last read in its tick). Game thread.
 bool InAction(int seat) noexcept;
+/// The member's height (cm, its root) when its running action started: the floor a ladder or climb began on. False
+/// with no action running or the start's height unread. Game thread.
+bool StartHeight(int seat, float& z) noexcept;
 
 /// A seat's member may use the grappling hook: its member's actions run in its scopes and the hookshot's lock calls are
 /// redirected (any thread).
