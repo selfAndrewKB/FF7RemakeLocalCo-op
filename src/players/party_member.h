@@ -110,7 +110,8 @@ Wait HoldWait(void* member) noexcept;
 /// while players/ai_move_guard is active, the one beneath it (field_hold::JudgedState). False when unread.
 bool JudgedState(const void* member, field_hold::Judged& out) noexcept;
 
-/// The member's current interest walk looped under its AI (the session saw it cross twice): it is declined, judged
+/// The member's current interest walk cannot be played from where it is (the session saw its AI take a crossing, or the
+/// walk begin during the player's own ladder or climb): it is declined, judged
 /// beneath while the member has INTEREST requests, ending 10 s without one (times the declines in a row within two
 /// minutes, at most 60 s). Returns the declines in a row (the session logs it). Game thread.
 std::uint32_t DeclineInterest(const void* member) noexcept;

@@ -149,7 +149,8 @@ struct Judged
 /// interest point the level placed (AEndInterestPoint, e.g. "run aside and watch Cloud cross the monkey bars"; its only
 /// writer is the AI model's interest intention, which reacts to any member but the leader inside the point's sphere,
 /// in single player too). Nothing waits on it: no arrival signal, no script step. Its AI plays it (the user, 2026-10-29:
-/// Aerith should run aside for the monkey bars); a walk that loops under the AI (two crossings) is declined and, with
+/// Aerith should run aside for the monkey bars); a walk that takes a crossing under the AI, or begins during the player's
+/// own ladder or climb, is declined and, with
 /// players/ai_move_guard placed (its walk cannot start under a player), judged here: the hold is the next non-empty
 /// layer's below it, a lead or a script written meanwhile included (Aerith's 5-minute ladder loop;
 /// research/RE-interest-ladder-loop.md). `kinds`: the 15 layers' kind bytes.

@@ -12,8 +12,9 @@
 // PLAYER slot holds a controller. Manual control adds its behaviours directly and never asks, the other slots are
 // passed, and a refusal is the requesters' normal "slot busy" path (they retry or skip). A member handed to its AI
 // (PLAYER slot empty) is asked as the game asks, so its AI walks as an AI ally's.
-// With the guard in place a looping interest walk can be declined (the session gives the member back after its AI
-// crossed twice; players/field_hold.h JudgedState): the walk cannot then restart under the player.
+// With the guard in place an interest walk can be declined (the session gives the member back after its AI takes a
+// crossing, or keeps it when the walk begins during the player's own ladder or climb; players/field_hold.h
+// JudgedState): the walk cannot then start under the player.
 // Entry redirect on the function (two instructions copied): placed by Tick from the game thread, outside the world
 // tick, where no AI tick runs (a thread between the two copied instructions at the swap would land in the jump; keep
 // the install there). Remove may run on any thread: every entry already goes through the jump, and the restore swaps
