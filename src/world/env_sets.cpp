@@ -9,10 +9,12 @@
 #include "platform/verified_code.h"
 #include "players/seats.h"
 #include "world/actor_place.h"
+#include "world/area_levels.h"
 #include "world/env_set_view.h"
 
 #include <Unreal/NameTypes.hpp>
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cstdint>
@@ -187,6 +189,13 @@ bool Levels(std::uint8_t* block, const Name*& data, std::int32_t& num) noexcept
     return Read(block + facts::kEnvSetBlockLevels + 8, num) && num >= 0 && (num == 0 || data != nullptr);
 }
 
+/// The levels' bytes (parallel to Levels; the game keeps them as long, a shorter array reads shown past its end).
+bool LevelsHidden(std::uint8_t* block, const std::uint8_t*& data, std::int32_t& num) noexcept
+{
+    data = static_cast<const std::uint8_t*>(ReadPointer(block, facts::kEnvSetBlockLevelsHidden));
+    return Read(block + facts::kEnvSetBlockLevelsHidden + 8, num) && num >= 0 && (num == 0 || data != nullptr);
+}
+
 // --- 1. The trace --------------------------------------------------------------------------------------------------
 
 char Issue(void* unused, const TraceArg* arg, std::uint64_t r8, std::uint64_t r9, std::uint64_t* handle) noexcept
@@ -264,10 +273,12 @@ ReadResult ReadSeat(int seat, Seat& s, void* manager) noexcept
     {
         return ReadResult::NoSet;  // no ground under the player that names a set (or the trace not back yet)
     }
-    Entry*       entries = nullptr;
-    const Name*  levels  = nullptr;
-    std::int32_t entryCount = 0, levelCount = 0;
-    if (!Entries(s.block.data(), entries, entryCount) || !Levels(s.block.data(), levels, levelCount))
+    Entry*              entries = nullptr;
+    const Name*         levels  = nullptr;
+    const std::uint8_t* hidden  = nullptr;
+    std::int32_t        entryCount = 0, levelCount = 0, hiddenCount = 0;
+    if (!Entries(s.block.data(), entries, entryCount) || !Levels(s.block.data(), levels, levelCount) ||
+        !LevelsHidden(s.block.data(), hidden, hiddenCount))
     {
         return ReadResult::NoSet;
     }
@@ -279,6 +290,7 @@ ReadResult ReadSeat(int seat, Seat& s, void* manager) noexcept
     }
     s.fresh.entries.count = 0;
     s.fresh.levels.count  = 0;
+    s.fresh.hidden.count  = 0;
     for (std::int32_t i = 0; i < entryCount; ++i)
     {
         s.fresh.entries.Add(entries[i]);
@@ -286,6 +298,7 @@ ReadResult ReadSeat(int seat, Seat& s, void* manager) noexcept
     for (std::int32_t i = 0; i < levelCount; ++i)
     {
         s.fresh.levels.Add(levels[i]);
+        s.fresh.hidden.Add(i < hiddenCount ? hidden[i] : std::uint8_t{0});
     }
     Ids ids{};
     platform::CopyGuarded(ids.data(), s.block.data() + facts::kEnvSetBlockIds, sizeof(ids));
@@ -375,6 +388,10 @@ bool LookUp(int seat, Seat& s, std::uint8_t* manager) noexcept
     s.hiddenEntries  = 0;
     s.shownButHidden = 0;
     s.attachedCount  = 0;
+    if (!g_enabled)
+    {
+        return true;  // switched off: the view hides nothing of its own (Write empties the mod's entries)
+    }
     LookupLevels(manager, s);
     for (const Entry& entry : s.paced.set.entries.View())
     {
@@ -476,12 +493,14 @@ char ReadSet(void* manager, const std::uint64_t* handle, std::uint8_t* block) no
     const char   one  = g_read(manager, handle, block);  // player 1's, as the game reads it
     std::uint8_t hold = 0;
     const bool   holding = Read(static_cast<std::uint8_t*>(manager) + facts::kEnvSetMgrHoldMode, hold) && hold != 0;
-    bool nameLost = false;  // the save data's set name could not be put back: no further seat reads this frame
+    bool nameLost   = false;  // the save data's set name could not be put back: no further seat reads this frame
+    bool anyChanged = false;
     for (int seat = 1; seat <= kSeatsBuilt; ++seat)
     {
         Seat& s = g_seats[seat];
-        // Hold mode: one scripted set for everyone, nothing for a further player alone. Off or out: nothing either.
-        const bool       present = s.member != nullptr && g_enabled && !holding;
+        // Hold mode: one scripted set for everyone, nothing for a further player alone. Out: nothing either. The switch
+        // gates the view's hides only (LookUp): the set is still read for world/area_levels.
+        const bool       present = s.member != nullptr && !holding;
         const ReadResult read    = present && !nameLost ? ReadSeat(seat, s, manager) : ReadResult::NoSet;
         const bool       resolved = read == ReadResult::Set;
         nameLost                  = nameLost || read == ReadResult::NameLost;
@@ -494,14 +513,17 @@ char ReadSet(void* manager, const std::uint64_t* handle, std::uint8_t* block) no
         {
             s.kept = next;
         }
-        const bool changed = view::Pace(s.paced, s.kept, Now());
+        // Out or held: dropped at once, so its area never rides into a later request (world/area_levels).
+        const bool changed = view::Pace(s.paced, s.kept, Now(), !present);
         if (changed)
         {
             ++s.changes;
             s.pacedIds = present ? s.ids : Ids{};
         }
+        anyChanged = anyChanged || changed;
         Refresh(seat, s, static_cast<std::uint8_t*>(manager), changed);
     }
+    area_levels::SeatsRead(anyChanged);  // before this tick's own request for player 1's area, if it makes one
     return one;
 }
 
@@ -605,6 +627,23 @@ void SetEnabled(bool on) noexcept
         g_seats[seat].due = true;
     }
     platform::Log(L"env sets {}", on ? L"on" : L"off (a further player's view hides nothing of its own from the next read)");
+}
+
+int SeatArea(int seat, std::span<std::uint64_t> names, std::span<std::uint8_t> hidden) noexcept
+{
+    if (!SeatBuilt(seat))
+    {
+        return 0;
+    }
+    const view::TwoSet& set   = g_seats[seat].paced.set;
+    const int           count = std::min({set.levels.count, static_cast<int>(names.size()), static_cast<int>(hidden.size())});
+    for (int i = 0; i < count; ++i)
+    {
+        const auto at = static_cast<std::size_t>(i);
+        names[at]     = Bits(set.levels.items[at]);
+        hidden[at]    = i < set.hidden.count ? set.hidden.items[at] : std::uint8_t{0};
+    }
+    return count;
 }
 
 std::wstring SeatSetText(int seat) noexcept

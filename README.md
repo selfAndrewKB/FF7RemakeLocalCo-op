@@ -45,8 +45,9 @@ readings are `<switch>.<what>`, and an area's readings `<area>.<what>`. Today:
   (the columns the window shows; 0 = as the span and the players decide), `single-view auto|on|off`, `scene-camera`,
   `split-scale`, `split-fov`, `split-fov.weight`, `letterbox-patch`; readings `whole-screen`, `split-switch`, `column-layout.state`, `window-span.state`,
   `mirror-player.state`, `scene-camera.state`, `split-scale.state`, `split-fov.state`, `letterbox-patch.sites`.
-- **The field:** `npc-crowd`, `npc-detail`, `npc-senses`, `env-sets`, `forced-walk`, `overlap-fade`, `search-arrows`,
-  `anim`, each with its reading `world.<switch>`; `world.fade`, `lead.gate` (the last guide judgment: a LEAD or a run
+- **The field:** `npc-crowd`, `npc-detail`, `npc-senses`, `env-sets`, `area-levels` (every player's area kept loaded,
+  not only player 1's), `forced-walk`, `overlap-fade`, `search-arrows`, `anim`, each with its reading `world.<switch>`;
+  `level-watch` (reading `world.levels`); `world.fade`, `lead.gate` (the last guide judgment: a LEAD or a run
   ahead on a further player's member), `lead.path <state>` (prints a state's chain), `nav-area`, `camera-override`,
   `shop-act`, `talk-gather`, `traversal.action`, `traversal.walkup`.
 - **Pads:** `pad-buttons`, `pad-menus`; readings `pad.events`, `pad.to-game` (each further pad's counts),
@@ -327,6 +328,9 @@ src/
     anim_choice.h           Which camera the game's animation judge reads for one mesh, and a further player's camera
                             snapshot in the game's own form
     anim_views              Characters near any player animate as the game animates them near player 1
+    area_levels             Every player's area stays loaded and solid, not only player 1's
+    area_levels_rules.h     The pieces of world/area_levels that need no game: the one level request every player's area
+                            shares (research/RE-world-streaming-levers.md §1, §4.2-§4.4)
     charapop_rule.h         CharaPop's Light/Middle rule, as its evaluators apply it to one camera, for the entries a
                             further player's camera needs (world/npc_detail.h)
     env_set_view.h          The pieces of world/env_sets that need no game: a further player's EnvironmentSet as the mod
@@ -448,5 +452,5 @@ src/
                             (tests/listener_rules_test.cpp)
     listeners               Every player hears the sounds near them: each SEAD sound is measured from the nearest
                             player's listener
-tests/                      50 host-side test programs (ctest), one per pure header or code stub; run without the game
+tests/                      51 host-side test programs (ctest), one per pure header or code stub; run without the game
 ```

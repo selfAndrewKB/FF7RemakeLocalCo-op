@@ -123,6 +123,7 @@ add_library(LocalSplitScreen SHARED
     src/views/window_span.cpp
     src/world/actor_place.cpp
     src/world/anim_views.cpp
+    src/world/area_levels.cpp
     src/world/env_sets.cpp
     src/world/level_watch.cpp
     src/world/npc_crowd.cpp
@@ -318,6 +319,13 @@ add_executable(EnvSetViewTests
 target_include_directories(EnvSetViewTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_compile_features(EnvSetViewTests PRIVATE cxx_std_20)
 add_test(NAME env_set_view COMMAND EnvSetViewTests)
+
+add_executable(AreaLevelsRulesTests
+    tests/area_levels_rules_test.cpp
+)
+target_include_directories(AreaLevelsRulesTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(AreaLevelsRulesTests PRIVATE cxx_std_20)
+add_test(NAME area_levels_rules COMMAND AreaLevelsRulesTests)
 
 add_executable(CoinTableTests
     tests/coin_table_test.cpp

@@ -64,7 +64,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.124.0-battle-menus-run-on";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.125.0-every-players-area-stays";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;

@@ -27,7 +27,11 @@
 // Not per view (§10.4): collision, lights, decals and point/spot shadows follow the world, which is player 1's set;
 // an actor a further player's set shows but player 1's set hides stays hidden for everyone (counted in the reading).
 // Hold mode (one scripted set for everyone): nothing hidden for a further player alone.
+// The set the view follows also names the area's levels; world/area_levels adds them to the game's one level request
+// (SeatArea), told after each read. A player out, or the game's hold mode, drops that player's set at once (no pause).
 
+#include <cstdint>
+#include <span>
 #include <string>
 
 namespace lss::platform {
@@ -49,11 +53,16 @@ void TickSeat(int seat, void* seatMember, void* seatController) noexcept;
 void Tick() noexcept;
 
 /// The switch (`env-sets on|off`, on at start): off empties the mod's entries in every further player's list at the
-/// next read.
+/// next read. The sets are still read (world/area_levels keeps each area loaded either way).
 void SetEnabled(bool on) noexcept;
 
 /// A further player's last ground set (its three ids: area, environment set, planner level set) as text; game thread.
 std::wstring SeatSetText(int seat) noexcept;
+
+/// The levels of the set a further player's view follows (FName bits) with their bytes (0 shown, 1 hidden, 2 hidden with
+/// collision kept), as many as fit; the count. None while the player is out or the game holds one set for everyone (the
+/// switch does not change it). Game thread.
+int SeatArea(int seat, std::span<std::uint64_t> names, std::span<std::uint8_t> hidden) noexcept;
 
 /// The `world.env-sets` reading: each further player's set, the actors hidden in their view, what could not be.
 std::wstring Reading() noexcept;

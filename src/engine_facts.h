@@ -1944,6 +1944,9 @@ inline constexpr std::uint32_t  kEnvSetMgrHoldMode    = 0x858;  // u8: hold mode
 inline constexpr std::uint32_t  kEnvSetMgrLookupLevels = 0x708; // TSet<FName>: the levels the apply looks actors up in
 inline constexpr std::uint32_t  kEnvSetBlockBytes     = 0x1D0;  // a set block (zero-filled = constructed)
 inline constexpr std::uint32_t  kEnvSetBlockLevels    = 0x08;   //   TArray<FName> LevelList (num +0x10)
+// TArray<u8>, one byte per LevelList entry: 0 shown, 1 hidden (collision off), 2 hidden (collision kept). The slot-4
+// call passes it as r9 (`lea r9,[rbp-0x78]` = the names' r8 + 0x10, 0x1416600FC; RE-world-streaming-levers.md §4.4).
+inline constexpr std::uint32_t  kEnvSetBlockLevelsHidden = 0x18;
 inline constexpr std::uint32_t  kEnvSetBlockIds       = 0x28;   //   the set's three ids
 inline constexpr std::uint32_t  kEnvSetBlockActors    = 0x40;   //   {FName, u32 Hidden} x 32 inline,
 inline constexpr std::uint32_t  kEnvSetBlockActorsHeap = 0x1C0; //   the heap data when grown, num +0x1C8, max +0x1CC

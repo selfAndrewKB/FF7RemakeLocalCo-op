@@ -37,20 +37,14 @@ namespace {
 
 using platform::Read;
 
-using ListRequestFn = std::int64_t (*)(std::uint8_t slot, std::int32_t priority, void* names, void* unvisible);
-using SetSlotFn     = void (*)(void* holder, std::int32_t slot, std::uint64_t id);
-using EnqueueFn     = std::int64_t (*)(std::int32_t priority, std::uint64_t level, bool load, bool hide, bool flag);
+using SetSlotFn = void (*)(void* holder, std::int32_t slot, std::uint64_t id);
+using EnqueueFn = std::int64_t (*)(std::int32_t priority, std::uint64_t level, bool load, bool hide, bool flag);
 
-constexpr std::int32_t kMaxListNames = 256;   // the game's request node holds 256 names
-constexpr std::int32_t kMaxLevels    = 2048;  // a world's streaming levels read at most (Ch. 8 lists 460)
-constexpr auto         kMemoryEvery  = std::chrono::seconds(10);
+constexpr std::int32_t kMaxLevels   = 2048;  // a world's streaming levels read at most (Ch. 8 lists 460)
+constexpr auto         kMemoryEvery = std::chrono::seconds(10);
 
-platform::CallRedirect  g_listCall;  // crosses a block: placed by Tick
 platform::CallRedirect  g_slotCall;
 platform::EntryRedirect g_enqueue;
-std::uintptr_t          g_listSite   = 0;
-std::uintptr_t          g_listTarget = 0;
-bool                    g_listPlaced = false;
 
 std::atomic<bool>          g_on{true};
 std::atomic<std::uint32_t> g_loadRequests{0};
@@ -127,54 +121,6 @@ std::wstring SeatsText()
         text += std::format(L"{}{}'s ground {}", seat == 1 ? L"" : L"; ", players::SeatName(seat), env_sets::SeatSetText(seat));
     }
     return text;
-}
-
-/// Player 1's area change, the visibility half: the set's level list with each level's byte (1 hidden, 2 hidden with its
-/// collision kept), read before the game's call sorts the list.
-std::int64_t RequestList(std::uint8_t slot, std::int32_t priority, void* names, void* unvisible)
-{
-    const auto original = reinterpret_cast<ListRequestFn>(g_listCall.Original());
-    if (g_on.load(std::memory_order_relaxed))
-    {
-        try
-        {
-            const std::uint64_t* data  = static_cast<const std::uint64_t*>(platform::ReadPointer(names, 0));
-            std::int32_t         count = 0;
-            const std::uint8_t*  bytes = unvisible != nullptr ? static_cast<const std::uint8_t*>(platform::ReadPointer(unvisible, 0)) : nullptr;
-            std::int32_t         byteCount = 0;
-            if (unvisible != nullptr)
-            {
-                Read(static_cast<const std::uint8_t*>(unvisible) + 8, byteCount);
-            }
-            std::wstring text;
-            int          hidden = 0;
-            if (Read(static_cast<const std::uint8_t*>(names) + 8, count) && count >= 0 && (count == 0 || data != nullptr))
-            {
-                for (std::int32_t i = 0; i < std::min(count, kMaxListNames); ++i)
-                {
-                    std::uint64_t name = 0;
-                    std::uint8_t  mark = 0;
-                    if (!Read(data + i, name))
-                    {
-                        break;
-                    }
-                    if (bytes != nullptr && i < byteCount)
-                    {
-                        Read(bytes + i, mark);
-                    }
-                    hidden += mark != 0 ? 1 : 0;
-                    text += std::format(L"{}{}{}", i == 0 ? L"" : L", ", NameText(name),
-                                        mark == 0 ? L"" : (mark == 2 ? L" (hidden, collision kept)" : std::format(L" (hidden {})", mark)));
-                }
-            }
-            platform::Log(L"level watch: player 1's area asks visibility slot {} (priority {}) for {} level(s), {} of them hidden: {}", slot,
-                          priority, count, hidden, text.empty() ? std::wstring(L"none") : text);
-        }
-        catch (...)
-        {
-        }
-    }
-    return original(slot, priority, names, unvisible);
 }
 
 /// Player 1's area change, the residency half: slot 32 takes the area's planner level set (the loader adds it, then
@@ -348,12 +294,10 @@ bool Install(const platform::GameImage& image) noexcept
     {
         return false;
     }
-    const auto listTarget = platform::FindFunction(image, facts::kLevelListRequest);
     const auto slotTarget = platform::FindFunction(image, facts::kPlannerSetSlot);
     const auto enqueue    = platform::FindFunction(image, facts::kLevelRequestEnqueue);
-    const auto listSite   = image.Rebase(facts::kEnvSetLevelListCall, 5);
     const auto slotSite   = image.Rebase(facts::kEnvSetPlannerSlotCall, 5);
-    if (!listTarget || !slotTarget || !enqueue || !listSite || !slotSite)
+    if (!slotTarget || !enqueue || !slotSite)
     {
         platform::LogWarning(L"level watch: the level code is not what the research read; the world's levels are not watched");
         return false;
@@ -366,8 +310,6 @@ bool Install(const platform::GameImage& image) noexcept
         platform::LogWarning(L"level watch: the area's residency call or the level queue could not be redirected; the world's levels are not watched");
         return false;
     }
-    g_listSite   = *listSite;
-    g_listTarget = *listTarget;
     control::Register({.name  = L"level-watch",
                        .shape = control::Shape::OnOff,
                        .help  = L"logs what loads, shows, hides and unloads the world's levels (world/level_watch.h; on)",
@@ -382,21 +324,13 @@ bool Install(const platform::GameImage& image) noexcept
                        .help  = L"the world's streaming levels counted, player 1's last area set, each further player's ground set, "
                                 L"the level requests seen, the committed memory",
                        .get   = [] { return control::Value{ReadingText()}; }});
-    platform::Log(L"level watch: ready (the area's residency call and the level queue are watched; the visibility call is "
-                  L"placed on the first tick)");
+    platform::Log(L"level watch: ready (the area's residency call and the level queue are watched; world/area_levels logs the "
+                  L"area's level request)");
     return true;
 }
 
 void Tick(bool anyIn) noexcept
 {
-    if (!g_listPlaced && g_listSite != 0)
-    {
-        g_listPlaced = true;  // once, whatever the outcome; outside the world tick, as the crossing call needs
-        if (!g_listCall.InstallFromOwnThread(g_listSite, g_listTarget, reinterpret_cast<std::uintptr_t>(&RequestList)))
-        {
-            platform::LogWarning(L"level watch: the area's visibility call could not be redirected; its level lists are not logged");
-        }
-    }
     if (!g_on.load(std::memory_order_relaxed) || !anyIn)
     {
         // Single player costs nothing: the census rests, and its first look after a join is a fresh world's Info line.
@@ -428,7 +362,7 @@ void Tick(bool anyIn) noexcept
 
 void Remove() noexcept
 {
-    g_on.store(false, std::memory_order_relaxed);  // the visibility redirect, left in place, passes calls through from here
+    g_on.store(false, std::memory_order_relaxed);
     g_slotCall.Restore();
     g_enqueue.Restore();
 }

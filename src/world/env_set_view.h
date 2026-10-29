@@ -63,14 +63,16 @@ struct List
 inline constexpr int kMaxEntries = 2048;
 inline constexpr int kMaxLevels  = 256;
 inline constexpr int kMaxHidden  = 4096;  // actors hidden in one further player's view (listed, plus their attached actors)
-using EntryList = List<Entry, kMaxEntries>;
-using LevelList = List<Name, kMaxLevels>;
+using EntryList  = List<Entry, kMaxEntries>;
+using LevelList  = List<Name, kMaxLevels>;
+using HiddenList = List<std::uint8_t, kMaxLevels>;
 
 /// A further player's set as the mod keeps it between the game's reads.
 struct TwoSet
 {
-    EntryList entries;  // the set's actor list
-    LevelList levels;   // the set's level list (where the game looks its actors up)
+    EntryList  entries;  // the set's actor list
+    LevelList  levels;   // the set's level list (where the game looks its actors up; world/area_levels loads it)
+    HiddenList hidden;   // per level: 0 shown, 1 hidden, 2 hidden with its collision kept (parallel to levels)
     friend bool operator==(const TwoSet&, const TwoSet&) = default;
 };
 
@@ -96,9 +98,11 @@ struct Paced
 };
 
 /// Takes `next` as the player's set if it differs and the pause since the last change has run out. True on a change.
-inline bool Pace(Paced& paced, const TwoSet& next, double now) noexcept
+/// `atOnce` (the player out, or the game's hold mode): no pause, so a set never outlives its player or its field
+/// (world/area_levels loads what the paced set lists).
+inline bool Pace(Paced& paced, const TwoSet& next, double now, bool atOnce = false) noexcept
 {
-    if (next == paced.set || (paced.changed && now - paced.changedAt < kChangePause))
+    if (next == paced.set || (!atOnce && paced.changed && now - paced.changedAt < kChangePause))
     {
         return false;
     }

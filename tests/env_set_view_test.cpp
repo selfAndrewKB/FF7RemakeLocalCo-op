@@ -84,6 +84,26 @@ void TestPaceSeesAFlagChange()
     EXPECT(Pace(paced, SetOf(kPictureOne, 0), 2.0));  // same actor, now shown
 }
 
+void TestPaceDropsAtOnceWhenOut()
+{
+    Paced paced;
+    EXPECT(Pace(paced, SetOf(kPictureOne, 1), 0.0));
+    EXPECT(!Pace(paced, TwoSet{}, 0.2));             // at an edge the pause holds the set
+    EXPECT(Pace(paced, TwoSet{}, 0.2, true));        // out, or the game's hold mode: dropped at once
+    EXPECT(paced.set.levels.count == 0 && paced.set.entries.count == 0);
+    EXPECT(!Pace(paced, SetOf(kPictureOne, 1), 0.5));  // back in: the pause runs from the drop
+    EXPECT(Pace(paced, SetOf(kPictureOne, 1), 1.2));
+}
+
+void TestTwoSetSeesAByteChange()
+{
+    TwoSet a = SetOf(kPictureOne, 1);
+    TwoSet b = a;
+    a.hidden.Add(0);
+    b.hidden.Add(1);
+    EXPECT(!(a == b));  // the same level, hidden in one: a change (world/area_levels loads by it)
+}
+
 void TestRemoveOursKeepsOthersInOrder()
 {
     int   a = 0, b = 0, c = 0, d = 0;
@@ -115,6 +135,8 @@ int main()
     TestPaceTakesTheFirstChangeAtOnce();
     TestPaceHoldsAtAnEdge();
     TestPaceSeesAFlagChange();
+    TestPaceDropsAtOnceWhenOut();
+    TestTwoSetSeesAByteChange();
     TestRemoveOursKeepsOthersInOrder();
     TestBounds();
     return lss::test::Report();
