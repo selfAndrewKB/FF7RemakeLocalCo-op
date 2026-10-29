@@ -20,6 +20,8 @@
 // fields; column 0's placement, last, writes them back as the tick did. All state is the game thread's (the records of
 // a frame, each column's alpha and last offset per icon).
 
+#include <cstdint>
+
 namespace lss::platform {
 class GameImage;
 }
@@ -43,5 +45,11 @@ void EndFrame() noexcept;
 /// The `hud-field-icons` switch (on at start).
 void SetEnabled(bool on) noexcept;
 bool Enabled() noexcept;
+
+/// Game thread: the diamond of the navi icon `key` (its FName as 8 bytes) is seat `seat`'s own (hud/lead_mark): only
+/// that seat's column shows it; the tick's placement (player 1's view, the single view), the other columns and a
+/// mirror's place it transparent (its alpha held at 0, no step: RE-lead-marker.md §1.3). `seat` -1 gives it back to
+/// every view. False when four keys are owned already. With the switch off the game's placement stands (every view).
+bool SetOwner(std::uint64_t key, int seat) noexcept;
 
 }  // namespace lss::hud::field_icons

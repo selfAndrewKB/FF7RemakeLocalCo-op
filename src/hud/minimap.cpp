@@ -110,6 +110,7 @@ image_code::NaviState g_navi;
 
 // Game thread only.
 bool  g_on       = true;
+std::uint32_t g_iconResets = 0;  // the field ends and resets heard (each empties every instance's icons)
 int   g_forSeat  = 0;  // the seat whose instance a game call runs on (0 none)
 int   g_column   = overlay_pass::kSingle;  // the column whose pass runs (hud/overlay_pass.h)
 void* g_renderer = nullptr;
@@ -444,12 +445,14 @@ U64 FieldStart(void* m, U64 a2, U64 a3, U64 a4)
 U64 FieldEnd(void* m, U64 a2, U64 a3, U64 a4)
 {
     const U64 r = g.fieldEnd(m, a2, a3, a4);
+    ++g_iconResets;  // the field's end empties the icons (RE-lead-marker.md §1.2)
     if (!IsSeatManager(m)) OnSeats(g.fieldEnd, a2, a3, a4);
     return r;
 }
 U64 Reset(void* m, U64 a2, U64 a3, U64 a4)
 {
     const U64 r = g.reset(m, a2, a3, a4);
+    ++g_iconResets;
     if (!IsSeatManager(m)) OnSeats(g.reset, a2, a3, a4);
     return r;
 }
@@ -1098,6 +1101,60 @@ void SetEnabled(bool on) noexcept
 bool Enabled() noexcept
 {
     return g_on && g_installed;
+}
+
+namespace {
+
+/// The instance `seat` names (0: the game's, EndUISystem[29]; a seat's own otherwise), null when it is not there now.
+void* InstanceOf(int seat) noexcept
+{
+    if (!g_installed || g.addIcon == nullptr || g.removeIcon == nullptr || seat < 0 || seat > kSeatsBuilt)
+    {
+        return nullptr;
+    }
+    if (seat != 0)
+    {
+        const Seat& s = g_seats[seat];
+        return s.faulted ? nullptr : s.manager;
+    }
+    void* manager = nullptr;
+    // Never a seat's lent into the slot (its tick runs inside the HUD tick; the callers run outside it).
+    return g.slot29 != nullptr && Read(g.slot29, manager) && !IsSeatManager(manager) ? manager : nullptr;
+}
+
+/// An FString as the game lays it out (data, count with the terminator, capacity): AddIcon copies it.
+struct RawString
+{
+    const wchar_t* data = nullptr;
+    std::int32_t   num = 0, max = 0;
+};
+
+}  // namespace
+
+bool AddIconTo(int seat, std::uint64_t key, std::uint8_t kind, const float (&at)[3], const IconParams& params) noexcept
+{
+    static constexpr wchar_t kNoText[] = L"";
+    void* manager = InstanceOf(seat);
+    if (manager == nullptr)
+    {
+        return false;
+    }
+    const RawString text{kNoText, 1, 1};
+    U64             ignored = 0;
+    return platform::CallGuarded(g.addIcon, ignored, manager, key, static_cast<U64>(kind), reinterpret_cast<U64>(&at[0]),
+                                 reinterpret_cast<U64>(&text), reinterpret_cast<U64>(&params));
+}
+
+bool RemoveIconFrom(int seat, std::uint64_t key) noexcept
+{
+    void* manager = InstanceOf(seat);
+    U64   ignored = 0;
+    return manager != nullptr && platform::CallGuarded(g.removeIcon, ignored, manager, key);
+}
+
+std::uint32_t IconResets() noexcept
+{
+    return g_iconResets;
 }
 
 }  // namespace lss::hud::minimap

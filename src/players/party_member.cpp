@@ -109,7 +109,7 @@ Wait FieldWait(void* member) noexcept
             return Wait::LeaderHanded;
         }
     }
-    const std::uint8_t* ai    = static_cast<const std::uint8_t*>(ReadPointer(member, facts::kCharacterFieldAi));
+    const std::uint8_t* ai   = static_cast<const std::uint8_t*>(ReadPointer(member, facts::kCharacterFieldAi));
     std::uint8_t        layer = field_hold::kNoLayer, kind = 0;
     if (ai == nullptr || !Read(ai + facts::kFieldAiActiveLayer, layer) || !Read(ai + facts::kFieldAiActiveKind, kind))
     {
@@ -122,7 +122,15 @@ Wait FieldWait(void* member) noexcept
     case field_hold::Hold::Animation:
         return Wait::Animation;
     case field_hold::Hold::Arrival:
-        return lead_gate::Guide(member, ai, kind) ? Wait::Guide : Wait::None;
+        switch (lead_gate::Judge(member, ai, kind))
+        {
+        case lead_keep_rules::Verdict::Guide:
+            return Wait::Guide;
+        case lead_keep_rules::Verdict::AtMark:
+            return Wait::AtMark;
+        default:
+            return Wait::None;  // staging, or kept by its player (the point marked: hud/lead_mark)
+        }
     case field_hold::Hold::NoState:
         return Wait::NoFieldAi;
     default:
@@ -375,6 +383,8 @@ const wchar_t* WhyHeldByScript(void* member) noexcept
         return L"in a scripted animation (an ANIMATION or one-shot kind): its AI plays it";
     case Wait::Guide:
         return L"a guide (a lead or a run to a mark: a level step waits on its arrival, or the story's marker rides on it): its AI walks it";
+    case Wait::AtMark:
+        return L"brought to its move's point: its AI finishes the arrival until the level's next setting";
     default:
         return nullptr;  // a push-button event or the game's leader handed is the game's own hand (party_events); the rest holds nothing
     }
@@ -485,11 +495,14 @@ const wchar_t* Describe(Wait wait) noexcept
     case Wait::LeaderHanded:
         return L"the game's leader is with its AI (a scene, a field action, the control lock), or unread";
     case Wait::AiHeld:
-        return L"a story script holds its field AI (a script layer, or the unread ESCAPE_POSITION kind)";
+        return L"a script holds its field AI (a script layer, or the unread ESCAPE_POSITION kind)";
     case Wait::Animation:
         return L"its AI plays a scripted animation (an ANIMATION or one-shot kind)";
     case Wait::Guide:
         return L"its AI walks a guide (a lead or a run to a mark: a level step waits on its arrival, or the story's marker rides on it)";
+    case Wait::AtMark:
+        return L"its player brought it to its move's point: its AI finishes the arrival (a lead waits for player 1 first), until the "
+               L"level's next setting";
     case Wait::NoFieldAi:
         return L"its field AI has no state yet";
     case Wait::Unread:

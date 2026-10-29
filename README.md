@@ -185,6 +185,7 @@ src/
     image_entries           The columns' layer entries on the render thread (RE-hud-two-images.md §3, §7: H2 and H3)
     layout_code.h           The machine code for the 16:9 assumptions in Square's HUD placement that misplace things in
                             a split half's band
+    lead_mark               A further player's own marker for the move it keeps
     marker_replay           Battle world markers placed through each player's own camera
     minimap                 Each seat's own minimap and compass: a navi map manager per seat, the game's own
     minimap_rules.h         The navi map's pool-0 handover across the frame's HUD passes, as a pure rule (hud/minimap.h
@@ -226,6 +227,8 @@ src/
     lead_gate               Whether a LEAD or a run to a mark (MoveToTarget) the level wrote on a further player's
                             member is a guide (the member goes to its AI, the player's view stays on it) or staging (the
                             player keeps it), from the game's own data
+    lead_keep_rules.h       Whether a further player keeps a member the level walks to its marks, and when the game
+                            takes it over at a mark
     leash_rules.h           Whether a live AutoWalk act leashes player 1 to a further player's member
                             (players/lead_gate; research/ RE-lead-unlock.md §3, §5)
     local_player_list       The engine's list of local players, for the modules that add a local player of the mod's own
@@ -459,5 +462,5 @@ src/
                             (tests/listener_rules_test.cpp)
     listeners               Every player hears the sounds near them: each SEAD sound is measured from the nearest
                             player's listener
-tests/                      54 host-side test programs (ctest), one per pure header or code stub; run without the game
+tests/                      55 host-side test programs (ctest), one per pure header or code stub; run without the game
 ```

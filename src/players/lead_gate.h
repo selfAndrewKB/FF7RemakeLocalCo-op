@@ -32,12 +32,19 @@
 //      level's AutoWalk acts are found once by walking the act tables' own rows (RE-data-table-rows.md; again when a
 //      table changes); a census tests only those aimed at the member against the active slots (the time is in the Info
 //      line).
+// Any of these makes the move needed finished. Since v0.128.0 the player keeps a needed move whose point is a field
+// point (players/lead_keep_rules.h; `lead-holder keeps`): hud/lead_mark marks the point in that player's view, and
+// within 2 m of it the member goes to its AI, which finishes the arrival, until the level's next setting. A needed
+// move with no point to mark is a guide, as before.
 // A lead or run is judged at its first sight and the judgment is logged (one Info line: the trigger, every waiter,
-// the marker, the verdict). A guide verdict holds until the setting ends (its state changes, the level's next
-// setting); a staging verdict is re-read while it lasts (the marker each time, the waiters once a second), so a
-// marker that comes late still hands the member over. One judgment is kept per level object (a run-ahead is
-// written on every member at once, one per further player). Reads are guarded; the two game calls (the trigger
-// table's row lookup, the story flag test) are the ones the game makes on the same data. Game thread.
+// the marker, the point, the verdict; again at each verdict change). A guide or at-the-mark verdict holds until the
+// setting ends (its state changes, the level's next setting); a staging or keep verdict is re-read while it lasts (the
+// marker and the member's distance to the point each time, the waiters once a second), so a marker that comes late
+// still changes it. One judgment is kept per level object (a run-ahead is written on every member at once, one per
+// further player). Reads are guarded; the game calls (the trigger table's row lookup, the story flag test, the field
+// point lookup) are the ones the game makes on the same data. Game thread.
+
+#include "players/lead_keep_rules.h"
 
 #include <cstdint>
 #include <string>
@@ -48,16 +55,34 @@ class GameImage;
 
 namespace lss::players::lead_gate {
 
-/// Resolves the globals and the story-flag test, registers the `lead.gate` reading (the last judgment) and the
-/// `lead.path` reading (a level state's chain walked as the gate walks it). False
+/// Resolves the globals and the story-flag test, registers the `lead.gate` reading (the last judgment), the
+/// `lead.path` reading (a level state's chain walked as the gate walks it) and the `lead-holder` switch. False
 /// (logged) if an engine check fails; a LEAD or a run to a mark is then staging, as before v0.26.0.
 bool Install(const platform::GameImage& image) noexcept;
 
-/// A member (`member`, its field AI `fieldAi`) runs `kind` on the level layer: true if the game's data makes it a
-/// guide (a waiter on its arrival, the story's marker on it, a further move in its own chain, or a live AutoWalk act
-/// leashing player 1 to it: players/leash_rules.h). False for a kind whose arrival the level cannot wait on
-/// (field_hold::SignalsArrival), and for a run that names no level object (a state-manager command's).
-bool Guide(const void* member, const void* fieldAi, std::uint8_t kind) noexcept;
+/// A member (`member`, its field AI `fieldAi`) runs `kind` on the level layer: the verdict from the game's data
+/// (needed when a waiter waits on its arrival, the story's marker rides on it, a further move is in its own chain, or a
+/// live AutoWalk act leashes player 1 to it: players/leash_rules.h) and the member's distance to the move's point.
+/// Staging for a kind whose arrival the level cannot wait on (field_hold::SignalsArrival), and for a run that names no
+/// level object (a state-manager command's).
+lead_keep_rules::Verdict Judge(const void* member, const void* fieldAi, std::uint8_t kind) noexcept;
+
+/// The point a kept move goes to (world centimetres) and its name.
+struct Mark
+{
+    float        at[3] = {};
+    std::int64_t point = 0;
+};
+
+/// `member`'s current move is judged KEEP: its point. False otherwise (another verdict, no move, not judged yet).
+bool KeptMark(const void* member, Mark& out) noexcept;
+
+/// A level name's text (the log).
+std::wstring PointName(std::int64_t point) noexcept;
+
+/// hud/lead_mark installed (true) or removed: without a marker the player cannot be shown the point, so every needed
+/// move is a guide, as before v0.128.0.
+void SetMarking(bool on) noexcept;
 
 /// The last judgment, one line (the reading).
 std::wstring Reading() noexcept;

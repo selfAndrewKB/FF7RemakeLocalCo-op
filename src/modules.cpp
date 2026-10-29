@@ -21,6 +21,7 @@
 #include "hud/field_icons.h"
 #include "hud/hud_probe.h"
 #include "hud/image_entries.h"
+#include "hud/lead_mark.h"
 #include "hud/marker_replay.h"
 #include "hud/minimap.h"
 #include "hud/outside_icons.h"
@@ -374,6 +375,9 @@ constexpr std::array kModules{
            .needs = {Need<&hud::second_image::Install>()}},
     Module{.name = L"outside icons", .install = Call<&hud::outside_icons::Install>, .remove = &hud::outside_icons::Remove,
            .needs = {Need<&hud::second_image::Install>()}},
+    // without it a further player's lead the level needs finished goes to its AI (no marker to show the way)
+    Module{.name = L"lead mark", .install = Call<&hud::lead_mark::Install>, .remove = &hud::lead_mark::Remove,
+           .needs = {Need<&hud::field_icons::Install>(), Need<&hud::minimap::Install>()}},
 };
 
 /// The row of an installer, or the table's size if none has it.
@@ -653,6 +657,7 @@ void TickHud(const Frame& frame) noexcept
     {
         const Frame::Seat& s = frame.seats[static_cast<std::size_t>(seat)];
         hud::minimap::TickSeat(seat, split && s.seated, split ? s.controller : nullptr);
+        hud::lead_mark::TickSeat(seat, s.In() ? s.member : nullptr);
     }
     hud::marker_replay::Tick();
     hud::field_icons::Tick();

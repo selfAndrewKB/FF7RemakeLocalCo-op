@@ -15,8 +15,8 @@
 // excepted (field_hold::InteractionLock: the member is then judged by its own state); in battle the BATTLE mode. A story script that takes a held
 // member (a script layer, an animation, the cinema modes) gets it the way the game hands its leader to its AI, the
 // seat and the player's view kept on it, until the hold ends (the user, 2026-10-21). A LEAD the level writes on
-// the member is the player's while it is staging and the AI's while it is a guide (the game's own data decides:
-// players/lead_gate.h). A downed member stays playable, as player 1 stays on a downed leader. With fewer rows than
+// the member is the player's while it is staging or kept (its point marked), and the AI's while it is a guide or once
+// the player brings it to its point (the game's own data decides: players/lead_gate.h). A downed member stays playable, as player 1 stays on a downed leader. With fewer rows than
 // seats (a solo story party) that player has no member and waits.
 //
 // Seat-indexed (seat 1 = player 2); game thread only; every read guarded (a reload tears the party down under them).
@@ -46,17 +46,18 @@ enum class Wait : std::uint8_t
     AiHeld,       // a script holds its field AI (a script layer, or the unread ESCAPE_POSITION kind: field_hold.h)
     Animation,    // its AI plays a scripted animation (ANIMATION or the one-shot SINGLE_ANIMATION: field_hold.h)
     Guide,        // its AI walks a guide: a lead or a run to a mark the level waits on, or the story marks it (lead_gate.h)
+    AtMark,       // its player brought a kept move to its point: its AI finishes the arrival (lead_keep_rules.h)
     NoFieldAi,    // its field AI has no state yet
     Unread,       // the party could not be read
 };
 
 /// The waits a seated member's own scripted hold makes: a cutscene mode, a script layer or kind, an animation, a
-/// guide lead. The session answers each with the game's own hand (the member to its AI, the seat and the player's
-/// view kept) and takes the member back when the hold ends. The rest (a push-button event, the game's leader handed) is
-/// the game's own hand of its leader, heard by party_events.
+/// guide lead, a kept move brought to its point. The session answers each with the game's own hand (the member to its
+/// AI, the seat and the player's view kept) and takes the member back when the hold ends. The rest (a push-button
+/// event, the game's leader handed) is the game's own hand of its leader, heard by party_events.
 constexpr bool ScriptHold(Wait wait) noexcept
 {
-    return wait == Wait::Cinema || wait == Wait::AiHeld || wait == Wait::Animation || wait == Wait::Guide;
+    return wait == Wait::Cinema || wait == Wait::AiHeld || wait == Wait::Animation || wait == Wait::Guide || wait == Wait::AtMark;
 }
 
 struct Choice

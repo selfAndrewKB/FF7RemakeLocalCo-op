@@ -64,4 +64,28 @@ void EndFrame() noexcept;
 void SetEnabled(bool on) noexcept;
 bool Enabled() noexcept;
 
+/// The game's icon parameter block (AddIcon's sixth argument, RE-lead-marker.md §1.2).
+struct IconParams
+{
+    float         lineLength         = 0.0f;  // the diamond's line height (cm; 150 when about 0)
+    float         viewTargetDistance = 0.0f;  // the minimap's "new" flag clears within it (2000 when 0)
+    float         circleRadius       = 0.0f;  // > 0: an area icon, no diamond
+    float         visibleStart       = 0.0f;  // the diamond shows within it of the view's character (else the widget's range)
+    std::uint8_t  hidden             = 0;     // not on this instance's minimap, compass or area map (the diamond ignores it)
+    std::uint8_t  onCanvas           = 0;     // on the instance's icon canvas whatever its kind
+    std::uint8_t  pad[2]             = {};
+    std::int32_t  layer              = -1;    // the floor; -1: the map's bounds
+};
+static_assert(sizeof(IconParams) == 24, "the game's block");
+
+/// Game thread, outside the HUD tick: the game's AddIcon on one instance only, not repeated on the others: the game's
+/// (`seat` 0, EndUISystem[29]: the one the field diamond reads) or seat `seat`'s own. A key already there is updated in
+/// place. False when that instance is not there (not made yet, faulted) or the call faulted.
+bool AddIconTo(int seat, std::uint64_t key, std::uint8_t kind, const float (&at)[3], const IconParams& params) noexcept;
+/// The game's RemoveIcon on one instance only (the widget and the entry go at once; a missing key is a no-op:
+/// RE-lead-mark-check.md §4).
+bool RemoveIconFrom(int seat, std::uint64_t key) noexcept;
+/// The field ends and resets heard: each empties every instance's icons, so an icon added before is added again.
+std::uint32_t IconResets() noexcept;
+
 }  // namespace lss::hud::minimap

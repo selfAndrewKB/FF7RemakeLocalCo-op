@@ -9,8 +9,10 @@
 #include "platform/verified_code.h"
 #include "players/field_hold.h"
 #include "players/field_root.h"
+#include "players/lead_keep_rules.h"
 #include "players/leash_rules.h"
 #include "players/state_path.h"
+#include "world/actor_place.h"
 
 #include <Unreal/NameTypes.hpp>
 
@@ -31,6 +33,7 @@ namespace {
 
 using platform::Read;
 using platform::ReadPointer;
+using lead_keep_rules::Verdict;
 
 using StoryFlagIsSetFn = char (*)(const std::int64_t* flag);
 using FindRowFn        = void* (*)(void* table, std::int64_t name);
@@ -52,6 +55,8 @@ std::uintptr_t   g_actionTables      = 0;  // 0: the leash is not read (logged a
 std::uintptr_t   g_actionGroupTables = 0;
 StoryFlagIsSetFn g_storyFlagIsSet    = nullptr;
 FieldPointFindFn g_fieldPointFind    = nullptr;
+bool             g_keeps             = true;  // `lead-holder keeps` (players/lead_keep_rules.h); guide: every needed move to its AI
+bool             g_marking           = false; // hud/lead_mark installed: a kept move's point can be shown
 
 /// The field AI whose handler last failed to read, and the kind: the failure is logged once (Debug) and then at
 /// Trace while it lasts.
@@ -78,16 +83,27 @@ constexpr bool ArrivalKindsHaveNames() noexcept
 }
 static_assert(ArrivalKindsHaveNames(), "every arrival kind needs its handler's object/state offsets, and only those");
 
+/// A world location (UE centimetres), as the game's FVector lays it out.
+struct Vec3
+{
+    float x = 0, y = 0, z = 0;
+};
+
 /// A lead or run judged, and the verdict that holds for it.
 struct Judgment
 {
     std::int64_t  object = 0, state = 0;
     std::uint8_t  kind       = 0;
-    bool          guide      = false;
+    Verdict       verdict    = Verdict::Staging;
     // Another waiter, a direct set on another object, or a further move in the member's own chain.
     bool          waiter     = false;
     bool          marker     = false;  // the story's marker rides on the member
     bool          leash      = false;  // a live AutoWalk act leashes player 1 to the member
+    bool          signals    = false;  // the move names an arrival trigger
+    bool          pointKnown = false;  // its destination is a field point of the loaded level (`point`)
+    bool          reached    = false;  // measured within the hand radius while the move was needed, kept and signalling (this setting)
+    std::int64_t  destination = 0;
+    Vec3          point;
     std::uint32_t censusTick = 0;
     std::uint32_t calls      = 0;
     std::uint32_t touched    = 0;      // the clock at the last call (the least recently used slot is reused)
@@ -288,12 +304,6 @@ std::vector<std::wstring> NextStates(const std::uint8_t* row) noexcept
     }
     return out;
 }
-
-/// A world location (UE centimetres), as the game's FVector lays it out.
-struct Vec3
-{
-    float x = 0, y = 0, z = 0;
-};
 
 /// A shown objective marker's target and where the game draws it (the record's shown position, world centimetres).
 struct MarkerPoint
@@ -566,8 +576,9 @@ catch (...)
 
 struct Census
 {
-    bool         read    = false;
-    std::int64_t trigger = 0;
+    bool         read        = false;
+    std::int64_t destination = 0;  // the move's point (string argument 1), 0 when unnamed
+    std::int64_t trigger     = 0;
     bool         self    = false;  // the member's own step waits (always, with a trigger)
     bool         chain   = false;  // a further move ahead in the member's own chain of states: the level walks it on
     int          others  = 0;      // other waiters (scope) plus direct sets on other objects
@@ -597,6 +608,10 @@ try
     }
     const std::vector<std::int64_t> args = Names(self->row + facts::kStateRowStringArgs, 3);
     census.read                          = true;
+    if (args.size() > facts::kStateRowDestinationArg)
+    {
+        census.destination = args[facts::kStateRowDestinationArg];
+    }
     if (args.size() < 3 || args[2] == 0)
     {
         census.text = L"no arrival trigger (nothing can wait)";
@@ -1000,6 +1015,45 @@ catch (...)
     return Leash{.text = L"the leash read raised an exception"};
 }
 
+/// The level object and state a move's arrival signal passes: the kind's handler holds them (engine_facts.h). False
+/// when unknown or unreadable (logged once per field AI and kind at Debug, then at Trace).
+bool MoveOf(const void* fieldAi, std::uint8_t kind, std::int64_t& object, std::int64_t& state) noexcept
+{
+    const facts::ArrivalHandlerNames* names = nullptr;
+    for (const facts::ArrivalHandlerNames& n : facts::kArrivalHandlerNames)
+    {
+        if (n.kind == kind)
+        {
+            names = &n;
+            break;
+        }
+    }
+    if (names == nullptr)
+    {
+        platform::LogDebug(L"lead gate: no handler names known for {} (kind {}); staging assumed", field_hold::KindName(kind), kind);
+        return false;
+    }
+    const auto* handler = static_cast<const std::uint8_t*>(ReadPointer(fieldAi, facts::kFieldAiHandlers + 8u * kind));
+    if (handler == nullptr || !Read(handler + names->object, object) || !Read(handler + names->state, state))
+    {
+        if (fieldAi != g_failingAi || kind != g_failingKind)
+        {
+            g_failingAi   = fieldAi;
+            g_failingKind = kind;
+            platform::LogDebug(L"lead gate: the {} handler of a member's field AI {:#x} could not be read (handler {:#x}); staging assumed",
+                               field_hold::KindName(kind), reinterpret_cast<std::uintptr_t>(fieldAi), reinterpret_cast<std::uintptr_t>(handler));
+        }
+        else
+        {
+            platform::LogTrace(L"lead gate: the {} handler of field AI {:#x} still unread; staging", field_hold::KindName(kind),
+                               reinterpret_cast<std::uintptr_t>(fieldAi));
+        }
+        return false;
+    }
+    g_failingAi = nullptr;
+    return true;
+}
+
 }  // namespace
 
 bool Install(const platform::GameImage& image) noexcept
@@ -1057,72 +1111,56 @@ bool Install(const platform::GameImage& image) noexcept
                            platform::Log(L"lead gate: lead.path {}: {}", *state, text);
                            return control::Outcome{.detail = text};
                        }});
-    platform::Log(L"lead gate: installed; a LEAD or a run to a mark on a further player's member goes to its AI when a level step "
+    control::Register({.name  = L"lead-holder",
+                       .shape = control::Shape::Word,
+                       .words = {L"keeps", L"guide"},
+                       .help  = L"a lead or run to a mark the level needs finished, on a further player's member: keeps (the player keeps "
+                                L"it, its point marked in that player's view, to its AI within 2 m of the point until the level's next "
+                                L"setting; keeps at start) or guide (to its AI for the whole move, as before v0.128.0)",
+                       .set   = [](const control::Value& value) {
+                           g_keeps = std::get<std::wstring>(value) == L"keeps";
+                           platform::Log(L"lead gate: lead-holder {}", g_keeps ? L"keeps" : L"guide");
+                           return control::Outcome{};
+                       },
+                       .get = [] { return control::Value{std::wstring(g_keeps ? L"keeps" : L"guide")}; }});
+    platform::Log(L"lead gate: installed; a LEAD or a run to a mark on a further player's member is needed finished when a level step "
                   L"waits on its arrival, the story's marker rides on it, a further move is ahead in its own chain of states, or the "
-                  L"level leashes player 1 to it");
+                  L"level leashes player 1 to it; the player keeps such a move, guided by a marker, and its AI finishes the arrival "
+                  L"at the point (lead-holder keeps)");
     return true;
 }
 
-bool Guide(const void* member, const void* fieldAi, std::uint8_t kind) noexcept
+Verdict Judge(const void* member, const void* fieldAi, std::uint8_t kind) noexcept
 try
 {
     // Not installed, or a kind whose arrival the level cannot wait on (field_hold.h names them): staging.
     if (g_storyFlagIsSet == nullptr || !field_hold::SignalsArrival(kind))
     {
-        return false;
+        return Verdict::Staging;
     }
-    // The kind's handler holds the object and state names its arrival signal passes (engine_facts.h).
-    const facts::ArrivalHandlerNames* names = nullptr;
-    for (const facts::ArrivalHandlerNames& n : facts::kArrivalHandlerNames)
-    {
-        if (n.kind == kind)
-        {
-            names = &n;
-            break;
-        }
-    }
-    if (names == nullptr)
-    {
-        platform::LogDebug(L"lead gate: no handler names known for {} (kind {}); staging assumed", field_hold::KindName(kind), kind);
-        return false;
-    }
-    const auto*  handler = static_cast<const std::uint8_t*>(ReadPointer(fieldAi, facts::kFieldAiHandlers + 8u * kind));
     std::int64_t object = 0, state = 0;
-    if (handler == nullptr || !Read(handler + names->object, object) || !Read(handler + names->state, state))
+    if (!MoveOf(fieldAi, kind, object, state))
     {
-        if (fieldAi != g_failingAi || kind != g_failingKind)
-        {
-            g_failingAi   = fieldAi;
-            g_failingKind = kind;
-            platform::LogDebug(L"lead gate: the {} handler of a member's field AI {:#x} could not be read (handler {:#x}); staging assumed",
-                               field_hold::KindName(kind), reinterpret_cast<std::uintptr_t>(fieldAi), reinterpret_cast<std::uintptr_t>(handler));
-        }
-        else
-        {
-            platform::LogTrace(L"lead gate: the {} handler of field AI {:#x} still unread; staging", field_hold::KindName(kind),
-                               reinterpret_cast<std::uintptr_t>(fieldAi));
-        }
-        return false;
+        return Verdict::Staging;
     }
-    g_failingAi = nullptr;
     if (object == 0)
     {
         platform::LogTrace(L"lead gate: the {} on the level layer names no level object (a state-manager command's run): no arrival "
                            L"signal, staging",
                            field_hold::KindName(kind));
-        return false;
+        return Verdict::Staging;
     }
     Judgment&  last = JudgmentOf(object);
     const bool same = last.object == object && last.state == state && last.kind == kind;
-    if (same && last.guide)
+    if (same && lead_keep_rules::ToAi(last.verdict))
     {
-        return true;  // judged a guide: holds until the setting ends (its state changes)
+        return last.verdict;  // a guide, or brought to its mark: holds until the setting ends (its state changes)
     }
     std::uint8_t* root = field_root::Root();
     std::uint8_t* sm   = field_root::StateManager();
     if (root == nullptr || sm == nullptr)
     {
-        return false;
+        return Verdict::Staging;
     }
     if (!same)
     {
@@ -1145,27 +1183,98 @@ try
         last.censusTick = last.calls;
         last.waiter     = waiters.others > 0 || waiters.chain;
         last.leash      = leash.on;
+        last.signals    = waiters.trigger != 0;
+        if (waiters.read)
+        {
+            last.destination = waiters.destination;
+            last.pointKnown  = last.destination != 0 && PointLocation(last.destination, last.point);
+        }
     }
     const bool wasMarker = last.marker;
     last.marker          = marker.onMember;
-    last.guide           = last.waiter || last.marker || last.leash;
-    if (!same || census || last.marker != wasMarker)
+    const bool needed    = last.waiter || last.marker || last.leash;
+    // How far the member stands from the point (2D, as the game measures its arrival), while it may be handed there.
+    float      away  = -1.0f;
+    const bool keeps = g_keeps && g_marking;
+    if (needed && keeps && last.pointKnown && last.signals && !last.reached)
     {
-        g_reading = std::format(L"{} on object {} state {}: {}; {}; marker {}: {}; verdict {}", field_hold::KindName(kind), Name(object),
-                                Name(state), census ? waiters.text : L"waiters as before", census ? leash.text : L"leash as before",
-                                marker.onMember ? L"on the member" : L"elsewhere", marker.text,
-                                last.guide ? L"GUIDE (to its AI, the player's view on it)" : L"staging (the player's)");
-        if (!same || last.guide)
+        world::actor_place::Vec3 at;
+        if (world::actor_place::ActorLocation(member, at))
+        {
+            const float dx = at.x - last.point.x, dy = at.y - last.point.y;
+            away           = std::hypot(dx, dy);
+            last.reached   = lead_keep_rules::Reached(dx, dy);
+        }
+    }
+    const Verdict was = last.verdict;
+    last.verdict      = lead_keep_rules::Decide(needed, keeps, last.pointKnown, last.signals, last.reached);
+    if (!same || census || last.marker != wasMarker || last.verdict != was)
+    {
+        g_reading = std::format(L"{} on object {} state {}: {}; {}; marker {}: {}; point {}; verdict {}", field_hold::KindName(kind),
+                                Name(object), Name(state), census ? waiters.text : L"waiters as before",
+                                census ? leash.text : L"leash as before", marker.onMember ? L"on the member" : L"elsewhere", marker.text,
+                                last.pointKnown ? std::format(L"{} at ({:.1f}, {:.1f}, {:.1f}) m", Name(last.destination), last.point.x / 100,
+                                                              last.point.y / 100, last.point.z / 100)
+                                                : last.destination != 0 ? std::format(L"{} (not a field point)", Name(last.destination))
+                                                                        : std::wstring(L"none named"),
+                                lead_keep_rules::Name(last.verdict));
+        if (!same || last.verdict != was)
         {
             platform::Log(L"lead gate: {}", g_reading);
         }
     }
-    return last.guide;
+    if (last.verdict == Verdict::AtMark && was != Verdict::AtMark)
+    {
+        platform::Log(L"lead gate: {} brought within {:.1f} m of its point {} (the hand radius {:.0f} m): to its AI, which walks the "
+                      L"last steps and signals the arrival; back to its player at the level's next setting",
+                      Name(object), away / 100, Name(last.destination), lead_keep_rules::kHandRadius / 100);
+    }
+    return last.verdict;
 }
 catch (...)
 {
     platform::Log(L"lead gate: the judgment raised an exception; staging assumed");
+    return Verdict::Staging;
+}
+
+bool KeptMark(const void* member, Mark& out) noexcept
+try
+{
+    const auto*  ai    = static_cast<const std::uint8_t*>(ReadPointer(member, facts::kCharacterFieldAi));
+    std::uint8_t layer = field_hold::kNoLayer, kind = 0;
+    if (ai == nullptr || !Read(ai + facts::kFieldAiActiveLayer, layer) || !Read(ai + facts::kFieldAiActiveKind, kind) ||
+        field_hold::Of(layer, kind) != field_hold::Hold::Arrival)
+    {
+        return false;
+    }
+    std::int64_t object = 0, state = 0;
+    if (!MoveOf(ai, kind, object, state) || object == 0)
+    {
+        return false;
+    }
+    for (const Judgment& j : g_judged)
+    {
+        if (j.object == object && j.state == state && j.kind == kind && j.verdict == Verdict::Keep && j.pointKnown)
+        {
+            out = Mark{.at = {j.point.x, j.point.y, j.point.z}, .point = j.destination};
+            return true;
+        }
+    }
     return false;
+}
+catch (...)
+{
+    return false;
+}
+
+std::wstring PointName(std::int64_t point) noexcept
+{
+    return Name(point);
+}
+
+void SetMarking(bool on) noexcept
+{
+    g_marking = on;
 }
 
 std::wstring Reading() noexcept

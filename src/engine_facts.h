@@ -719,6 +719,7 @@ inline constexpr std::uint32_t kFieldIconSlot = 51;  // EndUISystem[51]: +0 the 
 // The icon map, TMap<FName, TUniquePtr<Entry>>: its sparse array (platform/sparse_array.h) at +0x10; 24 bytes per
 // element, the entry pointer at +8.
 inline constexpr std::uint32_t kFieldIconMapData = 0x10, kFieldIconMapElement = 24, kFieldIconMapElementEntry = 8;
+inline constexpr std::uint32_t kFieldIconMapElementKey = 0;  // the navi icon's FName, slot 29's key (RE-field-icon-placement.md §2.2)
 inline constexpr std::uint32_t kFieldIconEntryHasSlot = 28, kFieldIconEntryAlpha = 32;  // the entry's has-slot byte; its alpha, the only state the placement carries
 inline constexpr std::uint32_t kCanvasChildren   = 0x160;  // SEndCanvas vtable: its children (+0 vtable: count; +8 slot pointers)
 inline constexpr std::uint32_t kCanvasSlotWidget = 0x08, kCanvasSlotOffset = 0x20;  // a slot's SWidget, its Offset {x, y, w, h}

@@ -844,7 +844,9 @@ void Session::HandForHold(Seat& seat, void* member, party_member::Wait hold) noe
                   L"when the hold ends{}",
                   seat.Name(), party_seat::MemberType(seat.index), party_member::Describe(hold),
                   seat.handedToAi ? L"yes" : L"NO (the hand faulted; tried again)", seat.Name(),
-                  hold == party_member::Wait::Guide ? std::format(L" (lead gate: {})", lead_gate::Reading()) : L"");
+                  hold == party_member::Wait::Guide || hold == party_member::Wait::AtMark
+                      ? std::format(L" (lead gate: {})", lead_gate::Reading())
+                      : L"");
     platform::LogDebug(L"  the member: {}", party_member::AiDetail(member));
 }
 

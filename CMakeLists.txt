@@ -48,6 +48,7 @@ add_library(LocalSplitScreen SHARED
     src/hud/hud_probe.cpp
     src/hud/field_icons.cpp
     src/hud/image_entries.cpp
+    src/hud/lead_mark.cpp
     src/hud/marker_replay.cpp
     src/hud/minimap.cpp
     src/hud/outside_icons.cpp
@@ -342,6 +343,13 @@ add_executable(LeashRulesTests
 target_include_directories(LeashRulesTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_compile_features(LeashRulesTests PRIVATE cxx_std_20)
 add_test(NAME leash_rules COMMAND LeashRulesTests)
+
+add_executable(LeadKeepRulesTests
+    tests/lead_keep_rules_test.cpp
+)
+target_include_directories(LeadKeepRulesTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(LeadKeepRulesTests PRIVATE cxx_std_20)
+add_test(NAME lead_keep_rules COMMAND LeadKeepRulesTests)
 
 add_executable(StallRulesTests
     tests/stall_rules_test.cpp

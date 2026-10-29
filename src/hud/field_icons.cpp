@@ -80,9 +80,23 @@ struct Known
     std::uint32_t seen = 0;            // the frame it was last recorded
 };
 
+/// A live entry of the icon map and its key (the navi icon's FName, as the map holds it).
+struct Listing
+{
+    const void*   entry = nullptr;
+    std::uint64_t key   = 0;
+};
+/// An icon one seat owns: its diamond shows in that seat's view only (SetOwner).
+struct Owned
+{
+    std::uint64_t key  = 0;
+    int           seat = -1;  // -1: the record is free
+};
+
 std::vector<Call>        g_calls;
 std::vector<Known>       g_known;
-std::vector<const void*> g_listed;  // the icon map's live entries, walked once per replay
+std::vector<Listing>     g_listed;  // the icon map's live entries, walked once per replay
+std::array<Owned, 4>     g_owned;
 std::uint32_t            g_frame = 0;
 
 /// What the readings show (`hud.field-icons`): counts since the last reading and one icon followed through the frame
@@ -92,6 +106,7 @@ struct Seen
     std::uint32_t frames = 0, framesWithIcons = 0, recorded = 0;
     std::uint32_t replays[kMaxColumns] = {}, faults = 0;
     std::uint32_t canvasChanged = 0, entryGone = 0, widgetGone = 0, noSlot = 0;
+    std::uint32_t ownedHidden = 0;  // a seat's own icon placed transparent (the tick's or another view's placement)
     bool          memberKnown = false;  // the further column's member location was read
     void*         icon      = nullptr;
     float         tickAt[2] = {}, at[kMaxColumns][2] = {};
@@ -156,6 +171,17 @@ void Keep(const Call& call) noexcept
     }
 }
 
+std::uint8_t* Manager() noexcept
+{
+    void* manager = nullptr;
+    return g_slot != nullptr && Read(g_slot, manager) ? static_cast<std::uint8_t*>(manager) : nullptr;
+}
+
+void ListEntries(const std::uint8_t* manager) noexcept;
+bool Listed(const void* entry) noexcept;
+int  OwnerOf(const void* entry) noexcept;
+bool AnyOwned() noexcept;
+
 void Place(void* entry, void* canvas, float dt, void* controller, const Vector3* leader, std::int32_t unused, const Vector3* icon)
 {
     if (!g_replaying && g_on && entry != nullptr && canvas != nullptr)
@@ -167,14 +193,29 @@ void Place(void* entry, void* canvas, float dt, void* controller, const Vector3*
             Keep(call);
             ++g_seen.recorded;
         }
+        // A seat's own icon: the tick's placement (player 1's view, and the single view's) keeps it transparent, its alpha
+        // held at 0 with no step (RE-lead-marker.md §1.3); the owner's column fades its own alpha in the replay.
+        if (AnyOwned())
+        {
+            static std::uint32_t listedAt = ~0u;  // the frame the tick last walked the map
+            if (std::uint8_t* manager = Manager())
+            {
+                if (listedAt != g_frame || !Listed(entry))  // once a frame, again for an entry added since
+                {
+                    ListEntries(manager);
+                    listedAt = g_frame;
+                }
+                if (OwnerOf(entry) >= 1)
+                {
+                    constexpr float kHidden = 0.0f;
+                    platform::WriteGuarded(static_cast<std::uint8_t*>(entry) + facts::kFieldIconEntryAlpha, &kHidden, sizeof(kHidden));
+                    dt = 0.0f;
+                    ++g_seen.ownedHidden;
+                }
+            }
+        }
     }
     reinterpret_cast<PlaceFn>(g_place.Original())(entry, canvas, dt, controller, leader, unused, icon);
-}
-
-std::uint8_t* Manager() noexcept
-{
-    void* manager = nullptr;
-    return g_slot != nullptr && Read(g_slot, manager) ? static_cast<std::uint8_t*>(manager) : nullptr;
 }
 
 /// The entries that are values in the manager's icon map now (an entry freed by the tick's removal would otherwise be
@@ -185,11 +226,12 @@ try
     g_listed.clear();
     platform::ForEachSparseElement(reinterpret_cast<std::uintptr_t>(manager) + facts::kFieldIconMapData, facts::kFieldIconMapElement,
                                    platform::kSmallSetMaxBits, [](std::uintptr_t element) {
-                                       const void* value = nullptr;
-                                       if (Read(reinterpret_cast<const void*>(element + facts::kFieldIconMapElementEntry), value) &&
-                                           value != nullptr)
+                                       Listing listing;
+                                       if (Read(reinterpret_cast<const void*>(element + facts::kFieldIconMapElementEntry), listing.entry) &&
+                                           listing.entry != nullptr)
                                        {
-                                           g_listed.push_back(value);
+                                           Read(reinterpret_cast<const void*>(element + facts::kFieldIconMapElementKey), listing.key);
+                                           g_listed.push_back(listing);
                                        }
                                        return true;
                                    });
@@ -201,14 +243,47 @@ catch (...)
 
 bool Listed(const void* entry) noexcept
 {
-    for (const void* listed : g_listed)
+    for (const Listing& listed : g_listed)
     {
-        if (listed == entry)
+        if (listed.entry == entry)
         {
             return true;
         }
     }
     return false;
+}
+
+bool AnyOwned() noexcept
+{
+    for (const Owned& owned : g_owned)
+    {
+        if (owned.seat >= 0)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+/// The seat owning the listed `entry`'s icon, or -1 (every view's).
+int OwnerOf(const void* entry) noexcept
+{
+    for (const Listing& listed : g_listed)
+    {
+        if (listed.entry != entry)
+        {
+            continue;
+        }
+        for (const Owned& owned : g_owned)
+        {
+            if (owned.seat >= 0 && owned.key == listed.key)
+            {
+                return owned.seat;
+            }
+        }
+        return -1;
+    }
+    return -1;
 }
 
 /// The canvas slot holding `widget`, matched on the widget's Slate object as the placement matches it (the game's
@@ -296,8 +371,9 @@ Known* KnownOf(const Call& call) noexcept
 
 /// One icon placed again for a column's view: for a further column with that column's alpha swapped into the entry and
 /// the tick's written back around the call; the slot's offset then read back (this view's projection wrote it) or this
-/// view's last one written (it did not). Returns false when the icon stays as the game placed it.
-bool PlaceFor(int column, const Call& call, void* widget, void* controller, const Vector3* leader, float dt, View& view,
+/// view's last one written (it did not). `hidden` (a seat's own icon in another view): alpha 0 swapped in, no step, so
+/// the placement leaves it transparent for this pass. Returns false when the icon stays as the game placed it.
+bool PlaceFor(int column, const Call& call, void* widget, void* controller, const Vector3* leader, float dt, bool hidden, View& view,
               bool& projected, std::uint8_t*& slot) noexcept
 {
     auto*   entry = static_cast<std::uint8_t*>(call.entry);
@@ -315,16 +391,27 @@ bool PlaceFor(int column, const Call& call, void* widget, void* controller, cons
         Fault(1, L"an icon's alpha");
         return false;
     }
-    if (column != 0 && !platform::WriteGuarded(entry + facts::kFieldIconEntryAlpha, &view.alpha, sizeof(view.alpha)))
+    constexpr float kHidden = 0.0f;
+    const bool      swap    = column != 0 || hidden;
+    if (swap && !platform::WriteGuarded(entry + facts::kFieldIconEntryAlpha, hidden ? &kHidden : &view.alpha, sizeof(view.alpha)))
     {
         Fault(2, L"an icon's alpha for a further column");
         return false;
     }
-    const bool placed = platform::CallGuarded(reinterpret_cast<PlaceFn>(g_place.Original()), call.entry, call.canvas, dt,
-                                              controller, leader, std::int32_t{0}, static_cast<const Vector3*>(&call.icon));
-    if (column != 0)
+    const bool placed = platform::CallGuarded(reinterpret_cast<PlaceFn>(g_place.Original()), call.entry, call.canvas,
+                                              hidden ? 0.0f : dt, controller, leader, std::int32_t{0},
+                                              static_cast<const Vector3*>(&call.icon));
+    if (swap)
     {
-        Read(entry + facts::kFieldIconEntryAlpha, view.alpha);  // this column's step taken
+        if (hidden)
+        {
+            view.alpha = 0.0f;  // fades in from 0 if this view becomes the owner's
+            ++g_seen.ownedHidden;
+        }
+        else
+        {
+            Read(entry + facts::kFieldIconEntryAlpha, view.alpha);  // this column's step taken
+        }
         platform::WriteGuarded(entry + facts::kFieldIconEntryAlpha, &alphaTick, sizeof(alphaTick));
     }
     if (!placed)
@@ -511,9 +598,12 @@ void Replay(int column, void* controller, void* member) noexcept
                 platform::CopyGuarded(g_seen.tickAt, slot + facts::kCanvasSlotOffset, sizeof(g_seen.tickAt));
             }
         }
+        // A seat's own icon shows in that seat's column only (a mirror's column has no seat: hidden there too).
+        const int     owner     = OwnerOf(call.entry);
+        const bool    hidden    = owner >= 0 && owner != overlay_pass::SeatOf(column);
         bool          projected = false;
         std::uint8_t* slot      = nullptr;
-        if (!PlaceFor(column, call, widget, pc, leader, dt, view, projected, slot))
+        if (!PlaceFor(column, call, widget, pc, leader, dt, hidden, view, projected, slot))
         {
             continue;
         }
@@ -575,9 +665,9 @@ std::wstring Reading()
     const std::wstring further = PlayerOf(1);
     std::wstring text = std::format(
         L"{} frames, {} with icons; recorded {}; replayed: {}; skipped: canvas changed {}, entry gone {}, widget gone "
-        L"{}, slot not found {}; faults {}; {}'s member {}",
+        L"{}, slot not found {}; faults {}; {}'s member {}; a seat's own icon placed transparent {}",
         s.frames, s.framesWithIcons, s.recorded, replayed, s.canvasChanged, s.entryGone, s.widgetGone, s.noSlot, s.faults,
-        further, s.memberKnown ? L"read" : L"not read");
+        further, s.memberKnown ? L"read" : L"not read", s.ownedHidden);
     if (s.icon != nullptr)
     {
         text += std::format(L" | icon {}: tick ({:.0f},{:.0f}) {} ({:.0f},{:.0f}{}) player 1 ({:.0f},{:.0f}{}); alpha tick {:.2f} "
@@ -597,6 +687,33 @@ void SetEnabled(bool on) noexcept
 bool Enabled() noexcept
 {
     return g_on && g_installed;
+}
+
+bool SetOwner(std::uint64_t key, int seat) noexcept
+{
+    Owned* free = nullptr;
+    for (Owned& owned : g_owned)
+    {
+        if (owned.seat >= 0 && owned.key == key)
+        {
+            owned.seat = seat;  // -1 frees it
+            return true;
+        }
+        if (owned.seat < 0 && free == nullptr)
+        {
+            free = &owned;
+        }
+    }
+    if (seat < 0)
+    {
+        return true;
+    }
+    if (free == nullptr)
+    {
+        return false;
+    }
+    *free = Owned{.key = key, .seat = seat};
+    return true;
 }
 
 }  // namespace lss::hud::field_icons
