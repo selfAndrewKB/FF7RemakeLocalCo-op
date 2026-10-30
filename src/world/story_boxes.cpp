@@ -305,10 +305,10 @@ bool HeldByPlayer(const void* member) noexcept
     return Read(static_cast<const std::uint8_t*>(member) + facts::kCharacterPlayerSlot, controller) && controller != nullptr;
 }
 
-bool KeptMove(const void* member) noexcept
+/// The level has the member on a move of its own (a run or a lead it wrote), kept by its player or not (story_boxes.h).
+bool LevelMoves(const void* member) noexcept
 {
-    players::lead_gate::Mark mark;
-    return players::lead_gate::KeptMark(member, mark);
+    return players::lead_gate::OnLevelMove(member);
 }
 
 bool Remembered(const void* member, std::uint64_t box) noexcept
@@ -342,7 +342,7 @@ std::int64_t Begin(void* points, std::uint64_t box, void* collider)
         const bool    laid   = LayoutOf(box, object, group);
         const std::uint64_t tag = FirstTag(collider);
         const rules::Entry entry{.heldByPlayer     = HeldByPlayer(collider),
-                                 .levelSentIt      = KeptMove(collider),
+                                 .levelSentIt      = LevelMoves(collider),
                                  .groupSet         = laid && group != 0,
                                  .groupNamesLeader = laid && group != 0 && GroupNamesLeader(group)};
         if (!rules::HoldBack(entry) || !GroupLists(group, tag))
@@ -416,7 +416,7 @@ void Replay(const Waiting& w, void* member, const wchar_t* why)
 
 const wchar_t* WhyReplay(const rules::Waiting& w) noexcept
 {
-    return !w.seated ? L"its player left" : w.handedToAi ? L"handed to its AI" : w.keptMove ? L"the level sent it, its player keeps it"
+    return !w.seated ? L"its player left" : w.handedToAi ? L"handed to its AI" : w.levelMoves ? L"the level sent it on a move"
                                                                                            : L"player 1 came to the box";
 }
 
@@ -560,7 +560,7 @@ try
             state.seated           = g_members[static_cast<std::size_t>(w.seat)] == member;
             state.handedToAi       = !HeldByPlayer(member);
             state.inCinema         = players::party_member::ActorMode(member) == facts::kActorModeCinema;
-            state.keptMove         = KeptMove(member);
+            state.levelMoves       = LevelMoves(member);
             state.playerOneReached = w.shaped && haveOne && rules::Reaches(w.shape, one);
         }
         if (!g_on.load() && !state.boxGone)

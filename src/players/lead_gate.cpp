@@ -1240,19 +1240,43 @@ catch (...)
     return Verdict::Staging;
 }
 
-bool KeptMark(const void* member, Mark& out) noexcept
-try
+namespace {
+
+/// `member`'s current level move (a LEAD or a run to a mark on the level layer; `object` 0 for a state-manager command's
+/// run), as the hold judges its state: an interest scene on top leaves the move beneath it.
+bool CurrentMove(const void* member, std::uint8_t& kind, std::int64_t& object, std::int64_t& state) noexcept
 {
     const auto*        ai = static_cast<const std::uint8_t*>(ReadPointer(member, facts::kCharacterFieldAi));
-    field_hold::Judged judged;  // as the hold judges it: an interest scene on top leaves the move beneath it marked
+    field_hold::Judged judged;
     if (ai == nullptr || !party_member::JudgedState(member, judged) ||
         field_hold::Of(judged.layer, judged.kind) != field_hold::Hold::Arrival)
     {
         return false;
     }
-    const std::uint8_t kind   = judged.kind;
-    std::int64_t       object = 0, state = 0;
-    if (!MoveOf(ai, kind, object, state) || object == 0)
+    kind = judged.kind;
+    return MoveOf(ai, kind, object, state);
+}
+
+}  // namespace
+
+bool OnLevelMove(const void* member) noexcept
+try
+{
+    std::uint8_t kind   = 0;
+    std::int64_t object = 0, state = 0;
+    return CurrentMove(member, kind, object, state);
+}
+catch (...)
+{
+    return false;
+}
+
+bool KeptMark(const void* member, Mark& out) noexcept
+try
+{
+    std::uint8_t kind   = 0;
+    std::int64_t object = 0, state = 0;
+    if (!CurrentMove(member, kind, object, state) || object == 0)
     {
         return false;
     }

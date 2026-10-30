@@ -12,8 +12,11 @@
 // not send, a member-only box's enter is not called now but remembered (the game then records nothing; its own end
 // handler is safe with no record). The member then enters it "now", by the game's own enter called with the same
 // three values, the moment a companion would in single player:
-//   - the level moves it or hands it to its AI (its PLAYER slot empties: a guide, a script, a scene's hand), or sends it
-//     on a move its player keeps;
+//   - the level moves it or hands it to its AI (its PLAYER slot empties: a guide, a script, a scene's hand), or writes a
+//     move of its own on it (a run or a lead, players/lead_gate OnLevelMove), even one its player keeps: in single player
+//     that move carries the companion through its boxes (the Ch. 5 dash crosses the talk box and the fence box in about
+//     3 s, before the talk sends "head for the stairs"; v0.129.0 counted only a move kept at a marked point, and the
+//     fence box, held until player 1 came 31 s later, missed that trigger: the stall again, 2026-10-30 15:17);
 //   - its player leaves (it follows on its AI);
 //   - player 1's character comes within a few metres of the box (world/story_box_rules.h Reaches): a following companion
 //     walks in about then.

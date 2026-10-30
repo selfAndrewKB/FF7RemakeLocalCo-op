@@ -74,6 +74,11 @@ struct Mark
     std::int64_t point = 0;
 };
 
+/// The level has `member` on a move of its own (a LEAD or a run to a mark on the level layer, a level object's or a
+/// state-manager command's), whatever the verdict and whoever walks it: world/story_boxes takes it as the story's moment for the
+/// member's own story boxes (a run the level sends crosses them in single player).
+bool OnLevelMove(const void* member) noexcept;
+
 /// `member`'s current move is judged KEEP: its point. False otherwise (another verdict, no move, not judged yet).
 bool KeptMark(const void* member, Mark& out) noexcept;
 

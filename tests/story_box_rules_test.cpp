@@ -56,7 +56,7 @@ void TestEverythingElseIsTheGames()
     EXPECT(!HoldBack(groupless));
 }
 
-constexpr Waiting kStillWaiting{.boxGone = false, .seated = true, .handedToAi = false, .inCinema = false, .keptMove = false,
+constexpr Waiting kStillWaiting{.boxGone = false, .seated = true, .handedToAi = false, .inCinema = false, .levelMoves = false,
                                 .playerOneReached = false};
 
 void TestAWaitingEntryWaits()
@@ -75,7 +75,7 @@ void TestEachReleaseReplays()
     EXPECT(Next(w) == Step::Replay);  // its player left: back to its AI, it would follow in
 
     w = kStillWaiting;
-    w.keptMove = true;
+    w.levelMoves = true;
     EXPECT(Next(w) == Step::Replay);
 
     w = kStillWaiting;

@@ -13,13 +13,15 @@ namespace lss::world::story_box_rules {
 struct Entry
 {
     bool heldByPlayer;      // the member's PLAYER slot holds a controller (its player walks it, not its AI)
-    bool levelSentIt;       // the level has the member on a move its player keeps (players/lead_gate KeptMark)
+    bool levelSentIt;       // the level has the member on a move of its own, whoever walks it (players/lead_gate OnLevelMove)
     bool groupSet;          // the box's ObjectLayout row names an actor group (a group box)
     bool groupNamesLeader;  // that group lists the party leader's tag (a party box: Cloud fires it on arrival)
 };
 
 /// The entry waits (the game's handler is not called now): a member-only story box entered by a member its player walks
-/// ahead of the story. A party box, a group-less box, a member on its AI or on a move the level sent are the game's.
+/// ahead of the story. A party box, a group-less box, a member on its AI or on a move the level sent are the game's: while
+/// the level has the member on any move (a staging run its player walks included), the level is at a moving step and the
+/// member's boxes are due, as on the companion's run in single player.
 constexpr bool HoldBack(const Entry& e) noexcept
 {
     return e.heldByPlayer && !e.levelSentIt && e.groupSet && !e.groupNamesLeader;
@@ -32,7 +34,7 @@ struct Waiting
     bool seated;           // the member is still its player's seat's member
     bool handedToAi;       // its PLAYER slot is empty: the game or the session handed it to its AI
     bool inCinema;         // its actor mode is CINEMA: the game dispatches no box then either
-    bool keptMove;         // the level sent it on a move its player keeps (lead-holder keeps)
+    bool levelMoves;       // the level has it on a move of its own, whoever walks it (players/lead_gate OnLevelMove)
     bool playerOneReached; // player 1's character has come to the box (Reaches below)
 };
 
@@ -56,7 +58,7 @@ constexpr Step Next(const Waiting& w) noexcept
     {
         return Step::Wait;
     }
-    if (!w.seated || w.handedToAi || w.keptMove || w.playerOneReached)
+    if (!w.seated || w.handedToAi || w.levelMoves || w.playerOneReached)
     {
         return Step::Replay;
     }
