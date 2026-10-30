@@ -16,7 +16,6 @@
 #include "players/seat_objects.h"
 #include "players/seats.h"
 #include "players/weak_object.h"
-#include "world/actor_place.h"
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -70,9 +69,6 @@ struct SeatState
     void*         component = nullptr;
     std::uint8_t  action    = 0;  // the component's running action at the last tick
     std::uint32_t actions = 0, camerasLeft = 0, camerasOff = 0, locksSkipped = 0;  // left: the game's eased leave
-    std::uint32_t aiActions = 0;  // actions started while the member was with its AI (never reset: compared as a difference)
-    float         startZ    = 0;  // the member's height when its running action started (StartHeight)
-    bool          startZKnown = false;
     std::uint32_t leaderResumed = 0;  // Start/Exit calls run with the seat's leader inside the action start
     std::int8_t   ladderKeepYaw = -1;  // an exit phase noted as the climb ended: its leave's keep-yaw flag (-1 none)
     bool          withAi        = false;  // the member is handed to its AI: its field actions run as the game's member's
@@ -1522,18 +1518,11 @@ void TickSeat(int seat, void* member) noexcept
     }
     if (action != 0)
     {
-        world::actor_place::Vec3 at;
-        state.startZKnown   = member != nullptr && world::actor_place::ActorLocation(member, at);
-        state.startZ        = state.startZKnown ? at.z : 0.0f;
         state.ladderKeepYaw = -1;
         state.actionWithAi  = state.withAi;  // the mode CompTick ran its start in (withAi changes between actions only)
         if (!state.actionWithAi)
         {
             ++state.actions;
-        }
-        else
-        {
-            ++state.aiActions;  // the session's loop test for an interest walk (AiActionsStarted)
         }
         platform::LogDebug(L"traversal: {}'s member starts a {}{}", players::SeatName(seat), ActionName(action),
                            state.actionWithAi ? L" (its AI's)" : L"");
@@ -1640,33 +1629,6 @@ bool PlayerOneMoveHolds(std::uint32_t mask) noexcept
 {
     const std::uint32_t mine = PlayerOneMoveBitsIn(mask);
     return mask == 0 ? MoverLockNow() : (mask & ~mine) == 0;
-}
-
-std::uint32_t AiActionsStarted(int seat) noexcept
-{
-    return seat >= 1 && seat <= players::kSeatsBuilt ? g_seats[seat].aiActions : 0;
-}
-
-bool InAction(int seat) noexcept
-{
-    return seat >= 1 && seat <= players::kSeatsBuilt && g_seats[seat].action != 0;
-}
-
-bool PlayerOneInAction() noexcept
-{
-    const std::uint8_t* comp   = nullptr;
-    std::uint8_t        action = 0;
-    return PlayerOneLeader(&comp) != nullptr && comp != nullptr && Read(comp + facts::kFieldActionState, action) && action != 0;
-}
-
-bool StartHeight(int seat, float& z) noexcept
-{
-    if (seat < 1 || seat > players::kSeatsBuilt || g_seats[seat].action == 0 || !g_seats[seat].startZKnown)
-    {
-        return false;
-    }
-    z = g_seats[seat].startZ;
-    return true;
 }
 
 bool HookShotReady() noexcept

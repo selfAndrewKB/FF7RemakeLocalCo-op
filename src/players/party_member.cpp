@@ -9,12 +9,7 @@
 #include "players/field_hold.h"
 #include "players/field_root.h"
 #include "players/lead_gate.h"
-#include "world/actor_place.h"
 
-#include <algorithm>
-#include <array>
-#include <chrono>
-#include <cmath>
 #include <cstdint>
 #include <format>
 #include <string>
@@ -122,13 +117,6 @@ Wait FieldWait(void* member) noexcept
         return Wait::NoFieldAi;
     }
     const std::uint8_t kind = state.kind;
-    // An interest walk on top (not declined): its AI plays it, as in single player; with the guard the session can give
-    // the member back if the walk loops (the walk is then declined and judged beneath).
-    if (kind == field_hold::kInterest && state.layer > field_hold::kLayerLevel && state.layer != field_hold::kLayerCinema &&
-        ai_move_guard::Active())
-    {
-        return Wait::Interest;
-    }
     switch (field_hold::Of(state.layer, kind))
     {
     case field_hold::Hold::Free:
@@ -176,100 +164,6 @@ std::uint8_t GameLeaderType() noexcept
                                                                                                                : facts::kPlayerTypeNone;
 }
 
-namespace {
-
-/// The members whose interest walk was declined (its AI looped on a crossing), and when an INTEREST was last seen on
-/// each. A decline holds while the member has INTEREST requests and ends after kDeclineWindowMs without one, times the
-/// declines in a row (a point that asks again later, its back-off unread, would otherwise restart the cycle), at most
-/// kDeclineWindowMaxMs. The record stays after the decline ends, so a repeat within kRepeatMs counts.
-struct Declined
-{
-    const void*    member      = nullptr;
-    std::uint64_t  lastSeen    = 0;  // steady clock, ms
-    std::uint64_t  lastDecline = 0;
-    std::uint32_t  declines    = 0;  // in a row (each within kRepeatMs of the last)
-    bool           active      = false;
-    bool           duringOwnAction = false;  // declined because the walk began during the player's own ladder or climb
-    float          floorZ          = 0;      // the member's height then (cm): the floor the walk began on
-};
-constexpr float kSameFloorCm = 200;  // a ladder joins floors further apart than this
-std::array<Declined, 4> g_declined;
-constexpr std::uint64_t kDeclineWindowMs    = 10'000;
-constexpr std::uint64_t kDeclineWindowMaxMs = 60'000;
-constexpr std::uint64_t kRepeatMs           = 120'000;
-
-std::uint64_t NowMs() noexcept
-{
-    return static_cast<std::uint64_t>(
-        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
-}
-
-Declined* DeclinedOf(const void* member) noexcept
-{
-    for (Declined& d : g_declined)
-    {
-        if (d.member == member && member != nullptr)
-        {
-            return &d;
-        }
-    }
-    return nullptr;
-}
-
-}  // namespace
-
-std::uint32_t DeclineInterest(const void* member, bool duringOwnAction, const float* floorZ) noexcept
-{
-    if (member == nullptr)
-    {
-        return 0;
-    }
-    const std::uint64_t now  = NowMs();
-    Declined*           slot = DeclinedOf(member);
-    if (slot == nullptr)
-    {
-        slot = &g_declined[0];  // a free record, else the least recently seen
-        for (Declined& d : g_declined)
-        {
-            if (d.member == nullptr || d.lastSeen < slot->lastSeen)
-            {
-                slot = &d;
-                if (d.member == nullptr)
-                {
-                    break;
-                }
-            }
-        }
-        *slot = Declined{.member = member};
-    }
-    slot->declines    = slot->declines != 0 && now - slot->lastDecline < kRepeatMs ? slot->declines + 1 : 1;
-    slot->lastDecline     = now;
-    slot->lastSeen        = now;
-    slot->active          = true;
-    // The floor: the height the player's action started at, else the member's height now; unread: no early end.
-    world::actor_place::Vec3 at;
-    const bool known      = floorZ != nullptr || world::actor_place::ActorLocation(member, at);
-    slot->duringOwnAction = duringOwnAction && known;
-    slot->floorZ          = !slot->duringOwnAction ? 0.0f : floorZ != nullptr ? *floorZ : at.z;
-    return slot->declines;
-}
-
-bool EndDeclineBackOnItsFloor(const void* member, bool inAction, bool playerOneActs) noexcept
-{
-    Declined* d = DeclinedOf(member);
-    if (d == nullptr || !d->active || !d->duringOwnAction || inAction || !playerOneActs)
-    {
-        return false;
-    }
-    world::actor_place::Vec3 at;
-    if (!world::actor_place::ActorLocation(member, at) || std::fabs(at.z - d->floorZ) > kSameFloorCm)
-    {
-        return false;  // still on the action's other floor (the top of the ladder): kept with its player
-    }
-    d->active = false;  // the count stays: a repeat within kRepeatMs still lengthens a later window
-    return true;
-}
-
 bool JudgedState(const void* member, field_hold::Judged& out) noexcept
 {
     const auto*  ai    = static_cast<const std::uint8_t*>(ReadPointer(member, facts::kCharacterFieldAi));
@@ -278,28 +172,10 @@ bool JudgedState(const void* member, field_hold::Judged& out) noexcept
     {
         return false;
     }
-    Declined* declined = DeclinedOf(member);
-    if (declined != nullptr && declined->active)
-    {
-        const std::uint64_t now    = NowMs();
-        const std::uint64_t window = std::min<std::uint64_t>(kDeclineWindowMs * declined->declines, kDeclineWindowMaxMs);
-        if (kind == field_hold::kInterest)
-        {
-            declined->lastSeen = now;
-        }
-        else if (now - declined->lastSeen >= window)
-        {
-            declined->active = false;  // the interest is over: the next one is the AI's again (the count stays)
-        }
-    }
-    if (declined != nullptr && !declined->active)
-    {
-        declined = nullptr;
-    }
     std::uint8_t kinds[field_hold::kLayers] = {};
-    // A declined walk is judged beneath it, only with the guard: without it the walk could start under the player and
-    // fault (no member is declined then).
-    if (kind == field_hold::kInterest && declined != nullptr && ai_move_guard::Active())
+    // An interest scene never takes a member (the user, 2026-10-30): it is judged by the request beneath it. Only with the
+    // guard: without it an interest walk could start under the player and fault (it hands, as before the guard).
+    if (kind == field_hold::kInterest && ai_move_guard::Active())
     {
         static_assert(field_hold::kLayers == facts::kFieldAiLayers, "the request stack's layers");
         for (std::size_t i = 0; i < field_hold::kLayers; ++i)
@@ -546,8 +422,6 @@ const wchar_t* WhyHeldByScript(void* member) noexcept
         return L"a guide (a lead or a run to a mark: a level step waits on its arrival, or the story's marker rides on it): its AI walks it";
     case Wait::AtMark:
         return L"brought to its move's point: its AI finishes the arrival until the level's next setting";
-    case Wait::Interest:
-        return L"an interest walk (an interest point the level placed): its AI plays it";
     default:
         return nullptr;  // a push-button event or the game's leader handed is the game's own hand (party_events); the rest holds nothing
     }
@@ -666,8 +540,6 @@ const wchar_t* Describe(Wait wait) noexcept
     case Wait::AtMark:
         return L"its player brought it to its move's point: its AI finishes the arrival (a lead waits for player 1 first), until the "
                L"level's next setting";
-    case Wait::Interest:
-        return L"its AI plays an interest walk (an interest point the level placed: run aside, look, come back), as in single player";
     case Wait::NoFieldAi:
         return L"its field AI has no state yet";
     case Wait::Unread:

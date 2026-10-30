@@ -1244,7 +1244,7 @@ bool KeptMark(const void* member, Mark& out) noexcept
 try
 {
     const auto*        ai = static_cast<const std::uint8_t*>(ReadPointer(member, facts::kCharacterFieldAi));
-    field_hold::Judged judged;  // as the hold judges it: a declined interest walk on top leaves the move beneath it marked
+    field_hold::Judged judged;  // as the hold judges it: an interest scene on top leaves the move beneath it marked
     if (ai == nullptr || !party_member::JudgedState(member, judged) ||
         field_hold::Of(judged.layer, judged.kind) != field_hold::Hold::Arrival)
     {

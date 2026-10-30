@@ -155,7 +155,6 @@ private:
         bool                 handedToAi     = false;    // its member is with its AI, as the game's leader is, or for its own hold
         bool                 holdHand       = false;    // the hand is for the member's own scripted hold: it ends with the hold, not the game's return
         party_member::Wait   hold           = party_member::Wait::None;  // that hold, for the reading
-        std::uint32_t        aiActionsAtHand = 0;  // the member's AI field actions before the hand (an interest walk's loop test)
         bool                 returnWaitLogged = false;  // the game took its leader back while a script still held the member
         bool                 keptThroughLock = false;   // the game's leader is with its AI for an interaction lock; the member stayed
         std::int32_t         memberWeak[2]  = {-1, 0};  // the seated member, to notice it destroyed

@@ -130,17 +130,6 @@ std::uint32_t PlayerOneMoveBitsIn(std::uint32_t mask) noexcept;
 /// processed). Game thread.
 bool PlayerOneMoveHolds(std::uint32_t mask) noexcept;
 
-/// The field actions (a ladder, a climb, a jump) seat `seat`'s member has started while with its AI, counted since the
-/// mod's start: the session compares two readings (an interest walk that crosses twice loops). Game thread.
-std::uint32_t AiActionsStarted(int seat) noexcept;
-/// Seat `seat`'s member is in a field action now (as last read in its tick). Game thread.
-bool InAction(int seat) noexcept;
-/// The member's height (cm, its root) when its running action started: the floor a ladder or climb began on. False
-/// with no action running or the start's height unread. Game thread.
-bool StartHeight(int seat, float& z) noexcept;
-/// Player 1's character runs a field action now (a ladder, a climb, the monkey bars): its component's action. Game thread.
-bool PlayerOneInAction() noexcept;
-
 /// A seat's member may use the grappling hook: its member's actions run in its scopes and the hookshot's lock calls are
 /// redirected (any thread).
 bool HookShotReady() noexcept;

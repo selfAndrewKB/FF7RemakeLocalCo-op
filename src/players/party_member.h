@@ -49,7 +49,6 @@ enum class Wait : std::uint8_t
     Animation,    // its AI plays a scripted animation (ANIMATION or the one-shot SINGLE_ANIMATION: field_hold.h)
     Guide,        // its AI walks a guide: a lead or a run to a mark the level waits on, or the story marks it (lead_gate.h)
     AtMark,       // its player brought a kept move to its point: its AI finishes the arrival (lead_keep_rules.h)
-    Interest,     // its AI plays an ambient interest walk (an interest point: "run aside and watch"), as in single player
     NoFieldAi,    // its field AI has no state yet
     Unread,       // the party could not be read
 };
@@ -60,8 +59,7 @@ enum class Wait : std::uint8_t
 /// event, the game's leader handed) is the game's own hand of its leader, heard by party_events.
 constexpr bool ScriptHold(Wait wait) noexcept
 {
-    return wait == Wait::Cinema || wait == Wait::AiHeld || wait == Wait::Animation || wait == Wait::Guide || wait == Wait::AtMark ||
-           wait == Wait::Interest;
+    return wait == Wait::Cinema || wait == Wait::AiHeld || wait == Wait::Animation || wait == Wait::Guide || wait == Wait::AtMark;
 }
 
 struct Choice
@@ -106,26 +104,10 @@ const wchar_t* WhyHeldByScript(void* member) noexcept;
 /// session hands a ScriptHold wait's member to its AI keeping its seat, and takes it back at None.
 Wait HoldWait(void* member) noexcept;
 
-/// The layer and kind `member`'s field AI hold is judged by: its active request, or, for a declined interest walk
-/// while players/ai_move_guard is active, the one beneath it (field_hold::JudgedState). False when unread.
+/// The layer and kind `member`'s field AI hold is judged by: its active request, or, for an interest scene while
+/// players/ai_move_guard is active, the one beneath it (field_hold::JudgedState: an interest scene never takes a
+/// member, the user 2026-10-30). False when unread.
 bool JudgedState(const void* member, field_hold::Judged& out) noexcept;
-
-/// The member's current interest walk cannot be played from where it is (the session saw its AI take a crossing, or the
-/// walk begin during the player's own ladder or climb): it is declined, judged
-/// beneath while the member has INTEREST requests, ending 10 s without one (times the declines in a row within two
-/// minutes, at most 60 s). Returns the declines in a row (the session logs it). `duringOwnAction`: declined because the
-/// walk began during the player's own ladder or climb; its floor is kept for EndDeclineBackOnItsFloor: `floorZ`, the
-/// height the action started at (traversal_action::StartHeight), else the member's height now. Game thread.
-std::uint32_t DeclineInterest(const void* member, bool duringOwnAction, const float* floorZ = nullptr) noexcept;
-
-/// A decline made during the player's own ladder or climb ends once the member is off it (`inAction` false), back on
-/// the floor the walk began on (within 2 m in height), and player 1's character has begun its own field action
-/// (`playerOneActs`: Cloud's ladder or monkey bars, the moment the scene is about; any field action of player 1's
-/// counts, harmless while the member stands on its starting floor by the point): from there its AI plays the walk as
-/// in single player, running aside on its own floor, never taking the ladder. Until Cloud begins, the member stays its
-/// player's: the scene would otherwise hold it at its spot (the user, 2026-10-29: "she runs to the spot ... locked").
-/// Off at the ladder's other end, it stays its player's. True when it ended one. Game thread.
-bool EndDeclineBackOnItsFloor(const void* member, bool inAction, bool playerOneActs) noexcept;
 
 /// The member's active request is an INTEREST (an ambient interest walk). A hold judged beneath it still hands the
 /// member to its AI, which then runs the walk first, as in single player: the session says so in its hand line.

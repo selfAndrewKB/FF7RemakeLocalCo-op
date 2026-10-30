@@ -75,9 +75,6 @@ constexpr int                  kRejoinFailures = 3;
 /// checked under a held member every this many ticks (cheap guarded reads).
 constexpr std::uint32_t kSeatRetryTicks  = 60;
 constexpr std::uint32_t kSwapGraceTicks  = 30;  // after a leader change: the seat's next character may still be held for a moment
-// An interest walk under the member's AI that has crossed this often is declined: a "run aside and watch" never takes a
-// ladder or a climb (live 2026-10-29: at 2 Aerith still went down and up the monkey-bar ladder for 15 s).
-constexpr std::uint32_t kInterestLoopCrossings = 1;
 constexpr std::uint32_t kFollowSlotTicks = 10;
 
 UObject* Field(const void* object, std::uint32_t offset) noexcept
@@ -843,7 +840,6 @@ void Session::HandForHold(Seat& seat, void* member, party_member::Wait hold) noe
     seat.handedToAi      = party_member::HandToAi(member);
     seat.holdHand        = seat.handedToAi;
     seat.hold            = hold;
-    seat.aiActionsAtHand = world::traversal_action::AiActionsStarted(seat.index);
     platform::Log(L"{}'s member (type {}) handed to its AI: {}: {}; {}'s view stays on it, its controller takes it back "
                   L"when the hold ends{}",
                   seat.Name(), party_seat::MemberType(seat.index), party_member::Describe(hold),
@@ -851,7 +847,7 @@ void Session::HandForHold(Seat& seat, void* member, party_member::Wait hold) noe
                   hold == party_member::Wait::Guide || hold == party_member::Wait::AtMark
                       ? std::format(L" (lead gate: {})", lead_gate::Reading())
                       : L"");
-    if (hold != party_member::Wait::Interest && party_member::InterestOnTop(member))
+    if (party_member::InterestOnTop(member))
     {
         // Kept rather than handed, the hold beneath could wait for ever (an interest that clears only at its walk's
         // end, a walk refused while held); handed, its AI runs the walk first. research/RE-interest-ladder-loop.md.
@@ -906,23 +902,6 @@ try
     {
         if (seat.holdHand)
         {
-            // An interest walk whose AI has crossed (kInterestLoopCrossings: a ladder, a climb, a jump) cannot reach its point
-            // from here (seen live 2026-10-29: Aerith on the monkey-bar ladder for 5 minutes): declined, once the
-            // crossing ends; the hold is then judged beneath it and the member goes back to its player, the AI move
-            // guard keeping the walk from starting under the player. research/RE-interest-ladder-loop.md. Every field
-            // action counts (a walk through a door and up a ladder is cut short: cosmetic). Only while the interest is
-            // still on top (a hold beneath that took over, a guide, keeps its doors to itself). With the guard off the
-            // decline is ignored (party_member::JudgedState) and the member stays with its AI, as before the guard.
-            const std::uint32_t crossings = world::traversal_action::AiActionsStarted(seat.index) - seat.aiActionsAtHand;
-            if (seat.hold == party_member::Wait::Interest && crossings >= kInterestLoopCrossings &&
-                !world::traversal_action::InAction(seat.index) && party_member::InterestOnTop(member))
-            {
-                const std::uint32_t inARow = party_member::DeclineInterest(member, false);
-                platform::Log(L"{}'s member: its AI's interest walk crossed {} times (it cannot reach the point from here): the walk "
-                              L"is declined ({} in a row) and the member goes back to {} until the interest ends",
-                              seat.Name(), crossings, inARow, seat.Name());
-                seat.aiActionsAtHand = world::traversal_action::AiActionsStarted(seat.index);  // counted once
-            }
             // The hold's end decides: the member free again (the level's next setting, the scene's end), the game's
             // leader with its player, and nothing else holding it.
             if (party_member::HoldWait(member) == party_member::Wait::None)
@@ -965,16 +944,6 @@ try
         }
         return;
     }
-    // A walk declined during the player's own ladder or climb is its AI's again once the member is off it, back on the
-    // floor the walk began on (it then starts where single player's companion would: no ladder on its way), and player
-    // 1's character has begun its own field action (the scene's moment; until then the member stays its player's).
-    if (party_member::EndDeclineBackOnItsFloor(member, world::traversal_action::InAction(seat.index),
-                                               world::traversal_action::PlayerOneInAction()))
-    {
-        platform::Log(L"{}'s member is back on the floor its interest walk began on and player 1 has begun a field action: the walk "
-                      L"is its AI's again",
-                      seat.Name());
-    }
     const party_member::Wait hold = party_member::HoldWait(member);
     // The push-button event answers first while the game's leader is handed (an interaction lock the member stayed
     // through that gained another bit reads as the push-button event when its bit stands): the same backstop. Only while the
@@ -1013,20 +982,6 @@ try
                           party_member::ControlLockMask(), seat.Name());
         }
         HandWithLeader(seat);
-        return;
-    }
-    // An interest walk that starts while the player's own field action runs (a ladder, a climb) found the member where the
-    // game never sends its AI ally (the user, 2026-10-29: Aerith partway up the monkey-bar ladder Cloud climbs alone): its
-    // AI could not reach the point from there and would cross back and forth. Declined at once: the member stays its
-    // player's, the AI move guard keeping the walk from starting under the player.
-    if (hold == party_member::Wait::Interest && world::traversal_action::InAction(seat.index))
-    {
-        float               startZ  = 0;  // the floor the climb began on, wherever on it the interest came
-        const bool          started = world::traversal_action::StartHeight(seat.index, startZ);
-        const std::uint32_t inARow  = party_member::DeclineInterest(member, true, started ? &startZ : nullptr);
-        platform::Log(L"{}'s member: an interest walk began during {}'s own field action (a ladder or a climb, where the game never "
-                      L"sends its AI): declined at once ({} in a row); the member stays {}'s",
-                      seat.Name(), seat.Name(), inARow, seat.Name());
         return;
     }
     if (party_member::ScriptHold(hold))
