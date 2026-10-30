@@ -32,6 +32,7 @@
 #include "battle/command_menu.h"
 #include "battle/targeting.h"
 #include "battle/lock_camera.h"
+#include "world/run_catch_up.h"
 #include "world/talk_gather.h"
 #include "world/traversal_action.h"
 #include "views/scene_camera.h"
@@ -837,6 +838,10 @@ void Session::HandForHold(Seat& seat, void* member, party_member::Wait hold) noe
     // The game's own hand (what it does for its leader at an event's start), the seat and the player's camera
     // operator kept: the member's AI runs the script, the player watches it, and the seat takes it back when the
     // hold ends.
+    if (hold == party_member::Wait::Guide)
+    {
+        world::run_catch_up::BeforeGuide(seat.index, member);  // taken past its own story box: brought back for the run
+    }
     seat.handedToAi      = party_member::HandToAi(member);
     seat.holdHand        = seat.handedToAi;
     seat.hold            = hold;

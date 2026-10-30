@@ -363,6 +363,9 @@ src/
     overlap_fade            No character turns see-through in a ladder, squeeze, crawl or similar move while a further
                             player is in
     party_fade              Party members never vanish near a camera while a further player is in
+    run_catch_up            A companion a further player walked past its own story box is brought back beside player 1's
+                            character when the level's run through that box goes to its AI (the user, 2026-10-30, after
+                            the Ch
     search_arrows           Each player's own grappling-hook search arrow
     shop_act                A shop a further player opens is that player's: its camera zooms on the opener's view, the
                             shopkeeper and the opener's character face each other, and the opener's pad drives it

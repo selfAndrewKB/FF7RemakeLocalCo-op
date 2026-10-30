@@ -103,7 +103,7 @@ struct Judgment
     bool          marker     = false;  // the story's marker rides on the member
     bool          leash      = false;  // a live AutoWalk act leashes player 1 to the member
     bool          signals    = false;  // the move names an arrival trigger
-    bool          ownBox     = false;  // the step moves on at its own armed story box (OwnBoxAhead): a guide
+    std::int64_t  ownBox     = 0;      // the step moves on at this armed story box of its own (OwnBoxAhead): a guide
     bool          pointKnown = false;  // its destination is a field point of the loaded level (`point`)
     bool          reached    = false;  // measured within the hand radius while the move was needed, kept and signalling (this setting)
     std::int64_t  destination = 0;
@@ -1230,7 +1230,7 @@ try
         last.waiter     = waiters.others > 0 || waiters.chain;
         last.leash      = leash.on;
         last.signals    = waiters.trigger != 0;
-        last.ownBox     = waiters.ownBox != 0;
+        last.ownBox     = waiters.ownBox;
         if (waiters.read)
         {
             last.destination = waiters.destination;
@@ -1254,7 +1254,7 @@ try
         }
     }
     const Verdict was = last.verdict;
-    last.verdict      = lead_keep_rules::Decide(needed, keeps, last.pointKnown, last.signals, last.reached, last.ownBox);
+    last.verdict      = lead_keep_rules::Decide(needed, keeps, last.pointKnown, last.signals, last.reached, last.ownBox != 0);
     if (!same || census || last.marker != wasMarker || last.verdict != was)
     {
         g_reading = std::format(L"{} on object {} state {}: {}; {}; marker {}: {}; point {}; verdict {}", field_hold::KindName(kind),
@@ -1329,6 +1329,31 @@ try
         if (j.object == object && j.state == state && j.kind == kind && j.verdict == Verdict::Keep && j.pointKnown)
         {
             out = Mark{.at = {j.point.x, j.point.y, j.point.z}, .point = j.destination};
+            return true;
+        }
+    }
+    return false;
+}
+catch (...)
+{
+    return false;
+}
+
+bool OwnBoxRun(const void* member, Mark& point, std::int64_t& box) noexcept
+try
+{
+    std::uint8_t kind   = 0;
+    std::int64_t object = 0, state = 0;
+    if (!CurrentMove(member, kind, object, state) || object == 0)
+    {
+        return false;
+    }
+    for (const Judgment& j : g_judged)
+    {
+        if (j.object == object && j.state == state && j.kind == kind && j.ownBox != 0 && j.pointKnown)
+        {
+            point = Mark{.at = {j.point.x, j.point.y, j.point.z}, .point = j.destination};
+            box   = j.ownBox;
             return true;
         }
     }

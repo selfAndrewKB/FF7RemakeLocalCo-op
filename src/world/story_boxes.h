@@ -27,6 +27,8 @@
 // and each remembered enter whose box went away first (its level unloaded): the only way one is dropped.
 // Game thread only: the enter runs inside the world tick's dispatcher; Tick runs outside it, where the redirect is placed.
 
+#include "world/story_box_rules.h"
+
 #include <cstdint>
 
 namespace lss::platform {
@@ -45,6 +47,15 @@ void Remove() noexcept;
 /// as the enter tests) and is switched on, so `member` walking in sends its trigger. False when not installed or unread.
 /// players/lead_gate asks it of a level run's way out (OwnBoxAhead). Game thread.
 bool ArmedOwnBox(std::uint64_t object, const void* member) noexcept;
+
+/// The placed shape of the story box registered under `tag` (its layout node name). False when not installed, not
+/// registered or not a box component.
+bool BoxShape(std::uint64_t tag, story_box_rules::Box& out) noexcept;
+
+/// `member` was brought back for the level's run from `from` to `to` (world/run_catch_up): each of its waiting enters
+/// whose box that straight run passes through waits for the member's own body instead of firing at its AI's hand
+/// (story_box_rules Next). Returns how many. Game thread.
+int AwaitRun(const void* member, const float from[3], const float to[3]) noexcept;
 
 /// Game thread, each engine tick, per built seat: the seat's member while its player is in (null otherwise).
 void TickSeat(int seat, void* member) noexcept;

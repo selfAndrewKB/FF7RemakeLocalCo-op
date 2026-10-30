@@ -82,6 +82,10 @@ bool OnLevelMove(const void* member) noexcept;
 /// `member`'s current move is judged KEEP: its point. False otherwise (another verdict, no move, not judged yet).
 bool KeptMark(const void* member, Mark& out) noexcept;
 
+/// `member`'s current move is judged a guide for its own story box (OwnBoxAhead) and goes to a known field point: the
+/// point and the box's layout object. False otherwise. world/run_catch_up asks it just before the guide's hand.
+bool OwnBoxRun(const void* member, Mark& point, std::int64_t& box) noexcept;
+
 /// A level name's text (the log).
 std::wstring PointName(std::int64_t point) noexcept;
 

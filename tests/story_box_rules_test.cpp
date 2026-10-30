@@ -5,6 +5,7 @@
 #include "world/story_box_rules.h"
 
 #include <cmath>
+#include <limits>
 #include <cstdio>
 
 namespace lss::test {
@@ -57,7 +58,7 @@ void TestEverythingElseIsTheGames()
 }
 
 constexpr Waiting kStillWaiting{.boxGone = false, .seated = true, .handedToAi = false, .inCinema = false, .levelMoves = false,
-                                .playerOneReached = false};
+                                .playerOneReached = false, .awaitsRun = false, .ranIn = false, .runOver = false};
 
 void TestAWaitingEntryWaits()
 {
@@ -145,8 +146,106 @@ void TestANanNeverReaches()
     EXPECT(!Reaches(kBox0200, nan));
 }
 
-}  // namespace
+void TestABroughtBackMemberWaitsForItsOwnRun()
+{
+    // Brought beside player 1 and handed to its AI for the run: neither the hand nor the level's move fires the box.
+    Waiting w = kStillWaiting;
+    w.awaitsRun  = true;
+    w.handedToAi = true;
+    w.levelMoves = true;
+    EXPECT(Next(w) == Step::Wait);
+    // Its AI runs into it: the game's own enter ran.
+    w.ranIn = true;
+    EXPECT(Next(w) == Step::Taken);
+    // Seen at the game's own enter, whoever holds it now: never a second enter.
+    w.handedToAi = false;
+    EXPECT(Next(w) == Step::Taken);
+}
 
+void TestABroughtBackMemberIsNeverLost()
+{
+    Waiting w = kStillWaiting;
+    w.awaitsRun  = true;
+    w.handedToAi = true;
+    w.playerOneReached = true;
+    EXPECT(Next(w) == Step::Replay);
+    w = kStillWaiting;
+    w.awaitsRun  = true;
+    w.handedToAi = false;  // back with its player: the run's setting is over
+    EXPECT(Next(w) == Step::Replay);
+    w = kStillWaiting;
+    w.awaitsRun  = true;
+    w.handedToAi = true;
+    w.seated     = false;
+    EXPECT(Next(w) == Step::Replay);
+    w.boxGone = true;
+    EXPECT(Next(w) == Step::Lost);
+    w = kStillWaiting;
+    w.awaitsRun  = true;
+    w.handedToAi = true;
+    w.inCinema   = true;
+    w.ranIn      = true;
+    EXPECT(Next(w) == Step::Wait);
+}
+
+void TestARunThatMissesItsBoxStillFiresIt()
+{
+    // The AI's path went round the box: at the run's point, or after the limit, the held enter fires (late, never lost).
+    Waiting w = kStillWaiting;
+    w.awaitsRun  = true;
+    w.handedToAi = true;
+    EXPECT(Next(w) == Step::Wait);
+    w.runOver = true;
+    EXPECT(Next(w) == Step::Replay);
+    EXPECT(RunOver(150.0f, 0.0f, 0, 0));                    // at the run's point
+    EXPECT(!RunOver(5000.0f, 0.0f, 8000, 100));             // the Ch. 5 dash under way
+    EXPECT(RunOver(5000.0f, 0.0f, 3000, kRunStillMs));      // stopped short (blocked) for 2 s
+    EXPECT(!RunOver(5000.0f, 0.0f, 3000, kRunStillMs - 1));
+    EXPECT(RunOver(5000.0f, 0.0f, kAwaitRunLimitMs, 0));    // the cap
+}
+
+// TNNL4's TifaRun box and the fence point Tifa's dash runs to (research/.ida-mcp/tifa-barret/data_tnnl4_rows.txt, cm).
+constexpr Box kTifaRun{.rotation = {0.0f, 0.0f, 0.0f, 1.0f}, .at = {854.0f, -37606.0f, -4890.0f}, .scale = {1.0f, 1.0f, 1.0f},
+                       .extent = {400.0f, 100.0f, 40.0f}};
+constexpr float kFencePoint[3] = {490.0f, -38330.0f, -4920.0f};
+
+void TestTheDashFromCloudRunsThroughTheFenceBox()
+{
+    // Played 2026-10-30 15:57 (run 3): Tifa beside Cloud at box 0195; her AI's dash went through the box.
+    const float byCloud[3] = {3221.0f, -32878.0f, -4885.0f};
+    EXPECT(RunCrosses(kTifaRun, byCloud, kFencePoint));
+    // Run 2: between box 0200 and the fence box.
+    const float between[3] = {1200.0f, -36800.0f, -4880.0f};
+    EXPECT(RunCrosses(kTifaRun, between, kFencePoint));
+}
+
+void TestARunFromPastTheFenceMissesTheBox()
+{
+    // Run 1: far down the tunnel, past the fence point; the run back never reaches the box.
+    const float pastIt[3] = {300.0f, -42000.0f, -4920.0f};
+    EXPECT(!RunCrosses(kTifaRun, pastIt, kFencePoint));
+    // Beside the box, running parallel to it more than the margin away: misses.
+    const float aside[3]  = {854.0f + 400.0f + 60.0f, -37000.0f, -4890.0f};
+    const float aside2[3] = {854.0f + 400.0f + 60.0f, -38000.0f, -4890.0f};
+    EXPECT(!RunCrosses(kTifaRun, aside, aside2));
+    // Within the capsule margin: crosses.
+    const float grazing[3]  = {854.0f + 400.0f + 40.0f, -37000.0f, -4890.0f};
+    const float grazing2[3] = {854.0f + 400.0f + 40.0f, -38000.0f, -4890.0f};
+    EXPECT(RunCrosses(kTifaRun, grazing, grazing2));
+}
+
+void TestARunStartingOrEndingInsideCrosses()
+{
+    const float inside[3] = {854.0f, -37606.0f, -4890.0f};
+    EXPECT(RunCrosses(kTifaRun, inside, kFencePoint));
+    EXPECT(RunCrosses(kTifaRun, inside, inside));  // standing in it
+    const float nan[3] = {std::nanf(""), -37606.0f, -4890.0f};
+    EXPECT(!RunCrosses(kTifaRun, nan, kFencePoint));
+    const float inf[3] = {std::numeric_limits<float>::infinity(), -37606.0f, -4890.0f};
+    EXPECT(!RunCrosses(kTifaRun, inf, kFencePoint));
+}
+
+}  // namespace
 int main()
 {
     TestAMemberOnlyBoxWaitsForAHeldMember();
@@ -159,5 +258,11 @@ int main()
     TestTheScaleCounts();
     TestTheRotationCounts();
     TestANanNeverReaches();
+    TestABroughtBackMemberWaitsForItsOwnRun();
+    TestABroughtBackMemberIsNeverLost();
+    TestARunThatMissesItsBoxStillFiresIt();
+    TestTheDashFromCloudRunsThroughTheFenceBox();
+    TestARunFromPastTheFenceMissesTheBox();
+    TestARunStartingOrEndingInsideCrosses();
     return lss::test::Report();
 }

@@ -80,6 +80,7 @@
 #include "world/party_fade.h"
 #include "world/search_arrows.h"
 #include "world/shop_act.h"
+#include "world/run_catch_up.h"
 #include "world/story_boxes.h"
 #include "world/talk_gather.h"
 #include "world/traversal_action.h"
@@ -323,6 +324,10 @@ constexpr std::array kModules{
     // without it a further player's member fires its own story boxes as it walks into them, ahead of the story (removed
     // any time: the restore swaps the enter back; a waiting enter is then the next tick's or dropped, logged)
     Module{.name = L"story boxes", .install = Call<&world::story_boxes::Install>, .remove = &world::story_boxes::Remove},
+    // without it a companion a further player took past its own story box runs back from there when the level's run
+    // through the box goes to its AI (its step then plays where it stands)
+    Module{.name = L"run catch-up", .install = Call<&world::run_catch_up::Install>,
+           .needs = {Need<&world::story_boxes::Install>(), Need<&players::lead_gate::Install>()}},
     // without it characters near a further player animate by player 1's camera
     Module{.name = L"anim per view", .install = Call<&world::anim_views::Install>},
     // without it NPCs near a further player pause by player 1's camera

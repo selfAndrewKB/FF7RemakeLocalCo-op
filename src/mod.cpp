@@ -64,7 +64,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.131.0-runs-into-a-companions-own-story-box-go-to-its-ai";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.132.0-a-companion-past-its-story-box-is-brought-back-for-its-run";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;

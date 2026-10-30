@@ -20,11 +20,14 @@
 #include "players/seat_camera.h"
 #include "players/seats.h"
 #include "players/weak_object.h"
+#include "world/actor_place.h"
 #include "world/field_targets.h"
 #include "world/story_box_rules.h"
 
 #include <array>
 #include <atomic>
+#include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <format>
 #include <string>
@@ -85,11 +88,55 @@ struct Waiting
     std::uint64_t               memberTag = 0;
     rules::Box                  shape{};
     bool                        shaped = false;
+    bool                        awaitsRun = false;  // brought back for the level's run through it (AwaitRun)
+    bool                        ranIn     = false;  // since then the game's own enter ran for the member and the box
+    float                       runTo[3]  = {};     // the run's point
+    std::int64_t                awaitedAt = 0;      // when AwaitRun marked it (NowMs)
+    float                       lastAt[3] = {};     // where the member last stood kRunStillCm away from before
+    std::int64_t                movedAt   = 0;      // when it got there (NowMs)
 };
 std::vector<Waiting> g_waiting;
 
 // Counts for the reading.
-std::uint32_t g_heldBack = 0, g_replayed = 0, g_replayedOff = 0, g_lost = 0, g_overflow = 0;
+std::uint32_t g_heldBack = 0, g_replayed = 0, g_replayedOff = 0, g_lost = 0, g_overflow = 0, g_taken = 0;
+
+std::int64_t NowMs() noexcept
+{
+    return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
+/// Whether the run `w` waits on is over (story_box_rules RunOver), keeping the member's last moving place in `w`. The cap
+/// holds even when the member's place cannot be read.
+bool RunOverNow(Waiting& w, const void* member) noexcept
+{
+    const std::int64_t now = NowMs();
+    float              at[3] = {};
+    if (!actor_place::ActorLocation(member, at))
+    {
+        return now - w.awaitedAt >= rules::kAwaitRunLimitMs;
+    }
+    if (std::hypot(at[0] - w.lastAt[0], at[1] - w.lastAt[1]) >= rules::kRunStillCm)
+    {
+        w.lastAt[0] = at[0];
+        w.lastAt[1] = at[1];
+        w.lastAt[2] = at[2];
+        w.movedAt   = now;
+    }
+    return rules::RunOver(at[0] - w.runTo[0], at[1] - w.runTo[1], now - w.awaitedAt, now - w.movedAt);
+}
+
+/// The game's own enter is about to run for `member` and `box`: a record awaiting the member's run through it is taken
+/// by that run (story_box_rules Step::Taken). Seen at the redirect, so only an enter the game really makes counts.
+void NoteRanIn(const void* member, std::uint64_t box) noexcept
+{
+    for (Waiting& w : g_waiting)
+    {
+        if (w.awaitsRun && w.box == box && players::weak_object::Resolve(w.member) == member)
+        {
+            w.ranIn = true;
+        }
+    }
+}
 
 std::wstring NameOf(std::uint64_t name)
 {
@@ -347,6 +394,7 @@ std::int64_t Begin(void* points, std::uint64_t box, void* collider)
                                  .groupNamesLeader = laid && group != 0 && GroupNamesLeader(group)};
         if (!rules::HoldBack(entry) || !GroupLists(group, tag))
         {
+            NoteRanIn(collider, box);
             return original(points, box, collider);  // the game's: a party box, the member on its AI or sent, not its box
         }
         if (Remembered(collider, box))
@@ -416,15 +464,23 @@ void Replay(const Waiting& w, void* member, const wchar_t* why)
 
 const wchar_t* WhyReplay(const rules::Waiting& w) noexcept
 {
+    if (w.awaitsRun)
+    {
+        return !w.seated            ? L"its player left"
+               : w.playerOneReached ? L"player 1 came to the box"
+               : !w.handedToAi      ? L"back with its player before its run took the box"
+                                    : L"its run is over without taking the box (at the run's point, stopped for 2 s, or 20 s gone)";
+    }
     return !w.seated ? L"its player left" : w.handedToAi ? L"handed to its AI" : w.levelMoves ? L"the level sent it on a move"
                                                                                            : L"player 1 came to the box";
 }
 
 std::wstring Reading()
 {
-    std::wstring text = std::format(L"redirect {}{}; held back {}, replayed {} ({} with the box off), lost {}, overflow {}; waiting {}",
+    std::wstring text = std::format(L"redirect {}{}; held back {}, replayed {} ({} with the box off), taken by the member's own run {}, lost {}, "
+                                    L"overflow {}; waiting {}",
                                     g_placed.load() ? L"placed" : L"not placed", g_on.load() ? L"" : L" (switched off)", g_heldBack, g_replayed,
-                                    g_replayedOff, g_lost, g_overflow, g_waiting.size());
+                                    g_replayedOff, g_taken, g_lost, g_overflow, g_waiting.size());
     for (const Waiting& w : g_waiting)
     {
         text += std::format(L"; {}'s {} in {}{}", players::SeatName(w.seat), NameOf(w.memberTag), NameOf(w.box),
@@ -434,6 +490,48 @@ std::wstring Reading()
 }
 
 }  // namespace
+
+bool BoxShape(std::uint64_t tag, story_box_rules::Box& out) noexcept
+try
+{
+    void* points = g_installed ? FieldPoints() : nullptr;
+    void* actor  = nullptr;
+    return points != nullptr && tag != 0 && CallGuarded(g_actorByTag, actor, points, &tag) && actor != nullptr && ShapeOf(actor, out);
+}
+catch (...)
+{
+    return false;
+}
+
+int AwaitRun(const void* member, const float from[3], const float to[3]) noexcept
+try
+{
+    int marked = 0;
+    for (Waiting& w : g_waiting)
+    {
+        if (w.shaped && players::weak_object::Resolve(w.member) == member && rules::RunCrosses(w.shape, from, to))
+        {
+            w.awaitsRun = true;
+            w.ranIn     = false;
+            w.runTo[0]  = to[0];
+            w.runTo[1]  = to[1];
+            w.runTo[2]  = to[2];
+            w.awaitedAt = NowMs();
+            w.movedAt   = w.awaitedAt;
+            w.lastAt[0] = from[0];
+            w.lastAt[1] = from[1];
+            w.lastAt[2] = from[2];
+            ++marked;
+            platform::LogDebug(L"story boxes: {}'s {} enter of {} waits for its own run through it", players::SeatName(w.seat),
+                               NameOf(w.memberTag), NameOf(w.box));
+        }
+    }
+    return marked;
+}
+catch (...)
+{
+    return 0;
+}
 
 bool ArmedOwnBox(std::uint64_t object, const void* member) noexcept
 try
@@ -580,6 +678,12 @@ try
             state.inCinema         = players::party_member::ActorMode(member) == facts::kActorModeCinema;
             state.levelMoves       = LevelMoves(member);
             state.playerOneReached = w.shaped && haveOne && rules::Reaches(w.shape, one);
+            state.awaitsRun        = w.awaitsRun;
+            state.ranIn            = w.ranIn;
+            if (w.awaitsRun)
+            {
+                state.runOver = RunOverNow(g_waiting[i], member);
+            }
         }
         if (!g_on.load() && !state.boxGone)
         {
@@ -591,7 +695,13 @@ try
             ++i;
             continue;
         }
-        if (step == rules::Step::Replay)
+        if (step == rules::Step::Taken)
+        {
+            ++g_taken;
+            platform::Log(L"story boxes: {}'s {} ran into {} on its AI: the game's own enter took it", players::SeatName(w.seat),
+                          NameOf(w.memberTag), NameOf(w.box));
+        }
+        else if (step == rules::Step::Replay)
         {
             Replay(w, member, g_on.load() ? WhyReplay(state) : L"story-box-hold switched off");
         }
