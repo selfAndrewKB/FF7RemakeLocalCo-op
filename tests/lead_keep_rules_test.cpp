@@ -82,6 +82,21 @@ void TestStagingStaysThePlayers()
     }
 }
 
+void TestARunIntoItsOwnBoxIsAGuide()
+{
+    // Tifa's Ch. 5 dash to the fence: nothing waits on its arrival, but it moves on at her fence box, before the talk's timed
+    // "head for the stairs" (2026-10-30). A guide whatever else holds, the keep switch included.
+    for (const bool needed : {false, true})
+    {
+        for (const bool keeps : {false, true})
+        {
+            EXPECT(Decide(needed, keeps, true, true, false, true) == Verdict::Guide);
+            EXPECT(Decide(needed, keeps, true, true, true, true) == Verdict::Guide);
+        }
+    }
+    EXPECT(Decide(false, true, true, true, false, false) == Verdict::Staging);
+}
+
 void TestOnlyTheGuideAndTheMarkHand()
 {
     EXPECT(ToAi(Verdict::Guide));
@@ -111,6 +126,7 @@ int main()
     TestAMoveWithNoFieldPointIsAGuide();
     TestTheGuideSwitchBringsBackTheGuide();
     TestStagingStaysThePlayers();
+    TestARunIntoItsOwnBoxIsAGuide();
     TestOnlyTheGuideAndTheMarkHand();
     TestReachedIsTwoDimensionalAndInclusive();
     return lss::test::Report();

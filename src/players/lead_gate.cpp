@@ -15,6 +15,7 @@
 #include "players/party_member.h"
 #include "players/state_path.h"
 #include "world/actor_place.h"
+#include "world/story_boxes.h"
 
 #include <Unreal/NameTypes.hpp>
 
@@ -102,6 +103,7 @@ struct Judgment
     bool          marker     = false;  // the story's marker rides on the member
     bool          leash      = false;  // a live AutoWalk act leashes player 1 to the member
     bool          signals    = false;  // the move names an arrival trigger
+    bool          ownBox     = false;  // the step moves on at its own armed story box (OwnBoxAhead): a guide
     bool          pointKnown = false;  // its destination is a field point of the loaded level (`point`)
     bool          reached    = false;  // measured within the hand radius while the move was needed, kept and signalling (this setting)
     std::int64_t  destination = 0;
@@ -584,13 +586,51 @@ struct Census
     bool         self    = false;  // the member's own step waits (always, with a trigger)
     bool         chain   = false;  // a further move ahead in the member's own chain of states: the level walks it on
     int          others  = 0;      // other waiters (scope) plus direct sets on other objects
+    std::int64_t ownBox  = 0;      // the step moves on at a trigger its own armed member-only story box sends (OwnBoxAhead)
     std::wstring text;
 };
+
+/// The member's move step moves on at a trigger (other than its arrival) that a member-only story box of the member's own
+/// sends, and the box is armed: the level expects the run to carry the member into that box, on the clock of whatever
+/// else runs meanwhile (the Ch. 5 dash crosses Tifa's fence box within 3 s, before the talk's timed "head for the
+/// stairs"; held by its player, she missed it and stalled, 2026-10-30). The box's state slot lists the trigger it sends
+/// (its sending state waits on it, RE-held-member-story-boxes.md) and its Status names it; world/story_boxes checks the
+/// box's group and that it is switched on. 0 when none.
+std::int64_t OwnBoxAhead(const std::vector<Slot>& slots, const Slot& self, std::int64_t arrival, const void* member)
+{
+    std::vector<std::int64_t> exits = Names(self.row + facts::kStateRowTriggers, facts::kStateRowTriggersRead);
+    std::erase_if(exits, [arrival](std::int64_t t) { return t == 0 || t == arrival; });
+    if (exits.empty())
+    {
+        return 0;
+    }
+    for (const Slot& s : slots)
+    {
+        if (s.row == nullptr || s.object == self.object)
+        {
+            continue;
+        }
+        const std::vector<std::int64_t> listens = Names(s.row + facts::kStateRowTriggers, facts::kStateRowTriggersRead);
+        for (const std::int64_t exit : exits)
+        {
+            if (std::find(listens.begin(), listens.end(), exit) == listens.end() ||
+                _wcsicmp(Text(s.row + facts::kStateRowStatus).c_str(), Name(exit).c_str()) != 0)
+            {
+                continue;  // not the box's sending state for this trigger (a name that does not match only drops this reason)
+            }
+            if (world::story_boxes::ArmedOwnBox(static_cast<std::uint64_t>(s.object), member))
+            {
+                return s.object;
+            }
+        }
+    }
+    return 0;
+}
 
 /// The waiters on the setting's arrival trigger: the slots whose current state lists it (in the trigger's scope), and
 /// the trigger row's own direct sets on other objects. RE-lead-arrival-wait.md §3.
 Census Waiters(const std::vector<Slot>& slots, std::int64_t object, std::int64_t state,
-               const std::vector<MarkerPoint>& markers) noexcept
+               const std::vector<MarkerPoint>& markers, const void* member) noexcept
 try
 {
     Census      census;
@@ -614,9 +654,12 @@ try
     {
         census.destination = args[facts::kStateRowDestinationArg];
     }
+    census.ownBox = OwnBoxAhead(slots, *self, args.size() > 2 ? args[2] : 0, member);
+    const std::wstring ownBox =
+        census.ownBox != 0 ? std::format(L"; moves on at its own story box {} (the run carries it in)", Name(census.ownBox)) : L"";
     if (args.size() < 3 || args[2] == 0)
     {
-        census.text = L"no arrival trigger (nothing can wait)";
+        census.text = L"no arrival trigger (nothing can wait)" + ownBox;
         return census;
     }
     census.trigger = args[2];
@@ -691,7 +734,7 @@ try
     }
     census.text = std::format(L"trigger {} (row {}, scope {}), {} waiting of {} active{}", Name(census.trigger),
                               trigger != nullptr ? L"found" : L"NOT found", scope == 0xFF ? L"?" : std::to_wstring(scope), listed,
-                              slots.size(), census.text);
+                              slots.size(), census.text + ownBox);
     return census;
 }
 catch (...)
@@ -1179,7 +1222,7 @@ try
     {
         const auto              start = std::chrono::steady_clock::now();
         const std::vector<Slot> slots = ActiveSlots(sm);
-        waiters                       = Waiters(slots, object, state, marker.points);
+        waiters                       = Waiters(slots, object, state, marker.points, member);
         waiters.text += std::format(L" [slots and waiters read in {} us]",
                                     std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start).count());
         leash           = LeashOn(slots, MemberTag(member), Name(object));
@@ -1187,6 +1230,7 @@ try
         last.waiter     = waiters.others > 0 || waiters.chain;
         last.leash      = leash.on;
         last.signals    = waiters.trigger != 0;
+        last.ownBox     = waiters.ownBox != 0;
         if (waiters.read)
         {
             last.destination = waiters.destination;
@@ -1210,7 +1254,7 @@ try
         }
     }
     const Verdict was = last.verdict;
-    last.verdict      = lead_keep_rules::Decide(needed, keeps, last.pointKnown, last.signals, last.reached);
+    last.verdict      = lead_keep_rules::Decide(needed, keeps, last.pointKnown, last.signals, last.reached, last.ownBox);
     if (!same || census || last.marker != wasMarker || last.verdict != was)
     {
         g_reading = std::format(L"{} on object {} state {}: {}; {}; marker {}: {}; point {}; verdict {}", field_hold::KindName(kind),

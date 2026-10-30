@@ -27,6 +27,8 @@
 // and each remembered enter whose box went away first (its level unloaded): the only way one is dropped.
 // Game thread only: the enter runs inside the world tick's dispatcher; Tick runs outside it, where the redirect is placed.
 
+#include <cstdint>
+
 namespace lss::platform {
 class GameImage;
 }
@@ -38,6 +40,11 @@ namespace lss::world::story_boxes {
 /// failed check: the boxes are then the game's, as before.
 bool Install(const platform::GameImage& image) noexcept;
 void Remove() noexcept;
+
+/// The layout object `object` is a member-only story box (its group lists `member`'s tag and not the party leader's,
+/// as the enter tests) and is switched on, so `member` walking in sends its trigger. False when not installed or unread.
+/// players/lead_gate asks it of a level run's way out (OwnBoxAhead). Game thread.
+bool ArmedOwnBox(std::uint64_t object, const void* member) noexcept;
 
 /// Game thread, each engine tick, per built seat: the seat's member while its player is in (null otherwise).
 void TickSeat(int seat, void* member) noexcept;

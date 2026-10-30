@@ -435,6 +435,24 @@ std::wstring Reading()
 
 }  // namespace
 
+bool ArmedOwnBox(std::uint64_t object, const void* member) noexcept
+try
+{
+    if (!g_installed || object == 0 || member == nullptr)
+    {
+        return false;
+    }
+    void*         row   = nullptr;
+    std::uint64_t group = 0;
+    return CallGuarded(g_findRow, row, g_layoutRows, object) && row != nullptr &&
+           Read(static_cast<const std::uint8_t*>(row) + facts::kLayoutRowActorGroup, group) && group != 0 &&
+           GroupLists(group, FirstTag(member)) && !GroupNamesLeader(group) && WouldSend(object) == Sends::Trigger;
+}
+catch (...)
+{
+    return false;
+}
+
 bool Install(const platform::GameImage& image) noexcept
 {
     const auto at         = image.Rebase(facts::kStoryBoxBegin, 16);
