@@ -1765,6 +1765,66 @@ inline constexpr std::array<std::uint8_t, 16> kFieldPointFindByNameEntry{
     0x40, 0x53, 0x48, 0x83, 0xEC, 0x20, 0x4C, 0x8B, 0x02, 0x48, 0x8D, 0x59, 0x08, 0x48, 0x8B, 0xCB};
 inline constexpr platform::FunctionFact kFieldPointFindByName{L"FieldPoint_FindByName", 0x140FF89C0, kFieldPointFindByNameEntry};
 
+// --- A held member's own story boxes (research/RE-held-member-story-boxes.md, 2026-10-30) ---------------------------
+/// EndFieldStateTrigger_OnColliderBeginOverlap(fieldPoints, FName volume by value, AActor* collider): the story box's
+/// enter, once per new box in a character's own sweep (the dispatcher's diff, game thread, world tick): records the
+/// collider as an occupant, then sends the box's attribute-1 Status if the box is on and its group lists the collider.
+/// The return is ignored by every caller. First instruction `mov [rsp+10h], rdx` (5 bytes, block-aligned, position-
+/// independent); the end mirror takes the same arguments and only undoes a recorded occupant. [CONFIRMED code + entry
+/// bytes, IDA 2026-10-30]
+inline constexpr std::uintptr_t kStoryBoxBegin = 0x14100CC70;
+inline constexpr std::array<std::uint8_t, 5> kStoryBoxBeginFirst{0x48, 0x89, 0x54, 0x24, 0x10};
+inline constexpr std::array<std::uint8_t, 16> kStoryBoxEndEntry{
+    0x40, 0x55, 0x56, 0x57, 0x41, 0x55, 0x41, 0x57, 0x48, 0x8B, 0xEC, 0x48, 0x83, 0xEC, 0x40, 0x4C};
+inline constexpr platform::FunctionFact kStoryBoxEnd{L"EndFieldStateTrigger_OnColliderEndOverlap", 0x14100D1B0, kStoryBoxEndEntry};
+/// FieldStateMgr_FindTriggerByName_1F0(fieldPoints, const FName*): the actor registered under that first tag at its
+/// BeginPlay (a TMap at +0x1F0, removed at EndPlay), or null. A pure hash probe.
+inline constexpr std::array<std::uint8_t, 16> kFieldPointActorByTagEntry{
+    0x40, 0x53, 0x48, 0x83, 0xEC, 0x20, 0x4C, 0x8B, 0x02, 0x48, 0x8D, 0x99, 0xF0, 0x01, 0x00, 0x00};
+inline constexpr platform::FunctionFact kFieldPointActorByTag{L"FieldStateMgr_FindTriggerByName_1F0", 0x140FF8A30,
+                                                              kFieldPointActorByTagEntry};
+/// The layout objects by box tag: g_Map_LayoutNodeName_ToObject, a TMap<FName, FName> of 24-byte pairs (value at +8),
+/// probed with TMap_FNameKey24_FindIndex(map, int* out, FName by value) -> out (-1: none).
+inline constexpr std::uintptr_t kLayoutObjectByNodeMap = 0x1453A7EE0;
+inline constexpr std::uint32_t  kLayoutObjectPairBytes = 24;
+inline constexpr std::uint32_t  kLayoutObjectPairValue = 8;
+inline constexpr std::array<std::uint8_t, 16> kNameMapFindIndexEntry{
+    0x48, 0x89, 0x74, 0x24, 0x08, 0x48, 0x89, 0x7C, 0x24, 0x10, 0x8B, 0x41, 0x08, 0x48, 0x8B, 0xFA};
+inline constexpr platform::FunctionFact kNameMapFindIndex{L"TMap_FNameKey24_FindIndex", 0x14067E200, kNameMapFindIndexEntry};
+/// An ObjectLayout row's OverlapActorGroup (FName; 0 = none) and the ActorGroup tables (three, DataTableSet3_FindRowByName)
+/// whose row holds the ActorList (TArray<FName>: data +0x08, Num +0x10; the game reads at most 32).
+inline constexpr std::uint32_t  kLayoutRowActorGroup     = 0x28;
+inline constexpr std::uintptr_t kTableActorGroup         = 0x145839DC0;
+inline constexpr std::uint32_t  kActorGroupRowActors     = 0x08;
+inline constexpr std::uint32_t  kActorGroupRowActorsNum  = 0x10;
+inline constexpr std::int32_t   kActorGroupActorsRead    = 32;
+/// A character's own overlap component (the sweep the dispatcher diffs) and its stored key set: a TArray<FName> with an
+/// inline allocator (inline data +0x108, heap data +0x208 when non-null, Num +0x210): the boxes it is inside.
+inline constexpr std::uint32_t kCharacterOverlapComponent = 0x1868;
+inline constexpr std::uint32_t kOverlapKeysInline         = 0x108;
+inline constexpr std::uint32_t kOverlapKeysHeap           = 0x208;
+inline constexpr std::uint32_t kOverlapKeysNum            = 0x210;
+/// Whether the box sends anything (the enter's own reads): StateMgr_GetSlotIndex_ByObjectName(stateManager, const FName*,
+/// attribute) -> the slot index (attribute 1: the trigger slot, null when the object has none); its off byte +0x170
+/// on the slot's linked base entry ([slot+0x18] then its first pointer) when there is one, else on the slot (1 = off);
+/// StateMgr_IsObjectBaseSlotLoaded(stateManager, attribute-0 index).
+inline constexpr std::array<std::uint8_t, 16> kStateSlotIndexEntry{
+    0x48, 0x89, 0x6C, 0x24, 0x18, 0x48, 0x89, 0x74, 0x24, 0x20, 0x57, 0x48, 0x83, 0xEC, 0x20, 0x48};
+inline constexpr platform::FunctionFact kStateSlotIndex{L"StateMgr_GetSlotIndex_ByObjectName", 0x14113E030, kStateSlotIndexEntry};
+inline constexpr std::array<std::uint8_t, 16> kStateBaseSlotLoadedEntry{
+    0x8B, 0x41, 0x28, 0x3B, 0x41, 0x54, 0x74, 0x4E, 0x4C, 0x8B, 0x49, 0x60, 0x4C, 0x8D, 0x41, 0x58};
+inline constexpr platform::FunctionFact kStateBaseSlotLoaded{L"StateMgr_IsObjectBaseSlotLoaded", 0x1406CE7D0,
+                                                             kStateBaseSlotLoadedEntry};
+inline constexpr std::uint32_t kStateSlotLinkedBase = 0x18;
+inline constexpr std::uint32_t kStateSlotOffByte    = 0x170;
+/// A trigger box's collision component (ATriggerBase::CollisionComponent, a UBoxComponent for ATriggerBox), its
+/// ComponentToWorld (rotation quaternion kComponentWorldRotation 0x1A0, below with the duct facts; translation
+/// kComponentWorldLocation 0x1B0; scale +0x1C0) and UBoxComponent::BoxExtent.
+/// [CONFIRMED UE4SS header dump: Engine.hpp ATriggerBase, UBoxComponent; FieldPointMgr_AddActorByTag0 reads +0x1A0]
+inline constexpr std::uint32_t kTriggerCollisionComponent = 0x378;
+inline constexpr std::uint32_t kComponentWorldScale       = 0x1C0;
+inline constexpr std::uint32_t kBoxComponentExtent        = 0x710;
+
 // --- The battle target cursor (RE-target-cursor-two.md) --------------------------------------------------------
 /// The one cursor widget's pointer on the battle system (outside the target fields), and the HUD keys the cursor
 /// driver writes each frame: the enemy bar manager's (EndUISystem[27]) displayed target (a weak pointer pair) and

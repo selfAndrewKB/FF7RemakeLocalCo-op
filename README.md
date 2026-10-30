@@ -366,6 +366,10 @@ src/
     search_arrows           Each player's own grappling-hook search arrow
     shop_act                A shop a further player opens is that player's: its camera zooms on the opener's view, the
                             shopkeeper and the opener's character face each other, and the opener's pad drives it
+    story_box_rules.h       The rules of world/story_boxes, without the game: which of a held member's story-box entries
+                            wait, when a waiting one fires, and whether player 1's character has come to the box
+    story_boxes             A further player's member never fires its own story box ahead of the story, and never loses
+                            one (the user, 2026-10-30: "no dialogue is ever cut and goes missing ...
     talk_gather             Player 1's character is brought to a talk another player starts, when it is far
     talk_gather_rules.h     Where player 1's character is brought when another player starts a talk (world/talk_gather.h
                             applies it), as a pure rule: the flat directions to try for a navmesh point beside the
@@ -463,5 +467,5 @@ src/
                             (tests/listener_rules_test.cpp)
     listeners               Every player hears the sounds near them: each SEAD sound is measured from the nearest
                             player's listener
-tests/                      55 host-side test programs (ctest), one per pure header or code stub; run without the game
+tests/                      56 host-side test programs (ctest), one per pure header or code stub; run without the game
 ```

@@ -80,6 +80,7 @@
 #include "world/party_fade.h"
 #include "world/search_arrows.h"
 #include "world/shop_act.h"
+#include "world/story_boxes.h"
 #include "world/talk_gather.h"
 #include "world/traversal_action.h"
 #include "world/traversal_walkup.h"
@@ -319,6 +320,9 @@ constexpr std::array kModules{
     Module{.name = L"forced walk", .install = Call<&world::forced_walk::Install>, .remove = &world::forced_walk::Remove},
     // without it a further player's hook area uses player 1's search arrow (the seats' arrows cleared on the game thread)
     Module{.name = L"search arrows", .install = Call<&world::search_arrows::Install>, .remove = &world::search_arrows::Remove},
+    // without it a further player's member fires its own story boxes as it walks into them, ahead of the story (removed
+    // any time: the restore swaps the enter back; a waiting enter is then the next tick's or dropped, logged)
+    Module{.name = L"story boxes", .install = Call<&world::story_boxes::Install>, .remove = &world::story_boxes::Remove},
     // without it characters near a further player animate by player 1's camera
     Module{.name = L"anim per view", .install = Call<&world::anim_views::Install>},
     // without it NPCs near a further player pause by player 1's camera
@@ -586,6 +590,7 @@ void TickWorld(const Frame& frame) noexcept
         world::traversal_walkup::TickSeat(seat, controller, member);
         world::traversal_action::TickSeat(seat, member);
         world::forced_walk::TickSeat(seat, member);
+        world::story_boxes::TickSeat(seat, member);
         players::nav_area::TickSeat(seat, member);
         world::field_targets::TickSeat(seat, localPlayer, member);
         world::search_arrows::TickSeat(seat, localPlayer);
@@ -593,6 +598,7 @@ void TickWorld(const Frame& frame) noexcept
     }
     world::traversal_action::Tick(anyIn);
     players::ai_move_guard::Tick();
+    world::story_boxes::Tick(frame.pawnOne);
     world::field_targets::Tick();
     world::search_arrows::Tick();
     world::anim_views::Tick();

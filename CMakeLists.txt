@@ -137,6 +137,7 @@ add_library(LocalSplitScreen SHARED
     src/world/forced_walk.cpp
     src/world/search_arrows.cpp
     src/world/shop_act.cpp
+    src/world/story_boxes.cpp
     src/world/talk_gather.cpp
     src/render/area_blend.cpp
     src/world/field_targets.cpp
@@ -568,3 +569,10 @@ target_include_directories(DxbcFixTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src
 target_compile_features(DxbcFixTests PRIVATE cxx_std_20)
 target_compile_definitions(DxbcFixTests PRIVATE LSS_TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/data")
 add_test(NAME dxbc_fix COMMAND DxbcFixTests)
+
+add_executable(StoryBoxRulesTests
+    tests/story_box_rules_test.cpp
+)
+target_include_directories(StoryBoxRulesTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(StoryBoxRulesTests PRIVATE cxx_std_20)
+add_test(NAME story_box_rules COMMAND StoryBoxRulesTests)
