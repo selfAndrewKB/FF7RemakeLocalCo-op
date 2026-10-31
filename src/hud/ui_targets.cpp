@@ -11,6 +11,7 @@
 #include "platform/log.h"
 #include "render/family_now.h"
 #include "render/movie_frame.h"
+#include "render/view_places.h"
 
 #include <algorithm>
 #include <atomic>
@@ -62,8 +63,10 @@ void SetMember(void* value) noexcept
     platform::WriteGuarded(reinterpret_cast<void*>(g_member), &value, sizeof(value));
 }
 
-/// The view's column: 0 for the view whose ViewRect.Min is (0, 0), column 0's in both split shapes (and the only
-/// view); the next ones are counted in the order the UI loop runs them (bounded by the last column).
+/// The view's column. Outside a split frame, its place in the engine's list by its state (render/view_places), wherever
+/// it sits on screen. In a split frame (every player's view at (0, 0) in its own family), or with no list known: 0 for
+/// the view whose ViewRect.Min is (0, 0), the next ones counted in the order the UI loop runs them (bounded by the last
+/// column).
 int ColumnOf(const void* view, std::int32_t (&rect)[4]) noexcept
 {
     std::memset(rect, 0, sizeof(rect));
@@ -71,6 +74,16 @@ int ColumnOf(const void* view, std::int32_t (&rect)[4]) noexcept
         !platform::CopyGuarded(rect, static_cast<const std::uint8_t*>(view) + facts::kViewRectMinX, sizeof(rect)))
     {
         return 0;
+    }
+    if (render::family_now::Current().index < 0)
+    {
+        if (const int place = render::view_places::PlaceOf(view); place >= 0)
+        {
+            // A column another view already took this Render (one frame after a leave from the middle, the list a frame
+            // ahead) moves nothing: the rotation rule never sees one column twice.
+            const bool taken = place > 0 && place < g_render.count && g_render.views[place] != nullptr && g_render.views[place] != view;
+            return place < kMaxColumns && !taken ? place : -1;
+        }
     }
     if (rect[0] == 0 && rect[1] == 0)
     {

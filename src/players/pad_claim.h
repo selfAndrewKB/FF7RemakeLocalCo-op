@@ -13,8 +13,8 @@
 // screens with this one (the column order, views/column_layout) and the pads follow, so the person keeps pad and
 // screen; A keeps the choice, B steps back. It ends when all screens but one are kept (the last takes what is left);
 // View held again puts back the pads and screens from the opening. The views collapsing into one (a scene, a menu) or
-// a player joining or leaving ends it with what is chosen so far. Player 1's view stays on the first screen for now
-// (the HUD tells player 1's view by its top-left place), so steps swap only players 2 and 3.
+// a player joining or leaving ends it with what is chosen so far. Any player may take any screen, player 1 too (with
+// two players through the engine's two-player entries).
 // Input comes from the pad table's listener, noted during the engine's pad poll and acted on in Tick. Every step plays
 // the game's own menu sound for it and is logged at Info. Game thread.
 

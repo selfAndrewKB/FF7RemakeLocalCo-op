@@ -15,7 +15,8 @@
 // reset keeps the D3D12 state cache safe across families: render/family_boundary.h). Before each family the boundary
 // queues the family's place for the render thread (render/family_now.h), which the HUD image, the movie frame and the
 // area settings read; after the last family, none. Every other submission (the menu's viewport, one player) goes to the
-// game unchanged. The final pass loads the back buffer and draws into the view's unshifted rectangle, so each family keeps
+// game unchanged. Every game viewport submission, split or not, first publishes each view's place in the list by its
+// state (render/view_places), for the readers outside a split frame. The final pass loads the back buffer and draws into the view's unshifted rectangle, so each family keeps
 // the columns before it [CONFIRMED code, Pass 10 I.2]; GPU particles step once a frame (the later families simulate with
 // zero time, Pass 10 I.3).
 //

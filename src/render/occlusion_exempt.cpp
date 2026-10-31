@@ -9,6 +9,7 @@
 #include "platform/verified_code.h"
 #include "render/family_now.h"
 #include "render/index_ranges.h"
+#include "render/view_places.h"
 
 #include <Unreal/NameTypes.hpp>
 
@@ -61,8 +62,8 @@ Slot g_main;  // the views occlusion-exempt.views allows (not a third column wit
 Slot g_third{.label = L" (third column)"};  // the third column's view, while it has a set of its own
 std::atomic<bool> g_thirdOwn{false};
 
-/// Which views the main set applies in: player 1's is the view whose rectangle starts at the window's top-left corner
-/// (as render/ao_origin reads it).
+/// Which views the main set applies in: player 1's is the first view of the engine's list, told by its state
+/// (render/view_places), or, with no list known, the view whose rectangle starts at the window's top-left corner.
 enum class Views : int
 {
     All,
@@ -346,6 +347,16 @@ Slot* SlotFor(const void* params) noexcept
             return &g_third;
         }
         const bool first = family.index == 0;
+        return views == Views::All || first == (views == Views::PlayerOne) ? &g_main : nullptr;
+    }
+    // Outside a split frame: the view's place in the engine's list; a view no player's (a scene capture) is one of the others.
+    if (const int place = view_places::PlaceOf(view); place != view_places::kUnknown)
+    {
+        if (thirdOwn && place == kThirdColumn)
+        {
+            return &g_third;
+        }
+        const bool first = place == 0;
         return views == Views::All || first == (views == Views::PlayerOne) ? &g_main : nullptr;
     }
     std::int32_t minX = 0;

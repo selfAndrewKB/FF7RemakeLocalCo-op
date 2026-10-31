@@ -24,13 +24,16 @@
 // while held, or the console's override `view-columns 0..3` (0: as the span and the players decide). mod.cpp passes
 // that number here and to the mirror player each tick.
 //
-// The column order (the settings file's `column-order` under [Views], the console's `column-order 123 | 132`; the
-// user 2026-10-25): which screen players 2 and 3 take when three views show, whatever the order they joined in. The
-// entry's records are arranged for it (column_rules::Slots): `1 3 2` puts player 2's view on the right (in one window,
-// three players: bottom right) and player 3's in the middle (bottom left); a mirror takes a screen left over. Player 1
-// keeps the left (top). The join order (`1 2 3`, the default) arranges nothing: the views keep the engine's list order,
-// and in one window the stock entry stays untouched, as before. Under `1 3 2` in one window the mod writes the arranged
-// top-and-two-below entry and holds the three-player setting at player 1 on top, as it does for the columns. The mod's columns stay the views' places in the engine's list; only where they show moves.
+// The column order (the settings file's `column-order` under [Views], the console's `column-order 123 | 132 | 213 ...`;
+// the user 2026-10-25, every player from 2026-10-31): which screen each player takes, whatever the order they joined in.
+// The entry's records are arranged for it (column_rules::Slots): `1 3 2` puts player 2's view on the right (in one
+// window, three players: bottom right) and player 3's in the middle (bottom left), `2 1 3` player 2's first (the top)
+// and player 1's second; a mirror takes a screen left over. The join order (`1 2 3`, the default) arranges nothing: the
+// views keep the engine's list order, and in one window the stock entry stays untouched, as before. Under another order
+// in one window the mod writes the arranged top-and-two-below entry and holds the three-player setting at FavorTop, as
+// it does for the columns. Two views take the engine's two-player entries (top and bottom, side by side), both kept the
+// same way: the two players in the order's order (RE-layout-fov.md §9). The mod's columns stay the views' places in the
+// engine's list; only where they show moves.
 // Reading `column-layout.state`. Game thread only. Logged at Info on each write and restore and on an order change,
 // at Debug for the status.
 
@@ -62,9 +65,9 @@ int Override() noexcept;
 /// The column order now (the setting, the console, the pad claim).
 column_rules::Order CurrentOrder() noexcept;
 
-/// Whether the last Tick placed three views by the column order (columns or local players three): the claim places its
-/// screens by the same test.
-bool ThreeViews() noexcept;
+/// The views the last Tick placed by the column order: 3 (columns or local players three), 2 (two), else 1. The claim
+/// places its screens by the same count (column_rules::ScreenSlots).
+int Views() noexcept;
 
 /// Sets the column order (logged with `why`); the next Tick arranges the entry. Game thread (players/pad_claim).
 void ChangeOrder(const column_rules::Order& order, const wchar_t* why) noexcept;

@@ -16,8 +16,11 @@
 //       pass sets its parameters (its own column's; column 0's for a mirror's column, which has no HUD image of its
 //       own); the others stay held. After the last view the mod releases what it holds, so it owns no reference
 //       across Renders (the game's own lifetime: one Render).
-// The views are numbered by column (hud/overlay_pass.h): the view whose ViewRect.Min is (0, 0) is column 0's (both
-// split shapes), the next ones are counted in the order the UI loop runs them. With one view nothing moves. The
+// The views are numbered by column (hud/overlay_pass.h): outside a split frame a view's column is its place in the
+// engine's list, told by its state (render/view_places), so player 1's view is column 0 wherever it sits on screen; in a
+// split frame each family's one view is at (0, 0) and the family's place decides the image (render/family_now). With no
+// list known the view at (0, 0) is column 0 and the next ones are counted in the UI loop's order. With one view nothing
+// moves. The
 // bookkeeping is a pure rule, hud/target_rotation.h, host-tested for one to three columns (plan/seats.md step 5).
 // The switch `hud-targets` (off at start until the image content follows) turns the moves on; the logging runs either
 // way (`hud-targets-log <frames>` logs each call for that many frames).

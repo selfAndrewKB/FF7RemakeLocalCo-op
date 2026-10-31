@@ -341,6 +341,8 @@ src/
     view_family.h           A render-thread view's family, read with the game's own fields (FSceneView::Family; the
                             family's Views array of view pointers and its count), the way the game's stereo rule reads
                             them (0x1425C4F10)
+    view_places             Each view's place in the engine's list, told by the view's own state rather than where it
+                            sits on screen
   world/                    the world around every player: fades, animation, NPCs, hiding, the field targets, walk-up
                             moves, talks, shops
     actor_place             Where an actor stands, read the one way: its root component's world location, guarded (null

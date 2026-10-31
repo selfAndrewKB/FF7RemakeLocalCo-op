@@ -156,7 +156,7 @@ std::array<int, kScreens> SeatOnScreens(const Frame& frame)
 {
     std::array<int, kScreens> seatOn{-1, -1, -1};
     const int  screens = std::clamp(frame.screens, 1, kScreens);
-    const auto slots   = views::column_rules::ScreenSlots(views::column_layout::ThreeViews(), views::column_layout::CurrentOrder(),
+    const auto slots   = views::column_rules::ScreenSlots(views::column_layout::Views(), views::column_layout::CurrentOrder(),
                                                           frame.listSeats);
     for (int place = 0; place < screens; ++place)
     {
@@ -232,7 +232,7 @@ void Open(const Frame& frame, int user)
         return;
     }
     const int screens = std::clamp(frame.screens, 1, kScreens);
-    g_claim           = rules::Open(screens, SeatOnScreens(frame), pad_table::Table(), true);
+    g_claim           = rules::Open(screens, SeatOnScreens(frame), pad_table::Table());
     g_openSeats       = SeatsShown(screens, frame.listSeats);
     g_openOrder       = views::column_layout::CurrentOrder();
     for (int seat = 0; seat < kScreens; ++seat)
@@ -263,7 +263,7 @@ void Press(int user, std::uint16_t button)
     }
     if (g_claim.seatOn != before.seatOn)
     {
-        if (const auto order = views::column_rules::OrderShowing(g_claim.seatOn); order && g_claim.screens >= 3)
+        if (const auto order = views::column_rules::OrderShowing(g_claim.seatOn); order && g_claim.screens >= 2)
         {
             views::column_layout::ChangeOrder(*order, L"the pad claim");
         }

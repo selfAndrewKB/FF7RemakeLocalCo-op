@@ -13,6 +13,7 @@
 #include "platform/settings.h"
 #include "views/column_rules.h"
 
+#include <array>
 #include <cstdint>
 #include <format>
 
@@ -27,7 +28,9 @@ using column_rules::Records;
 using column_rules::kStockFavorTop;
 using column_rules::kThreeColumns;
 using column_rules::kThreePlayerRecords;
+using column_rules::kTwoPlayerRecords;
 using column_rules::Record;
+using column_rules::TwoRecords;
 using platform::Read;
 
 static_assert(sizeof(Record) == facts::kPerPlayerSplitBytes, "a record is the engine's FPerPlayerSplitscreenData");
@@ -57,6 +60,29 @@ bool           g_settingRefused = false;    // the setting could not be held (lo
 const wchar_t* g_waiting        = nullptr;  // why the entry cannot be reached, logged once per reason
 const wchar_t* g_fault          = nullptr;  // a read or write that failed, logged once until it succeeds
 std::uint32_t  g_ticks = 0, g_writes = 0, g_restores = 0;
+int            g_views          = 1;        // the views placed at the last tick: 3, 2 or 1
+
+/// One of the engine's two-player entries, kept as the three-player one is: the stock records arranged by the column
+/// order while two views show, the stock ones back otherwise; any other content left alone (logged once). Both are
+/// kept the same, so whichever the two-player setting picks (window_span holds side by side on a span) shows it.
+struct TwoEntry
+{
+    std::uint32_t  type;                       // its place in the table
+    const Record (*stock)[kTwoPlayerRecords];  // the constructor's two records
+    const wchar_t* name;                       // "top and bottom", "side by side"
+    const wchar_t* first;                      // the first screen's word ("top", "left")
+    const wchar_t* second;
+    TwoRecords     wanted{};
+    bool           written = false;
+    bool           foreign = false;
+    bool           reached = false;
+    const wchar_t* fault   = nullptr;          // logged once until it succeeds
+    std::uint32_t  writes = 0, restores = 0;
+};
+std::array<TwoEntry, 2> g_two{
+    TwoEntry{facts::kSplitTypeTwoPlayerHorizontal, &column_rules::kStockTopBottom, L"top and bottom", L"top", L"bottom"},
+    TwoEntry{facts::kSplitTypeTwoPlayerVertical, &column_rules::kStockSideBySide, L"side by side", L"left", L"right"},
+};
 
 /// A failed read or write, logged once per reason (state-change logging: the retry is the cadence's).
 void Fault(const wchar_t* why) noexcept
@@ -68,9 +94,9 @@ void Fault(const wchar_t* why) noexcept
     }
 }
 
-/// The three-player entry's records in the live viewport client, or null with the reason. The table is the
-/// constructor's: six entries, the three-player ones of three records each.
-std::uint8_t* FindRecords(const wchar_t** why) noexcept
+/// The records of entry `type` (`expected` of them) in the live viewport client, or null with the reason. The table is
+/// the constructor's: six entries, the two-player ones of two records, the three-player ones of three.
+std::uint8_t* FindRecords(std::uint32_t type, std::int32_t expected, const wchar_t** why) noexcept
 {
     std::uintptr_t engine = 0, client = 0, entries = 0, records = 0;
     std::int32_t   count  = 0;
@@ -91,17 +117,24 @@ std::uint8_t* FindRecords(const wchar_t** why) noexcept
         *why = L"the viewport client's layout table is not the constructor's six entries";
         return nullptr;
     }
-    const std::uintptr_t entry = entries + facts::kSplitTypeThreePlayerFavorTop * facts::kSplitscreenDataBytes;
+    const std::uintptr_t entry = entries + type * facts::kSplitscreenDataBytes;
     if (!Read(reinterpret_cast<const void*>(entry), records) || !Read(reinterpret_cast<const void*>(entry + facts::kTArrayNum), count) ||
-        records == 0 || count != kThreePlayerRecords)
+        records == 0 || count != expected)
     {
-        *why = L"the three-player entry does not hold three records";
+        *why = expected == kThreePlayerRecords ? L"the three-player entry does not hold three records"
+                                               : L"a two-player entry does not hold two records";
         return nullptr;
     }
     return reinterpret_cast<std::uint8_t*>(records);
 }
 
-std::wstring RecordsText(const Record (&records)[kThreePlayerRecords])
+std::uint8_t* FindRecords(const wchar_t** why) noexcept
+{
+    return FindRecords(facts::kSplitTypeThreePlayerFavorTop, kThreePlayerRecords, why);
+}
+
+template <std::size_t N>
+std::wstring RecordsText(const Record (&records)[N])
 {
     std::wstring text;
     for (const Record& r : records)
@@ -311,6 +344,135 @@ void Apply(const Records& wanted) noexcept
     }
 }
 
+/// A two-player entry's screens as `entry` shows them: "player 2 on the left, player 1 on the right".
+std::wstring TwoScreensText(const TwoEntry& e, const Record (&entry)[kTwoPlayerRecords])
+{
+    std::wstring text;
+    for (int slot = 0; slot < kTwoPlayerRecords; ++slot)
+    {
+        for (int place = 0; place < kTwoPlayerRecords; ++place)
+        {
+            if (entry[place] == (*e.stock)[slot])
+            {
+                const int seat = g_seats[static_cast<std::size_t>(place)];
+                text += std::format(L"{}{} {}", slot == 0 ? L"" : L", ",
+                                    seat >= 0 ? std::format(L"player {}", seat + 1) : std::wstring(L"the mirror"),
+                                    slot == 0 ? std::format(L"on the {}", e.first) : std::format(L"on the {}", e.second));
+            }
+        }
+    }
+    return text;
+}
+
+/// A failed read or write of a two-player entry, logged once per reason.
+void TwoFault(TwoEntry& e, const wchar_t* why) noexcept
+{
+    if (e.fault != why)
+    {
+        e.fault = why;
+        platform::LogWarning(L"column layout: the engine's two-player layout ({}): {}", e.name, why);
+    }
+}
+
+/// A two-player entry as it should be: `wanted` written, the stock one restored, or left alone (logged).
+void ApplyTwo(TwoEntry& e, const TwoRecords& wanted) noexcept
+{
+    e.wanted           = wanted;
+    const auto& stock  = *e.stock;
+    const bool     ours    = !column_rules::Same(wanted.record, stock);
+    const wchar_t* why     = L"";
+    std::uint8_t*  records = FindRecords(e.type, kTwoPlayerRecords, &why);
+    if (records == nullptr)
+    {
+        if (g_waiting != why)
+        {
+            g_waiting = why;
+            platform::LogDebug(L"column layout: the layout table cannot be reached: {}", why);
+        }
+        return;
+    }
+    e.reached = true;
+    Record entry[kTwoPlayerRecords]{};
+    if (!platform::CopyGuarded(entry, records, sizeof(entry)))
+    {
+        TwoFault(e, L"could not be read; tried again twice a second");
+        return;
+    }
+    const Action action = column_rules::DecideTwo(entry, wanted.record, stock);
+    if (action != Action::Foreign && e.foreign)
+    {
+        e.foreign = false;
+        platform::Log(L"column layout: the engine's two-player layout ({}) is {} again", e.name,
+                      column_rules::Same(entry, stock) ? L"the stock one" : L"one of the mod's");
+    }
+    switch (action)
+    {
+        case Action::Write:
+            if (platform::WriteGuarded(records, wanted.record, sizeof(wanted.record)))
+            {
+                e.written = true;
+                e.fault   = nullptr;
+                ++e.writes;
+                platform::Log(L"column layout: the engine's two-player layout ({}) now shows {} (was {}); the engine lays two "
+                              L"local players out from it on the next redraw (write {})",
+                              e.name, TwoScreensText(e, wanted.record),
+                              column_rules::Same(entry, stock) ? L"the stock one" : L"another of the mod's", e.writes);
+            }
+            else
+            {
+                TwoFault(e, L"could not be written; two players keep player 1 first; tried again twice a second");
+            }
+            break;
+        case Action::Restore:
+            if (platform::WriteGuarded(records, stock, sizeof(entry)))
+            {
+                e.written = false;
+                e.fault   = nullptr;
+                ++e.restores;
+                platform::Log(L"column layout: the engine's two-player layout ({}) put back to player 1 first (restore {})", e.name,
+                              e.restores);
+            }
+            else
+            {
+                TwoFault(e, L"could not be put back; it keeps the mod's records; tried again twice a second");
+            }
+            break;
+        case Action::Foreign:
+            e.fault = nullptr;
+            if (!e.foreign)
+            {
+                e.foreign = true;
+                e.written = false;
+                platform::LogWarning(L"column layout: the engine's two-player layout ({}) holds neither its stock values nor one of "
+                                     L"the mod's ({}); left alone",
+                                     e.name, RecordsText(entry));
+            }
+            break;
+        case Action::Nothing:
+            e.written = ours;
+            e.fault   = nullptr;
+            break;
+    }
+}
+
+/// A two-player entry's state for the reading.
+std::wstring TwoReading(const TwoEntry& e)
+{
+    const auto& stock = *e.stock;
+    const wchar_t* why     = L"";
+    std::uint8_t*  records = g_installed ? FindRecords(e.type, kTwoPlayerRecords, &why) : nullptr;
+    Record         entry[kTwoPlayerRecords]{};
+    if (records == nullptr || !platform::CopyGuarded(entry, records, sizeof(entry)))
+    {
+        return std::format(L"{} unread", e.name);
+    }
+    const std::wstring what = column_rules::Same(entry, stock)            ? std::wstring(L"stock")
+                              : column_rules::ArrangementOf(entry, stock) ? L"arranged (" + TwoScreensText(e, entry) + L")"
+                                                                          : L"other: " + RecordsText(entry);
+    return std::format(L"{} {} (writes {}, restores {}{})", e.name, what, e.writes, e.restores,
+                       e.fault != nullptr ? std::format(L"; fault: {}", e.fault) : L"");
+}
+
 }  // namespace
 
 bool Install(const platform::GameImage& image) noexcept
@@ -324,6 +486,10 @@ bool Install(const platform::GameImage& image) noexcept
     g_engineGlobal = *engineGlobal;
     g_installed    = true;
     g_wanted       = Records{{kStockFavorTop[0], kStockFavorTop[1], kStockFavorTop[2]}};
+    for (TwoEntry& e : g_two)
+    {
+        e.wanted = TwoRecords{{(*e.stock)[0], (*e.stock)[1]}};
+    }
     // The file's word is one of the table's, so it parses.
     SetOrder(column_rules::ParseOrder(platform::settings::Of(platform::settings::kColumnOrder).word).value_or(column_rules::kJoinOrder),
              platform::settings::Why(platform::settings::kColumnOrder).c_str());
@@ -349,7 +515,7 @@ bool Install(const platform::GameImage& image) noexcept
             const auto order = column_rules::ParseOrder(word);
             if (!order)
             {
-                return control::Outcome{false, L"the order must be 123 or 132"};  // unreachable: the shape checks the words
+                return control::Outcome{false, L"the order must be 1, 2 and 3, each once"};  // unreachable: the shape checks the words
             }
             SetOrder(*order, L"the console");
             return control::Outcome{};
@@ -358,7 +524,7 @@ bool Install(const platform::GameImage& image) noexcept
         [] { return std::format(L"{}{}{}", g_order.player[0], g_order.player[1], g_order.player[2]); });
     Register({.name = L"column-layout.state", .shape = Shape::Text,
               .help = L"the columns wanted, the column order, the engine's three-player layout entry (stock, the mod's three columns, "
-                      L"or the stock records arranged) and the setting",
+                      L"or the stock records arranged) and the setting, and its two two-player entries (stock or arranged)",
               .get  = [] { return Value{Reading()}; }});
     platform::Log(L"column layout: ready (three columns through the engine's own layout table while three are wanted; "
                   L"view-columns 0..3; column order {})",
@@ -371,9 +537,9 @@ column_rules::Order CurrentOrder() noexcept
     return g_order;
 }
 
-bool ThreeViews() noexcept
+int Views() noexcept
 {
-    return g_columns >= kThreePlayerRecords || g_localPlayers >= kThreePlayerRecords;
+    return g_views;
 }
 
 void ChangeOrder(const column_rules::Order& order, const wchar_t* why) noexcept
@@ -402,6 +568,7 @@ void Tick(int columns, int localPlayers, int spanColumns, const ListSeats& seats
     // arranged by the column order while three views exist.
     const bool    threeWanted = column_rules::ThreeColumns(columns, localPlayers, spanColumns, g_override);
     const bool    threeViews  = columns >= kThreePlayerRecords || localPlayers >= kThreePlayerRecords;
+    g_views = threeViews ? kThreePlayerRecords : columns == kTwoPlayerRecords || localPlayers == kTwoPlayerRecords ? kTwoPlayerRecords : 1;
     const Records wanted      = column_rules::EntryWanted(threeWanted, threeViews, g_order, seats);
     const bool    ours        = !column_rules::Same(wanted.record, kStockFavorTop);
     const bool    change      = !column_rules::Same(wanted.record, g_wanted.record) && !g_foreign && g_fault == nullptr;
@@ -410,6 +577,19 @@ void Tick(int columns, int localPlayers, int spanColumns, const ListSeats& seats
     if (change || cadence || !g_reached)
     {
         Apply(wanted);
+    }
+    // The two-player entries: arranged while two views show.
+    for (TwoEntry& e : g_two)
+    {
+        const auto& stock = *e.stock;
+        const TwoRecords two      = column_rules::TwoEntryWanted(stock, g_views == kTwoPlayerRecords, g_order, seats);
+        const bool       twoOurs  = !column_rules::Same(two.record, stock);
+        const bool       twoNew   = !column_rules::Same(two.record, e.wanted.record) && !e.foreign && e.fault == nullptr;
+        const bool       twoCheck = g_ticks % kCheckTicks == 0 && (e.written || e.foreign || e.fault != nullptr || twoOurs);
+        if (twoNew || twoCheck || !e.reached)
+        {
+            ApplyTwo(e, two);
+        }
     }
     if (g_written && g_ticks % kStatusTicks == 0 && platform::Enabled(platform::Level::Debug))
     {
@@ -427,6 +607,10 @@ void Remove() noexcept
     if (g_installed)
     {
         Apply(Records{{kStockFavorTop[0], kStockFavorTop[1], kStockFavorTop[2]}});  // the restore needs one of the mod's entries in it
+        for (TwoEntry& e : g_two)
+        {
+            ApplyTwo(e, TwoRecords{{(*e.stock)[0], (*e.stock)[1]}});
+        }
     }
     HoldSetting(false);
 }
@@ -447,12 +631,13 @@ std::wstring Reading()
                                                                            ScreensText({{entry[0], entry[1], entry[2]}}, kStockFavorTop) + L")"
                                                                      : std::format(L"other: {}", RecordsText(entry));
     }
-    return std::format(L"{} column(s) wanted{}, {} local player(s); column order {}; the engine's three-player layout: {}{}; its "
-                       L"setting held at player 1 on top: {}; writes {}, restores {}{}",
-                       g_columns, g_override != 0 ? std::format(L" (view-columns {})", g_override) : L"", g_localPlayers,
+    return std::format(L"{} column(s) wanted{}, {} local player(s), {} view(s) placed; column order {}; the engine's three-player "
+                       L"layout: {}{}; its setting held at player 1 on top: {}; writes {}, restores {}{}; the two-player layouts: {}; {}",
+                       g_columns, g_override != 0 ? std::format(L" (view-columns {})", g_override) : L"", g_localPlayers, g_views,
                        OrderText(g_order), table,
                        records == nullptr && g_installed ? std::format(L" ({})", why) : L"", g_settingByte != nullptr ? L"yes" : L"no",
-                       g_writes, g_restores, g_fault != nullptr ? std::format(L"; fault: {}", g_fault) : L"");
+                       g_writes, g_restores, g_fault != nullptr ? std::format(L"; fault: {}", g_fault) : L"", TwoReading(g_two[0]),
+                       TwoReading(g_two[1]));
 }
 
 }  // namespace lss::views::column_layout

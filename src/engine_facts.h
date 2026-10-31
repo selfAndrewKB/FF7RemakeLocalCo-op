@@ -2299,6 +2299,8 @@ inline constexpr std::uint32_t kTArrayNum                     = 0x08;
 inline constexpr std::int32_t  kSplitscreenTypes              = 6;
 inline constexpr std::uint32_t kSplitscreenDataBytes          = 0x10;
 inline constexpr std::uint32_t kPerPlayerSplitBytes           = 0x10;
+inline constexpr std::uint32_t kSplitTypeTwoPlayerHorizontal  = 1;  // top and bottom (RE-layout-fov.md §9: two records)
+inline constexpr std::uint32_t kSplitTypeTwoPlayerVertical    = 2;  // side by side
 inline constexpr std::uint32_t kSplitTypeThreePlayerFavorTop  = 3;
 
 // --- The camera manager's pose slots and the scene signals (research/RE-camera.md §2.2-2.4, RE-lifecycle-world.md) --

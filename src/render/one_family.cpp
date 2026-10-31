@@ -9,6 +9,7 @@
 #include "platform/vtable_entry.h"
 #include "render/family_boundary.h"
 #include "render/family_split.h"
+#include "render/view_places.h"
 
 #include <intrin.h>
 
@@ -43,6 +44,7 @@ __declspec(noinline) void Submit(void* rendererModule, void* canvas, std::uint8_
         return;
     }
     family_boundary::Poll();
+    view_places::Publish(family);  // every game viewport frame, split or not: each view's place by its state
     if (!g_on.load(std::memory_order_relaxed) || !family_boundary::Ready())
     {
         g_submit(rendererModule, canvas, family);

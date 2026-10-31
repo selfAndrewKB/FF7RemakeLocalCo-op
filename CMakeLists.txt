@@ -119,6 +119,7 @@ add_library(LocalSplitScreen SHARED
     src/render/family_boundary.cpp
     src/render/family_now.cpp
     src/render/one_family.cpp
+    src/render/view_places.cpp
     src/render/ssr_origin.cpp
     src/render/sun_cascades.cpp
     src/views/letterbox_patch.cpp

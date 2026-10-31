@@ -76,17 +76,15 @@ inline const wchar_t* PlainName(Button button) noexcept
 /// Each screen position's button, as pad_claim_rules::kScreenButton.
 inline constexpr std::array<Button, rules::kScreens> kScreenButton{Button::A, Button::X, Button::Y};
 
-/// The player on a screen can step: two players who may move are on screens (player 1 may not while its view stays
-/// on the first screen), this one among them.
+/// The player on a screen can step: two players are on screens, this one among them.
 constexpr bool CanStep(const rules::Claim& c, int seat) noexcept
 {
-    const auto movable = [&c](int s) { return s > 0 || (s == 0 && !c.firstFixed); };
-    int        count   = 0;
+    int count = 0;
     for (int s = 0; s < c.screens; ++s)
     {
-        count += movable(c.seatOn[static_cast<std::size_t>(s)]) ? 1 : 0;
+        count += c.seatOn[static_cast<std::size_t>(s)] >= 0 ? 1 : 0;
     }
-    return count >= 2 && movable(seat);
+    return count >= 2 && seat >= 0;
 }
 
 /// Screen `screen`'s text; `names` the characters by seat (upper case, "TIFA"). Empty for a screen with no player.

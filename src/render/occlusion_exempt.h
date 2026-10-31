@@ -17,14 +17,15 @@
 // and each new set (Info, with the objects' names when there are few), a change in how many objects a pass exempts
 // (Trace: the game rewrites some flags every frame). The reading gives the set and the last count in an allowed view.
 //
-// Switch `occlusion-exempt.views all | player-1 | others`: the views the set applies in (player 1's = the view whose
-// rectangle starts at the window's top-left corner; a scene capture's own view starts there too, so it counts with
-// player 1's). Exempting in player 1's view only tells a limit shared by all views' queries from a fault in the
+// Switch `occlusion-exempt.views all | player-1 | others`: the views the set applies in (player 1's = the first view of
+// the engine's list, told by its state: render/view_places, wherever it sits on screen; a scene capture's view is no
+// player's and counts with the others; with no list known, the view whose rectangle starts at the window's top-left
+// corner). Exempting in player 1's view only tells a limit shared by all views' queries from a fault in the
 // answers of player 2's and player 3's own views (2026-10-24: the latter).
 //
-// Command `occlusion-exempt.third-column <a b, c d> | none | main`: a set of its own for the third column's view (in a split
-// frame the third view of the engine's list; otherwise the view whose rectangle's left edge is two widths in, in the
-// top row, which is another player's view under the column order `1 3 2`; it then ignores `.views`), so one look tests two
+// Command `occlusion-exempt.third-column <a b, c d> | none | main`: a set of its own for the third column's view (the third
+// view of the engine's list; with no list known, the view whose rectangle's left edge is two widths in, in the top row,
+// which is another player's view under the column order `1 3 2`; it then ignores `.views`), so one look tests two
 // sets: player 2's view takes the main set (with `.views others`), player 3's its own. `main` gives it the main set
 // again. Halving with the depth-pyramid test on (`r.HZBOcclusion 1`, which tests each object alone, not in groups
 // of 8) gives clear answers.

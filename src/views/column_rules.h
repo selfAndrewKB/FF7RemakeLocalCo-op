@@ -17,7 +17,10 @@
 // places (player 1's, then the seats in join order, then the mirrors), and every per-view module counts in them. Where
 // a column shows on screen is the column order's (the setting `column-order`, the user 2026-10-25): with `1 3 2`
 // player 2's view takes the right-hand record and player 3's the middle one whatever the join order, through the same
-// entry, the records arranged (Slots, Arrange). A view of no player (a mirror) takes a slot left over.
+// entry, the records arranged (Slots, Arrange). A view of no player (a mirror) takes a slot left over. Any player may
+// take any screen, player 1 too (2026-10-31: nothing in the engine ties player 1 to the first record, RE-layout-fov.md
+// §9, and the mod tells views by their place in the list, not on screen). Two views take one of the engine's two-player
+// entries (top and bottom, or side by side), arranged the same way (TwoSlots): the two players in the order's order.
 
 #include <algorithm>
 #include <array>
@@ -75,9 +78,24 @@ inline constexpr Record kThreeColumns[kThreePlayerRecords] = {
     {1.0f / 3.0f, 1.0f, 2.0f / 3.0f, 0.0f},
 };
 
-constexpr bool Same(const Record (&a)[kThreePlayerRecords], const Record (&b)[kThreePlayerRecords]) noexcept
+/// The engine's two-player layouts hold two records.
+inline constexpr int kTwoPlayerRecords = 2;
+
+/// The stock two-player entries, as the constructor fills them [CONFIRMED static, RE-layout-fov.md §9.3]: TwoPlayer_
+/// Horizontal (player 1 on top, the other below) and TwoPlayer_Vertical (player 1 on the left, the other on the right).
+inline constexpr Record kStockTopBottom[kTwoPlayerRecords] = {
+    {1.0f, 0.5f, 0.0f, 0.0f},
+    {1.0f, 0.5f, 0.0f, 0.5f},
+};
+inline constexpr Record kStockSideBySide[kTwoPlayerRecords] = {
+    {0.5f, 1.0f, 0.0f, 0.0f},
+    {0.5f, 1.0f, 0.5f, 0.0f},
+};
+
+template <std::size_t N>
+constexpr bool Same(const Record (&a)[N], const Record (&b)[N]) noexcept
 {
-    for (int i = 0; i < kThreePlayerRecords; ++i)
+    for (std::size_t i = 0; i < N; ++i)
     {
         if (!(a[i] == b[i]))
         {
@@ -88,8 +106,8 @@ constexpr bool Same(const Record (&a)[kThreePlayerRecords], const Record (&b)[kT
 }
 
 /// The column order: the player each screen slot shows, left to right (in one window, three players: the top, then
-/// the bottom left, the bottom right). Player 1 keeps the first slot (the HUD tells player 1's view by its top-left
-/// corner: hud/ui_targets.cpp); players 2 and 3 take the other two in either order.
+/// the bottom left, the bottom right; two players: the top, then the bottom, or left and right). Any of the six orders;
+/// with two players the one not in is skipped.
 struct Order
 {
     std::array<int, kThreePlayerRecords> player{1, 2, 3};
@@ -104,7 +122,7 @@ struct Order
 inline constexpr Order kJoinOrder{};
 
 /// The order from text (the settings file, the console): its digits in order, anything else skipped ("1 3 2", "132",
-/// "1,3,2"). Empty unless the digits are 1, then 2 and 3 in either order.
+/// "1,3,2"). Empty unless the digits are 1, 2 and 3, each once.
 constexpr std::optional<Order> ParseOrder(std::wstring_view text) noexcept
 {
     Order order{};
@@ -121,9 +139,17 @@ constexpr std::optional<Order> ParseOrder(std::wstring_view text) noexcept
         }
         order.player[static_cast<std::size_t>(count++)] = c - L'0';
     }
-    const bool valid = count == kThreePlayerRecords && order.player[0] == 1 &&
-                       ((order.player[1] == 2 && order.player[2] == 3) || (order.player[1] == 3 && order.player[2] == 2));
-    return valid ? std::optional<Order>{order} : std::nullopt;
+    std::array<bool, kThreePlayerRecords + 1> seen{};
+    for (int i = 0; i < count; ++i)
+    {
+        const int player = order.player[static_cast<std::size_t>(i)];
+        if (player < 1 || player > kThreePlayerRecords || seen[static_cast<std::size_t>(player)])
+        {
+            return std::nullopt;
+        }
+        seen[static_cast<std::size_t>(player)] = true;
+    }
+    return count == kThreePlayerRecords ? std::optional<Order>{order} : std::nullopt;
 }
 
 /// The view at each place of the engine's list: the seat whose view it is (0 player 1's, 1 player 2's, 2 player 3's),
@@ -162,34 +188,63 @@ constexpr std::array<int, kThreePlayerRecords> Slots(const Order& order, const L
     return slots;
 }
 
-/// The entry for those slots: place i's record is base's record slots[i].
-struct Records
+/// The record each of two views takes (the engine's two-player entries): the two players in the order's order (the
+/// player not in skipped); the list's order under the join order or when a view is no player's (a mirror).
+constexpr std::array<int, kTwoPlayerRecords> TwoSlots(const Order& order, const ListSeats& seats) noexcept
 {
-    Record record[kThreePlayerRecords]{};
-};
-constexpr Records Arrange(const Record (&base)[kThreePlayerRecords], const std::array<int, kThreePlayerRecords>& slots) noexcept
-{
-    Records out{};
-    for (int i = 0; i < kThreePlayerRecords; ++i)
+    const auto rank = [&order](int seat) {
+        for (int slot = 0; slot < kThreePlayerRecords; ++slot)
+        {
+            if (order.player[static_cast<std::size_t>(slot)] == seat + 1)
+            {
+                return slot;
+            }
+        }
+        return kThreePlayerRecords;
+    };
+    const int first = seats[0], second = seats[1];
+    if (order == kJoinOrder || first < 0 || second < 0 || rank(first) <= rank(second))
     {
-        out.record[i] = base[std::clamp(slots[static_cast<std::size_t>(i)], 0, kThreePlayerRecords - 1)];
+        return {0, 1};
+    }
+    return {1, 0};
+}
+
+/// An entry's records: place i's record is record[i].
+template <std::size_t N>
+struct RecordSet
+{
+    Record record[N]{};
+};
+using Records    = RecordSet<kThreePlayerRecords>;
+using TwoRecords = RecordSet<kTwoPlayerRecords>;
+
+/// The entry for those slots: place i's record is base's record slots[i].
+template <std::size_t N>
+constexpr RecordSet<N> Arrange(const Record (&base)[N], const std::array<int, N>& slots) noexcept
+{
+    RecordSet<N> out{};
+    for (std::size_t i = 0; i < N; ++i)
+    {
+        out.record[i] = base[static_cast<std::size_t>(std::clamp(slots[i], 0, static_cast<int>(N) - 1))];
     }
     return out;
 }
 
 /// The entry holds exactly `base`'s records, in any order (each once).
-constexpr bool ArrangementOf(const Record (&entry)[kThreePlayerRecords], const Record (&base)[kThreePlayerRecords]) noexcept
+template <std::size_t N>
+constexpr bool ArrangementOf(const Record (&entry)[N], const Record (&base)[N]) noexcept
 {
-    std::array<bool, kThreePlayerRecords> used{};
-    for (int i = 0; i < kThreePlayerRecords; ++i)
+    std::array<bool, N> used{};
+    for (std::size_t i = 0; i < N; ++i)
     {
         bool found = false;
-        for (int j = 0; !found && j < kThreePlayerRecords; ++j)
+        for (std::size_t j = 0; !found && j < N; ++j)
         {
-            if (!used[static_cast<std::size_t>(j)] && entry[i] == base[j])
+            if (!used[j] && entry[i] == base[j])
             {
-                used[static_cast<std::size_t>(j)] = true;
-                found                             = true;
+                used[j] = true;
+                found   = true;
             }
         }
         if (!found)
@@ -223,22 +278,53 @@ constexpr Action Decide(const Record (&entry)[kThreePlayerRecords], const Record
     return Same(wanted, kStockFavorTop) ? Action::Restore : Action::Write;
 }
 
-/// The screen slot each place of the engine's list shows: arranged by an order other than the join order while three
-/// views exist (`threeViews`); in the list's order otherwise (with two views the engine does not use the entry).
-constexpr std::array<int, kThreePlayerRecords> ScreenSlots(bool threeViews, const Order& order, const ListSeats& seats) noexcept
+/// The screen slot each place of the engine's list shows with `views` views: three arranged by an order other than the
+/// join order (Slots), two by the order's order of the two players (TwoSlots, the third place unused); one in place.
+constexpr std::array<int, kThreePlayerRecords> ScreenSlots(int views, const Order& order, const ListSeats& seats) noexcept
 {
-    const bool arranged = threeViews && !(order == kJoinOrder);
-    return arranged ? Slots(order, seats) : std::array<int, kThreePlayerRecords>{0, 1, 2};
+    if (views >= kThreePlayerRecords)
+    {
+        return order == kJoinOrder ? std::array<int, kThreePlayerRecords>{0, 1, 2} : Slots(order, seats);
+    }
+    if (views == kTwoPlayerRecords)
+    {
+        const auto two = TwoSlots(order, seats);
+        return {two[0], two[1], 2};
+    }
+    return {0, 1, 2};
 }
 
-/// The entry wanted: the mod's columns while three columns are wanted, else the stock records, its slots ScreenSlots'.
+/// The three-player entry wanted: the mod's columns while three columns are wanted, else the stock records, arranged
+/// while three views exist.
 constexpr Records EntryWanted(bool threeColumns, bool threeViews, const Order& order, const ListSeats& seats) noexcept
 {
-    return Arrange(threeColumns ? kThreeColumns : kStockFavorTop, ScreenSlots(threeViews, order, seats));
+    return Arrange(threeColumns ? kThreeColumns : kStockFavorTop, ScreenSlots(threeViews ? kThreePlayerRecords : 1, order, seats));
+}
+
+/// A two-player entry wanted (`stock` its constructor's records): arranged while exactly two views exist.
+constexpr TwoRecords TwoEntryWanted(const Record (&stock)[kTwoPlayerRecords], bool twoViews, const Order& order,
+                                    const ListSeats& seats) noexcept
+{
+    return Arrange(stock, twoViews ? TwoSlots(order, seats) : std::array<int, kTwoPlayerRecords>{0, 1});
+}
+
+/// What to do with a two-player entry: as Decide, its own stock records the only base.
+constexpr Action DecideTwo(const Record (&entry)[kTwoPlayerRecords], const Record (&wanted)[kTwoPlayerRecords],
+                           const Record (&stock)[kTwoPlayerRecords]) noexcept
+{
+    if (!ArrangementOf(entry, stock))
+    {
+        return Action::Foreign;
+    }
+    if (Same(entry, wanted))
+    {
+        return Action::Nothing;
+    }
+    return Same(wanted, stock) ? Action::Restore : Action::Write;
 }
 
 /// The order that shows `seatOn` (each screen slot's seat, -1 for none): by player number, a slot no player has taking
-/// the player left over. Empty unless player 1 is on the first slot and no seat is on two.
+/// the player left over. Empty when a seat is on two slots or is no seat.
 constexpr std::optional<Order> OrderShowing(const std::array<int, kThreePlayerRecords>& seatOn) noexcept
 {
     Order                                 order{.byNumber = true};
@@ -266,10 +352,6 @@ constexpr std::optional<Order> OrderShowing(const std::array<int, kThreePlayerRe
                 used[static_cast<std::size_t>(seat)]      = true;
             }
         }
-    }
-    if (order.player[0] != 1)
-    {
-        return std::nullopt;  // player 1's view keeps the first slot (the HUD's rule, above)
     }
     return order;
 }

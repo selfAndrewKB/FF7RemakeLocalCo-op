@@ -40,7 +40,7 @@ bool Has(const std::wstring& text, const std::wstring& part)
 /// Before anyone takes a screen, each says its character and its own button (A, X, Y), and how to cancel.
 void UntakenScreens()
 {
-    const rules::Claim c = rules::Open(3, {0, 1, 2}, rules::kIdentity, true);
+    const rules::Claim c = rules::Open(3, {0, 1, 2}, rules::kIdentity);
     const ScreenText   first  = TextFor(c, 0, kNames);
     const ScreenText   second = TextFor(c, 1, kNames);
     const ScreenText   third  = TextFor(c, 2, kNames);
@@ -59,7 +59,7 @@ void UntakenScreens()
 /// Lines are joined as the game's strings join them: CR LF, three lines, none trailing.
 void LinesJoinedLikeTheGame()
 {
-    const rules::Claim c    = rules::Open(2, {0, 1, -1}, rules::kIdentity, true);
+    const rules::Claim c    = rules::Open(2, {0, 1, -1}, rules::kIdentity);
     const std::wstring text = TextFor(c, 0, kNames).markup;
     std::size_t        breaks = 0;
     for (std::size_t at = text.find(L"\r\n"); at != std::wstring::npos; at = text.find(L"\r\n", at + 2))
@@ -74,7 +74,7 @@ void LinesJoinedLikeTheGame()
 /// A taken screen offers keep and back; the character arrows only where a step can move it.
 void TakenScreens()
 {
-    rules::Claim c = rules::Open(3, {0, 1, 2}, rules::kIdentity, true);
+    rules::Claim c = rules::Open(3, {0, 1, 2}, rules::kIdentity);
     rules::Press(c, 1, rules::kX);  // pad 2 takes the second screen (BARRET)
     rules::Press(c, 0, rules::kA);  // pad 1 takes the first (CLOUD)
     const ScreenText barret = TextFor(c, 1, kNames);
@@ -82,28 +82,27 @@ void TakenScreens()
     EXPECT(Has(barret.markup, L"<button=left,pad>  <color=yellow>BARRET</color>  <button=right,pad>"));
     EXPECT(Has(barret.markup, L"<button=cross,pad> Keep    <button=circle,pad> Back"));
     EXPECT(barret.plain[0] == L"<   BARRET   >");
-    // Player 1 cannot step while its view stays on the first screen.
-    EXPECT(!Has(cloud.markup, L"<button=left,pad>"));
-    EXPECT(cloud.plain[0] == L"CLOUD");
-    EXPECT(cloud.plain[1] == L"A: keep    B: back");
+    // Player 1 steps like the others.
+    EXPECT(Has(cloud.markup, L"<button=left,pad>  <color=yellow>CLOUD</color>  <button=right,pad>"));
+    EXPECT(cloud.plain[0] == L"<   CLOUD   >");
+    EXPECT(cloud.plain[1] == L"Left/Right: character    A: keep    B: back");
 }
 
-/// Two screens: only one player besides player 1, so no step is offered.
-void NoStepWithOneOther()
+/// Two screens: the two players can trade; one screen: no step is offered.
+void StepsNeedTwo()
 {
-    rules::Claim c = rules::Open(2, {0, 1, -1}, rules::kIdentity, true);
+    rules::Claim c = rules::Open(2, {0, 1, -1}, rules::kIdentity);
     rules::Press(c, 1, rules::kX);
-    EXPECT(!Has(TextFor(c, 1, kNames).markup, L"<button=left,pad>"));
-    // With player 1 free to move, the two can trade.
-    rules::Claim free = rules::Open(2, {0, 1, -1}, rules::kIdentity, false);
-    rules::Press(free, 1, rules::kX);
-    EXPECT(Has(TextFor(free, 1, kNames).markup, L"<button=left,pad>"));
+    EXPECT(Has(TextFor(c, 1, kNames).markup, L"<button=left,pad>"));
+    rules::Claim one = rules::Open(1, {0, -1, -1}, rules::kIdentity);
+    rules::Press(one, 0, rules::kA);
+    EXPECT(!Has(TextFor(one, 0, kNames).markup, L"<button=left,pad>"));
 }
 
 /// A kept screen says so and offers B to change.
 void KeptScreen()
 {
-    rules::Claim c = rules::Open(3, {0, 1, 2}, rules::kIdentity, true);
+    rules::Claim c = rules::Open(3, {0, 1, 2}, rules::kIdentity);
     rules::Press(c, 2, rules::kY);
     rules::Press(c, 2, rules::kA);
     const ScreenText tifa = TextFor(c, 2, kNames);
@@ -114,7 +113,7 @@ void KeptScreen()
 /// A screen with no player, or outside the screens, has no text.
 void EmptyScreens()
 {
-    const rules::Claim c = rules::Open(2, {0, 1, 2}, rules::kIdentity, true);
+    const rules::Claim c = rules::Open(2, {0, 1, 2}, rules::kIdentity);
     EXPECT(TextFor(c, 2, kNames).markup.empty());
     EXPECT(TextFor(c, -1, kNames).markup.empty());
     EXPECT(TextFor(c, 3, kNames).plain[0].empty());
@@ -127,7 +126,7 @@ int main()
     UntakenScreens();
     LinesJoinedLikeTheGame();
     TakenScreens();
-    NoStepWithOneOther();
+    StepsNeedTwo();
     KeptScreen();
     EmptyScreens();
     return lss::test::Report();

@@ -40,8 +40,8 @@ struct Option
 // The table. An option's owner (the module named beside it) applies the reading at its install.
 inline constexpr std::array<const wchar_t*, 3> kMultiMonitorWords{L"auto", L"on", L"off"};
 inline constexpr std::array<const wchar_t*, 3> kMultiMonitorLabels{L"Auto", L"On", L"Off"};
-inline constexpr std::array<const wchar_t*, 2> kColumnOrderWords{L"123", L"132"};
-inline constexpr std::array<const wchar_t*, 2> kColumnOrderLabels{L"1 2 3", L"1 3 2"};
+inline constexpr std::array<const wchar_t*, 6> kColumnOrderWords{L"123", L"132", L"213", L"231", L"312", L"321"};
+inline constexpr std::array<const wchar_t*, 6> kColumnOrderLabels{L"1 2 3", L"1 3 2", L"2 1 3", L"2 3 1", L"3 1 2", L"3 2 1"};
 inline constexpr std::array<const wchar_t*, 2> kMenuSlowWords{L"on", L"off"};
 inline constexpr std::array<const wchar_t*, 2> kMenuSlowLabels{L"On", L"Off"};
 inline constexpr std::array<const wchar_t*, 3> kBattleWarpsWords{L"players-stay", L"off", L"game"};
@@ -57,11 +57,12 @@ inline constexpr Option kMultiMonitor{  // views/window_span
     L"every view in one window."};
 inline constexpr Option kColumnOrder{  // views/column_layout
     L"Views", L"column-order", kColumnOrderWords, L"123",
-    L"which screen players 2 and 3 take when three views show: 123 the join order, 132 player 2 on the right and player "
-    L"3 in the middle (in one window: bottom right and bottom left); player 1 keeps the left",
+    L"which screen each player takes: the players left to right (in one window, three players: the top, then the bottom "
+    L"left and right; two players: top then bottom, or left then right), the player not in skipped; 123 the join order "
+    L"(nothing arranged), 132 player 2 on the right and player 3 in the middle, 213 player 2 first and player 1 second",
     false, L"Screen order", kColumnOrderLabels,
-    L"Which screen players 2 and 3 take when three views show. 1 2 3: the order they joined. 1 3 2: player 2 on the "
-    L"right, player 3 in the middle. Player 1 keeps the left."};
+    L"Which screen each player takes, left to right (in one window: the top first). 1 2 3: the order they joined. With "
+    L"two players the one not playing is skipped."};
 inline constexpr Option kMenuSlow{  // battle/command_menu_tick
     L"Battle", L"menu-slow", kMenuSlowWords, L"off",
     L"off (the default): no grey, and the world and the ATB gauges run on at full speed while a battle command menu is "

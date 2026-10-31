@@ -18,8 +18,8 @@
 //   - A keeps it, B steps back (a kept screen unkept, a taken one let go); the claim ends when at most one screen is
 //     not kept and one is (the last person takes what is left), or the opener again (View held) puts back the tables
 //     from the opening.
-// While player 1's view cannot leave the first screen (`firstFixed`; the HUD tells player 1's view by its place:
-// hud/ui_targets.cpp ColumnOf), steps never move player 1.
+// Any player may take any screen, player 1 too (2026-10-31: the views are told apart by their place in the engine's
+// list, not on screen; plan/topics/views.md History 2026-10-31).
 
 #include <array>
 #include <cstdint>
@@ -222,19 +222,17 @@ struct Claim
     PadTable                    pads = kIdentity;          // the pad table
     std::array<int, kScreens>   takenBy{-1, -1, -1};       // the physical user that took each screen, or -1
     std::array<bool, kScreens>  kept{};                    // the screen's choice is kept
-    bool                        firstFixed = true;         // player 1's view stays on the first screen
     // The tables at the opening, put back by a cancel.
     std::array<int, kScreens>   openSeatOn{0, 1, 2};
     PadTable                    openPads = kIdentity;
 };
 
-constexpr Claim Open(int screens, const std::array<int, kScreens>& seatOn, const PadTable& pads, bool firstFixed) noexcept
+constexpr Claim Open(int screens, const std::array<int, kScreens>& seatOn, const PadTable& pads) noexcept
 {
     Claim c{};
-    c.screens    = screens < 1 ? 1 : screens > kScreens ? kScreens : screens;
-    c.seatOn     = seatOn;
-    c.pads       = pads;
-    c.firstFixed = firstFixed;
+    c.screens = screens < 1 ? 1 : screens > kScreens ? kScreens : screens;
+    c.seatOn  = seatOn;
+    c.pads    = pads;
     for (int s = c.screens; s < kScreens; ++s)
     {
         c.seatOn[static_cast<std::size_t>(s)] = -1;
@@ -358,18 +356,14 @@ constexpr Result Press(Claim& c, int user, std::uint16_t button) noexcept
     {
         return {};
     }
-    // The next player in the party order (wrapping) on a screen not kept, player 1 only while its view may move.
+    // The next player in the party order (wrapping) on a screen not kept.
     const int here = c.seatOn[m];
     const int dir  = button == kDpadRight ? 1 : kScreens - 1;
-    if (c.firstFixed && here == 0)
-    {
-        return {};
-    }
     for (int k = 1; k < kScreens; ++k)
     {
         const int seat  = (here + dir * k) % kScreens;
         const int there = ScreenShowing(c, seat);
-        if (there < 0 || c.kept[static_cast<std::size_t>(there)] || (c.firstFixed && seat == 0))
+        if (there < 0 || c.kept[static_cast<std::size_t>(there)])
         {
             continue;
         }
