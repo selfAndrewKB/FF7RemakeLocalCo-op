@@ -1,5 +1,9 @@
 #include "menu/coop_page_open.h"
 
+#define RC_UNREAL_DISABLE_PROPERTY_DEPRECATION_WARNINGS
+#define RC_UNREAL_DISABLE_CLASS_DEPRECATION_WARNINGS
+#include <Unreal/UObject.hpp>
+
 #include "engine_facts.h"
 #include "menu/coop_menu_rules.h"
 #include "menu/coop_page.h"
@@ -10,6 +14,7 @@
 #include "platform/settings.h"
 #include "platform/verified_code.h"
 #include "platform/vtable_entry.h"
+#include "players/seat_camera.h"
 #include "players/weak_object.h"
 
 #include <array>
@@ -62,6 +67,8 @@ std::array<platform::VTableEntry, rules::kCategoryKeys.size()> g_headings;
 // Game thread.
 void*         g_mgr = nullptr;  // the main menu manager while open
 weak::Weak    g_topWeak;
+void*         g_heldTop = nullptr;  // the Top window the mod put on the engine's root set while the page is open (alive
+                                    // while held: the collector never frees a root)
 std::wstring  g_savedTitle, g_savedGuide;
 std::uint64_t g_opens          = 0;
 int           g_pageVisibility = -1;  // the page's own visibility while the dev switch hides it, else -1
@@ -87,6 +94,95 @@ void SwapHeadings(bool labels) noexcept
             platform::LogWarning(L"Co-op page: the heading of {} could not be set; it shows the game's", page[i].text.label);
         }
     }
+}
+
+/// The engine's root-set flag on `object` (UObject::AddToRoot's flag, through UE4SS's object array): set, cleared or
+/// read. Guarded: false if the object array faulted. Raw: no objects to unwind.
+bool RootGuarded(void* object, bool set) noexcept
+{
+    __try
+    {
+        auto* const o = static_cast<RC::Unreal::UObject*>(object);
+        set ? o->SetRootSet() : o->ClearRootSet();
+        return true;
+    }
+    __except (platform::GuardFilter(GetExceptionCode()))
+    {
+        return false;
+    }
+}
+
+bool IsRootGuarded(void* object, bool& rooted) noexcept
+{
+    __try
+    {
+        rooted = static_cast<RC::Unreal::UObject*>(object)->IsRootSet();
+        return true;
+    }
+    __except (platform::GuardFilter(GetExceptionCode()))
+    {
+        return false;
+    }
+}
+
+void ReleaseTop() noexcept;
+
+/// The hidden Top window kept from the garbage collector while the page is open (research RE-game-widgets.md §11.7):
+/// Top's Hide takes it out of the overlay, nothing else holds it, and the manager's tick empties the title, help and
+/// guide once it is collected (about a minute in). The game's own System flow never reads Top while hidden; the page
+/// keeps it the current window, so it holds it as AddToRoot does, and only if no one else rooted it.
+void HoldTop(void* top) noexcept
+{
+    if (g_heldTop != nullptr && g_heldTop != top)
+    {
+        ReleaseTop();  // an older hold is let go, never lost by an overwrite
+    }
+    bool rooted = false;
+    if (!IsRootGuarded(top, rooted))
+    {
+        platform::LogWarning(L"Co-op page: the main menu's first page could not be read in the object array; its title, help and "
+                             L"guide may go blank at the next garbage collection");
+        return;
+    }
+    if (rooted)
+    {
+        return;  // someone else's hold: left as found
+    }
+    if (!RootGuarded(top, true))
+    {
+        platform::LogWarning(L"Co-op page: the main menu's first page could not be held; its title, help and guide may go blank at "
+                             L"the next garbage collection");
+        return;
+    }
+    g_heldTop = top;
+    platform::LogDebug(L"Co-op page: the main menu's hidden first page held from the garbage collection while the page is open");
+}
+
+/// The hold let go (the page closed, gone, or the mod unloading): the Top window is the game's to keep again. Only on the
+/// game thread: the flag shares its word with the collector's own flags, which its worker tasks change atomically during
+/// a collection the game thread runs; off it (an unload), the hold is forgotten and Top stays held until the game ends.
+void ReleaseTop() noexcept
+{
+    if (g_heldTop == nullptr)
+    {
+        return;
+    }
+    if (!players::seat_camera::IsGameThread())
+    {
+        g_heldTop = nullptr;
+        platform::LogDebug(L"Co-op page: the main menu's first page left held: the unload runs off the game thread");
+        return;
+    }
+    if (!RootGuarded(g_heldTop, false))
+    {
+        platform::LogWarning(L"Co-op page: the hold on the main menu's first page could not be let go; it stays until the game "
+                             L"ends");
+    }
+    else
+    {
+        platform::LogDebug(L"Co-op page: the main menu's first page let go");
+    }
+    g_heldTop = nullptr;
 }
 
 /// The Top window's title and guide back as they were.
@@ -126,6 +222,7 @@ void Closed(const wchar_t* how) noexcept
     RestoreTop();
     void* shown = nullptr;
     const bool ok = g_mgr != nullptr && platform::CallGuarded(g.showTop, shown, g_mgr, true) && shown != nullptr;
+    ReleaseTop();  // after ShowTopWindow: it finds Top alive, the branch the game takes when no collection fell in between
     platform::Log(L"Co-op page: closed ({}); {}", how, ok ? L"the main menu is back" : L"the main menu could not be shown again (it closed)");
     g_mgr = nullptr;
 }
@@ -151,6 +248,7 @@ void ForceClose(void* page, const wchar_t* why) noexcept
         platform::WriteGuarded(At(page, facts::kOptionsState), &none, sizeof(none));
     }
     RestoreTop();
+    ReleaseTop();
     g_mgr = nullptr;
     platform::Log(L"Co-op page: closed with the main menu ({}); its layer popped and the page taken out", why);
 }
@@ -272,6 +370,7 @@ void Unplace() noexcept
 {
     SwapHeadings(false);
     g_keyDown.Restore();
+    ReleaseTop();
 }
 
 void Remove() noexcept
@@ -282,6 +381,7 @@ void Remove() noexcept
         platform::Log(L"Co-op page: the mod unloads with the page open; the page is left to the game");
     }
     g_pageVisibility = -1;
+    ReleaseTop();  // a flag in the object array: no UI call
 }
 
 void Open(void* mgr, OpenWindowFn openWindow) noexcept
@@ -322,6 +422,7 @@ try
     const std::uint8_t hidden = 0;
     platform::WriteGuarded(At(top, facts::kWindowVisible), &hidden, 1);
     g_topWeak    = weak::MakeWeak(top);
+    HoldTop(top);
     g_savedTitle = game_ui::ReadString(At(top, facts::kWindowTitle));
     g_savedGuide = game_ui::ReadString(At(top, facts::kTopGuide));
     game_ui::AssignString(At(top, facts::kWindowTitle), rules::kTitle);
@@ -341,6 +442,10 @@ try
 }
 catch (...)
 {
+    if (!coop_page::IsOpen())
+    {
+        ReleaseTop();  // thrown after the hold, before the page opened: nothing else would let it go
+    }
 }
 
 void Tick() noexcept
@@ -369,6 +474,7 @@ void Tick() noexcept
             ShowPageAgain(nullptr);
             SwapHeadings(false);
             RestoreTop();
+            ReleaseTop();
             g_mgr = nullptr;
             platform::Log(L"Co-op page: the page is gone with the main menu closing; its title and guide put back");
         }

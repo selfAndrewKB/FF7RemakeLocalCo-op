@@ -9,8 +9,10 @@
 // and the game's heading table (keyed by category, keys the page shares with the game's first three) names the page's
 // categories. Back on the page's categories closes it in the same input event (the page's key handler, a vtable slot)
 // and the Top window comes back as after any game window; a close the handler did not see is caught by the tick. A main
-// menu closed under the page (no game path is known to) takes it down the game's no-animation way. Each open and close
-// logged at Info. Game thread.
+// menu closed under the page (no game path is known to) takes it down the game's no-animation way. While open, the
+// hidden Top window is held from the garbage collector (the engine's root set, as AddToRoot), since its Hide takes it out
+// of the overlay and nothing else keeps it: collected, the manager's tick would empty the title, help and guide (§11.7).
+// Every close lets it go. Each open and close logged at Info, the hold at Debug. Game thread.
 
 #include <cstdint>
 #include <string>
