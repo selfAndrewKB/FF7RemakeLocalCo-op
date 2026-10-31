@@ -93,12 +93,14 @@ constexpr bool Same(const Record (&a)[kThreePlayerRecords], const Record (&b)[kT
 struct Order
 {
     std::array<int, kThreePlayerRecords> player{1, 2, 3};
+    bool byNumber = false;  // `1 2 3` by player number, not the join order (the pad claim's: players/pad_claim)
     constexpr bool operator==(const Order&) const noexcept = default;
 };
 
 /// The default, `1 2 3`: the join order. The entry keeps the engine's list order (EntryWanted arranges nothing), so the
 /// player who joined first shows in the middle (bottom left), the next on the right (bottom right), as before the
-/// setting existed. Only `1 3 2` arranges by player number.
+/// setting existed. `1 3 2` arranges by player number, and so does `1 2 3` with byNumber (the pad claim's choice,
+/// whatever order the players joined in).
 inline constexpr Order kJoinOrder{};
 
 /// The order from text (the settings file, the console): its digits in order, anything else skipped ("1 3 2", "132",
@@ -221,14 +223,55 @@ constexpr Action Decide(const Record (&entry)[kThreePlayerRecords], const Record
     return Same(wanted, kStockFavorTop) ? Action::Restore : Action::Write;
 }
 
-/// The entry wanted: the mod's columns while three columns are wanted, else the stock records; arranged by an order
-/// other than the join order while three views exist (`threeViews`); in the list's order otherwise (with two views the
-/// engine does not use the entry).
-constexpr Records EntryWanted(bool threeColumns, bool threeViews, const Order& order, const ListSeats& seats) noexcept
+/// The screen slot each place of the engine's list shows: arranged by an order other than the join order while three
+/// views exist (`threeViews`); in the list's order otherwise (with two views the engine does not use the entry).
+constexpr std::array<int, kThreePlayerRecords> ScreenSlots(bool threeViews, const Order& order, const ListSeats& seats) noexcept
 {
     const bool arranged = threeViews && !(order == kJoinOrder);
-    const auto slots    = arranged ? Slots(order, seats) : std::array<int, kThreePlayerRecords>{0, 1, 2};
-    return Arrange(threeColumns ? kThreeColumns : kStockFavorTop, slots);
+    return arranged ? Slots(order, seats) : std::array<int, kThreePlayerRecords>{0, 1, 2};
+}
+
+/// The entry wanted: the mod's columns while three columns are wanted, else the stock records, its slots ScreenSlots'.
+constexpr Records EntryWanted(bool threeColumns, bool threeViews, const Order& order, const ListSeats& seats) noexcept
+{
+    return Arrange(threeColumns ? kThreeColumns : kStockFavorTop, ScreenSlots(threeViews, order, seats));
+}
+
+/// The order that shows `seatOn` (each screen slot's seat, -1 for none): by player number, a slot no player has taking
+/// the player left over. Empty unless player 1 is on the first slot and no seat is on two.
+constexpr std::optional<Order> OrderShowing(const std::array<int, kThreePlayerRecords>& seatOn) noexcept
+{
+    Order                                 order{.byNumber = true};
+    std::array<bool, kThreePlayerRecords> used{};
+    for (int s = 0; s < kThreePlayerRecords; ++s)
+    {
+        const int seat = seatOn[static_cast<std::size_t>(s)];
+        if (seat < -1 || seat >= kThreePlayerRecords || (seat >= 0 && used[static_cast<std::size_t>(seat)]))
+        {
+            return std::nullopt;
+        }
+        order.player[static_cast<std::size_t>(s)] = seat + 1;  // 0 for a slot no player has, filled below
+        if (seat >= 0)
+        {
+            used[static_cast<std::size_t>(seat)] = true;
+        }
+    }
+    for (int s = 0; s < kThreePlayerRecords; ++s)
+    {
+        for (int seat = 0; order.player[static_cast<std::size_t>(s)] == 0 && seat < kThreePlayerRecords; ++seat)
+        {
+            if (!used[static_cast<std::size_t>(seat)])
+            {
+                order.player[static_cast<std::size_t>(s)] = seat + 1;
+                used[static_cast<std::size_t>(seat)]      = true;
+            }
+        }
+    }
+    if (order.player[0] != 1)
+    {
+        return std::nullopt;  // player 1's view keeps the first slot (the HUD's rule, above)
+    }
+    return order;
 }
 
 }  // namespace lss::views::column_rules

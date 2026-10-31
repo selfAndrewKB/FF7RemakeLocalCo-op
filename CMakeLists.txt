@@ -85,6 +85,8 @@ add_library(LocalSplitScreen SHARED
     src/players/pad_buttons.cpp
     src/players/pad_presence.cpp
     src/players/pad_table.cpp
+    src/players/pad_claim.cpp
+    src/hud/view_prompt.cpp
     src/players/party_events.cpp
     src/players/party_member.cpp
     src/players/party_seat.cpp

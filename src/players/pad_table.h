@@ -45,4 +45,14 @@ bool Set(const pad_claim_rules::PadTable& table, const wchar_t* why) noexcept;
 /// Every connected pad reads idle to the game while on. Game thread.
 void SetIdle(bool on, const wchar_t* why) noexcept;
 
+/// Each physical pad's new presses (the buttons down on this poll and up on its last) and the opener, as the game's
+/// poll reads them, idle or not: the claim's input (players/pad_claim). Called inside the engine's poll, so the
+/// listener only notes them (a table change there would lose its re-check: the poll clears the byte at its end).
+/// Game thread.
+using Listener = void (*)(int user, std::uint16_t pressed, bool open) noexcept;
+void Listen(Listener listener) noexcept;
+
+/// Logs the engine's other input devices (a PlayStation pad read through scePad is not moved by the table). Game thread.
+void LogDevices() noexcept;
+
 }  // namespace lss::players::pad_table

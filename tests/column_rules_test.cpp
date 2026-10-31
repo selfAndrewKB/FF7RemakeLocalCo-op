@@ -156,6 +156,29 @@ void SlotsAndEntries()
 
 }  // namespace
 
+/// The pad claim's orders (players/pad_claim): by player number whatever the join order, a slot no player has taking the
+/// player left over, never player 1 off the first slot.
+void ClaimOrders()
+{
+    using Seats3 = std::array<int, kThreePlayerRecords>;
+    const auto both = OrderShowing(Seats3{0, 1, 2});
+    EXPECT(both && both->byNumber && (both->player == Seats3{1, 2, 3}));
+    EXPECT(!(*both == kJoinOrder));  // arranged, unlike the join order's 1 2 3
+    const auto swapped = OrderShowing(Seats3{0, 2, 1});
+    EXPECT(swapped && (swapped->player == Seats3{1, 3, 2}));
+    const auto mirror = OrderShowing(Seats3{0, 1, -1});  // player 2 and a mirror
+    EXPECT(mirror && (mirror->player == Seats3{1, 2, 3}));
+    EXPECT(!OrderShowing(Seats3{1, 0, 2}));   // player 1 off the first slot
+    EXPECT(!OrderShowing(Seats3{0, 1, 1}));   // a seat twice
+    EXPECT(!OrderShowing(Seats3{0, 3, 1}));   // no such seat
+
+    // Player 3 joined first (the list: player 1, player 3, player 2): by number 1 2 3 puts player 2 in the middle.
+    using Slots3 = std::array<int, kThreePlayerRecords>;
+    EXPECT((ScreenSlots(true, *both, {0, 2, 1}) == Slots3{0, 2, 1}));
+    EXPECT((ScreenSlots(true, kJoinOrder, {0, 2, 1}) == Slots3{0, 1, 2}));  // the join order arranges nothing
+    EXPECT((ScreenSlots(false, *both, {0, 2, 1}) == Slots3{0, 1, 2}));      // two views: the list's order
+}
+
 int main()
 {
     WantedColumns();
@@ -164,6 +187,7 @@ int main()
     Decisions();
     Orders();
     SlotsAndEntries();
+    ClaimOrders();
     std::printf(g_failures == 0 ? "column_rules: all passed\n" : "column_rules: %d failure(s)\n", g_failures);
     return g_failures == 0 ? 0 : 1;
 }

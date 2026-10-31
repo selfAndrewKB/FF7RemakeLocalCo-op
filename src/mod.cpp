@@ -36,6 +36,8 @@
 #include "players/scopes.h"
 #include "players/session.h"
 #include "players/single_view.h"
+#include "players/pad_claim.h"
+#include "hud/view_prompt.h"
 #include "players/split_switch.h"
 #include "players/split_render.h"
 #include "players/weak_object.h"
@@ -64,7 +66,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.133.1-hold-view-to-change-pads";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.134.0-hold-view-to-pick-your-screen-and-character";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
@@ -354,6 +356,11 @@ private:
         // The other way round (the split decided while the switch stays set: a clear that failed, or someone else's
         // switch) the screen stays single; the policy's log says so, and the HUD follows the engine's view sizes.
         FollowShown(shown);
+        // The pad claim (players/pad_claim.h) over this tick's views, its prompts drawn in each player's own view.
+        lss::hud::view_prompt::SetControllers({ControllerOf(0), ControllerOfSeat(1), ControllerOfSeat(2), nullptr});
+        lss::players::pad_claim::Tick({.screens   = columns_.count,
+                                       .listSeats = ListSeatsOf(columns_),
+                                       .single    = singleView_.Single()});
         // The next shop a further player opens: its camera on the screen's one view in one window (where the single
         // view can show it), on the opener's on a row or under the console's off (world/shop_act.h).
         lss::world::shop_act::SetOneWindow(!columns.columnsHeld &&

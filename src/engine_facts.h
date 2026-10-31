@@ -156,6 +156,24 @@ inline constexpr std::uint32_t  kAppInputDevices        = 0x1E8;          // TAr
 inline constexpr std::uint32_t  kXInputNeedsStateUpdate = 0x08;           // bNeedsControllerStateUpdate (bool)
 inline constexpr std::uintptr_t kSonyControllerDeviceVTable = 0x144F47608;  // the PlayStation pad device (scePad): not XInput
 
+// --- Text in a player's own view (RE-view-text.md) --------------------------------------------------------------
+// UGameViewportClient::Draw gives each local player's HUD a canvas offset to that player's view and calls its
+// PostRender through the AHUD vtable (every HUD here is the plain engine class: one table).
+inline constexpr std::array<std::uint8_t, 16> kHudPostRenderEntry{
+    0x40, 0x55, 0x53, 0x48, 0x8D, 0x6C, 0x24, 0xB1, 0x48, 0x81, 0xEC, 0xD8, 0x00, 0x00, 0x00, 0x48};
+inline constexpr platform::FunctionFact kHudPostRender{L"AHUD::PostRender", 0x142F98580, kHudPostRenderEntry};
+inline constexpr platform::SlotFact     kHudPostRenderSlot{L"vtbl_AHUD +0x660 (PostRender)", 0x144E6A408 + 0x660, kHudPostRender};
+inline constexpr std::array<std::uint8_t, 16> kDrawShadowedStringEntry{
+    0x48, 0x8B, 0xC4, 0x48, 0x89, 0x58, 0x10, 0x48, 0x89, 0x70, 0x18, 0x55, 0x57, 0x41, 0x56, 0x48};
+// int32 (FCanvas*, float X, float Y, const wchar_t*, const UFont*, const FLinearColor*, float TextScale): view-relative
+inline constexpr platform::FunctionFact kDrawShadowedString{L"FCanvas::DrawShadowedString", 0x14333D3B0, kDrawShadowedStringEntry};
+inline constexpr std::uint32_t kHudOwner         = 0x378;  // AHUD::PlayerOwner (APlayerController*)
+inline constexpr std::uint32_t kHudCanvas        = 0x3C0;  // AHUD::Canvas (UCanvas*), set only inside the HUD pass
+inline constexpr std::uint32_t kCanvasClipX      = 0x30;   // UCanvas::ClipX (float): the view's width in pixels
+inline constexpr std::uint32_t kCanvasClipY      = 0x34;   // UCanvas::ClipY
+inline constexpr std::uint32_t kCanvasFCanvas    = 0x260;  // UCanvas::Canvas (FCanvas*)
+inline constexpr std::uint32_t kEngineMediumFont = 0x70;   // UEngine::MediumFont (UFont*, Roboto)
+
 inline constexpr std::array<std::uint8_t, 16> kInputTickEntry{
     0x48, 0x8B, 0xC4, 0x55, 0x53, 0x56, 0x57, 0x41, 0x54, 0x41, 0x55, 0x41, 0x56, 0x41, 0x57, 0x48};
 inline constexpr std::array<std::uint8_t, 16> kInputKeyDownEntry{

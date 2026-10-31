@@ -59,6 +59,16 @@ void Tick(int columns, int localPlayers, int spanColumns, const column_rules::Li
 /// The console's override (`view-columns`): 0 for none.
 int Override() noexcept;
 
+/// The column order now (the setting, the console, the pad claim).
+column_rules::Order CurrentOrder() noexcept;
+
+/// Whether the last Tick placed three views by the column order (columns or local players three): the claim places its
+/// screens by the same test.
+bool ThreeViews() noexcept;
+
+/// Sets the column order (logged with `why`); the next Tick arranges the entry. Game thread (players/pad_claim).
+void ChangeOrder(const column_rules::Order& order, const wchar_t* why) noexcept;
+
 /// Puts the stock records and the setting back if the mod's are in. At the mod's end.
 void Remove() noexcept;
 

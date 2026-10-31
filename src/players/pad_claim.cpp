@@ -1,0 +1,392 @@
+#include "players/pad_claim.h"
+
+#define RC_UNREAL_DISABLE_PROPERTY_DEPRECATION_WARNINGS
+#define RC_UNREAL_DISABLE_CLASS_DEPRECATION_WARNINGS
+#include <Unreal/CoreUObject/UObject/Class.hpp>
+#include <Unreal/UObject.hpp>
+
+#include "engine_facts.h"
+#include "hud/view_prompt.h"
+#include "platform/guarded.h"
+#include "platform/log.h"
+#include "players/field_root.h"
+#include "players/pad_claim_rules.h"
+#include "players/pad_table.h"
+#include "players/scopes.h"
+#include "players/seats.h"
+#include "views/column_layout.h"
+
+#include <algorithm>
+#include <array>
+#include <cwctype>
+#include <cstdint>
+#include <format>
+#include <string>
+
+namespace lss::players::pad_claim {
+
+namespace {
+
+namespace rules = pad_claim_rules;
+using views::column_rules::ListSeats;
+
+constexpr int kScreens = rules::kScreens;
+
+struct Event
+{
+    int           user    = 0;
+    std::uint16_t pressed = 0;
+    bool          open    = false;
+};
+
+// Noted by the pad table's listener during the engine's poll, taken in Tick. Game thread both.
+constexpr std::size_t       kQueue = 32;
+std::array<Event, kQueue>   g_events{};
+std::size_t                 g_queued = 0;
+std::uint32_t               g_dropped = 0;
+
+// Game thread.
+bool                                 g_installed = false;
+bool                                 g_active    = false;
+rules::Claim                         g_claim{};
+std::array<int, kScreens>            g_openSeats{};  // the seats on screens at the opening, sorted (a join or leave ends it)
+std::array<std::wstring, kScreens>   g_names{};      // each seat's character, upper case ("BARRET")
+views::column_rules::Order           g_openOrder{};  // the column order at the opening, put back by a cancel
+
+void Note(int user, std::uint16_t pressed, bool open) noexcept
+{
+    if (g_queued < kQueue)
+    {
+        g_events[g_queued++] = {user, pressed, open};
+    }
+    else
+    {
+        ++g_dropped;
+    }
+}
+
+void ClassText(void* object, std::wstring* out) noexcept
+try
+{
+    *out = static_cast<RC::Unreal::UObject*>(object)->GetClassPrivate()->GetName();
+}
+catch (...)
+{
+    out->clear();
+}
+
+/// The seat's character in capitals, from its class ("PC0001_00_Barret_Standard_C": BARRET), else "PLAYER n".
+std::wstring NameOf(int seat)
+{
+    void* const member = seat == 0 ? players::field_root::PartyLeader(facts::kLeaderCurrent) : scopes::Member(seat);
+    std::wstring cls;
+    if (member != nullptr)
+    {
+        platform::CallGuarded(&ClassText, member, &cls);
+    }
+    // PC<number>_<variant>_<Name>_...
+    if (cls.starts_with(L"PC"))
+    {
+        const auto first  = cls.find(L'_');
+        const auto second = first == std::wstring::npos ? first : cls.find(L'_', first + 1);
+        const auto third  = second == std::wstring::npos ? second : cls.find(L'_', second + 1);
+        if (third != std::wstring::npos && third > second + 1)
+        {
+            std::wstring name = cls.substr(second + 1, third - second - 1);
+            for (wchar_t& c : name)
+            {
+                c = static_cast<wchar_t>(std::towupper(c));
+            }
+            return name;
+        }
+    }
+    return std::format(L"PLAYER {}", seat + 1);
+}
+
+std::wstring ScreenName(int screen, int screens)
+{
+    constexpr std::array<const wchar_t*, kScreens> kOf3{L"the first screen", L"the second screen", L"the third screen"};
+    constexpr std::array<const wchar_t*, 2>        kOf2{L"the first screen", L"the second screen"};
+    if (screens == 1)
+    {
+        return L"the screen";
+    }
+    return screens == 2 ? kOf2[static_cast<std::size_t>(screen & 1)] : kOf3[static_cast<std::size_t>(screen % kScreens)];
+}
+
+std::wstring Character(int seat)
+{
+    return seat >= 0 && seat < kScreens ? g_names[static_cast<std::size_t>(seat)] : std::wstring(L"nobody");
+}
+
+/// "the first screen CLOUD (pad 2), the second screen BARRET (pad 1)".
+std::wstring Summary(const rules::Claim& c)
+{
+    std::wstring text;
+    for (int s = 0; s < c.screens; ++s)
+    {
+        const int seat = c.seatOn[static_cast<std::size_t>(s)];
+        if (seat < 0)
+        {
+            continue;
+        }
+        text += std::format(L"{}{} {} (pad {}){}", text.empty() ? L"" : L", ", ScreenName(s, c.screens), Character(seat),
+                            c.pads[static_cast<std::size_t>(seat)] + 1, c.kept[static_cast<std::size_t>(s)] ? L", kept" : L"");
+    }
+    return text.empty() ? L"no player" : text;
+}
+
+/// The seats on screens, sorted, -1 for none: what a join or a leave changes.
+std::array<int, kScreens> SeatsShown(int screens, const ListSeats& seats)
+{
+    std::array<int, kScreens> shown{-1, -1, -1};
+    for (int place = 0; place < screens && place < kScreens; ++place)
+    {
+        shown[static_cast<std::size_t>(place)] = seats[static_cast<std::size_t>(place)];
+    }
+    std::sort(shown.begin(), shown.end());
+    return shown;
+}
+
+/// Each screen's player now: the engine's list placed by the column order, as the layout places it.
+std::array<int, kScreens> SeatOnScreens(const Frame& frame)
+{
+    std::array<int, kScreens> seatOn{-1, -1, -1};
+    const int  screens = std::clamp(frame.screens, 1, kScreens);
+    const auto slots   = views::column_rules::ScreenSlots(views::column_layout::ThreeViews(), views::column_layout::CurrentOrder(),
+                                                          frame.listSeats);
+    for (int place = 0; place < screens; ++place)
+    {
+        const int slot = slots[static_cast<std::size_t>(place)];
+        if (slot >= 0 && slot < kScreens)
+        {
+            seatOn[static_cast<std::size_t>(slot)] = frame.listSeats[static_cast<std::size_t>(place)];
+        }
+    }
+    return seatOn;
+}
+
+/// Each screen's prompt from the claim.
+void ShowPrompts()
+{
+    hud::view_prompt::ClearAll();
+    constexpr std::array<const wchar_t*, kScreens> kButton{L"A", L"X", L"Y"};
+    bool canStep = false;  // two players other than player 1 on screens
+    int  others  = 0;
+    for (int s = 0; s < g_claim.screens; ++s)
+    {
+        others += g_claim.seatOn[static_cast<std::size_t>(s)] > 0 ? 1 : 0;
+    }
+    canStep = others >= 2;
+    for (int s = 0; s < g_claim.screens; ++s)
+    {
+        const int seat = g_claim.seatOn[static_cast<std::size_t>(s)];
+        if (seat < 0)
+        {
+            continue;
+        }
+        hud::view_prompt::Prompt p;
+        p.lines[0]  = L"CHANGING PADS   (hold View to cancel)";
+        p.highlight = 1;
+        const auto at = static_cast<std::size_t>(s);
+        if (g_claim.takenBy[at] < 0)
+        {
+            p.lines[1] = Character(seat);
+            p.lines[2] = std::format(L"Press {} to play this screen", kButton[at]);
+        }
+        else if (!g_claim.kept[at])
+        {
+            const bool steps = canStep && seat != 0;
+            p.lines[1] = steps ? std::format(L"<   {}   >", Character(seat)) : Character(seat);
+            p.lines[2] = steps ? L"Left/Right: character    A: keep    B: back" : L"A: keep    B: back";
+        }
+        else
+        {
+            p.lines[1] = Character(seat);
+            p.lines[2] = L"Kept    (B: change)";
+        }
+        hud::view_prompt::Show(seat, p);
+    }
+}
+
+void End(const wchar_t* why, bool putBack)
+{
+    if (putBack)
+    {
+        rules::Cancel(g_claim);
+        pad_table::Set(g_claim.pads, L"the pad claim, put back");
+        views::column_layout::ChangeOrder(g_openOrder, L"the pad claim, put back");  // the order itself, join order included
+    }
+    g_active = false;
+    hud::view_prompt::ClearAll();
+    pad_table::SetIdle(false, L"the pad claim ended");
+    platform::Log(L"pad claim: {}: {}", why, Summary(g_claim));
+}
+
+void Open(const Frame& frame, int user)
+{
+    if (frame.single)
+    {
+        platform::Log(L"pad claim: View held on pad {}, but the views are one now (a scene or a menu): hold it again once "
+                      L"they are split",
+                      user + 1);
+        return;
+    }
+    const int screens = std::clamp(frame.screens, 1, kScreens);
+    g_claim           = rules::Open(screens, SeatOnScreens(frame), pad_table::Table(), true);
+    g_openSeats       = SeatsShown(screens, frame.listSeats);
+    g_openOrder       = views::column_layout::CurrentOrder();
+    for (int seat = 0; seat < kScreens; ++seat)
+    {
+        g_names[static_cast<std::size_t>(seat)] = NameOf(seat);
+    }
+    g_active = true;
+    pad_table::SetIdle(true, L"the pad claim");
+    pad_table::LogDevices();
+    platform::Log(L"pad claim: open (pad {} held View); {}", user + 1, Summary(g_claim));
+    ShowPrompts();
+}
+
+/// One pad's press on the open claim.
+void Press(int user, std::uint16_t button)
+{
+    const rules::Claim before = g_claim;
+    const rules::Result r     = rules::Press(g_claim, user, button);
+    if (r.did == rules::Did::Nothing)
+    {
+        platform::LogDebug(L"pad claim: pad {}'s press {:#06x} changes nothing", user + 1, button);
+        return;
+    }
+    if (g_claim.pads != before.pads)
+    {
+        pad_table::Set(g_claim.pads, L"the pad claim");
+    }
+    if (g_claim.seatOn != before.seatOn)
+    {
+        if (const auto order = views::column_rules::OrderShowing(g_claim.seatOn); order && g_claim.screens >= 3)
+        {
+            views::column_layout::ChangeOrder(*order, L"the pad claim");
+        }
+    }
+    const int    seat  = r.screen >= 0 ? g_claim.seatOn[static_cast<std::size_t>(r.screen)] : -1;
+    const auto   where = ScreenName(r.screen, g_claim.screens);
+    switch (r.did)
+    {
+    case rules::Did::Took:
+        platform::Log(L"pad claim: pad {} took {}: it plays {}", user + 1, where, Character(seat));
+        break;
+    case rules::Did::Stepped:
+        platform::Log(L"pad claim: pad {} stepped to {} on {}", user + 1, Character(seat), where);
+        break;
+    case rules::Did::Kept:
+        platform::Log(L"pad claim: pad {} keeps {} on {}", user + 1, Character(seat), where);
+        break;
+    case rules::Did::Unkept:
+        platform::Log(L"pad claim: pad {} opens {} again ({})", user + 1, where, Character(seat));
+        break;
+    case rules::Did::LetGo:
+        platform::Log(L"pad claim: pad {} lets {} go", user + 1, where);
+        break;
+    case rules::Did::Nothing:
+        break;
+    }
+}
+
+}  // namespace
+
+bool Install() noexcept
+{
+    pad_table::Listen(&Note);
+    g_installed = true;
+    platform::Log(L"pad claim: View held a second on any pad opens the pad claim (each screen's button takes it, the "
+                  L"d-pad picks the character, A keeps)");
+    return true;
+}
+
+void Remove() noexcept
+{
+    pad_table::Listen(nullptr);
+    if (g_active)
+    {
+        g_active = false;
+        hud::view_prompt::ClearAll();
+        pad_table::SetIdle(false, L"the mod's end");
+    }
+    g_installed = false;
+}
+
+void Tick(const Frame& frame) noexcept
+try
+{
+    if (!g_installed)
+    {
+        return;
+    }
+    const std::size_t count = g_queued;
+    g_queued                = 0;
+    if (g_dropped != 0)
+    {
+        platform::LogDebug(L"pad claim: {} pad press(es) dropped (more than {} in one tick)", g_dropped, kQueue);
+        g_dropped = 0;
+    }
+    if (g_active)
+    {
+        const int screens = std::clamp(frame.screens, 1, kScreens);
+        if (frame.single)
+        {
+            End(L"the views became one (a scene or a menu); ended with the choices so far", false);
+        }
+        else if (screens != g_claim.screens || SeatsShown(screens, frame.listSeats) != g_openSeats)
+        {
+            End(L"a player joined or left; ended with the choices so far", false);
+        }
+    }
+    bool changed = false;
+    bool opened  = false;  // presses of the poll that opened it reached the game too (idle starts at the next poll)
+    for (std::size_t i = 0; i < count; ++i)
+    {
+        const Event e = g_events[i];
+        if (e.open)
+        {
+            if (g_active)
+            {
+                End(L"cancelled (View held again): the pads and screens from the opening", true);
+            }
+            else
+            {
+                Open(frame, e.user);
+                opened = g_active;
+            }
+            continue;
+        }
+        if (!g_active || opened)
+        {
+            continue;
+        }
+        for (const std::uint16_t button : {rules::kA, rules::kB, rules::kX, rules::kY, rules::kDpadLeft, rules::kDpadRight})
+        {
+            if ((e.pressed & button) != 0 && g_active)
+            {
+                Press(e.user, button);
+                changed = true;
+            }
+        }
+        if (g_active && rules::Done(g_claim))
+        {
+            End(L"done", false);
+        }
+    }
+    if (g_active && changed)
+    {
+        ShowPrompts();
+    }
+}
+catch (...)
+{
+    platform::Log(L"pad claim: an exception; the claim ends with the choices so far");
+    g_active = false;
+    hud::view_prompt::ClearAll();
+    pad_table::SetIdle(false, L"the pad claim's exception");
+}
+
+}  // namespace lss::players::pad_claim

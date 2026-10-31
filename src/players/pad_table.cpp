@@ -35,6 +35,7 @@ struct Pad
 {
     rules::OpenHold  hold;
     rules::LetGo     letGo;  // idle to the game until it lets go of what it held at a change
+    std::uint16_t    last = 0;  // the buttons on its last poll (the listener's presses)
 };
 
 platform::VTableEntry g_getEntry;
@@ -46,6 +47,7 @@ std::uintptr_t        g_sonyVTable = 0;
 bool                  g_installed  = false;
 
 std::array<std::atomic<int>, kSlots> g_table{0, 1, 2, 3};
+std::atomic<Listener>                g_listener{nullptr};
 std::atomic<bool>                    g_idle{false};
 
 // Game thread.
@@ -104,12 +106,19 @@ DWORD WINAPI GetStateFor(DWORD slot, XINPUT_STATE* state) noexcept
     {
         *state = XINPUT_STATE{};  // the engine reads the buffer as left after a failure (RE-pad-slots.md §3)
         g_pads[static_cast<std::size_t>(user)].hold = {};  // a View held back as it dropped out is not a tap on its return
+        g_pads[static_cast<std::size_t>(user)].last = 0;
         return result;
     }
     Pad&                pad   = g_pads[static_cast<std::size_t>(user)];
     const std::uint16_t raw   = state->Gamepad.wButtons;
     const std::int64_t  now   = NowMs();
     const rules::Gated  gated = rules::Gate(pad.hold, raw, now);
+    const auto          pressed = static_cast<std::uint16_t>(raw & ~pad.last);
+    pad.last                    = raw;
+    if (const Listener listener = g_listener.load(std::memory_order_relaxed); listener != nullptr && (pressed != 0 || gated.open))
+    {
+        listener(user, pressed, gated.open);
+    }
     if (gated.open)
     {
         ++g_opens;
@@ -204,8 +213,9 @@ std::wstring ModuleOf(std::uintptr_t address)
     return slash == std::wstring::npos ? full : full.substr(slash + 1);
 }
 
-/// The engine's other input devices: a PlayStation pad read through scePad is not moved by the table.
-void LogInputDevices() noexcept
+}  // namespace
+
+void LogDevices() noexcept
 {
     void* const   app   = platform::ReadPointer(reinterpret_cast<const void*>(g_appGlobal), 0);
     void*         data  = app != nullptr ? platform::ReadPointer(app, facts::kAppInputDevices) : nullptr;
@@ -227,6 +237,8 @@ void LogInputDevices() noexcept
                   sony > 0 ? L", one the PlayStation pad reader: a PlayStation pad it reads is not moved by the pad table"
                            : L", none the PlayStation pad reader");
 }
+
+namespace {
 
 std::wstring Reading()
 {
@@ -302,6 +314,11 @@ catch (...)
 {
 }
 
+void Listen(Listener listener) noexcept
+{
+    g_listener.store(listener, std::memory_order_relaxed);
+}
+
 bool Install(const platform::GameImage& image) noexcept
 {
     const auto getSlot = image.Rebase(facts::kXInputGetStateImport, sizeof(void*));
@@ -333,7 +350,7 @@ bool Install(const platform::GameImage& image) noexcept
     g_installed = true;
     platform::Log(L"pads: the game's pad read and rumble go through the pad table ({}; read through {}, rumble through {})",
                   TableText(Table()), ModuleOf(get), ModuleOf(set));
-    LogInputDevices();
+    LogDevices();
 
     control::Register({.name  = L"pad-table",
                        .shape = control::Shape::Text,
@@ -389,6 +406,7 @@ bool Install(const platform::GameImage& image) noexcept
 
 void Remove() noexcept
 {
+    g_listener.store(nullptr);
     g_idle.store(false);
     g_setEntry.Restore();
     g_getEntry.Restore();

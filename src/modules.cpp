@@ -40,6 +40,8 @@
 #include "players/pad_buttons.h"
 #include "players/pad_presence.h"
 #include "players/pad_table.h"
+#include "players/pad_claim.h"
+#include "hud/view_prompt.h"
 #include "players/seat_camera.h"
 #include "players/scopes.h"
 #include "players/session.h"
@@ -250,6 +252,11 @@ constexpr std::array kModules{
     Module{.name = L"pads reading", .install = Call<&players::pad_presence::Register>},
     // without it each pad is the player with its XInput number, whatever order Windows and Steam Input gave them
     Module{.name = L"pad table", .install = Call<&players::pad_table::Install>, .remove = &players::pad_table::Remove},
+    // without it no prompt can be drawn in a player's own view (the pad claim's)
+    Module{.name = L"view prompts", .install = Call<&hud::view_prompt::Install>, .remove = &hud::view_prompt::Remove},
+    // without it the pads can be changed only from the console (pad-table)
+    Module{.name = L"pad claim", .install = Call<&players::pad_claim::Install>, .remove = &players::pad_claim::Remove,
+           .needs = {Need<&players::pad_table::Install>(), Need<&hud::view_prompt::Install>()}},
     // without it a LEAD or a run to a mark on a further player's member stays the player's
     Module{.name = L"lead gate", .install = Call<&players::lead_gate::Install>},
     // without it an ambient interest walk hands a further player's member to its AI (which can loop on a ladder)

@@ -123,7 +123,8 @@ void SetOrder(const Order& order, const wchar_t* why)
 
 std::wstring OrderText(const Order& order)
 {
-    return std::format(L"{} {} {}", order.player[0], order.player[1], order.player[2]);
+    return std::format(L"{} {} {}{}", order.player[0], order.player[1], order.player[2],
+                       order.byNumber && order.player == decltype(order.player){1, 2, 3} ? L" by player" : L"");
 }
 
 /// The screens left to right as the wanted entry shows them: "player 1, player 3, the mirror".
@@ -353,6 +354,7 @@ bool Install(const platform::GameImage& image) noexcept
             SetOrder(*order, L"the console");
             return control::Outcome{};
         },
+        // The option's own words only (a wait or a save and restore compares them); "by player" shows in the state reading.
         [] { return std::format(L"{}{}{}", g_order.player[0], g_order.player[1], g_order.player[2]); });
     Register({.name = L"column-layout.state", .shape = Shape::Text,
               .help = L"the columns wanted, the column order, the engine's three-player layout entry (stock, the mod's three columns, "
@@ -362,6 +364,28 @@ bool Install(const platform::GameImage& image) noexcept
                   L"view-columns 0..3; column order {})",
                   OrderText(g_order));
     return true;
+}
+
+column_rules::Order CurrentOrder() noexcept
+{
+    return g_order;
+}
+
+bool ThreeViews() noexcept
+{
+    return g_columns >= kThreePlayerRecords || g_localPlayers >= kThreePlayerRecords;
+}
+
+void ChangeOrder(const column_rules::Order& order, const wchar_t* why) noexcept
+try
+{
+    if (!(order == g_order))
+    {
+        SetOrder(order, why);
+    }
+}
+catch (...)
+{
 }
 
 void Tick(int columns, int localPlayers, int spanColumns, const ListSeats& seats) noexcept
