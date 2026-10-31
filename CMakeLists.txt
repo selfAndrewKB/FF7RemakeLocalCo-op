@@ -87,6 +87,7 @@ add_library(LocalSplitScreen SHARED
     src/players/pad_table.cpp
     src/players/pad_claim.cpp
     src/hud/view_prompt.cpp
+    src/hud/view_window.cpp
     src/menu/coop_menu.cpp
     src/players/party_events.cpp
     src/players/party_member.cpp
@@ -254,6 +255,13 @@ add_executable(PadClaimRulesTests
 target_include_directories(PadClaimRulesTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_compile_features(PadClaimRulesTests PRIVATE cxx_std_20)
 add_test(NAME pad_claim_rules COMMAND PadClaimRulesTests)
+
+add_executable(PadClaimTextTests
+    tests/pad_claim_text_test.cpp
+)
+target_include_directories(PadClaimTextTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(PadClaimTextTests PRIVATE cxx_std_20)
+add_test(NAME pad_claim_text COMMAND PadClaimTextTests)
 
 add_executable(SunOwnerTests
     tests/sun_owner_test.cpp

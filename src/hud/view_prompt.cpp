@@ -15,6 +15,8 @@
 #include "platform/log.h"
 #include "platform/verified_code.h"
 #include "platform/vtable_entry.h"
+#include "players/scopes.h"
+#include "players/seat_objects.h"
 #include "players/seats.h"
 #include "players/unreal_call.h"
 
@@ -61,7 +63,6 @@ std::int32_t          g_rectColor = -1, g_rectX = -1, g_rectY = -1, g_rectW = -1
 bool                  g_installed  = false;
 
 // Game thread.
-std::array<void*, kPlayers>  g_controllers{};
 std::array<Prompt, kPlayers> g_prompts{};
 std::array<bool, kPlayers>   g_shown{};
 std::array<bool, kPlayers>   g_logged{};  // the first draw in that view logged
@@ -110,16 +111,11 @@ void DrawRect(void* hud, float x, float y, float w, float h) noexcept
     players::GuardedProcessEvent(static_cast<UObject*>(hud), g_drawRect, frame);
 }
 
+/// The HUD's player: a seat's by its controller (players/seat_objects), else player 1's. A mirror's HUD shows player 1's
+/// picture, so player 1's prompt there is right.
 int SeatOf(const void* controller) noexcept
 {
-    for (int seat = 0; seat < kPlayers && controller != nullptr; ++seat)
-    {
-        if (g_controllers[static_cast<std::size_t>(seat)] == controller)
-        {
-            return seat;
-        }
-    }
-    return -1;
+    return controller != nullptr ? players::seat_objects::SeatOf(controller) : -1;
 }
 
 /// After the game's own HUD pass of one player's view: that player's prompt, if any.
@@ -273,11 +269,6 @@ void Remove() noexcept
     g_shown = {};
     g_entry.Restore();
     g_installed = false;
-}
-
-void SetControllers(const std::array<void*, players::scopes::kMaxPlayers>& controllers) noexcept
-{
-    g_controllers = controllers;
 }
 
 void Show(int seat, const Prompt& prompt) noexcept

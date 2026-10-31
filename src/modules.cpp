@@ -42,6 +42,7 @@
 #include "players/pad_table.h"
 #include "players/pad_claim.h"
 #include "hud/view_prompt.h"
+#include "hud/view_window.h"
 #include "menu/coop_menu.h"
 #include "players/seat_camera.h"
 #include "players/scopes.h"
@@ -255,6 +256,8 @@ constexpr std::array kModules{
     Module{.name = L"pad table", .install = Call<&players::pad_table::Install>, .remove = &players::pad_table::Remove},
     // without it no prompt can be drawn in a player's own view (the pad claim's)
     Module{.name = L"view prompts", .install = Call<&hud::view_prompt::Install>, .remove = &hud::view_prompt::Remove},
+    // without it the pad claim's prompts are drawn in the engine's own font (the view prompts) instead of the game's window
+    Module{.name = L"view windows", .install = Call<&hud::view_window::Install>, .remove = &hud::view_window::Remove},
     // without it the pads can be changed only from the console (pad-table)
     Module{.name = L"pad claim", .install = Call<&players::pad_claim::Install>, .remove = &players::pad_claim::Remove,
            .needs = {Need<&players::pad_table::Install>(), Need<&hud::view_prompt::Install>()}},
@@ -734,6 +737,7 @@ void TickAfterSession(const Frame& frame) noexcept
     TickWorld(frame);
     TickHud(frame);
     menu::coop_menu::Tick();
+    hud::view_window::Tick();
 }
 
 }  // namespace lss::modules

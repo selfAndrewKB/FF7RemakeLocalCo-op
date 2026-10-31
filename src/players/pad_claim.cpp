@@ -7,10 +7,12 @@
 
 #include "engine_facts.h"
 #include "hud/view_prompt.h"
+#include "hud/view_window.h"
 #include "platform/guarded.h"
 #include "platform/log.h"
 #include "players/field_root.h"
 #include "players/pad_claim_rules.h"
+#include "players/pad_claim_text.h"
 #include "players/pad_table.h"
 #include "players/scopes.h"
 #include "players/seats.h"
@@ -52,6 +54,7 @@ rules::Claim                         g_claim{};
 std::array<int, kScreens>            g_openSeats{};  // the seats on screens at the opening, sorted (a join or leave ends it)
 std::array<std::wstring, kScreens>   g_names{};      // each seat's character, upper case ("BARRET")
 views::column_rules::Order           g_openOrder{};  // the column order at the opening, put back by a cancel
+unsigned long long                   g_gameClosedSeen = 0;  // view_window's count of windows the game closed, as last shown
 
 void Note(int user, std::uint16_t pressed, bool open) noexcept
 {
@@ -166,47 +169,43 @@ std::array<int, kScreens> SeatOnScreens(const Frame& frame)
     return seatOn;
 }
 
-/// Each screen's prompt from the claim.
+/// Each screen's text from the claim (players/pad_claim_text.h): in the game's message window in that player's view, or,
+/// where no window can be shown, the engine-font prompt. A player no longer on a screen has neither.
 void ShowPrompts()
 {
     hud::view_prompt::ClearAll();
-    constexpr std::array<const wchar_t*, kScreens> kButton{L"A", L"X", L"Y"};
-    bool canStep = false;  // two players other than player 1 on screens
-    int  others  = 0;
-    for (int s = 0; s < g_claim.screens; ++s)
-    {
-        others += g_claim.seatOn[static_cast<std::size_t>(s)] > 0 ? 1 : 0;
-    }
-    canStep = others >= 2;
+    std::array<bool, kScreens> shown{};  // by seat
     for (int s = 0; s < g_claim.screens; ++s)
     {
         const int seat = g_claim.seatOn[static_cast<std::size_t>(s)];
-        if (seat < 0)
+        if (seat < 0 || seat >= kScreens)
         {
             continue;
         }
-        hud::view_prompt::Prompt p;
-        p.lines[0]  = L"CHANGING PADS   (hold View to cancel)";
-        p.highlight = 1;
-        const auto at = static_cast<std::size_t>(s);
-        if (g_claim.takenBy[at] < 0)
+        shown[static_cast<std::size_t>(seat)] = true;
+        const pad_claim_text::ScreenText text = pad_claim_text::TextFor(g_claim, s, g_names);
+        if (!hud::view_window::Show(seat, text.markup))
         {
-            p.lines[1] = Character(seat);
-            p.lines[2] = std::format(L"Press {} to play this screen", kButton[at]);
+            hud::view_prompt::Prompt p;
+            p.lines     = text.plain;
+            p.highlight = 0;
+            hud::view_prompt::Show(seat, p);
         }
-        else if (!g_claim.kept[at])
-        {
-            const bool steps = canStep && seat != 0;
-            p.lines[1] = steps ? std::format(L"<   {}   >", Character(seat)) : Character(seat);
-            p.lines[2] = steps ? L"Left/Right: character    A: keep    B: back" : L"A: keep    B: back";
-        }
-        else
-        {
-            p.lines[1] = Character(seat);
-            p.lines[2] = L"Kept    (B: change)";
-        }
-        hud::view_prompt::Show(seat, p);
     }
+    for (int seat = 0; seat < kScreens; ++seat)
+    {
+        if (!shown[static_cast<std::size_t>(seat)])
+        {
+            hud::view_window::Close(seat);
+        }
+    }
+}
+
+/// Every prompt gone: the windows close the game's way (Out and its sound).
+void ClearPrompts() noexcept
+{
+    hud::view_window::CloseAll();
+    hud::view_prompt::ClearAll();
 }
 
 void End(const wchar_t* why, bool putBack)
@@ -218,7 +217,7 @@ void End(const wchar_t* why, bool putBack)
         views::column_layout::ChangeOrder(g_openOrder, L"the pad claim, put back");  // the order itself, join order included
     }
     g_active = false;
-    hud::view_prompt::ClearAll();
+    ClearPrompts();
     pad_table::SetIdle(false, L"the pad claim ended");
     platform::Log(L"pad claim: {}: {}", why, Summary(g_claim));
 }
@@ -240,7 +239,8 @@ void Open(const Frame& frame, int user)
     {
         g_names[static_cast<std::size_t>(seat)] = NameOf(seat);
     }
-    g_active = true;
+    g_active         = true;
+    g_gameClosedSeen = hud::view_window::ClosedByGame();
     pad_table::SetIdle(true, L"the pad claim");
     pad_table::LogDevices();
     platform::Log(L"pad claim: open (pad {} held View); {}", user + 1, Summary(g_claim));
@@ -270,21 +270,28 @@ void Press(int user, std::uint16_t button)
     }
     const int    seat  = r.screen >= 0 ? g_claim.seatOn[static_cast<std::size_t>(r.screen)] : -1;
     const auto   where = ScreenName(r.screen, g_claim.screens);
+    // Each step with the game's own menu sound for it: a take or a keep decides, a step moves, a let-go cancels.
+    using hud::view_window::Sound;
     switch (r.did)
     {
     case rules::Did::Took:
+        hud::view_window::Play(Sound::Decide);
         platform::Log(L"pad claim: pad {} took {}: it plays {}", user + 1, where, Character(seat));
         break;
     case rules::Did::Stepped:
+        hud::view_window::Play(Sound::Cursor);
         platform::Log(L"pad claim: pad {} stepped to {} on {}", user + 1, Character(seat), where);
         break;
     case rules::Did::Kept:
+        hud::view_window::Play(Sound::Decide);
         platform::Log(L"pad claim: pad {} keeps {} on {}", user + 1, Character(seat), where);
         break;
     case rules::Did::Unkept:
+        hud::view_window::Play(Sound::Cancel);
         platform::Log(L"pad claim: pad {} opens {} again ({})", user + 1, where, Character(seat));
         break;
     case rules::Did::LetGo:
+        hud::view_window::Play(Sound::Cancel);
         platform::Log(L"pad claim: pad {} lets {} go", user + 1, where);
         break;
     case rules::Did::Nothing:
@@ -376,6 +383,13 @@ try
             End(L"done", false);
         }
     }
+    // The game closed a window under the claim (a script's clear of its message windows): shown again.
+    if (g_active && hud::view_window::ClosedByGame() != g_gameClosedSeen)
+    {
+        g_gameClosedSeen = hud::view_window::ClosedByGame();
+        platform::Log(L"pad claim: the game closed a prompt window; the prompts are shown again");
+        changed = true;
+    }
     if (g_active && changed)
     {
         ShowPrompts();
@@ -385,7 +399,7 @@ catch (...)
 {
     platform::Log(L"pad claim: an exception; the claim ends with the choices so far");
     g_active = false;
-    hud::view_prompt::ClearAll();
+    ClearPrompts();
     pad_table::SetIdle(false, L"the pad claim's exception");
 }
 

@@ -6,6 +6,7 @@
 // The turn-back alert (slot 36, over player 1's leader) is decided from player 1's leader and placed through player 1's
 // view: player 1's alone. The field target icons (slot 15: talk, examine, chests, field actions) and the search compass
 // and arrows (slot 55, world/search_arrows.h) are each player's own: each widget is placed through its own player's view.
+// The claim screen's game windows (hud/view_window.h) are each player's own too: each is shown in its seat's pass only.
 // Around each pass of the overlay render (hud/second_image.h) the roots that are not the pass's player's are made
 // transparent through the game's own UUserWidget::SetColorAndOpacity, and their colour is put back right after, through
 // the same setter: in a further column's pass player 1's cursors and the other seats' icons and search arrows; in player
@@ -18,7 +19,8 @@ namespace lss::hud::pass_hide {
 /// Just before a further column's pass (its seat, overlay_pass::SeatOf): what that seat does not see, transparent.
 /// Returns how many were.
 int BeginFurtherPass(int seat) noexcept;
-/// Just before player 1's pass or the single render: the seats' icons transparent (nothing while no seat has one).
+/// Just before player 1's pass or the single render: the seats' icons and windows transparent (nothing while no seat
+/// has one).
 int BeginOwnPass() noexcept;
 /// Just after either: their colours back.
 void EndPass() noexcept;

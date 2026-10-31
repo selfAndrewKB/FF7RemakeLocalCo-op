@@ -37,7 +37,6 @@
 #include "players/session.h"
 #include "players/single_view.h"
 #include "players/pad_claim.h"
-#include "hud/view_prompt.h"
 #include "players/split_switch.h"
 #include "players/split_render.h"
 #include "players/weak_object.h"
@@ -66,7 +65,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.135.1-coop-menu-text-reads";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.136.0-claim-game-windows";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
@@ -356,8 +355,7 @@ private:
         // The other way round (the split decided while the switch stays set: a clear that failed, or someone else's
         // switch) the screen stays single; the policy's log says so, and the HUD follows the engine's view sizes.
         FollowShown(shown);
-        // The pad claim (players/pad_claim.h) over this tick's views, its prompts drawn in each player's own view.
-        lss::hud::view_prompt::SetControllers({ControllerOf(0), ControllerOfSeat(1), ControllerOfSeat(2), nullptr});
+        // The pad claim (players/pad_claim.h) over this tick's views, its prompts shown in each player's own view.
         lss::players::pad_claim::Tick({.screens   = columns_.count,
                                        .listSeats = ListSeatsOf(columns_),
                                        .single    = singleView_.Single()});

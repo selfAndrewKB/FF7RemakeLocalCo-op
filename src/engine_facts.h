@@ -3307,4 +3307,62 @@ inline constexpr std::array<std::uint8_t, 16> kScrollBoxRefreshEntry{
     0x48, 0x8B, 0x89, 0xD8, 0x07, 0x00, 0x00, 0x48, 0x85, 0xC9, 0x74, 0x0C, 0x48, 0x8B, 0x89, 0xF8};
 inline constexpr platform::FunctionFact kScrollBoxRefresh{L"EndVSB_RefreshItems_cand", 0x14137D8F0, kScrollBoxRefreshEntry};
 
+// ---------------------------------------------------------------------------------------------------------------------
+// Claim windows: the game's message window (Com_Window_01_C, UEndMessageWindow) in each player's own view
+// (hud/view_window; research/RE-game-widgets.md §12). The game's own sequence (EndUI_ShowMessageWindow 0x1413B12A0) with
+// its focus layer popped at once: create (world) -> the window or null; AddToRootOverlay (kAddToRootOverlayFn) at the
+// ZOrder also written at kEndWidgetZOrder; set the text (window, const FString*: text ID or literal markup); the options
+// (window, const TArray<FString>*, leftAligned 1: none collapses the cells); open (window, 0: In, the open sound, a focus
+// layer); UEndUserWidget::PopFromFocusStack (that layer, wherever it sits; a no-op once popped); the game's window list
+// add (EUI[39], int* id, UObject** window: its reset on a load or a map change closes the window too); close (Out, the
+// close sound; its own pop finds nothing). With kMessageWindowRemoveAfterOut set, the window's tick takes it out of the
+// overlay when Out ends and sets the state to 0.
+inline constexpr std::array<std::uint8_t, 16> kMessageWindowCreateEntry{
+    0x48, 0x8B, 0xC4, 0x53, 0x57, 0x48, 0x81, 0xEC, 0x88, 0x00, 0x00, 0x00, 0x48, 0x8B, 0x1D, 0xE5};
+inline constexpr platform::FunctionFact kMessageWindowCreate{L"EndMessageWindow_Create", 0x1412BE000, kMessageWindowCreateEntry};
+inline constexpr std::array<std::uint8_t, 16> kMessageWindowSetTextEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x18, 0x55, 0x56, 0x57, 0x48, 0x8D, 0x6C, 0x24, 0xB9, 0x48, 0x81, 0xEC};
+inline constexpr platform::FunctionFact kMessageWindowSetText{L"EndMessageWindow_SetMessageText", 0x1412BE340,
+                                                              kMessageWindowSetTextEntry};
+inline constexpr std::array<std::uint8_t, 16> kMessageWindowSetOptionsEntry{
+    0x44, 0x89, 0x44, 0x24, 0x18, 0x48, 0x89, 0x4C, 0x24, 0x08, 0x55, 0x53, 0x57, 0x41, 0x54, 0x41};
+inline constexpr platform::FunctionFact kMessageWindowSetOptions{L"EndMessageWindow_SetOptions", 0x1412BE4A0,
+                                                                 kMessageWindowSetOptionsEntry};
+inline constexpr std::array<std::uint8_t, 16> kMessageWindowOpenEntry{
+    0x4C, 0x8B, 0xDC, 0x55, 0x56, 0x57, 0x49, 0x8D, 0x6B, 0x98, 0x48, 0x81, 0xEC, 0x50, 0x01, 0x00};
+inline constexpr platform::FunctionFact kMessageWindowOpen{L"EndMessageWindow_Open_PushFocusLayer", 0x1412BE9E0,
+                                                           kMessageWindowOpenEntry};
+inline constexpr std::array<std::uint8_t, 16> kMessageWindowCloseEntry{
+    0x40, 0x57, 0x48, 0x81, 0xEC, 0x80, 0x00, 0x00, 0x00, 0x8B, 0x81, 0x60, 0x03, 0x00, 0x00, 0x48};
+inline constexpr platform::FunctionFact kMessageWindowClose{L"EndMessageWindow_Close", 0x1412BF090, kMessageWindowCloseEntry};
+inline constexpr std::array<std::uint8_t, 16> kPopFromFocusStackEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x08, 0x57, 0x48, 0x83, 0xEC, 0x30, 0x48, 0x8D, 0x54, 0x24, 0x20, 0x48};
+inline constexpr platform::FunctionFact kPopFromFocusStack{L"UEndUserWidget__PopFromFocusStack", 0x14134BF50,
+                                                           kPopFromFocusStackEntry};
+inline constexpr std::array<std::uint8_t, 16> kMessageWindowListAddEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x10, 0x4C, 0x89, 0x4C, 0x24, 0x20, 0x55, 0x56, 0x57, 0x41, 0x54, 0x41};
+inline constexpr platform::FunctionFact kMessageWindowListAdd{L"EndUI39_MessageWindowList_Add", 0x141485F10,
+                                                              kMessageWindowListAddEntry};
+inline constexpr std::uint32_t kMessageWindowListSlot      = 39;     // EndUISystem[39]: the game's message windows
+inline constexpr std::uint32_t kMessageWindowState         = 0x360;  // int32: 0 none, 1 opening, 2 open, 3 closing
+inline constexpr std::uint32_t kMessageWindowRemoveAfterOut = 0x369; // u8: the tick removes it when Out ends
+inline constexpr std::int32_t  kClaimWindowZOrder          = 1000;   // above the HUD (0) and the skip icon (991), below
+                                                                     // subtitles (1240) and the pause menu (1990)
+/// The game's UI sounds (§12.6): play (const args*, 0x34 bytes: +0 the UI sound source, +8 the cue's FName, +0x10 -1,
+/// +0x14 four floats {0, 1, 1, 0}, +0x28 0, +0x30 1.0f) and the source (the object named "UI"; null if none). The cues'
+/// FNames, as the game's menus hold them: cursor move, decide, cancel.
+inline constexpr std::array<std::uint8_t, 16> kPlayUISoundEntry{
+    0x40, 0x53, 0x48, 0x83, 0xEC, 0x50, 0x48, 0x8B, 0xD9, 0x48, 0x8B, 0x0D, 0x30, 0xB9, 0x13, 0x04};
+inline constexpr platform::FunctionFact kPlayUISound{L"EndAudio_PlayUISound_cand", 0x1416AE170, kPlayUISoundEntry};
+inline constexpr std::array<std::uint8_t, 16> kUISoundSourceEntry{
+    0x40, 0x53, 0x48, 0x83, 0xEC, 0x30, 0x65, 0x48, 0x8B, 0x04, 0x25, 0x58, 0x00, 0x00, 0x00, 0xBA};
+inline constexpr platform::FunctionFact kUISoundSource{L"EndUI_GetUISoundSource_cand", 0x1413B64B0, kUISoundSourceEntry};
+inline constexpr std::uintptr_t kSoundCueCursor = 0x145852C80;  // FName UI000_Cursor
+inline constexpr std::uintptr_t kSoundCueDecide = 0x145852A90;  // FName UI002_OK
+inline constexpr std::uintptr_t kSoundCueCancel = 0x145852A98;  // FName UI003_Cancel
+/// The focus context's layers (SquareInput owner, EndUISystem[2]): TArray of 40-byte layers, count at +0x48. Read only,
+/// for the log line that shows a window's open left them as they were.
+inline constexpr std::uint32_t kFocusContextSlot = 2;
+inline constexpr std::uint32_t kFocusLayerCount  = 0x48;
+
 }  // namespace lss::facts

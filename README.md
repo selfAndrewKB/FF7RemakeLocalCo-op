@@ -206,8 +206,10 @@ src/
     target_rotation.h       Which UI target each view samples, with N columns (hud/ui_targets.h; plan/seats.md step 5)
     ui_targets              One UI image per view, on the render thread (RE-hud-two-images.md §4, §5, §7: H1 and H4)
     user_widgets            The live UUserWidgets, kept current without walking every UObject
-    view_prompt             A few lines of text in one player's own view: the pad claim's prompts (players/pad_claim;
-                            research/RE-view-text.md)
+    view_prompt             A few lines of text in one player's own view: the pad claim's prompts where the game's own
+                            window cannot be shown
+    view_window             The game's own framed message window in one player's view: the claim screen's prompts
+                            (players/pad_claim; research/RE-game-widgets.md §12)
   players/                  the seats: the session, the party member and its funnels, the scopes, the pads, each seat's
                             camera and trigger
     action_key              One of the game's action getters (Input_IsActionHeld_ByKey, Input_IsActionPressed_ByKey) on
@@ -249,6 +251,7 @@ src/
     pad_claim               The claim screen: which pad plays which character, chosen by the people holding them
     pad_claim_rules.h       The pure rules of the live pad assignment (players/pad_claim; plan/topics/input.md State
                             "Planned", the user's design of 2026-10-30 18:43)
+    pad_claim_text.h        What each screen of the claim says (players/pad_claim; the rules: players/pad_claim_rules.h)
     pad_presence            Which XInput users have a pad, asked of XInput itself once a second on the game thread (the
                             game's own input system polls the same API every frame; a disconnected slot's query is the
                             slow one, so never per frame)
@@ -482,5 +485,5 @@ src/
     coop_menu               The Co-op row of the game's main menu and the page it opens
     coop_menu_rules.h       The Co-op page's rules: what the game's Options screen shows when the mod opens its own copy
                             from the Co-op row of the main menu
-tests/                      58 host-side test programs (ctest), one per pure header or code stub; run without the game
+tests/                      59 host-side test programs (ctest), one per pure header or code stub; run without the game
 ```

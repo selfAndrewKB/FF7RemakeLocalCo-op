@@ -11,6 +11,7 @@
 
 #include "engine_facts.h"
 #include "hud/user_widgets.h"
+#include "hud/view_window.h"
 #include "platform/guarded.h"
 #include "platform/log.h"
 #include "players/unreal_call.h"
@@ -118,9 +119,11 @@ try
     for (const auto& widget : user_widgets::Live())
     {
         const Cursor cursor = CursorOf(widget.object);
+        const int    window = cursor == Cursor::None ? view_window::SeatOf(widget.object) : -1;  // a claim window's seat
         const bool   hide   = cursor == Cursor::PlayerOne ? playerOneCursors
                               : cursor == Cursor::TargetIcon  ? world::target_icons::OwnerSeat(widget.object) != seat
                               : cursor == Cursor::SearchArrow ? world::search_arrows::OwnerSeat(widget.object) != seat
+                              : window >= 0                   ? window != seat
                                                               : false;
         void* canvas = nullptr;
         float color[4]{};
@@ -158,7 +161,8 @@ int BeginFurtherPass(int seat) noexcept
 int BeginOwnPass() noexcept
 {
     g_hidden.clear();
-    return world::target_icons::AnySeatIcons() || world::search_arrows::AnySeatArrows() ? Begin(0, false) : 0;
+    return world::target_icons::AnySeatIcons() || world::search_arrows::AnySeatArrows() || view_window::Any() ? Begin(0, false)
+                                                                                                              : 0;
 }
 
 void EndPass() noexcept
