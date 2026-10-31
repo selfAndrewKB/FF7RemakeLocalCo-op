@@ -477,5 +477,10 @@ src/
                             (tests/listener_rules_test.cpp)
     listeners               Every player hears the sounds near them: each SEAD sound is measured from the nearest
                             player's listener
-tests/                      57 host-side test programs (ctest), one per pure header or code stub; run without the game
+  menu/                     the mod's own menu: a Co-op row in the game's main menu opening a page of the game's Options
+                            screen
+    coop_menu               The Co-op row of the game's main menu and the page it opens
+    coop_menu_rules.h       The Co-op page's rules: what the game's Options screen shows when the mod opens its own copy
+                            from the Co-op row of the main menu
+tests/                      58 host-side test programs (ctest), one per pure header or code stub; run without the game
 ```

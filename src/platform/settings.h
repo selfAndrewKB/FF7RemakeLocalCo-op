@@ -31,38 +31,61 @@ struct Option
     const wchar_t*                  fallback;  // the word taken when the file has none: one of `words`
     const wchar_t*                  help;      // one line, the console's help
     bool                            experimental = false;  // the mod menu shows it as experimental (plan/README.md §9)
+    // The Co-op page (menu/coop_menu_rules.h): the row's name, each word's name in `words`' order, a short help line.
+    const wchar_t*                  label = L"";
+    std::span<const wchar_t* const> wordLabels{};
+    const wchar_t*                  menuHelp = L"";
 };
 
 // The table. An option's owner (the module named beside it) applies the reading at its install.
 inline constexpr std::array<const wchar_t*, 3> kMultiMonitorWords{L"auto", L"on", L"off"};
+inline constexpr std::array<const wchar_t*, 3> kMultiMonitorLabels{L"Auto", L"On", L"Off"};
 inline constexpr std::array<const wchar_t*, 2> kColumnOrderWords{L"123", L"132"};
+inline constexpr std::array<const wchar_t*, 2> kColumnOrderLabels{L"1 2 3", L"1 3 2"};
 inline constexpr std::array<const wchar_t*, 2> kMenuSlowWords{L"on", L"off"};
+inline constexpr std::array<const wchar_t*, 2> kMenuSlowLabels{L"On", L"Off"};
 inline constexpr std::array<const wchar_t*, 3> kBattleWarpsWords{L"players-stay", L"off", L"game"};
+inline constexpr std::array<const wchar_t*, 3> kBattleWarpsLabels{L"Players stay", L"Nobody", L"Whole party"};
 
 inline constexpr Option kMultiMonitor{  // views/window_span
     L"Views", L"multi-monitor", kMultiMonitorWords, L"auto",
     L"the game window across a row of equal monitors, one full view per player: auto (while a further player is in), "
     L"on (held with any player count, from the game's next steady frame; a column no player fills mirrors player 1's "
-    L"picture), off (no span until window-span on, window-span.hold on or Ctrl+F2; from the console: leaves now)"};
+    L"picture), off (no span until window-span on, window-span.hold on or Ctrl+F2; from the console: leaves now)",
+    false, L"Multiple monitors", kMultiMonitorLabels,
+    L"One full view per player across a row of equal monitors. Auto: while a further player is in. On: always. Off: "
+    L"every view in one window."};
 inline constexpr Option kColumnOrder{  // views/column_layout
     L"Views", L"column-order", kColumnOrderWords, L"123",
     L"which screen players 2 and 3 take when three views show: 123 the join order, 132 player 2 on the right and player "
-    L"3 in the middle (in one window: bottom right and bottom left); player 1 keeps the left"};
+    L"3 in the middle (in one window: bottom right and bottom left); player 1 keeps the left",
+    false, L"Screen order", kColumnOrderLabels,
+    L"Which screen players 2 and 3 take when three views show. 1 2 3: the order they joined. 1 3 2: player 2 on the "
+    L"right, player 3 in the middle. Player 1 keeps the left."};
 inline constexpr Option kMenuSlow{  // battle/command_menu_tick
     L"Battle", L"menu-slow", kMenuSlowWords, L"off",
     L"off (the default): no grey, and the world and the ATB gauges run on at full speed while a battle command menu is "
-    L"open; on: an open menu slows the world and greys the screen, as the game does (Ctrl+F9 switches it too)"};
+    L"open; on: an open menu slows the world and greys the screen, as the game does (Ctrl+F9 switches it too)",
+    false, L"Command menu slow-down", kMenuSlowLabels,
+    L"On: an open battle command menu slows the battle and greys the screen, as in single player. Off: the battle runs "
+    L"on at full speed while a player picks a command."};
 inline constexpr Option kBattleWarps{  // battle/battle_warps
     L"Battle", L"battle-warps", kBattleWarpsWords, L"players-stay",
     L"who the game warps at a battle's start and end: players-stay (every player's own character stays where it is), "
-    L"off (nobody is warped), game (the whole party)"};
+    L"off (nobody is warped), game (the whole party)",
+    false, L"Moves at a battle's start and end", kBattleWarpsLabels,
+    L"Who the game moves into place when a battle starts and ends. Players stay: every player's character stays where "
+    L"it is. Nobody: no one is moved. Whole party: everyone, as in single player."};
 inline constexpr std::array<const wchar_t*, 2> kLeadHolderWords{L"guide", L"keeps"};
+inline constexpr std::array<const wchar_t*, 2> kLeadHolderLabels{L"AI guides", L"Player keeps"};
 inline constexpr Option kLeadHolder{  // players/lead_gate
     L"Experimental", L"lead-holder", kLeadHolderWords, L"guide",
     L"a lead or run to a mark the level needs finished, on a further player's character: guide (the default: to its AI for "
     L"the whole walk, the player's view on it) or keeps (experimental: the player keeps it, the stop marked in that "
     L"player's view, its AI finishing the arrival within 2 m of the stop)",
-    true};
+    true, L"Leading the way", kLeadHolderLabels,
+    L"When the story has another player's character lead the way. AI guides: its AI walks there and the player watches. "
+    L"Player keeps: the player walks it to the marked stop."};
 
 inline constexpr std::array<const Option*, 5> kOptions{&kMultiMonitor, &kColumnOrder, &kMenuSlow, &kBattleWarps, &kLeadHolder};
 

@@ -42,6 +42,7 @@
 #include "players/pad_table.h"
 #include "players/pad_claim.h"
 #include "hud/view_prompt.h"
+#include "menu/coop_menu.h"
 #include "players/seat_camera.h"
 #include "players/scopes.h"
 #include "players/session.h"
@@ -257,6 +258,8 @@ constexpr std::array kModules{
     // without it the pads can be changed only from the console (pad-table)
     Module{.name = L"pad claim", .install = Call<&players::pad_claim::Install>, .remove = &players::pad_claim::Remove,
            .needs = {Need<&players::pad_table::Install>(), Need<&hud::view_prompt::Install>()}},
+    // without it the mod's options are set only from the console and the settings file
+    Module{.name = L"Co-op menu", .install = Call<&menu::coop_menu::Install>, .remove = &menu::coop_menu::Remove},
     // without it a LEAD or a run to a mark on a further player's member stays the player's
     Module{.name = L"lead gate", .install = Call<&players::lead_gate::Install>},
     // without it an ambient interest walk hands a further player's member to its AI (which can loop on a ladder)
@@ -730,6 +733,7 @@ void TickAfterSession(const Frame& frame) noexcept
     TickBattle(frame);
     TickWorld(frame);
     TickHud(frame);
+    menu::coop_menu::Tick();
 }
 
 }  // namespace lss::modules

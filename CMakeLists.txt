@@ -87,6 +87,7 @@ add_library(LocalSplitScreen SHARED
     src/players/pad_table.cpp
     src/players/pad_claim.cpp
     src/hud/view_prompt.cpp
+    src/menu/coop_menu.cpp
     src/players/party_events.cpp
     src/players/party_member.cpp
     src/players/party_seat.cpp
@@ -465,6 +466,13 @@ add_executable(SettingsTests
 target_include_directories(SettingsTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_compile_features(SettingsTests PRIVATE cxx_std_20)
 add_test(NAME settings COMMAND SettingsTests)
+
+add_executable(CoopMenuRulesTests
+    tests/coop_menu_rules_test.cpp
+)
+target_include_directories(CoopMenuRulesTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(CoopMenuRulesTests PRIVATE cxx_std_20)
+add_test(NAME coop_menu_rules COMMAND CoopMenuRulesTests)
 
 add_executable(SeatsTests
     tests/seats_test.cpp

@@ -9,6 +9,9 @@
 //
 // The entry is only replaced if it still holds the function the research identified, so a game
 // patch or another mod that already changed it makes the replacement refuse rather than guess.
+//
+// Any other aligned 8-byte word of the game's data is swapped the same way, checked against the value the research
+// read (menu/coop_menu: the main menu's row tables).
 
 #include <cstdint>
 

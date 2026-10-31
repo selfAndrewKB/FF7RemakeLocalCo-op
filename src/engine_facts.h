@@ -3125,4 +3125,172 @@ inline constexpr platform::SlotFact kAutoSeSoundForEvent{
 inline constexpr int kAutoSeStepTypeFirst = 1;
 inline constexpr int kAutoSeStepTypeLast  = 6;
 
+// --- The Co-op row of the main menu and its page (research/RE-game-widgets.md §9-§10; menu/coop_menu) ----------------
+// The main menu's left list (UEndMainTopMenu) is built at its construct from four tables indexed by the row's kind
+// (0..12): the text and help (const wchar_t*[13], .rdata, read only by the row's setup, which copies them into a new
+// FString), the order (u8[13], .rdata, read only by the build) and the unlock flag (FName[13], .data, written once by a
+// static initializer): a kind is kept when its raw flag is 0 or that story flag is set. Kind 12 is the trial's "Buy
+// Now" (flag stfCmn_IsTrialMode, never set in the full game: the user, 2026-10-31); the mod gives it its text, help and
+// a 0 flag, and puts it before System (11). A press broadcasts the kind to OpenWindowByKind.
+inline constexpr std::uint8_t   kTopRowKind        = 12;
+inline constexpr std::uintptr_t kTopRowTextSlot    = 0x1443C4780 + kTopRowKind * 8;  // g_MainTopMenu_ItemTextIds[12]
+inline constexpr std::uintptr_t kTopRowTextWas     = 0x1443C8EA0;                    // its pointer, the trial's text id
+inline constexpr std::uintptr_t kTopRowHelpSlot    = 0x1443C46E0 + kTopRowKind * 8;  // g_MainTopMenu_ItemHelpIds[12]
+inline constexpr std::uintptr_t kTopRowHelpWas     = 0x1443C8970;
+inline constexpr std::uintptr_t kTopRowUnlockSlot  = 0x145851F00 + kTopRowKind * 8;  // g_MainTopMenu_ItemUnlockFlag_cand[12]
+/// g_MainTopMenu_ItemOrder (0x1443C47E8, 13 bytes 00..0C): its aligned second word holds kinds 8..12 and three bytes
+/// past the table's end (the build stops at 0x1443C47F5); swapping 11 and 12 there puts the Co-op row before System.
+inline constexpr std::uintptr_t kTopRowOrderWord   = 0x1443C47F0;
+inline constexpr std::uint64_t  kTopRowOrderWas    = 0x0000000C0B0A0908ull;
+inline constexpr std::uint64_t  kTopRowOrderCoop   = 0x0000000B0C0A0908ull;
+/// void(FMainMenuMgr* mgr = EndUISystem[24], u8 kind): the bounds test (kind > 12: return) runs after the menu
+/// tutorial's prelude and before the jump table, so kind 0xFF runs only the prelude. First instruction mov [rsp+8], rbx.
+inline constexpr std::array<std::uint8_t, 16> kOpenWindowByKindEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x08, 0x88, 0x54, 0x24, 0x10, 0x55, 0x56, 0x57, 0x41, 0x54, 0x41, 0x55};
+inline constexpr platform::FunctionFact kOpenWindowByKind{L"EndUI24_MainMenu_OpenWindowByKind", 0x141463D30,
+                                                          kOpenWindowByKindEntry};
+inline constexpr std::uint8_t kOpenWindowPreludeOnly = 0xFF;
+/// UEndMainTopMenu*(mgr, bool restoreCursor): the Top window shown again (title, focus, Show, cursor), current again;
+/// what the game's Back from any main menu window ends in.
+inline constexpr std::array<std::uint8_t, 16> kShowTopWindowEntry{
+    0x4C, 0x8B, 0xDC, 0x55, 0x56, 0x41, 0x54, 0x41, 0x57, 0x49, 0x8D, 0x6B, 0x88, 0x48, 0x81, 0xEC};
+inline constexpr platform::FunctionFact kShowTopWindow{L"EndUI24_MainMenu_ShowTopWindow", 0x141465F90, kShowTopWindowEntry};
+inline constexpr std::uint32_t kUiMainMenuSlot     = 24;    // EndUISystem[24]: the main menu manager (a C++ struct)
+inline constexpr std::uint32_t kUiMenuTutorialSlot = 57;    // EndUISystem[57]: the menu tutorial
+inline constexpr std::uint32_t kMenuTutorialState  = 0x28;  // u8; 15..19: the game opens no window
+inline constexpr std::uint8_t  kMenuTutorialBusyFirst = 15;
+inline constexpr std::uint8_t  kMenuTutorialBusyLast  = 19;
+inline constexpr std::uint32_t kMainMenuMgrMenu    = 0x00;  // weak UEndMainMenu
+inline constexpr std::uint32_t kMainMenuMgrCurrent = 0x10;  // weak: the current window
+inline constexpr std::uint32_t kMainMenuMgrOpen    = 0x70;  // i32: 1 while open (0 closed, 2 closing)
+inline constexpr std::uint32_t kMainMenuMgrTopCurrent = 0x74;  // u8: the Top window is the current one
+inline constexpr std::uintptr_t kMainTopMenuVtable = 0x144BD6FD8;  // UEndMainTopMenu's
+inline constexpr std::uint32_t kWindowZOrder       = 0x248;  // UEndUserWidget: i32 ZOrder (1990 for the main menu's)
+inline constexpr std::uint32_t kWindowHideSlot     = 0x440;  // UEndMainMenuWindow vtable: Hide (pops its layer, reverses Menu_In)
+inline constexpr std::uint32_t kWindowVisible      = 0x410;  // u8
+inline constexpr std::uint32_t kWindowTitle        = 0x420;  // FString: the title the manager's tick shows (Top's vt+0x458 is 0)
+inline constexpr std::uint32_t kTopGuide           = 0x588;  // FString: Top's guide, shown whatever has focus
+inline constexpr std::uint32_t kTopRows            = 0x5A0;  // TArray<u8>: the kinds the build kept, in order
+inline constexpr std::uint32_t kObjectGetWorldSlot = 0x140;  // UObject vtable: GetWorld
+// The main menu's frame (UEndMainMenu, the weak at mgr+0x00): its title, help and guide text blocks, which the manager's
+// tick fills every frame from the current window; a text block keeps the text last shown at +0x118.
+inline constexpr std::uint32_t kMainMenuTitleText  = 0x3A0;  // UEndTextBlock*
+inline constexpr std::uint32_t kMainMenuHelpText   = 0x3B8;
+inline constexpr std::uint32_t kMainMenuGuideText  = 0x3C0;
+inline constexpr std::uint32_t kTextBlockText      = 0x118;  // UEndTextBlock: FString Text
+// (UWidget::SetVisibility and its Visibility byte: kWidgetSetVisibilityFn and kWidgetVisibility above.)
+inline constexpr std::uint8_t kVisibilityHidden = 2;  // ESlateVisibility::Hidden
+// The game's Options screen (UEndNewOptionsMenu, Blueprint MainMenu_OptionsTop2_C, resident): the mod's own instance,
+// never the one System keeps (g_OptionsMenu_CachedWeak_cand has System's two xrefs only, §10.4).
+inline constexpr const wchar_t* kOptionsClassPath =
+    L"/Game/GameContents/Menu/Resident/MainMenu/MainMenu_OptionsTop2.MainMenu_OptionsTop2_C";
+/// UEndNewOptionsMenu*(UWorld*, UClass*, u8 inGame): CreateWidgetInstance, an IsA check, +0x3C0 = inGame.
+inline constexpr std::array<std::uint8_t, 16> kOptionsCreateEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x08, 0x57, 0x48, 0x83, 0xEC, 0x20, 0x41, 0x0F, 0xB6, 0xF8, 0x48, 0x8B};
+inline constexpr platform::FunctionFact kOptionsCreate{L"UEndNewOptionsMenu_Create_cand", 0x1412C96C0, kOptionsCreateEntry};
+/// void(page, u8 startCategory): Menu_In, state 1, its focus layer pushed with focus on the category list.
+inline constexpr std::array<std::uint8_t, 16> kOptionsOpenEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x74, 0x24, 0x18, 0x57, 0x48, 0x83, 0xEC, 0x70, 0x48};
+inline constexpr platform::FunctionFact kOptionsOpen{L"UEndNewOptionsMenu_Open_cand", 0x1412D0F30, kOptionsOpenEntry};
+/// bool(UEndUserWidget*, i32 ZOrder): TakeWidget (the first one runs the NativeConstruct, which fills the game's data),
+/// then the root overlay's AddWidget.
+inline constexpr std::array<std::uint8_t, 16> kAddToRootOverlayEntry{
+    0x4C, 0x8B, 0xDC, 0x55, 0x41, 0x54, 0x41, 0x56, 0x49, 0x8D, 0xAB, 0xD8, 0xFA, 0xFF, 0xFF, 0x48};
+inline constexpr platform::FunctionFact kAddToRootOverlayFn{L"UEndUserWidget__AddToRootOverlay", kAddToRootOverlay,
+                                                            kAddToRootOverlayEntry};
+/// bool(UEndUserWidget*): its root-overlay canvas still alive (false after an overlay rebuild, a level change).
+inline constexpr std::array<std::uint8_t, 16> kIsInRootOverlayEntry{
+    0x48, 0x83, 0xB9, 0x30, 0x02, 0x00, 0x00, 0x00, 0x74, 0x12, 0x48, 0x8B, 0x81, 0x38, 0x02, 0x00};
+inline constexpr platform::FunctionFact kIsInRootOverlay{L"UEndUserWidget__IsInRootOverlay_CanvasWeakAlive", 0x14134B060,
+                                                         kIsInRootOverlayEntry};
+/// UEndUserWidget*(widget): removes it from the root overlay (the game's no-animation close).
+inline constexpr std::array<std::uint8_t, 16> kRemoveFromRootOverlayEntry{
+    0x40, 0x53, 0x48, 0x83, 0xEC, 0x40, 0x80, 0xB9, 0x6A, 0x02, 0x00, 0x00, 0x00, 0x48, 0x89, 0x6C};
+inline constexpr platform::FunctionFact kRemoveFromRootOverlay{L"UEndUserWidget__RemoveFromParent_RootOverlay", 0x14134AE90,
+                                                               kRemoveFromRootOverlayEntry};
+/// TSharedRef<SWidget>* (UWidget*, TSharedRef<SWidget>* out, 16 bytes) and void(EndUISystem array, TSharedRef* taken):
+/// the page's focus layer popped the way its own Back does; the pop releases the reference it is given.
+inline constexpr std::array<std::uint8_t, 16> kTakeWidgetEntry{
+    0x4C, 0x8B, 0xDC, 0x49, 0x89, 0x5B, 0x08, 0x49, 0x89, 0x6B, 0x18, 0x49, 0x89, 0x73, 0x20, 0x57};
+inline constexpr platform::FunctionFact kTakeWidget{L"UWidget__TakeWidget_cand", 0x141348DF0, kTakeWidgetEntry};
+inline constexpr std::array<std::uint8_t, 16> kPopFocusLayerEntry{
+    0x40, 0x53, 0x48, 0x83, 0xEC, 0x30, 0x48, 0x8B, 0xDA, 0x48, 0x8B, 0xD1, 0x48, 0x8B, 0x49, 0x10};
+inline constexpr platform::FunctionFact kPopFocusLayer{L"EndUISystem_PopFocusLayer", 0x1413AE250, kPopFocusLayerEntry};
+/// The page's key handler (vt+0x340, pass 2: Back, Accept, Square, Circle, L3): Back in state 1 closes the page (state 8,
+/// its layer popped). Only this vtable holds it.
+inline constexpr std::array<std::uint8_t, 16> kOptionsKeyDownEntry{
+    0x40, 0x55, 0x53, 0x56, 0x57, 0x41, 0x56, 0x41, 0x57, 0x48, 0x8D, 0xAC, 0x24, 0x08, 0xFC, 0xFF};
+inline constexpr platform::SlotFact kOptionsKeyDown{L"vtbl_UEndNewOptionsMenu +0x340 (key down, pass 2)", 0x144BDC1D8 + 0x340,
+                                                    {L"UEndNewOptionsMenu key down (pass 2)", 0x1412D13A0, kOptionsKeyDownEntry}};
+/// i32(page, u8 categoryKey, i32 rowIndex): the row's value (a List row: its value's index). First instruction
+/// mov [rsp+18h], rbx.
+inline constexpr std::array<std::uint8_t, 16> kOptionsGetValueEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x18, 0x48, 0x89, 0x74, 0x24, 0x20, 0x55, 0x57, 0x41, 0x56, 0x48, 0x8D};
+inline constexpr platform::FunctionFact kOptionsGetValue{L"OptionsMenu_GetOptionValue", 0x1412D6260, kOptionsGetValueEntry};
+/// void(page, u8 optionCategory, i32 value): commits a value into a copy of the game's option block; for a category of
+/// 0x80 or more the copy goes back unchanged. Its first five bytes are four pushes (rbp, rbx, rsi, rdi), no branch lands
+/// inside them, and it runs on the game thread only, where the redirect is placed.
+inline constexpr std::array<std::uint8_t, 16> kOptionsSetValueEntry{
+    0x40, 0x55, 0x53, 0x56, 0x57, 0x41, 0x55, 0x41, 0x56, 0x41, 0x57, 0x48, 0x8D, 0xAC, 0x24, 0x90};
+inline constexpr platform::FunctionFact kOptionsSetValue{L"OptionsMenu_SetOptionValue_CopyApplyCommit", 0x1412D6880,
+                                                         kOptionsSetValueEntry};
+inline constexpr std::size_t kRedirectFirstBytes = 5;  // the five bytes both value redirects copy
+inline constexpr std::uint32_t kOptionsState       = 0x360;  // u8: 1 categories, 2 rows, 4 value list, 5 editing, 8 closing
+inline constexpr std::uint8_t  kOptionsStateClosing = 8;     // then its own tick takes it out of the overlay, state 0
+/// The rows' heading: a category's press sets the page's Txt_Title from g_OptionsMenu_CategoryHeadingIds[key] (.rdata,
+/// const wchar_t*[8], read only there, copied into the text; keys above 7 get none); Back to the categories clears it.
+inline constexpr std::uintptr_t kOptionsHeadings     = 0x144BDBCA0;
+inline constexpr std::array<std::uintptr_t, 8> kOptionsHeadingsWere{0x1443CDFC8, 0x1443CDF18, 0x1443CE108, 0x1443CE078,
+                                                                   0x1443CDD48, 0x1443CDC98, 0x1443CDE68, 0x1443CDDD8};
+inline constexpr std::uint32_t kOptionsCategoryList = 0x368;  // UEndVirtualScrollBox*
+inline constexpr std::uint32_t kOptionsCategoryIndex = 0x3A8;  // i32
+inline constexpr std::uint32_t kOptionsRowIndex     = 0x3AC;  // i32
+inline constexpr std::uint32_t kOptionsOrder        = 0x468;  // TArray<u8>: the category keys the left list shows
+inline constexpr std::uint32_t kOptionsLabels       = 0x4B8;  // TArray<FString> _CategoryItems, indexed by key
+inline constexpr std::uint32_t kOptionsItems        = 0x4C8;  // TMap<u8, FOptionInfos> _OptionItems
+inline constexpr std::uint32_t kOptionInfosHelp     = 0x00;   // FOptionInfos: FString HelpText
+inline constexpr std::uint32_t kOptionInfosRows     = 0x10;   //   TArray<FOptionInfo> Infos
+inline constexpr std::size_t   kOptionInfoSize      = 0x68;   // FOptionInfo: u8 Kind +0 (0 List), u8 OptionCategory +1,
+inline constexpr std::uint32_t kOptionInfoCategory  = 0x01;   //   FString Text +8, FString HelpText +0x18,
+inline constexpr std::uint32_t kOptionInfoText      = 0x08;   //   TArray<FString> ValueTexts +0x28, ValueHelps +0x38,
+inline constexpr std::uint32_t kOptionInfoHelp      = 0x18;   //   TArray<FName> OpenFlags +0x48, i32 Min +0x58, Max +0x5C,
+inline constexpr std::uint32_t kOptionInfoValues    = 0x28;   //   FName OpenFlag +0x60
+inline constexpr std::uint32_t kOptionInfoValueHelps = 0x38;  // the value list's help per value (read only below its Num)
+inline constexpr std::uint32_t kOptionInfoMin       = 0x58;
+/// The game's own helpers the page's data is written with (its allocator, GMalloc): an FString copy (dst, const
+/// FString* src: reads the source's Data and Num, so a view over the mod's string is a valid source), FindOrAdd on
+/// _OptionItems (map, const u8* key) -> FOptionInfos*, an FOptionInfo's default constructor, destructor and move
+/// constructor (dst, src), the two arrays' growth after Num++ (array: reads Num, sets Max, reallocates), RemoveAt
+/// (array, index, count; count > 0), and the scroll box's count and refresh.
+inline constexpr std::array<std::uint8_t, 16> kFStringAssignEntry{
+    0x40, 0x53, 0x48, 0x83, 0xEC, 0x20, 0x48, 0x8B, 0xD9, 0x48, 0x3B, 0xCA, 0x74, 0x59, 0x44, 0x8B};
+inline constexpr platform::FunctionFact kFStringAssign{L"FString__AssignCopy_cand", 0x14063E480, kFStringAssignEntry};
+inline constexpr std::array<std::uint8_t, 16> kOptionItemsFindOrAddEntry{
+    0x40, 0x53, 0x48, 0x83, 0xEC, 0x20, 0x48, 0x89, 0x54, 0x24, 0x38, 0x4C, 0x8D, 0x44, 0x24, 0x38};
+inline constexpr platform::FunctionFact kOptionItemsFindOrAdd{L"OptionItemsMap_FindOrAdd_cand", 0x1412E81F0,
+                                                              kOptionItemsFindOrAddEntry};
+inline constexpr std::array<std::uint8_t, 16> kOptionInfoCtorEntry{
+    0x33, 0xC0, 0x48, 0x89, 0x41, 0x08, 0x48, 0x89, 0x41, 0x10, 0x48, 0x89, 0x41, 0x18, 0x48, 0x89};
+inline constexpr platform::FunctionFact kOptionInfoCtor{L"FOptionInfo_DefaultCtor_cand", 0x1412D0E90, kOptionInfoCtorEntry};
+inline constexpr std::array<std::uint8_t, 16> kOptionInfoDtorEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x08, 0x57, 0x48, 0x83, 0xEC, 0x20, 0x48, 0x8B, 0xD9, 0x48, 0x8B, 0x49};
+inline constexpr platform::FunctionFact kOptionInfoDtor{L"FOptionInfo_Dtor_cand", 0x1412D0ED0, kOptionInfoDtorEntry};
+inline constexpr std::array<std::uint8_t, 16> kOptionInfoMoveEntry{
+    0x0F, 0xB6, 0x02, 0x45, 0x33, 0xC0, 0x88, 0x01, 0x0F, 0xB6, 0x42, 0x01, 0x88, 0x41, 0x01, 0x4C};
+inline constexpr platform::FunctionFact kOptionInfoMove{L"FOptionInfo_MoveCtor_cand", 0x1412E89C0, kOptionInfoMoveEntry};
+inline constexpr std::array<std::uint8_t, 16> kArrayGrowEntry{  // both growths open alike
+    0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x74, 0x24, 0x10, 0x57, 0x48, 0x83, 0xEC, 0x20, 0x83};
+inline constexpr platform::FunctionFact kOptionInfosGrow{L"TArrayFOptionInfo_ResizeGrow_cand", 0x140943D00, kArrayGrowEntry};
+inline constexpr platform::FunctionFact kStringArrayGrow{L"TArrayFString_ResizeGrow_cand", 0x14063EF30, kArrayGrowEntry};
+inline constexpr std::array<std::uint8_t, 16> kOptionInfosRemoveAtEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x6C, 0x24, 0x10, 0x48, 0x89, 0x74, 0x24, 0x18, 0x57};
+inline constexpr platform::FunctionFact kOptionInfosRemoveAt{L"TArrayFOptionInfo_RemoveAt_cand", 0x1412E7D00,
+                                                             kOptionInfosRemoveAtEntry};
+inline constexpr std::array<std::uint8_t, 16> kScrollBoxSetCountEntry{
+    0x89, 0x91, 0x58, 0x07, 0x00, 0x00, 0x48, 0x8B, 0x89, 0xD8, 0x07, 0x00, 0x00, 0x48, 0x85, 0xC9};
+inline constexpr platform::FunctionFact kScrollBoxSetCount{L"EndVSB_SetItemCount_cand", 0x14137D490, kScrollBoxSetCountEntry};
+inline constexpr std::array<std::uint8_t, 16> kScrollBoxRefreshEntry{
+    0x48, 0x8B, 0x89, 0xD8, 0x07, 0x00, 0x00, 0x48, 0x85, 0xC9, 0x74, 0x0C, 0x48, 0x8B, 0x89, 0xF8};
+inline constexpr platform::FunctionFact kScrollBoxRefresh{L"EndVSB_RefreshItems_cand", 0x14137D8F0, kScrollBoxRefreshEntry};
+
 }  // namespace lss::facts
