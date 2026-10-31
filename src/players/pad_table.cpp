@@ -33,7 +33,7 @@ constexpr int kSlots = rules::kSlots;
 /// One physical pad, as the game's poll last read it. Game thread (the poll and the console both run there).
 struct Pad
 {
-    rules::ChordHold hold;
+    rules::OpenHold  hold;
     rules::LetGo     letGo;  // idle to the game until it lets go of what it held at a change
 };
 
@@ -50,7 +50,7 @@ std::atomic<bool>                    g_idle{false};
 
 // Game thread.
 std::array<Pad, kSlots> g_pads{};
-std::uint32_t           g_chords = 0, g_waited = 0, g_rechecks = 0, g_changes = 0;
+std::uint32_t           g_opens = 0, g_waited = 0, g_rechecks = 0, g_changes = 0;
 std::wstring            g_last   = L"none yet";
 
 std::int64_t NowMs() noexcept
@@ -103,19 +103,19 @@ DWORD WINAPI GetStateFor(DWORD slot, XINPUT_STATE* state) noexcept
     if (result != ERROR_SUCCESS)
     {
         *state = XINPUT_STATE{};  // the engine reads the buffer as left after a failure (RE-pad-slots.md §3)
-        g_pads[static_cast<std::size_t>(user)].hold = {};  // a press held back as it dropped out is not a tap on its return
+        g_pads[static_cast<std::size_t>(user)].hold = {};  // a View held back as it dropped out is not a tap on its return
         return result;
     }
     Pad&                pad   = g_pads[static_cast<std::size_t>(user)];
     const std::uint16_t raw   = state->Gamepad.wButtons;
     const std::int64_t  now   = NowMs();
     const rules::Gated  gated = rules::Gate(pad.hold, raw, now);
-    if (gated.chord)
+    if (gated.open)
     {
-        ++g_chords;
+        ++g_opens;
         try
         {
-            g_last = std::format(L"View and Menu together on {} (player {}'s slot)", PadName(user), slot + 1);
+            g_last = std::format(L"View held 1 s on {} (player {}'s slot)", PadName(user), slot + 1);
             platform::Log(L"pads: {}", g_last);
         }
         catch (...)
@@ -132,7 +132,7 @@ DWORD WINAPI GetStateFor(DWORD slot, XINPUT_STATE* state) noexcept
     const rules::Wait  wait  = rules::Poll(pad.letGo, raw, left, right, now);
     if (wait != rules::Wait::None)
     {
-        // Idle on the poll that ends the wait too: a held-back View or Menu released on it would otherwise reach the
+        // Idle on the poll that ends the wait too: a held-back View released on it would otherwise reach the
         // new slot as a tap.
         Idle(*state);
         try
@@ -230,9 +230,9 @@ void LogInputDevices() noexcept
 
 std::wstring Reading()
 {
-    return std::format(L"{}{}; {}; View+Menu {}, waits for a let-go {}, re-checks {}, changes {}; last: {}",
+    return std::format(L"{}{}; {}; View held {}, waits for a let-go {}, re-checks {}, changes {}; last: {}",
                        g_installed ? L"on" : L"not installed", g_idle.load() ? L" (every pad idle)" : L"",
-                       TableText(Table()), g_chords, g_waited, g_rechecks, g_changes, g_last);
+                       TableText(Table()), g_opens, g_waited, g_rechecks, g_changes, g_last);
 }
 
 }  // namespace
@@ -373,7 +373,7 @@ bool Install(const platform::GameImage& image) noexcept
                        .get = [] { return control::Value{g_idle.load()}; }});
     control::Register({.name  = L"players.pad-table",
                        .shape = control::Shape::Text,
-                       .help  = L"(read only) the pad table, the View+Menu presses and the waits for a let-go",
+                       .help  = L"(read only) the pad table, the View holds and the waits for a let-go",
                        .get   = [] {
                            try
                            {

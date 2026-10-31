@@ -16,7 +16,7 @@
 //   - on its screen the d-pad steps through the players: the player there swaps screens and pads with the next one
 //     whose screen is not kept, so the person keeps pad and screen and the character changes;
 //   - A keeps it, B steps back (a kept screen unkept, a taken one let go); the claim ends when at most one screen is
-//     not kept and one is (the last person takes what is left), or the opening combination again puts back the tables
+//     not kept and one is (the last person takes what is left), or the opener again (View held) puts back the tables
 //     from the opening.
 // While player 1's view cannot leave the first screen (`firstFixed`; the HUD tells player 1's view by its place:
 // hud/ui_targets.cpp ColumnOf), steps never move player 1.
@@ -32,14 +32,11 @@ inline constexpr int kScreens = 3;  // views laid out: player 1 and two further 
 // XInput's button bits (XINPUT_GAMEPAD_*), kept here so the rules build without Windows headers.
 inline constexpr std::uint16_t kDpadLeft  = 0x0004;
 inline constexpr std::uint16_t kDpadRight = 0x0008;
-inline constexpr std::uint16_t kMenu      = 0x0010;  // START
 inline constexpr std::uint16_t kView      = 0x0020;  // BACK
 inline constexpr std::uint16_t kA         = 0x1000;
 inline constexpr std::uint16_t kB         = 0x2000;
 inline constexpr std::uint16_t kX         = 0x4000;
 inline constexpr std::uint16_t kY         = 0x8000;
-
-inline constexpr std::uint16_t kChordBits = kView | kMenu;
 
 /// Each screen position's button: the first A, the second X, the third Y.
 inline constexpr std::array<std::uint16_t, kScreens> kScreenButton{kA, kX, kY};
@@ -77,59 +74,52 @@ constexpr int SlotOf(const PadTable& table, int user) noexcept
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
-// The opening combination: View and Menu together on one pad. Either button alone opens a game menu at its press, so a
-// press of either is held back from the game for up to kChordWindowMs: if the other joins, the combination fires and
-// the game never sees either; if not, the game gets the press late (or, released within the window, as a one-poll tap).
+// The opener: View held for kOpenHoldMs on one pad (the user, 2026-10-30 21:4x: "Scrap the view plus menu mapping";
+// View+Menu raised Steam's on-screen keyboard over the game). View alone opens the map at its press, so a View press is
+// held back from the game: let go before kOpenHoldMs, the game gets it then as a one-poll tap (the map opens at the
+// let-go, a tap's length late); held kOpenHoldMs, the opener fires once and the game never sees that press.
 
-inline constexpr std::int64_t kChordWindowMs = 150;
+inline constexpr std::uint16_t kOpenButton = kView;
+inline constexpr std::int64_t  kOpenHoldMs = 1000;
 
-struct ChordHold
+struct OpenHold
 {
-    std::uint16_t hidden = 0;      // combination buttons down, not yet shown to the game
-    std::uint16_t shown  = 0;      // combination buttons down and shown
-    std::int64_t  since  = 0;      // when the newest hidden press went down
-    bool          fired  = false;  // the combination fired: its buttons hidden until both are up
+    bool         down  = false;  // View is down and held back from the game
+    bool         fired = false;  // the opener fired on this press: hidden until View is up
+    std::int64_t since = 0;      // when it went down
 };
 
 struct Gated
 {
     std::uint16_t buttons = 0;      // what the game sees
-    bool          chord   = false;  // the combination fired on this poll
+    bool          open    = false;  // the opener fired on this poll
 };
 
 /// One poll of one physical pad: `raw` its buttons, `nowMs` a steady clock.
-constexpr Gated Gate(ChordHold& h, std::uint16_t raw, std::int64_t nowMs) noexcept
+constexpr Gated Gate(OpenHold& h, std::uint16_t raw, std::int64_t nowMs) noexcept
 {
-    const auto down = static_cast<std::uint16_t>(raw & kChordBits);
-    auto       out  = static_cast<std::uint16_t>(raw & ~kChordBits);
-    if (h.fired)
+    const bool view = (raw & kOpenButton) != 0;
+    auto       out  = static_cast<std::uint16_t>(raw & ~kOpenButton);
+    if (!view)
     {
-        h.fired  = down != 0;
-        h.hidden = 0;
-        h.shown  = 0;
+        // Let go: a press held back and not fired reaches the game as a tap (pressed on this poll, up on the next).
+        if (h.down && !h.fired)
+        {
+            out = static_cast<std::uint16_t>(out | kOpenButton);
+        }
+        h = OpenHold{};
         return {out, false};
     }
-    if (down == kChordBits && h.shown == 0)  // together: neither already shown to the game
+    if (!h.down)
     {
-        h = ChordHold{.fired = true};
+        h.down  = true;
+        h.since = nowMs;
+    }
+    if (!h.fired && nowMs - h.since >= kOpenHoldMs)
+    {
+        h.fired = true;
         return {out, true};
     }
-    const auto releasedHidden = static_cast<std::uint16_t>(h.hidden & ~down);
-    h.shown  = static_cast<std::uint16_t>(h.shown & down);
-    h.hidden = static_cast<std::uint16_t>(h.hidden & down);
-    const auto fresh = static_cast<std::uint16_t>(down & ~h.hidden & ~h.shown);
-    if (fresh != 0)
-    {
-        h.hidden = static_cast<std::uint16_t>(h.hidden | fresh);
-        h.since  = nowMs;
-    }
-    if (h.hidden != 0 && nowMs - h.since >= kChordWindowMs)
-    {
-        h.shown  = static_cast<std::uint16_t>(h.shown | h.hidden);
-        h.hidden = 0;
-    }
-    // A press released while still hidden reaches the game as a tap: pressed on this poll, up on the next.
-    out = static_cast<std::uint16_t>(out | h.shown | releasedHidden);
     return {out, false};
 }
 
@@ -395,7 +385,7 @@ constexpr Result Press(Claim& c, int user, std::uint16_t button) noexcept
     return {};
 }
 
-/// The opening combination again: the tables from the opening.
+/// The opener again: the tables from the opening.
 constexpr void Cancel(Claim& c) noexcept
 {
     c.seatOn  = c.openSeatOn;

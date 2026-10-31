@@ -18,8 +18,8 @@
 //   - after idle or a change, a pad stays idle to the game until it lets go of what it was holding then, so the press
 //     that ended a claim never reaches the game as an attack or a talk (pad_claim_rules LetGo: a resting trigger or a
 //     stuck button never holds a pad for good); every pad's rumble is set off at a change;
-//   - the opening combination, View and Menu together (pad_claim_rules::Gate): either button alone reaches the game up
-//     to 150 ms late, so the combination never opens the map or the pause menu.
+//   - the opener, View held for a second (pad_claim_rules::Gate): a shorter View press reaches the game at its let-go,
+//     so a tap still opens the map (a tap's length late) and the hold never does.
 // A PlayStation pad the game reads through its own scePad device is not XInput and is not moved (logged at install).
 // Console: `pad-table` (the pads of players 1-3 and the spare slot, e.g. `pad-table 2 1 3 4`), `pads-idle`; reading `players.pad-table`.
 

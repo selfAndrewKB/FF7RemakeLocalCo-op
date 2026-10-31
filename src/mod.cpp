@@ -64,7 +64,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.133.0-each-players-pad-can-be-changed-live";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.133.1-hold-view-to-change-pads";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;

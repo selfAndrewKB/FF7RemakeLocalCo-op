@@ -175,51 +175,40 @@ void EverySwapKeepsTheWhole()
     }
 }
 
-/// View or Menu alone reaches the game, late; together they fire and the game sees neither.
-void TheCombination()
+/// View held a second opens the claim; a shorter View press reaches the game at its let-go; other buttons pass.
+void TheOpener()
 {
-    ChordHold h{};
-    Gated     g = Gate(h, kView, 0);
-    EXPECT(g.buttons == 0 && !g.chord);  // held back
-    g = Gate(h, kView, 100);
-    EXPECT(g.buttons == 0);
-    g = Gate(h, kView, kChordWindowMs);
-    EXPECT(g.buttons == kView);  // the window passed: the press reaches the game
-    g = Gate(h, 0, 200);
-    EXPECT(g.buttons == 0);
+    OpenHold h{};
+    Gated    g = Gate(h, kView | kA, 0);
+    EXPECT(g.buttons == kA && !g.open);  // View held back, A passes
+    g = Gate(h, kView, kOpenHoldMs - 1);
+    EXPECT(g.buttons == 0 && !g.open);
+    g = Gate(h, kView, kOpenHoldMs);
+    EXPECT(g.buttons == 0 && g.open);    // fires once
+    g = Gate(h, kView, kOpenHoldMs + 500);
+    EXPECT(g.buttons == 0 && !g.open);   // hidden until let go
+    g = Gate(h, 0, kOpenHoldMs + 600);
+    EXPECT(g.buttons == 0 && !g.open);   // the fired press is never a tap
 
-    // A quick tap: released inside the window, the game sees it pressed for one poll, then up.
-    h = {};
-    EXPECT(Gate(h, kMenu, 0).buttons == 0);
-    EXPECT(Gate(h, 0, 40).buttons == kMenu);
-    EXPECT(Gate(h, 0, 60).buttons == 0);
-
-    // The combination: View, then Menu within the window. Other buttons pass throughout.
-    h = {};
-    EXPECT(Gate(h, kView | kA, 0).buttons == kA);
-    g = Gate(h, kView | kMenu | kA, 80);
-    EXPECT(g.chord && g.buttons == kA);
-    g = Gate(h, kView | kMenu, 100);
-    EXPECT(!g.chord && g.buttons == 0);   // fires once
-    g = Gate(h, kMenu, 120);
-    EXPECT(g.buttons == 0);               // hidden until both are up
-    g = Gate(h, 0, 140);
-    EXPECT(g.buttons == 0);
-    EXPECT(Gate(h, kMenu, 400).buttons == 0);              // a new press is held back again
-    EXPECT(Gate(h, kMenu, 400 + kChordWindowMs).buttons == kMenu);
-
-    // Both on the same poll fire too.
-    h = {};
-    EXPECT(Gate(h, kView | kMenu, 0).chord);
-
-    // View held past the window (the game saw it: the map opened), then Menu: not together, no combination.
+    // A tap: the game gets View on the let-go poll, then up on the next.
     h = {};
     EXPECT(Gate(h, kView, 0).buttons == 0);
-    EXPECT(Gate(h, kView, kChordWindowMs).buttons == kView);
-    g = Gate(h, kView | kMenu, 300);
-    EXPECT(!g.chord && g.buttons == kView);  // Menu held back as usual
-}
+    EXPECT(Gate(h, kView, 90).buttons == 0);
+    EXPECT(Gate(h, 0, 110).buttons == kView);
+    EXPECT(Gate(h, 0, 126).buttons == 0);
 
+    // Menu (Start) and the rest are never held back.
+    h = {};
+    EXPECT(Gate(h, kB | 0x0010, 0).buttons == (kB | 0x0010));
+
+    // A new press after a fired one starts over.
+    h = {};
+    Gate(h, kView, 0);
+    EXPECT(Gate(h, kView, kOpenHoldMs).open);
+    Gate(h, 0, kOpenHoldMs + 10);
+    EXPECT(!Gate(h, kView, 5000).open);
+    EXPECT(Gate(h, kView, 5000 + kOpenHoldMs).open);
+}
 /// After a change a pad stays idle until it lets go of what it held then; a resting trigger or a stuck button never
 /// holds it for good.
 void TheLetGo()
@@ -268,7 +257,7 @@ int main()
     KeepBackAndCancel();
     WhenItEnds();
     EverySwapKeepsTheWhole();
-    TheCombination();
+    TheOpener();
     TheLetGo();
     if (g_failures != 0)
     {
