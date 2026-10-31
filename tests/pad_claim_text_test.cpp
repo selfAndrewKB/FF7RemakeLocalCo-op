@@ -45,11 +45,11 @@ void UntakenScreens()
     const ScreenText   second = TextFor(c, 1, kNames);
     const ScreenText   third  = TextFor(c, 2, kNames);
     EXPECT(Has(first.markup, L"<color=yellow>CLOUD</color>"));
-    EXPECT(Has(first.markup, L"Press <button=cross> to play this screen"));
-    EXPECT(Has(second.markup, L"<button=square>"));
-    EXPECT(Has(third.markup, L"<button=triangle>"));
+    EXPECT(Has(first.markup, L"Press <button=cross,pad> to play this screen"));
+    EXPECT(Has(second.markup, L"<button=square,pad>"));
+    EXPECT(Has(third.markup, L"<button=triangle,pad>"));
     EXPECT(Has(third.markup, L"<color=yellow>TIFA</color>"));
-    EXPECT(Has(first.markup, L"Hold <button=touch> to cancel"));
+    EXPECT(Has(first.markup, L"Hold <button=touch,pad> to cancel"));
     EXPECT(first.plain[0] == L"CLOUD");
     EXPECT(first.plain[1] == L"Press A to play this screen");
     EXPECT(second.plain[1] == L"Press X to play this screen");
@@ -79,11 +79,11 @@ void TakenScreens()
     rules::Press(c, 0, rules::kA);  // pad 1 takes the first (CLOUD)
     const ScreenText barret = TextFor(c, 1, kNames);
     const ScreenText cloud  = TextFor(c, 0, kNames);
-    EXPECT(Has(barret.markup, L"<button=left>  <color=yellow>BARRET</color>  <button=right>"));
-    EXPECT(Has(barret.markup, L"<button=cross> Keep    <button=circle> Back"));
+    EXPECT(Has(barret.markup, L"<button=left,pad>  <color=yellow>BARRET</color>  <button=right,pad>"));
+    EXPECT(Has(barret.markup, L"<button=cross,pad> Keep    <button=circle,pad> Back"));
     EXPECT(barret.plain[0] == L"<   BARRET   >");
     // Player 1 cannot step while its view stays on the first screen.
-    EXPECT(!Has(cloud.markup, L"<button=left>"));
+    EXPECT(!Has(cloud.markup, L"<button=left,pad>"));
     EXPECT(cloud.plain[0] == L"CLOUD");
     EXPECT(cloud.plain[1] == L"A: keep    B: back");
 }
@@ -93,11 +93,11 @@ void NoStepWithOneOther()
 {
     rules::Claim c = rules::Open(2, {0, 1, -1}, rules::kIdentity, true);
     rules::Press(c, 1, rules::kX);
-    EXPECT(!Has(TextFor(c, 1, kNames).markup, L"<button=left>"));
+    EXPECT(!Has(TextFor(c, 1, kNames).markup, L"<button=left,pad>"));
     // With player 1 free to move, the two can trade.
     rules::Claim free = rules::Open(2, {0, 1, -1}, rules::kIdentity, false);
     rules::Press(free, 1, rules::kX);
-    EXPECT(Has(TextFor(free, 1, kNames).markup, L"<button=left>"));
+    EXPECT(Has(TextFor(free, 1, kNames).markup, L"<button=left,pad>"));
 }
 
 /// A kept screen says so and offers B to change.
@@ -107,7 +107,7 @@ void KeptScreen()
     rules::Press(c, 2, rules::kY);
     rules::Press(c, 2, rules::kA);
     const ScreenText tifa = TextFor(c, 2, kNames);
-    EXPECT(Has(tifa.markup, L"Kept    <button=circle> Change"));
+    EXPECT(Has(tifa.markup, L"Kept    <button=circle,pad> Change"));
     EXPECT(tifa.plain[1] == L"Kept    (B: change)");
 }
 

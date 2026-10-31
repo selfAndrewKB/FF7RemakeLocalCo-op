@@ -65,7 +65,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.136.0-claim-game-windows";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.136.1-claim-pad-icons";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;

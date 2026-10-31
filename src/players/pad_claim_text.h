@@ -5,10 +5,12 @@
 //
 // One text, two forms. The game's form is markup for its message window (hud/view_window; research/RE-game-widgets.md
 // §12): button icons by physical name (`<button=cross>` is A on an Xbox pad and ✕ on a DualShock; physical, because the
-// claim reads the physical buttons, never the confirm swap), the character in the game's yellow, lines joined by CR LF
-// as the game's own strings are. The plain form is the same lines in words, for the fallback drawn on the engine's
-// canvas (hud/view_prompt) when no game window can be opened. A screen says, top to bottom: the character there, what
-// that screen's person can press, and how to cancel the claim.
+// claim reads the physical buttons, never the confirm swap), each forced to a pad's art (`,pad`: the game otherwise
+// draws the last device's, a keyboard's keycaps after a key press, seen live 2026-10-31, and only pads take part in a
+// claim), the character in the game's yellow, lines joined by CR LF as the game's own strings are. The plain form is
+// the same lines in words, for the fallback drawn on the engine's canvas (hud/view_prompt) when no game window can be
+// opened. A screen says, top to bottom: the character there, what that screen's person can press, and how to cancel
+// the claim.
 
 #include "players/pad_claim_rules.h"
 
@@ -97,7 +99,7 @@ inline ScreenText TextFor(const rules::Claim& c, int screen, const std::array<st
     const auto  at   = static_cast<std::size_t>(screen);
     const int   seat = c.seatOn[at];
     const auto& name = names[static_cast<std::size_t>(seat)];
-    const auto  icon = [](Button b) { return std::wstring(L"<button=") + MarkupName(b) + L">"; };
+    const auto  icon = [](Button b) { return std::wstring(L"<button=") + MarkupName(b) + L",pad>"; };
     const auto  word = [](Button b) { return std::wstring(PlainName(b)); };
     const std::wstring yellow = L"<color=yellow>" + name + L"</color>";
 
