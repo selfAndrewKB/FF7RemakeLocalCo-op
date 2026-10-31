@@ -31,6 +31,7 @@ add_library(LocalSplitScreen SHARED
     src/control/server.cpp
     src/battle/command_camera.cpp
     src/battle/arena_warp.cpp
+    src/battle/battle_rates.cpp
     src/battle/battle_warps.cpp
     src/battle/command_menu_tick.cpp
     src/battle/command_menu.cpp
@@ -478,6 +479,13 @@ add_executable(SettingsTests
 target_include_directories(SettingsTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_compile_features(SettingsTests PRIVATE cxx_std_20)
 add_test(NAME settings COMMAND SettingsTests)
+
+add_executable(BattleRatesRulesTests
+    tests/battle_rates_rules_test.cpp
+)
+target_include_directories(BattleRatesRulesTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(BattleRatesRulesTests PRIVATE cxx_std_20)
+add_test(NAME battle_rates_rules COMMAND BattleRatesRulesTests)
 
 add_executable(CoopMenuRulesTests
     tests/coop_menu_rules_test.cpp

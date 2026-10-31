@@ -62,6 +62,11 @@ void Remove() noexcept;
 /// Game thread, once per frame: the seats' members, the native swaps until they are in place, the summary.
 void Tick() noexcept;
 
+/// The enemy battle component whose battle start (the slot this module holds) runs on this thread; null outside it or
+/// when the slot is not placed. For battle/battle_rates, which scales the stats that start computes. Any thread.
+void* StartingComponent() noexcept;
+/// Whether that slot is placed (StartingComponent names the enemies being started). Game thread.
+bool StartWatched() noexcept;
 /// Whether the coin's rules run: installed, switched on, and a further player holds a member. Any thread.
 bool Active() noexcept;
 

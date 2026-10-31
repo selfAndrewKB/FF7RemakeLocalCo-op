@@ -35,7 +35,8 @@ readings are `<switch>.<what>`, and an area's readings `<area>.<what>`. Today:
   `log-level error|warning|info|debug|trace` (debug at start; trace holds the per-frame lines).
 - **The settings file's options**, switched in play: `multi-monitor auto|on|off`, `column-order 123|132`,
   `menu-slow on|off` (off: an open battle command menu no longer slows the world or greys the screen),
-  `battle-warps players-stay|off|game` (who the game warps at a battle's start and end). Every option of
+  `battle-warps players-stay|off|game` (who the game warps at a battle's start and end), the battle's rates
+  `enemy-damage`, `enemy-hp`, `boss-hp`, `enemy-stagger`, `exp-gain`, `ap-gain` (each `0.1` to `10.0`). Every option of
   `LocalSplitScreen.ini` is one row of the table in `src/platform/settings.h`, and its command is built from that row.
 - **The game:** `game.state` (title|loading|play|pause|menu|leaving|…), `game.paused`, `game.menu-kind`,
   `game.menu-owns-input`, `game.location`, `field.step` (13 = steady field), `field.running`, `field.targets`,
@@ -122,7 +123,9 @@ until a player joins); `auto` (the default) spans while a further player is in; 
 (the default), an open battle command menu no longer slows the world or greys the screen; on, the game's slow-down and
 grey (Ctrl+F9 switches it in play). `[Battle] battle-warps =
 players-stay | off | game`: who the game warps at a battle's start and end (players-stay, the default: every player's
-own character stays where it is). The file is read once at the game's start (the log's `settings:` line lists every
+own character stays where it is). `[Battle] enemy-damage`, `enemy-hp`, `boss-hp`, `enemy-stagger`, `exp-gain`,
+`ap-gain = 0.1 ... 10.0`: the battle's rates, each a multiplier on the game's own value (1.0, the default, the game's).
+The file is read once at the game's start (the log's `settings:` line lists every
 option's word and where it came from; a word the file gets wrong is a warning and the default); a value's case and
 spaces and commas do not matter. The install never replaces an existing `LocalSplitScreen.ini`: add a new section by hand from
 the repository's copy; a key the file lacks takes its default.
@@ -444,6 +447,11 @@ src/
     arena_warp_rules.h      The double click that brings a further player's character into the fight
                             (battle/arena_warp.h applies it on the Dash press): two presses within kDoubleClickMs are
                             one double click, and a pair once spent starts afresh
+    battle_rates            The battle's rates: enemy damage, enemy HP, boss HP, the enemies' stagger gauge, EXP and AP,
+                            each a multiplier from 0.1 to 10.0 set live from the Co-op page, the console or the settings
+                            file
+    battle_rates_rules.h    The battle's rates (battle/battle_rates.h): the multipliers' words and the arithmetic, done
+                            the game's way
     battle_warps            Which party members the game warps at a battle's start and end
     battle_warps_rules.h    Who the game warps at a battle's start and end, as the setting decides it without the game
                             (battle/battle_warps.h applies it at the game's three calls)
@@ -496,5 +504,5 @@ src/
     game_ui                 The game's UI pieces the Co-op menu's modules share: the UI system's managers, the main
                             menu's first page, weak pointers held in the game's widgets, and FStrings read and copied
                             the game's way
-tests/                      59 host-side test programs (ctest), one per pure header or code stub; run without the game
+tests/                      60 host-side test programs (ctest), one per pure header or code stub; run without the game
 ```

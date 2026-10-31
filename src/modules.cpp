@@ -2,6 +2,7 @@
 
 #include "audio/listeners.h"
 #include "battle/arena_warp.h"
+#include "battle/battle_rates.h"
 #include "battle/battle_warps.h"
 #include "battle/command_camera.h"
 #include "battle/command_menu_tick.h"
@@ -309,6 +310,10 @@ constexpr std::array kModules{
     // without it enemies name player 1 as the player
     Module{.name = L"enemy coin", .install = Call<&battle::enemy_coin::Install>, .remove = &battle::enemy_coin::Remove,
            .needs = {Need<&battle::command_menu::Install>()}},
+    // without it every enemy's HP, stagger gauge and damage and every award are the game's (the battle's rates); after the
+    // coin, whose battle-start slot names the enemy being started
+    Module{.name = L"battle rates", .install = Call<&battle::battle_rates::Install>, .remove = &battle::battle_rates::Remove,
+           .needs = {Need<&battle::enemy_coin::Install>()}},
     // without it an enemy aimed at a far human it cannot reach waits until that human comes near
     Module{.name = L"enemy stall", .install = Call<&battle::enemy_stall::Install>, .remove = &battle::enemy_stall::Remove,
            .needs = {Need<&battle::enemy_coin::Install>()}},
@@ -716,6 +721,7 @@ void TickBattle(const Frame& frame) noexcept
     battle::member_rates::Tick();
     battle::enemy_leader::Tick();
     battle::enemy_coin::Tick();
+    battle::battle_rates::Tick();
     battle::enemy_stall::Tick();
     battle::enemy_watch::Tick();
     battle::sequence_camera::Tick();

@@ -3367,4 +3367,69 @@ inline constexpr std::uintptr_t kSoundCueCancel = 0x145852A98;  // FName UI003_C
 inline constexpr std::uint32_t kFocusContextSlot = 2;
 inline constexpr std::uint32_t kFocusLayerCount  = 0x48;
 
+
+// --- The battle's rates: enemy HP and stagger, enemy damage, EXP and AP (research/RE-enemy-stat-scaling.md,
+// RE-streamlined-progression.md; reviewed against the binary 2026-10-31 16:11) ----------------------------------------
+/// EnemyParam_ComputeStats_FromSpecAndLevel(estimateRow, paramRow, int* hp, int* bp, int* pa, int* ma, int* pd, int* md):
+/// the HP and stagger gauge in percent of the EnemyParameter row in, the values out, then the Easy/Hard rate. Called by
+/// an enemy's battle start, the spec override (a phase row) and a guest ally's construction; the first two are
+/// redirected (each `E8` inside one block; the result in rax is never read).
+inline constexpr std::array<std::uint8_t, 16> kEnemyComputeStatsEntry{
+    0x48, 0x8B, 0xC4, 0x48, 0x89, 0x58, 0x18, 0x4C, 0x89, 0x48, 0x20, 0x55, 0x56, 0x57, 0x41, 0x55};
+inline constexpr platform::FunctionFact kEnemyComputeStats{L"EnemyParam_ComputeStats_FromSpecAndLevel", 0x140A01020,
+                                                           kEnemyComputeStatsEntry};
+inline constexpr std::uintptr_t kEnemyComputeStatsStartCall    = 0x140893594;  // in the enemy component's battle start
+inline constexpr std::uintptr_t kEnemyComputeStatsOverrideCall = 0x14096D0A2;  // in the spec override
+/// BattleUnit_SetOverrideBattleCharaSpec_KeepRatios(component, FName row): the game's own phase change (AI exec,
+/// four callers, one a tail jump). Stores the row's name and the row, then, in battle, recomputes the stats and sets
+/// max HP and the stagger gauge keeping their shares. Its first instruction is a home-area store (5 bytes, one block).
+inline constexpr std::array<std::uint8_t, 16> kSpecOverrideEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x18, 0x48, 0x89, 0x74, 0x24, 0x20, 0x55, 0x57, 0x41, 0x54, 0x41, 0x56};
+inline constexpr platform::FunctionFact kSpecOverride{L"BattleUnit_SetOverrideBattleCharaSpec_KeepRatios", 0x14096CBC0,
+                                                      kSpecOverrideEntry};
+inline constexpr std::size_t   kSpecOverrideFirstBytes = 5;
+inline constexpr std::uint32_t kBattleCompBaseSpec     = 0x5B8;  // the component's own BattleCharaSpec row
+inline constexpr std::uint32_t kBattleCompOverrideName = 0x5E0;  // FName of the override row (None: the own row)
+inline constexpr std::uint32_t kBattleCompParams       = 0x5E8;  // the parameter object: +0x18 HP (i32)
+inline constexpr std::uint32_t kBattleParamsHp         = 0x18;
+inline constexpr std::uint32_t kCharaSpecKind          = 0x130;  // u8 CharacterKindID: 1 the fight's leader (a boss)
+inline constexpr std::uint8_t  kCharaSpecKindLeader    = 1;
+/// BattleDamage_ClampAndDebugInvincible(int* damage, attackerActor, victimActor, damageSourceRow, u8 heal), after the
+/// game's per-hit difficulty step, at the end of both hit functions; the first call crosses a block.
+inline constexpr std::array<std::uint8_t, 16> kDamageClampEntry{
+    0x40, 0x53, 0x56, 0x41, 0x54, 0x41, 0x57, 0x48, 0x83, 0xEC, 0x28, 0x45, 0x0F, 0xB6, 0x61, 0x08};
+inline constexpr platform::FunctionFact kDamageClamp{L"BattleDamage_ClampAndDebugInvincible", 0x1409E7E20, kDamageClampEntry};
+inline constexpr std::uintptr_t kDamageClampCall  = 0x1409EC02C;  // in BattleDamage_ApplyHitToVictim (crosses)
+inline constexpr std::uintptr_t kDamageClampCallB = 0x1409F2011;  // in BattleDamage_ApplyHitToVictim_B
+inline constexpr std::uint32_t  kDamageSourceType      = 0x08;  // u8 DamageType (FEndDataTableBattleDamageSource)
+inline constexpr std::uint32_t  kDamageSourcePowerType = 0x14;  // u8 PowerType
+/// Difficulty_GetEffective(): 0 Easy, 1 Normal, 2 Hard (the save's Hard flag first). Reads the save data.
+inline constexpr std::array<std::uint8_t, 16> kDifficultyEntry{
+    0x40, 0x53, 0x48, 0x83, 0xEC, 0x20, 0xE8, 0x25, 0xBA, 0xE3, 0xFF, 0x48, 0x8B, 0xD8, 0xE8, 0x1D};
+inline constexpr platform::FunctionFact kDifficulty{L"Difficulty_GetEffective", 0x140B11D80, kDifficultyEntry};
+inline constexpr std::int32_t kDifficultyNormal = 1;
+/// BattleResult_AwardExpApGil(result): the battle's EXP and AP times the bonus rows when the story is cleared or the
+/// save's 2x EXP & 3x AP byte is on, then each member's share. One caller (game thread), `E8` inside one block.
+inline constexpr std::array<std::uint8_t, 16> kAwardEntry{
+    0x48, 0x8B, 0xC4, 0x48, 0x89, 0x58, 0x10, 0x48, 0x89, 0x70, 0x18, 0x48, 0x89, 0x78, 0x20, 0x55};
+inline constexpr platform::FunctionFact kAward{L"BattleResult_AwardExpApGil", 0x1409D9590, kAwardEntry};
+inline constexpr std::uintptr_t kAwardCall = 0x1409B79E2;  // in BattleSystem_Tick_CallsTargetingTwice
+/// Story_IsFF7RemakeCleared(): the bonus gate's first test; its call in the award lies inside one block.
+inline constexpr std::array<std::uint8_t, 16> kStoryClearedEntry{
+    0x48, 0x83, 0xEC, 0x38, 0xC7, 0x44, 0x24, 0x28, 0x17, 0x00, 0x00, 0x00, 0x48, 0x8D, 0x0D, 0x2D};
+inline constexpr platform::FunctionFact kStoryCleared{L"Story_IsFF7RemakeCleared", 0x140B06CF0, kStoryClearedEntry};
+inline constexpr std::uintptr_t kAwardStoryClearedCall = 0x1409D9890;
+inline constexpr std::uint32_t  kSaveDataBoosterExp    = 0x399;  // u8 in the active save data: 2x EXP & 3x AP
+/// The ResidentParameter tables (three slots: area, resident, debug; DataTableSet3_FindRowByName over them, the first
+/// hit wins, every read) and the rows' FName globals. A row: ParamInt +0x08, ParamFloat +0x0C.
+inline constexpr std::uintptr_t kResidentParameterTables = 0x145843650;
+inline constexpr std::uintptr_t kNameExpRateGameClear    = 0x145836E18;  // ParamInt 200
+inline constexpr std::uintptr_t kNameApRateGameClear     = 0x145836DF8;  // ParamInt 300
+inline constexpr std::uintptr_t kNameEasyTakeDamage      = 0x1458370E8;  // ParamFloat 0.4
+inline constexpr std::uintptr_t kNameHardTakeDamage      = 0x1458370F0;  // ParamFloat 1.4
+inline constexpr std::uint32_t  kParamRowInt   = 0x08;
+inline constexpr std::uint32_t  kParamRowFloat = 0x0C;
+inline constexpr std::size_t    kTableSlots    = 3;
+inline constexpr std::size_t    kTableSlotResident = 1;
+
 }  // namespace lss::facts

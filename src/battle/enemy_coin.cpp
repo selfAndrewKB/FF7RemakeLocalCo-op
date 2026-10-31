@@ -166,6 +166,7 @@ DWORD                                         g_thread = 0;  // the game thread
 
 // The enemy whose script native, opening or follow tick is running on this thread (null: none, or not an enemy).
 thread_local void*         t_enemy = nullptr;
+thread_local void*         t_starting = nullptr;  // the enemy component whose battle start runs (StartingComponent)
 thread_local std::uint64_t t_rng   = 0;
 // The move struct whose flyer point evaluation or move type choice runs on this thread (its first field: the
 // controller), and whether Reno's finishing roll started the roll running now.
@@ -478,9 +479,12 @@ void BattleStart(void* component)
             enemy = ReadPointer(owner, facts::kCharacterBattleAI);
         }
     }
-    t_enemy = enemy;
+    void* const starting = t_starting;
+    t_enemy              = enemy;
+    t_starting           = component;
     reinterpret_cast<BattleStartFn>(g_battleStart.Original())(component);
-    t_enemy = previous;
+    t_starting = starting;
+    t_enemy    = previous;
 }
 
 void* OpeningLeader(void* partyManager, std::uint8_t variant)
@@ -1270,6 +1274,16 @@ void Tick() noexcept
         }
         ResetSince();
     }
+}
+
+void* StartingComponent() noexcept
+{
+    return t_starting;
+}
+
+bool StartWatched() noexcept
+{
+    return g_battleStart.Active();
 }
 
 bool Active() noexcept

@@ -54,7 +54,7 @@ void TableConsistent()
         // An experimental option's default leaves the game as it plays without it (its word is the first: off or guide).
         EXPECT(!option->experimental || std::wcscmp(option->fallback, option->words[0]) == 0);
     }
-    EXPECT(kOptions.size() == 5);
+    EXPECT(kOptions.size() == 11);
     EXPECT(kLeadHolder.experimental && std::wcscmp(kLeadHolder.fallback, L"guide") == 0);
     EXPECT(std::wcscmp(kLeadHolder.section, L"Experimental") == 0);
 }
