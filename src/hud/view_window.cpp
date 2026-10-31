@@ -2,6 +2,7 @@
 
 #include "control/registry.h"
 #include "engine_facts.h"
+#include "platform/game_array.h"
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
@@ -39,14 +40,7 @@ using GetWorldFn   = void* (*)(void* object);
 
 constexpr int kPlayers = players::scopes::kMaxPlayers;
 
-/// An FString or TArray as the game lays them out.
-struct GameArray
-{
-    void*        data = nullptr;
-    std::int32_t num  = 0;
-    std::int32_t max  = 0;
-};
-static_assert(sizeof(GameArray) == 16);
+using platform::GameArray;
 
 /// The game's functions and globals, found at install.
 struct Game
@@ -98,12 +92,6 @@ std::uint8_t* At(void* object, std::uint32_t offset) noexcept
     return static_cast<std::uint8_t*>(object) + offset;
 }
 
-/// A source FString over the mod's own text (the game copies it: EndText_ResolveTextIdOrLiteral reads Data and Num).
-GameArray View(const std::wstring& text) noexcept
-{
-    return text.empty() ? GameArray{} : GameArray{const_cast<wchar_t*>(text.c_str()), static_cast<std::int32_t>(text.size() + 1), 0};
-}
-
 /// The world the HUD lives in: the game viewport client's (UObject::GetWorld).
 void* World() noexcept
 {
@@ -138,7 +126,7 @@ bool Alive(const Window& w) noexcept
 
 bool SetText(void* window, const std::wstring& text) noexcept
 {
-    const GameArray view = View(text);
+    const GameArray view = platform::SourceString(text);  // EndText_ResolveTextIdOrLiteral copies it
     return platform::CallGuarded(g.setText, window, static_cast<const void*>(&view));
 }
 

@@ -89,6 +89,9 @@ add_library(LocalSplitScreen SHARED
     src/hud/view_prompt.cpp
     src/hud/view_window.cpp
     src/menu/coop_menu.cpp
+    src/menu/coop_page.cpp
+    src/menu/coop_page_open.cpp
+    src/menu/game_ui.cpp
     src/players/party_events.cpp
     src/players/party_member.cpp
     src/players/party_seat.cpp

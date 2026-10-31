@@ -146,6 +146,8 @@ src/
                             puts the original bytes back
     entry_redirect          Sends every call of one game function through a function of ours, which may call the game's
                             function itself (Original()), and puts it back
+    game_array.h            An FString or TArray as the engine lays them out (Data, Num, Max), and a source FString over
+                            the mod's own text for the game's string copies to read
     guarded                 Structured-exception guards for touching engine memory and calling engine code
     image                   The game's executable image in memory, and the translation from IDA addresses to live ones
                             and back (the IDA form of a live address, for log lines)
@@ -485,5 +487,12 @@ src/
     coop_menu               The Co-op row of the game's main menu and the page it opens
     coop_menu_rules.h       The Co-op page's rules: what the game's Options screen shows when the mod opens its own copy
                             from the Co-op row of the main menu
+    coop_page               The Co-op page itself: the mod's own instance of the game's Options screen, filled with the
+                            settings table's options, and its value reads and commits
+    coop_page_open          Opening and closing the Co-op page over the main menu, as the game shows and closes its own
+                            windows
+    game_ui                 The game's UI pieces the Co-op menu's modules share: the UI system's managers, the main
+                            menu's first page, weak pointers held in the game's widgets, and FStrings read and copied
+                            the game's way
 tests/                      59 host-side test programs (ctest), one per pure header or code stub; run without the game
 ```
