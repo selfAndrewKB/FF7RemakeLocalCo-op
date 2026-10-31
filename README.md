@@ -244,9 +244,13 @@ src/
                             joining player
     pad_buttons             Each pad's buttons for its own player (RE-input.md §1, §8; RE-input-p2.md §2: the design, a
                             written exception)
+    pad_claim_rules.h       The pure rules of the live pad assignment (players/pad_claim; plan/topics/input.md State
+                            "Planned", the user's design of 2026-10-30 18:43)
     pad_presence            Which XInput users have a pad, asked of XInput itself once a second on the game thread (the
                             game's own input system polls the same API every frame; a disconnected slot's query is the
                             slow one, so never per frame)
+    pad_table               Which physical pad answers each of the game's pad slots (plan/topics/input.md State
+                            "Planned"; the user's design of 2026-10-30 18:43; research/RE-pad-slots.md)
     party_events            The game's party funnels, heard by the session (RE-slot-member.md §1.5, §2.5, §3; Rebirth's
                             player_two/party_events)
     party_member            Which deployed party member a further player plays, and when it is the player's to take
@@ -470,5 +474,5 @@ src/
                             (tests/listener_rules_test.cpp)
     listeners               Every player hears the sounds near them: each SEAD sound is measured from the nearest
                             player's listener
-tests/                      56 host-side test programs (ctest), one per pure header or code stub; run without the game
+tests/                      57 host-side test programs (ctest), one per pure header or code stub; run without the game
 ```

@@ -39,6 +39,7 @@
 #include "players/operator_battle_mode.h"
 #include "players/pad_buttons.h"
 #include "players/pad_presence.h"
+#include "players/pad_table.h"
 #include "players/seat_camera.h"
 #include "players/scopes.h"
 #include "players/session.h"
@@ -247,6 +248,8 @@ constexpr std::array kModules{
     Module{.name = L"pad buttons", .install = Call<&players::pad_buttons::Install>, .remove = &players::pad_buttons::Remove},
     // diagnostics: which XInput users have a pad
     Module{.name = L"pads reading", .install = Call<&players::pad_presence::Register>},
+    // without it each pad is the player with its XInput number, whatever order Windows and Steam Input gave them
+    Module{.name = L"pad table", .install = Call<&players::pad_table::Install>, .remove = &players::pad_table::Remove},
     // without it a LEAD or a run to a mark on a further player's member stays the player's
     Module{.name = L"lead gate", .install = Call<&players::lead_gate::Install>},
     // without it an ambient interest walk hands a further player's member to its AI (which can loop on a ladder)

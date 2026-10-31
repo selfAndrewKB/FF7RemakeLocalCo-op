@@ -84,6 +84,7 @@ add_library(LocalSplitScreen SHARED
     src/players/ai_move_guard.cpp
     src/players/pad_buttons.cpp
     src/players/pad_presence.cpp
+    src/players/pad_table.cpp
     src/players/party_events.cpp
     src/players/party_member.cpp
     src/players/party_seat.cpp
@@ -243,6 +244,13 @@ add_executable(MenuPadsTests
 target_include_directories(MenuPadsTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_compile_features(MenuPadsTests PRIVATE cxx_std_20)
 add_test(NAME menu_pads COMMAND MenuPadsTests)
+
+add_executable(PadClaimRulesTests
+    tests/pad_claim_rules_test.cpp
+)
+target_include_directories(PadClaimRulesTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(PadClaimRulesTests PRIVATE cxx_std_20)
+add_test(NAME pad_claim_rules COMMAND PadClaimRulesTests)
 
 add_executable(SunOwnerTests
     tests/sun_owner_test.cpp

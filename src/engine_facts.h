@@ -143,6 +143,19 @@ inline constexpr std::uint32_t  kKeyEventUserIndex   = 0x0C;         // FKeyEven
 inline constexpr std::uint32_t  kKeyEventKey         = 0x20;         // FKeyEvent: the key's FName
 inline constexpr std::uint32_t  kStickBankCount      = 0x08;         // a bank's TArray num
 
+// --- The pad slots (RE-pad-slots.md) ---------------------------------------------------------------------------
+// Unreal's stock XInputInterface::SendControllerEvents is the game's only XInput caller, through these two import
+// slots of xinput1_3 (read at every call: `call [rip+slot]`; .rdata, read-only). It polls a slot only while the slot
+// is marked connected, or every slot while the interface's re-check byte is set (cleared after the poll; the window
+// procedure's WM_DEVICECHANGE sets it).
+inline constexpr std::uintptr_t kXInputGetStateImport   = 0x1440941F8;
+inline constexpr std::uintptr_t kXInputSetStateImport   = 0x1440941F0;
+inline constexpr std::uintptr_t kWindowsApplicationGlobal = 0x145827708;  // FWindowsApplication* (GWindowsApplication)
+inline constexpr std::uint32_t  kAppXInputInterface     = 0x1D8;          // XInputInterface*
+inline constexpr std::uint32_t  kAppInputDevices        = 0x1E8;          // TArray<IInputDevice*> (data, num at +8)
+inline constexpr std::uint32_t  kXInputNeedsStateUpdate = 0x08;           // bNeedsControllerStateUpdate (bool)
+inline constexpr std::uintptr_t kSonyControllerDeviceVTable = 0x144F47608;  // the PlayStation pad device (scePad): not XInput
+
 inline constexpr std::array<std::uint8_t, 16> kInputTickEntry{
     0x48, 0x8B, 0xC4, 0x55, 0x53, 0x56, 0x57, 0x41, 0x54, 0x41, 0x55, 0x41, 0x56, 0x41, 0x57, 0x48};
 inline constexpr std::array<std::uint8_t, 16> kInputKeyDownEntry{
