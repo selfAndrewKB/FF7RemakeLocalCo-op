@@ -3179,6 +3179,20 @@ inline constexpr std::uint32_t kMainMenuHelpText   = 0x3B8;
 inline constexpr std::uint32_t kMainMenuGuideText  = 0x3C0;
 inline constexpr std::uint32_t kTextBlockText      = 0x118;  // UEndTextBlock: FString Text
 // (UWidget::SetVisibility and its Visibility byte: kWidgetSetVisibilityFn and kWidgetVisibility above.)
+// Read only, for the first-open gap (research/RE-game-widgets.md §11.6.5): a text block's drawing state.
+inline constexpr std::uint32_t kTextBlockFont      = 0x1D0;  // UEndTextBlock: UEndFont*
+inline constexpr std::uint32_t kTextBlockAlpha     = 0x144;  //   ColorAndOpacity's alpha (float)
+inline constexpr std::uint32_t kTextBlockSlate     = 0x210;  //   SEndTextBlock*
+inline constexpr std::uint32_t kSlateTextText      = 0x340;  // SEndTextBlock: FString, the text it lays out
+inline constexpr std::uint32_t kSlateTextFont      = 0x3A0;  //   UEndFont* (main), +0x3A8 the second
+inline constexpr std::uint32_t kSlateTextFontTwo   = 0x3A8;
+inline constexpr std::uint32_t kSlateTextBatches   = 0x988;  //   i32: glyph batches laid out (0: nothing to draw)
+inline constexpr std::uint32_t kSlateTextSize      = 0x9A8;  //   float: the width it was given
+inline constexpr std::uint32_t kSlateTextPending   = 0x9B4;  //   u8, u8: layout pending
+inline constexpr std::uint32_t kObjectFlags        = 0x08;   // UObject: EObjectFlags (0x20000000: being destroyed)
+inline constexpr std::uint32_t kFontPages          = 0x480;  // UEndFont: its pages object (pages +0x18, count +0x20)
+inline constexpr std::uint32_t kFontPagesData      = 0x18;
+inline constexpr std::uint32_t kFontPagesCount     = 0x20;
 inline constexpr std::uint8_t kVisibilityHidden = 2;  // ESlateVisibility::Hidden
 // The game's Options screen (UEndNewOptionsMenu, Blueprint MainMenu_OptionsTop2_C, resident): the mod's own instance,
 // never the one System keeps (g_OptionsMenu_CachedWeak_cand has System's two xrefs only, §10.4).

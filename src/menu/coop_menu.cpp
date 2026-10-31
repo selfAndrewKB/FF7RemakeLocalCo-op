@@ -716,7 +716,28 @@ void Unplace() noexcept
     g_openWindow.Restore();
 }
 
-/// One of the main menu's frame texts as shown: its text and its own visibility.
+/// A font's drawing state: its flags and its texture pages (a null page's glyphs are skipped).
+std::wstring FontState(const void* font)
+{
+    if (font == nullptr)
+    {
+        return L"none";
+    }
+    std::uint32_t flags = 0;
+    platform::Read(static_cast<const std::uint8_t*>(font) + facts::kObjectFlags, flags);
+    void* const  pages = platform::ReadPointer(font, facts::kFontPages);
+    void* const  data  = platform::ReadPointer(pages, facts::kFontPagesData);
+    std::int32_t count = -1;
+    platform::Read(pages != nullptr ? static_cast<const std::uint8_t*>(pages) + facts::kFontPagesCount : nullptr, count);
+    int nulls = 0;
+    for (std::int32_t i = 0; data != nullptr && i < count && i < 64; ++i)
+    {
+        nulls += platform::ReadPointer(data, static_cast<std::uint32_t>(i) * 8) == nullptr ? 1 : 0;
+    }
+    return std::format(L"{:X} flags {:X} pages {} null {}", reinterpret_cast<std::uintptr_t>(font) & 0xFFFFFF, flags, count, nulls);
+}
+
+/// One of the main menu's frame texts as shown: its text, its own visibility, and its Slate block's drawing state.
 std::wstring FrameText(const void* menu, std::uint32_t offset)
 {
     void* const   block      = platform::ReadPointer(menu, offset);
@@ -725,7 +746,24 @@ std::wstring FrameText(const void* menu, std::uint32_t offset)
     {
         return L"(none)";
     }
-    return std::format(L"'{}' (visibility {})", ReadString(At(block, facts::kTextBlockText)), visibility);
+    float alpha = -1.0f;
+    platform::Read(At(block, facts::kTextBlockAlpha), alpha);
+    std::wstring text = std::format(L"'{}' (visibility {}, alpha {:.2f}, font {})", ReadString(At(block, facts::kTextBlockText)), visibility,
+                                    alpha, FontState(platform::ReadPointer(block, facts::kTextBlockFont)));
+    void* const slate = platform::ReadPointer(block, facts::kTextBlockSlate);
+    if (slate == nullptr)
+    {
+        return text + L" [no Slate block]";
+    }
+    std::int32_t batches = -1;
+    float        width   = -1.0f;
+    std::uint8_t pending[2]{0xFF, 0xFF};
+    platform::Read(At(slate, facts::kSlateTextBatches), batches);
+    platform::Read(At(slate, facts::kSlateTextSize), width);
+    platform::Read(At(slate, facts::kSlateTextPending), pending);
+    return text + std::format(L" [Slate '{}', font {}, second font {}, batches {}, width {:.0f}, pending {} {}]",
+                              ReadString(At(slate, facts::kSlateTextText)), FontState(platform::ReadPointer(slate, facts::kSlateTextFont)),
+                              FontState(platform::ReadPointer(slate, facts::kSlateTextFontTwo)), batches, width, pending[0], pending[1]);
 }
 
 std::wstring Reading()
