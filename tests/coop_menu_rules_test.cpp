@@ -124,10 +124,48 @@ void CommandValues()
     EXPECT(!WordOfReading(control::Value{}).has_value());
 }
 
+/// The rates (100 values) are sliders; the short lists stay lists.
+void SlidersAreTheLongRows()
+{
+    int sliders = 0;
+    for (const settings::Option* option : settings::kOptions)
+    {
+        EXPECT(IsSlider(*option) == (option->wordLabels.size() > kListLongest));
+        sliders += IsSlider(*option) ? 1 : 0;
+    }
+    EXPECT(sliders == 6);  // enemy damage, enemy HP, boss HP, stagger, EXP, AP
+}
+
+/// The window follows the marker with a cell of context, stays inside the gauge, and is 0 when everything fits.
+void SliderWindow()
+{
+    constexpr int cells = 99, window = kSliderWindow;
+    EXPECT(FirstVisible(9, 0, 10, window) == 0);  // a stock gauge: 10 cells, no window
+    EXPECT(FirstVisible(0, 0, cells, window) == 0);
+    EXPECT(FirstVisible(9, 0, cells, window) == 0);   // the stock place (1.0)
+    EXPECT(FirstVisible(10, 0, cells, window) == 1);  // one step on: the window moves one cell
+    EXPECT(FirstVisible(50, 0, cells, window) == 41);
+    EXPECT(FirstVisible(49, 41, cells, window) == 41);  // back inside: no move
+    EXPECT(FirstVisible(42, 41, cells, window) == 41);
+    EXPECT(FirstVisible(41, 41, cells, window) == 40);  // within a cell of the left edge
+    EXPECT(FirstVisible(99, 41, cells, window) == 89);  // the end: never past the last cell
+    EXPECT(FirstVisible(0, 89, cells, window) == 0);    // back to the start
+    for (int marker = 0; marker <= cells; ++marker)
+    {
+        for (const int first : {0, 30, 89})
+        {
+            const int shown = FirstVisible(marker, first, cells, window);
+            EXPECT(shown >= 0 && shown <= cells - window && marker >= shown && marker <= shown + window);
+        }
+    }
+}
+
 }  // namespace
 
 int main()
 {
+    SlidersAreTheLongRows();
+    SliderWindow();
     EveryOptionHasMenuText();
     PageFromTheTable();
     RowBytesApartFromTheGame();

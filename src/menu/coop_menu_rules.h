@@ -117,6 +117,41 @@ inline std::optional<int> OptionOf(std::uint8_t rowByte) noexcept
     return option < static_cast<int>(settings::kOptions.size()) ? std::optional<int>(option) : std::nullopt;
 }
 
+/// The game's longest value list built in code (Resolution, 11 values: research/RE-options-value-list.md §1): its value
+/// pull-down cannot scroll, so a row with more values is the game's slider row instead (a Range row over its values'
+/// places, 0 to count - 1, the same number a list row passes), shown through a window of the stock gauge's 10 cells
+/// that scrolls with the value (research/RE-options-gauge-scroll.md §5).
+inline constexpr std::size_t kListLongest  = 11;
+inline constexpr int         kSliderWindow = 10;
+
+/// The row is a slider: more values than the game's longest list.
+inline bool IsSlider(const settings::Option& option) noexcept
+{
+    return option.wordLabels.size() > kListLongest;
+}
+
+/// The first cell a slider's window shows. `marker` is the marker's place (the value's place: the edge between the
+/// filled cells and the rest), `first` the window's first cell so far, `cells` the gauge's cells (count - 1). The window
+/// moves only when the marker comes within one cell of its edge (a cell of context kept on either side, as the game's
+/// lists scroll to the nearest edge), and never past either end; 0 when every cell fits.
+inline int FirstVisible(int marker, int first, int cells, int window) noexcept
+{
+    if (cells <= window)
+    {
+        return 0;
+    }
+    if (marker > first + window - 1)
+    {
+        first = marker - window + 1;
+    }
+    if (marker < first + 1)
+    {
+        first = marker - 1;
+    }
+    const int last = cells - window;
+    return first < 0 ? 0 : (first > last ? last : first);
+}
+
 /// The value the page shows for a word: its place in the option's words; none if the word is none of them.
 inline std::optional<int> ValueOf(const settings::Option& option, const std::wstring& word) noexcept
 {

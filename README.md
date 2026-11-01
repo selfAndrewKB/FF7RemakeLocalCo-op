@@ -503,6 +503,7 @@ src/
                             windows
     coop_pause              The Co-op row in the battle pause (research/RE-battle-pause-coop.md; the user, 2026-11-01:
                             the battle's rates changed in a fight)
+    coop_slider             The Co-op page's sliders
     game_ui                 The game's UI pieces the Co-op menu's modules share: the UI system's managers, the main
                             menu's first page, weak pointers held in the game's widgets, and FStrings read and copied
                             the game's way

@@ -3273,6 +3273,51 @@ inline constexpr std::uint32_t kOptionInfoHelp      = 0x18;   //   TArray<FName>
 inline constexpr std::uint32_t kOptionInfoValues    = 0x28;   //   FName OpenFlag +0x60
 inline constexpr std::uint32_t kOptionInfoValueHelps = 0x38;  // the value list's help per value (read only below its Num)
 inline constexpr std::uint32_t kOptionInfoMin       = 0x58;
+inline constexpr std::uint32_t kOptionInfoMax       = 0x5C;
+/// EOptionSelectionKind (research/RE-options-value-list.md §2): 0 List (the value pull-down, a plain stacking list that
+/// cannot scroll), 1 Range (the inline gauge: Left/Right step 1 in [Min, Max], one cell per step, an integer label).
+inline constexpr std::uint8_t kOptionKindList  = 0;
+inline constexpr std::uint8_t kOptionKindRange = 1;
+// The Range row's gauge (research/RE-options-gauge-scroll.md): the page's edited value, the gauge widget (Blueprint
+// MainMenu_Options_Gauge2_C) and its cell strip (a UEndVirtualScrollBox: virtualising, clipped to its bounds, scrolled
+// by a float offset in slate units, sized by its DesiredCount when above 0, else by all its cells).
+inline constexpr std::uint32_t kOptionsEditValue  = 0x3B0;  // i32: the value a Range row edits (Left/Right, then Accept)
+inline constexpr std::uint32_t kOptionsGauge      = 0x388;  // MainMenu_Options_Gauge2_C*
+inline constexpr std::uint32_t kOptionsGaugeStrip = 0x398;  // UEndVirtualScrollBox*: the gauge's cells
+inline constexpr std::uint32_t kGaugeHead         = 0x380;  // gauge: Img_Gauge_Head (its slot a UEndCanvasPanelSlot)
+inline constexpr std::uint32_t kGaugeText         = 0x390;  // gauge: Txt_Setting (UEndTextBlock*)
+inline constexpr std::uint32_t kWidgetSlot        = 0x28;   // UWidget::Slot
+inline constexpr std::uint32_t kWidgetClipping    = 0xB6;   // UWidget::Clipping (u8; 1 ClipToBounds)
+inline constexpr std::uint32_t kCanvasSlotTop     = 0x3C;   // UCanvasPanelSlot: LayoutData.Offsets.Top (float)
+inline constexpr std::uint32_t kScrollBoxDesired  = 0x75C;  // UEndVirtualScrollBox: i32 DesiredCount
+inline constexpr std::uint32_t kScrollBoxBar      = 0x721;  //   u8 ScrollBarVisibility; +0x72C AlwaysShowScrollbar
+inline constexpr std::uint32_t kScrollBoxAlwaysBar = 0x72C;
+inline constexpr std::uint32_t kScrollBoxSlate    = 0x7D8;  //   TSharedPtr<SEndVirtualScrollBox>
+inline constexpr std::uint32_t kSlateScrollSize   = 0x5B4;  // SEndVirtualScrollBox: the size it was last given (2 floats)
+inline constexpr float         kGaugePitch        = 28.0f;  // units per cell, as the game places the marker
+inline constexpr float         kGaugeHeadX        = 80.5f;  // the marker's x at the first cell
+/// OptionsMenu_UpdateGaugeMarker(page, gauge, const FOptionInfo*): the strip's count (Max - Min), the marker at
+/// (v - Min) * 28 + 80.5, Txt_Setting = "%d". Two calls, both `E8` inside one block: the press (every kind) and each
+/// Left/Right step. Its entry is `test rdx, rdx; jz rel32`, so it is redirected at its calls, not at its entry.
+inline constexpr std::array<std::uint8_t, 16> kGaugeMarkerEntry{
+    0x48, 0x85, 0xD2, 0x0F, 0x84, 0x14, 0x03, 0x00, 0x00, 0x48, 0x8B, 0xC4, 0x55, 0x41, 0x54, 0x41};
+inline constexpr platform::FunctionFact kGaugeMarker{L"OptionsMenu_UpdateGaugeMarker_cand", 0x1412E0450, kGaugeMarkerEntry};
+inline constexpr std::uintptr_t kGaugeMarkerOpenCall = 0x1412D9E5B;  // in the press body
+inline constexpr std::uintptr_t kGaugeMarkerStepCall = 0x1412E5411;  // in UEndNewOptionsMenu_StepEditValue_cand
+/// FString::FromInt(FString* out, i32): a Range row's value text, in OnOptionListSetupItem right after the row's value
+/// read (`E8` inside one block; its out is then the row's Txt_AbilityName through UEndTextBlock::SetText).
+inline constexpr std::array<std::uint8_t, 16> kFromIntEntry{
+    0x4C, 0x8B, 0xDC, 0x49, 0x89, 0x5B, 0x18, 0x55, 0x56, 0x41, 0x56, 0x48, 0x81, 0xEC, 0xB0, 0x00};
+inline constexpr platform::FunctionFact kFromInt{L"FString_FromInt", 0x141C0A150, kFromIntEntry};
+inline constexpr std::uintptr_t kRowValueTextCall = 0x1412D9788;
+/// The reflected functions the slider drives (ProcessEvent; the same calls the game's shop list makes).
+inline constexpr const wchar_t* kScrollBoxSetDesiredCount = L"/Script/EndGame.EndVirtualScrollBox:SetDesiredCount";
+inline constexpr const wchar_t* kScrollBoxSetScrollOffset = L"/Script/EndGame.EndVirtualScrollBox:SetScrollOffset";
+inline constexpr const wchar_t* kScrollBoxGetScrollOffset = L"/Script/EndGame.EndVirtualScrollBox:GetScrollOffset";
+inline constexpr const wchar_t* kScrollBoxGetMaxOffset    = L"/Script/EndGame.EndVirtualScrollBox:GetMaxScrollOffset";
+inline constexpr const wchar_t* kCanvasSlotSetPosition    = L"/Script/EndGame.EndCanvasPanelSlot:SetPosition";
+inline constexpr const wchar_t* kTextBlockSetText         = L"/Script/EndGame.EndTextBlock:SetText";
+inline constexpr const wchar_t* kCanvasSlotClassPath      = L"/Script/EndGame.EndCanvasPanelSlot";
 /// The game's own helpers the page's data is written with (its allocator, GMalloc): an FString copy (dst, const
 /// FString* src: reads the source's Data and Num, so a view over the mod's string is a valid source), FindOrAdd on
 /// _OptionItems (map, const u8* key) -> FOptionInfos*, an FOptionInfo's default constructor, destructor and move

@@ -17,6 +17,7 @@
 #include "menu/coop_menu_rules.h"
 
 #include <cstdint>
+#include <optional>
 #include <vector>
 
 namespace lss::platform {
@@ -41,6 +42,9 @@ void* Ready(void* top) noexcept;
 void* Page() noexcept;
 /// `object` is the mod's page (by its weak pointer: a dead page's address may hold another object).
 bool IsPage(const void* object) noexcept;
+/// The option whose row the page's value read last answered, if it answered `value`; taken once (game thread: a
+/// slider row's text is made right after its value read, menu/coop_slider).
+std::optional<int> TakeAnswered(std::int32_t value) noexcept;
 
 /// The page is open over the main menu's hidden first page (set by menu/coop_page_open): commits are taken only then.
 bool IsOpen() noexcept;

@@ -7,6 +7,7 @@
 
 #include "control/registry.h"
 #include "engine_facts.h"
+#include "menu/coop_slider.h"
 #include "menu/game_ui.h"
 #include "platform/entry_redirect.h"
 #include "platform/game_array.h"
@@ -89,6 +90,13 @@ std::uint64_t g_commits = 0;
 std::array<std::optional<int>, settings::kOptions.size()> g_queued{};
 /// The value the page last showed per option (a commit equal to it changes nothing when the current word is unknown).
 std::array<int, settings::kOptions.size()> g_shown{};
+/// The option and value the page's value read last answered, for a slider row's text (menu/coop_slider), taken once.
+struct Answered
+{
+    int          option = -1;
+    std::int32_t value  = 0;
+};
+std::optional<Answered> g_answered;
 
 // --- Values: the settings table's options through their console commands ------------------------------------------
 
@@ -119,6 +127,7 @@ std::optional<int> OptionAt(std::uint8_t key, std::int32_t row) noexcept
 /// The game's value read: the mod's rows answer their option's word's place (a commit not yet run: its value).
 std::int32_t GetValue(void* page, std::uint8_t key, std::int32_t row)
 {
+    g_answered.reset();  // every read, any page: an answer belongs only to the read just made
     if (g_filled && IsPage(page))
     {
         try
@@ -130,6 +139,7 @@ std::int32_t GetValue(void* page, std::uint8_t key, std::int32_t row)
                 const auto              word  = CurrentWord(*option);
                 const int value = g_queued[i] ? *g_queued[i] : (word ? rules::ValueOf(shown, *word).value_or(0) : 0);
                 g_shown[i]      = value;
+                g_answered      = Answered{*option, value};
                 platform::LogTrace(L"Co-op page: {} shows {} (the option reads {})", shown.key, value,
                                    word ? *word : std::wstring(L"nothing readable"));
                 return value;
@@ -243,9 +253,16 @@ const wchar_t* AppendRow(GameArray* rows, int option)
     const settings::Option&      row = *settings::kOptions[static_cast<std::size_t>(option)];
     alignas(16) std::uint8_t     info[facts::kOptionInfoSize];
     g.infoCtor(info);
-    info[0]                                  = 0;  // List
-    info[facts::kOptionInfoCategory]         = rules::RowByte(option);
+    // A row longer than the game's longest list is the game's slider over its values' places (menu/coop_slider).
+    const bool slider = rules::IsSlider(row) && coop_slider::Ready();
+    info[0]           = slider ? facts::kOptionKindRange : facts::kOptionKindList;
+    info[facts::kOptionInfoCategory] = rules::RowByte(option);
     std::memset(info + facts::kOptionInfoMin, 0, 8);  // Min, Max (the constructor leaves them)
+    if (slider)
+    {
+        const auto last = static_cast<std::int32_t>(row.wordLabels.size()) - 1;
+        std::memcpy(info + facts::kOptionInfoMax, &last, sizeof last);
+    }
     const GameArray text = SourceString(row.label);
     const GameArray help = SourceString(row.menuHelp);
     g.assign(info + facts::kOptionInfoText, &text);
@@ -468,6 +485,13 @@ void* Ready(void* top) noexcept
 void* Page() noexcept
 {
     return weak::Resolve(g_pageWeak);
+}
+
+std::optional<int> TakeAnswered(std::int32_t value) noexcept
+{
+    const auto answered = g_answered;
+    g_answered.reset();
+    return answered && answered->value == value ? std::optional<int>(answered->option) : std::nullopt;
 }
 
 bool IsPage(const void* object) noexcept

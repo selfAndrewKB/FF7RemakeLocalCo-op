@@ -6,6 +6,7 @@
 #include "menu/coop_page.h"
 #include "menu/coop_page_open.h"
 #include "menu/coop_pause.h"
+#include "menu/coop_slider.h"
 #include "menu/game_ui.h"
 #include "platform/entry_redirect.h"
 #include "platform/game_array.h"
@@ -46,6 +47,7 @@ bool                    g_installed = false;
 bool                    g_pending   = false;  // the first tick places everything
 bool                    g_placed    = false;  // the row shows and opens the page
 bool                    g_pauseFound = false;  // the battle pause's row can be placed
+bool                    g_sliderFound = false;  // the long rows can be sliders
 
 /// The game's window opener: the Co-op row's kind opens the page; every other kind is the game's.
 void OpenWindow(void* mgr, std::uint8_t kind)
@@ -69,6 +71,11 @@ bool Place(const platform::GameImage& image) noexcept
     if (!redirected)
     {
         return false;
+    }
+    // The sliders are their own: without them the long rows stay lists (logged by coop_slider).
+    if (g_sliderFound)
+    {
+        coop_slider::Place();
     }
     std::uintptr_t unlockWas = 0;
     if (!platform::Read(reinterpret_cast<const void*>(g.unlockSlot), unlockWas))
@@ -97,6 +104,7 @@ void Unplace() noexcept
     g_unlock.Restore();
     g_help.Restore();
     g_text.Restore();
+    coop_slider::Unplace();
     coop_page::Unplace();
     g_openWindow.Restore();
 }
@@ -154,6 +162,7 @@ try
     g.helpWas      = *helpWas;
     g.unlockSlot   = *unlockSlot;
     g.orderWord    = *orderWord;
+    g_sliderFound  = coop_slider::Install(image);
     g_pauseFound   = coop_pause::Install(image);
     if (!g_pauseFound)
     {
