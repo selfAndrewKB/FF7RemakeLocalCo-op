@@ -65,7 +65,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.139.1-solo-rates";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.140.0-held-sliders";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;

@@ -17,6 +17,7 @@
 #include "platform/log.h"
 #include "platform/settings.h"
 #include "platform/verified_code.h"
+#include "platform/vtable_entry.h"
 #include "players/unreal_call.h"
 
 #include <cmath>
@@ -38,8 +39,9 @@ using RC::Unreal::UClass;
 using RC::Unreal::UFunction;
 using RC::Unreal::UObject;
 
-using MarkerFn  = void (*)(void* page, void* gauge, const std::uint8_t* info);
-using FromIntFn = void* (*)(void* out, std::int32_t value);
+using MarkerFn     = void (*)(void* page, void* gauge, const std::uint8_t* info);
+using FromIntFn    = void* (*)(void* out, std::int32_t value);
+using ActionDownFn = std::uintptr_t (*)(void* page, void* a, void* b, void* event);
 
 /// The reflected calls the slider makes, found at install.
 struct Calls
@@ -56,7 +58,9 @@ struct Calls
 // Set at install and on the first tick, then only read.
 Calls                  g_calls;
 std::uintptr_t         g_marker = 0, g_fromInt = 0, g_openSite = 0, g_stepSite = 0, g_rowSite = 0;
+std::uintptr_t         g_keyLeft = 0, g_keyRight = 0;  // the d-pad keys' FName globals (live addresses)
 platform::CallRedirect g_open, g_step, g_row;
+platform::VTableEntry  g_hold;
 bool                   g_ready = false;
 
 // Game thread.
@@ -234,6 +238,38 @@ void* RowValueText(void* out, std::int32_t value)
     return reinterpret_cast<FromIntFn>(g_row.Original())(out, value);
 }
 
+/// The repeat flag of a held d-pad Left/Right on the mod's page while one of its sliders is open; null otherwise.
+std::uint8_t* HeldStep(void* page, void* event) noexcept
+{
+    std::uint8_t  state = 0, repeat = 0;
+    std::uint64_t key = 0, left = 0, right = 0;
+    if (!g_ready || event == nullptr || !coop_page::IsPage(page) || !Read(At(page, facts::kOptionsState), state) ||
+        state != facts::kOptionsStateRangeEdit || !Read(At(event, facts::kActionEventRepeat), repeat) || repeat != 1 ||
+        !Read(At(event, facts::kActionEventKey), key) || !Read(reinterpret_cast<const void*>(g_keyLeft), left) ||
+        !Read(reinterpret_cast<const void*>(g_keyRight), right) || (key != left && key != right))
+    {
+        return nullptr;
+    }
+    return static_cast<std::uint8_t*>(At(event, facts::kActionEventRepeat));
+}
+
+/// The page's action handler: a held Left/Right on the mod's open slider is passed as a press, so the game steps it at
+/// the input's own repeat rate (0.2 s, then every 0.1 s), as its handler does every press. The event is put back after.
+std::uintptr_t ActionDown(void* page, void* a, void* b, void* event)
+{
+    const auto          original = reinterpret_cast<ActionDownFn>(g_hold.Original());
+    std::uint8_t* const repeat   = HeldStep(page, event);
+    constexpr std::uint8_t kPress = 0, kRepeat = 1;
+    if (repeat == nullptr || !platform::WriteGuarded(repeat, &kPress, sizeof kPress))
+    {
+        return original(page, a, b, event);
+    }
+    platform::LogTrace(L"Co-op slider: a held step");
+    const std::uintptr_t reply = original(page, a, b, event);
+    platform::WriteGuarded(repeat, &kRepeat, sizeof kRepeat);
+    return reply;
+}
+
 template <typename T>
 T* Find(const wchar_t* path)
 {
@@ -274,6 +310,8 @@ try
     g_openSite = *openSite;
     g_stepSite = *stepSite;
     g_rowSite  = *rowSite;
+    g_keyLeft  = image.Rebase(f::kKeyDPadLeft, 8).value_or(0);
+    g_keyRight = image.Rebase(f::kKeyDPadRight, 8).value_or(0);
     return true;
 }
 catch (...)
@@ -281,7 +319,7 @@ catch (...)
     return false;
 }
 
-bool Place() noexcept
+bool Place(const platform::GameImage& image) noexcept
 {
     g_ready = g_marker != 0 && g_open.Install(g_openSite, g_marker, reinterpret_cast<std::uintptr_t>(&Opened)) &&
               g_step.Install(g_stepSite, g_marker, reinterpret_cast<std::uintptr_t>(&Stepped)) &&
@@ -292,14 +330,21 @@ bool Place() noexcept
         platform::LogWarning(L"Co-op slider: a call could not be redirected; the long rows stay lists");
         return false;
     }
-    platform::Log(L"Co-op slider: the long rows are the game's sliders, a window of {} cells scrolled with the value",
-                  rules::kSliderWindow);
+    // Holding Left/Right is its own: without it each press still steps once.
+    const bool held = g_keyLeft != 0 && g_keyRight != 0 &&
+                      platform::ReplaceSlot(image, facts::kOptionsActionDown, reinterpret_cast<std::uintptr_t>(&ActionDown),
+                                            g_hold);
+    platform::Log(L"Co-op slider: the long rows are the game's sliders, a window of {} cells scrolled with the value; {}",
+                  rules::kSliderWindow,
+                  held ? L"a held Left/Right steps on at the input's repeat rate"
+                       : L"the page's action handler is not what the research read: one step per press");
     return true;
 }
 
 void Unplace() noexcept
 {
     g_ready = false;
+    g_hold.Restore();
     g_row.Restore();
     g_step.Restore();
     g_open.Restore();

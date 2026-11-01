@@ -3310,6 +3310,19 @@ inline constexpr std::array<std::uint8_t, 16> kFromIntEntry{
     0x4C, 0x8B, 0xDC, 0x49, 0x89, 0x5B, 0x18, 0x55, 0x56, 0x41, 0x56, 0x48, 0x81, 0xEC, 0xB0, 0x00};
 inline constexpr platform::FunctionFact kFromInt{L"FString_FromInt", 0x141C0A150, kFromIntEntry};
 inline constexpr std::uintptr_t kRowValueTextCall = 0x1412D9788;
+/// The page's action handler (vt+0x338, pass 1; research/RE-options-gauge-repeat.md): in state 5 (a Range row edited) a
+/// d-pad Left/Right steps the value, but only when the event is not a held button's repeat (`cmp [r9+10h], r13b` at
+/// 0x1412D5038), so no gauge of the game's steps on hold. Only this vtable holds it.
+inline constexpr std::array<std::uint8_t, 16> kOptionsActionDownEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x10, 0x48, 0x89, 0x74, 0x24, 0x18, 0x48, 0x89, 0x7C, 0x24, 0x20, 0x55};
+inline constexpr platform::SlotFact kOptionsActionDown{
+    L"vtbl_UEndNewOptionsMenu +0x338 (action down, pass 1)", 0x144BDC1D8 + 0x338,
+    {L"UEndNewOptionsMenu action down (pass 1)", 0x1412D4FB0, kOptionsActionDownEntry}};
+inline constexpr std::uint8_t   kOptionsStateRangeEdit = 5;      // kOptionsState: a Range row's gauge open
+inline constexpr std::uint32_t  kActionEventRepeat     = 0x10;   // SquareInput's action event: u8 1 for a held button's repeat
+inline constexpr std::uint32_t  kActionEventKey        = 0x20;   // its key's FName (8 bytes)
+inline constexpr std::uintptr_t kKeyDPadLeft           = 0x1459207A0;  // EKeys::Gamepad_DPad_Left (its FName)
+inline constexpr std::uintptr_t kKeyDPadRight          = 0x145920788;  // EKeys::Gamepad_DPad_Right
 /// The reflected functions the slider drives (ProcessEvent; the same calls the game's shop list makes).
 inline constexpr const wchar_t* kScrollBoxSetDesiredCount = L"/Script/EndGame.EndVirtualScrollBox:SetDesiredCount";
 inline constexpr const wchar_t* kScrollBoxSetScrollOffset = L"/Script/EndGame.EndVirtualScrollBox:SetScrollOffset";

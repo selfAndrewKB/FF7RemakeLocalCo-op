@@ -10,8 +10,11 @@
 // coop_menu_rules::FirstVisible), places the marker by the same canvas-slot setter the game uses, and writes the value's
 // word in the gauge's label. The row's own value text is the word too (the row text's FromInt call redirected for the
 // mod's sliders). The mod deciding when to scroll is the one step the game has no path for (no gauge of the game's
-// holds more than its frame); the user approved it 2026-11-01. Only the mod's page is touched. Each open logged at
-// Debug with the strip's readings, each step at Trace. Game thread.
+// holds more than its frame); the user approved it 2026-11-01. Holding Left/Right steps on (the user, 2026-11-01): the
+// input already sends a held button's repeats (0.2 s, then every 0.1 s) and the page's action handler drops them at one
+// test (research/RE-options-gauge-repeat.md); its vtable slot is replaced, and on the mod's open slider a held d-pad
+// Left/Right reaches it as a press, the event put back after. Only the mod's page is touched. Each open logged at Debug
+// with the strip's readings, each step at Trace. Game thread.
 
 namespace lss::platform {
 class GameImage;
@@ -22,8 +25,9 @@ namespace lss::menu::coop_slider {
 /// Finds the gauge's function, the row text's FromInt and the reflected calls. False if one is missing (the long rows
 /// then stay lists).
 bool Install(const platform::GameImage& image) noexcept;
-/// The three call redirects (first tick, game thread). False if one could not be placed (then none is).
-bool Place() noexcept;
+/// The three call redirects (first tick, game thread). False if one could not be placed (then none is). Then the page's
+/// action handler for held steps, on its own (logged; without it each press steps once).
+bool Place(const platform::GameImage& image) noexcept;
 void Unplace() noexcept;
 
 /// The sliders are placed: the page builds its long rows as sliders.

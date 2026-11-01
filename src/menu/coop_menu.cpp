@@ -75,7 +75,7 @@ bool Place(const platform::GameImage& image) noexcept
     // The sliders are their own: without them the long rows stay lists (logged by coop_slider).
     if (g_sliderFound)
     {
-        coop_slider::Place();
+        coop_slider::Place(image);
     }
     std::uintptr_t unlockWas = 0;
     if (!platform::Read(reinterpret_cast<const void*>(g.unlockSlot), unlockWas))
