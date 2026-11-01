@@ -39,6 +39,7 @@ using AwardFn       = std::uint64_t (*)(void* result);
 using ClearedFn     = char (*)();
 using DifficultyFn  = std::int32_t (*)();
 using IsPartySideFn = bool (*)(void* component);
+using OwnerFn       = void* (*)(void* component);  // the battle component's owner character (vtable +0x20)
 using FindRowFn     = std::uint8_t* (*)(const void* tables, std::uint64_t name);
 
 /// The game's functions and places, found at install.
@@ -72,9 +73,11 @@ Rates g_rates;
 thread_local void* t_overriding = nullptr;  // the component whose phase change runs on this thread
 thread_local bool  t_awardOpen  = false;    // the award call runs with the mod's rows: its bonus gate answers open
 
-// Game thread.
+// Game thread. An enemy's battle component is the game's own allocation, not an object (EndCharacter_CreatePlayerComponentCB0
+// takes it from GMalloc and holds it at its character's +0xCB0), so no weak pair can name it: its owner character is
+// kept, and the component read from it again at the re-run.
 constexpr std::size_t                 kUnitsKept = 48;
-std::array<weak::Weak, kUnitsKept>    g_units{};  // the enemies whose stats were scaled, for a new rate's re-run
+std::array<weak::Weak, kUnitsKept>    g_units{};  // the characters of the enemies whose stats were scaled
 std::size_t                           g_unitNext = 0;
 bool                                  g_reapply  = false;  // an HP or gauge rate changed: re-run on the next tick
 
@@ -94,22 +97,42 @@ bool                   g_rowOverrideSaid = false;
 
 // --- HP and the stagger gauge --------------------------------------------------------------------------------------
 
-/// Kept for the re-run once seen (game thread; one entry per component).
+/// A battle component's owner character, through the component's own getter (it resolves the component's weak pair
+/// to its owner). Null if unreadable.
+void* OwnerOf(void* component) noexcept
+{
+    void**  vtable = nullptr;
+    OwnerFn get    = nullptr;
+    void*   owner  = nullptr;
+    return component != nullptr && Read(component, vtable) && Read(vtable + facts::kComponentOwnerGetterSlot, get) &&
+                   platform::CallGuarded(get, owner, component)
+               ? owner
+               : nullptr;
+}
+
+/// The component's character kept for the re-run once seen (game thread; one entry per character).
 void Keep(void* component) noexcept
 {
     if (!players::seat_camera::IsGameThread())
     {
         return;
     }
+    void* const owner = OwnerOf(component);
+    if (owner == nullptr || ReadPointer(owner, facts::kCharacterBattleComponent) != component)
+    {
+        platform::LogDebug(L"battle rates: the enemy {:p} has no character holding it; a new rate will not reach it",
+                           component);
+        return;
+    }
     for (const weak::Weak& kept : g_units)
     {
-        if (weak::Resolve(kept) == component)
+        if (weak::Resolve(kept) == owner)
         {
             return;
         }
     }
-    const weak::Weak made = weak::MakeWeak(component);
-    if (weak::Resolve(made) == component)
+    const weak::Weak made = weak::MakeWeak(owner);
+    if (weak::Resolve(made) == owner)
     {
         g_units[g_unitNext] = made;
         g_unitNext          = (g_unitNext + 1) % kUnitsKept;
@@ -182,8 +205,9 @@ void Reapply() noexcept
     bool fault = false;
     for (const weak::Weak& kept : g_units)
     {
-        void* const component = weak::Resolve(kept);
-        if (component == nullptr)
+        void* const owner     = weak::Resolve(kept);
+        void* const component = owner != nullptr ? ReadPointer(owner, facts::kCharacterBattleComponent) : nullptr;
+        if (component == nullptr || OwnerOf(component) != owner)
         {
             continue;
         }
