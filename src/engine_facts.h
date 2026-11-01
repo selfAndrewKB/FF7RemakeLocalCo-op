@@ -3432,4 +3432,50 @@ inline constexpr std::uint32_t  kParamRowFloat = 0x0C;
 inline constexpr std::size_t    kTableSlots    = 3;
 inline constexpr std::size_t    kTableSlotResident = 1;
 
+
+// --- The battle pause and its Co-op row (research/RE-battle-pause-coop.md, reviewed against the binary 2026-11-01) -----
+/// EndUISystem[23], the pause menu's manager (a C++ struct): +0 weak UEndPauseMenu, +8 weak confirm window, +0x10 state
+/// (0 idle, 1/2 a retry loading, 3 closing), +0x14 mode (EEndMenuPauseMode: 4 Battle), +0x20 the rows,
+/// TArray<{i32 kind; const wchar_t* textId}> (16 bytes each). A row's kind is what its press does; the dispatch does
+/// nothing for a kind above 9 (`cmp edx, 9; ja`), so the mod's row takes kind 10. Every open builds the rows afresh.
+inline constexpr std::uint32_t kUiPauseMenuSlot  = 23;
+inline constexpr std::uint32_t kPauseMgrWidget   = 0x00;
+inline constexpr std::uint32_t kPauseMgrConfirm  = 0x08;
+inline constexpr std::uint32_t kPauseMgrState    = 0x10;
+inline constexpr std::uint32_t kPauseMgrMode     = 0x14;
+inline constexpr std::uint32_t kPauseMgrRows     = 0x20;
+inline constexpr std::uint8_t  kPauseModeBattle  = 4;
+inline constexpr std::int32_t  kPauseRowTitle    = 2;   // Return to Title Screen: the Co-op row goes above it
+inline constexpr std::int32_t  kPauseRowCoop     = 10;
+inline constexpr std::size_t   kPauseRowBytes    = 16;
+inline constexpr std::uint32_t kPauseRowText     = 8;
+/// EndUI23_PauseMenu_OpenMode(mgr, world, u8 mode): builds the mode's rows, creates or re-adds the pause widget, sets its
+/// labels (UEndPauseMenu_SetRows), pushes its focus layer at 2000 and focuses its list. Its one caller, a `call rel32`
+/// inside one block, is redirected; the mod's re-open after the Co-op page calls the same redirect.
+inline constexpr std::array<std::uint8_t, 16> kPauseOpenModeEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x18, 0x55, 0x56, 0x57, 0x41, 0x54, 0x41, 0x55, 0x41, 0x56, 0x41, 0x57};
+inline constexpr platform::FunctionFact kPauseOpenMode{L"EndUI23_PauseMenu_OpenMode", 0x14148A5E0, kPauseOpenModeEntry};
+inline constexpr std::uintptr_t kPauseOpenModeCall = 0x1413B0A91;  // in EndUI_OpenPauseMenuMode
+/// UEndPauseMenu_SetRows(widget, const TArray<FString>* labels): copies the labels (the source only read), binds the
+/// list's cells and press by name, sets the item count and refreshes.
+inline constexpr std::array<std::uint8_t, 16> kPauseSetRowsEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x18, 0x55, 0x56, 0x57, 0x48, 0x83, 0xEC, 0x30, 0x48, 0x8D, 0x99, 0xE0};
+inline constexpr platform::FunctionFact kPauseSetRows{L"UEndPauseMenu_SetRows", 0x1412ED750, kPauseSetRowsEntry};
+/// EndUI23_PauseMenu_OnRowPressed(mgr, reply, i32 index, ...): a row's press, by its kind; reached from the list's press
+/// delegate through two invokers, each a `call rel32` inside one block (both redirected).
+inline constexpr std::array<std::uint8_t, 16> kPauseRowPressedEntry{
+    0x40, 0x55, 0x53, 0x57, 0x41, 0x54, 0x48, 0x8D, 0x6C, 0x24, 0xC1, 0x48, 0x81, 0xEC, 0xF8, 0x00};
+inline constexpr platform::FunctionFact kPauseRowPressed{L"EndUI23_PauseMenu_OnRowPressed", 0x14148BB40, kPauseRowPressedEntry};
+inline constexpr std::array<std::uintptr_t, 2> kPauseRowPressedCalls{0x1414BD255, 0x1414BD345};
+/// EndUI23_PauseMenu_Close(mgr): pops the pause's focus layer and animates it out (its tick then removes it); the game
+/// stays paused (state 8).
+inline constexpr std::array<std::uint8_t, 16> kPauseCloseEntry{
+    0x40, 0x56, 0x48, 0x83, 0xEC, 0x50, 0x48, 0x8B, 0x05, 0xFB, 0xE3, 0x35, 0x04, 0x48, 0x8B, 0xF1};
+inline constexpr platform::FunctionFact kPauseClose{L"EndUI23_PauseMenu_Close", 0x14148B360, kPauseCloseEntry};
+/// EndUI_RequestGamePauseOff(): the game state's pause request cleared (what Resume does); arguments unused.
+inline constexpr std::array<std::uint8_t, 16> kPauseOffEntry{
+    0x48, 0x83, 0xEC, 0x28, 0x48, 0x8B, 0x05, 0xF5, 0x4B, 0x43, 0x04, 0x48, 0x85, 0xC0, 0x74, 0x22};
+inline constexpr platform::FunctionFact kPauseOff{L"EndUI_RequestGamePauseOff", 0x1413B4EB0, kPauseOffEntry};
+inline constexpr std::uint8_t kGameStateMenu = 8;
+
 }  // namespace lss::facts

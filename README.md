@@ -501,6 +501,8 @@ src/
                             settings table's options, and its value reads and commits
     coop_page_open          Opening and closing the Co-op page over the main menu, as the game shows and closes its own
                             windows
+    coop_pause              The Co-op row in the battle pause (research/RE-battle-pause-coop.md; the user, 2026-11-01:
+                            the battle's rates changed in a fight)
     game_ui                 The game's UI pieces the Co-op menu's modules share: the UI system's managers, the main
                             menu's first page, weak pointers held in the game's widgets, and FStrings read and copied
                             the game's way
