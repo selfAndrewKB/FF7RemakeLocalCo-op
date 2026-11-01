@@ -11,7 +11,6 @@
 #include "platform/log.h"
 #include "platform/settings.h"
 #include "platform/verified_code.h"
-#include "players/seat_camera.h"
 #include "players/weak_object.h"
 
 #include <array>
@@ -19,6 +18,8 @@
 #include <cstdint>
 #include <span>
 #include <string>
+
+#include <Windows.h>
 
 namespace lss::battle::battle_rates {
 
@@ -76,10 +77,13 @@ thread_local bool  t_awardOpen  = false;    // the award call runs with the mod'
 // Game thread. An enemy's battle component is the game's own allocation, not an object (EndCharacter_CreatePlayerComponentCB0
 // takes it from GMalloc and holds it at its character's +0xCB0), so no weak pair can name it: its owner character is
 // kept, and the component read from it again at the re-run.
+// The game thread is this module's own reading, taken at each tick: one borrowed from the seats' camera was set only
+// once a further player joined, so a fight played alone kept no enemy (2026-11-01).
 constexpr std::size_t                 kUnitsKept = 48;
 std::array<weak::Weak, kUnitsKept>    g_units{};  // the characters of the enemies whose stats were scaled
 std::size_t                           g_unitNext = 0;
 bool                                  g_reapply  = false;  // an HP or gauge rate changed: re-run on the next tick
+std::atomic<DWORD>                    g_gameThread{0};     // set by Tick
 
 /// One of the game's Easy/Hard damage rate rows: where it is (the resident table's row) and its own value.
 struct RateRow
@@ -113,8 +117,10 @@ void* OwnerOf(void* component) noexcept
 /// The component's character kept for the re-run once seen (game thread; one entry per character).
 void Keep(void* component) noexcept
 {
-    if (!players::seat_camera::IsGameThread())
+    if (GetCurrentThreadId() != g_gameThread.load(std::memory_order_relaxed))
     {
+        platform::LogDebug(L"battle rates: the enemy {:p} was scaled off the game thread; a new rate will not reach it",
+                           component);
         return;
     }
     void* const owner = OwnerOf(component);
@@ -201,7 +207,7 @@ std::uint64_t Override(void* component, std::uint64_t row)
 /// stores its row again, as the game's own call would.
 void Reapply() noexcept
 {
-    int  count = 0;
+    int  count = 0, alive = 0;
     bool fault = false;
     for (const weak::Weak& kept : g_units)
     {
@@ -211,6 +217,7 @@ void Reapply() noexcept
         {
             continue;
         }
+        ++alive;
         std::int32_t  hp  = 0;
         std::uint64_t row = 0;
         void* const   params = ReadPointer(component, facts::kBattleCompParams);
@@ -231,8 +238,8 @@ void Reapply() noexcept
         }
     }
     platform::Log(L"battle rates: the new HP and stagger rates reach {} enemies still standing (each keeps its share of HP "
-                  L"and gauge left){}",
-                  count, fault ? L"; one faulted and keeps its stats" : L"");
+                  L"and gauge left; {} kept enemies still have their character){}",
+                  count, alive, fault ? L"; one faulted and keeps its stats" : L"");
 }
 
 // --- Enemy damage --------------------------------------------------------------------------------------------------
@@ -570,6 +577,7 @@ void Remove() noexcept
 
 void Tick() noexcept
 {
+    g_gameThread.store(GetCurrentThreadId(), std::memory_order_relaxed);
     if (g_damagePlaced && (g_rowsWanted || ++g_rowTicks >= 60))
     {
         g_rowsWanted = false;
