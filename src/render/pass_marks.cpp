@@ -227,6 +227,10 @@ template <std::size_t I>
 std::uint64_t Wrapper(std::uint64_t a, std::uint64_t b, std::uint64_t c, std::uint64_t d)
 {
     constexpr Kind kind = kSites[I].kind;
+    if (!g_placed)
+    {
+        return reinterpret_cast<PassFn>(g_target[I])(a, b, c, d);  // switched off: only the game's call
+    }
     if constexpr (kind != Kind::BeginAfter)
     {
         CloseBracket();
@@ -334,6 +338,13 @@ void BetweenFamilies(bool firstFamily) noexcept
         std::uint32_t chained = 0;
         for (std::size_t i = 0; i < kCount; ++i)
         {
+            if (g_redirects[i].IsInstalled())
+            {
+                // Left in place at the last removal (changed by someone else): still wrapping, with the target it was
+                // placed with. Reading the call now would give its own thunk, and the wrapper would call itself.
+                ++wrapped;
+                continue;
+            }
             std::int32_t displacement = 0;
             if (!platform::Read(reinterpret_cast<const void*>(g_site[i] + 1), displacement))
             {
@@ -354,10 +365,13 @@ void BetweenFamilies(bool firstFamily) noexcept
     }
     else
     {
+        // In the reverse of the placing order: two calls can share a 16-byte block, and each redirect restores the
+        // block as it found it, so the later one must come off first (in placing order the first finds the block
+        // changed and stays, and the second's restore writes the first back).
         std::uint32_t kept = 0;
-        for (platform::CallRedirect& redirect : g_redirects)
+        for (auto redirect = g_redirects.rbegin(); redirect != g_redirects.rend(); ++redirect)
         {
-            if (redirect.IsInstalled() && !redirect.Restore())
+            if (redirect->IsInstalled() && !redirect->Restore())
             {
                 ++kept;  // changed after us: left alone
             }
