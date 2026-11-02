@@ -13,7 +13,10 @@
 // sites, research/.ida-mcp/pass-marks/_sites.tsv, byte-checked at install). While on, each call goes to a wrapper
 // (platform/call_redirect.h) that puts a node on the RHI command list before and after the original call; on the RHI
 // thread each node submits and begins or ends the pass's event on the queue (family_boundary::SubmitForMark,
-// view_marks::BeginPass / EndPass). Every site takes four integer or pointer arguments at most and returns in rax, so
+// view_marks::BeginPass / EndPass). A call another module already redirects (the fog volume watch's volumetric fog
+// calls, the UI targets' post-processing call, both placed at start) is wrapped in turn: the install checks the bytes
+// around each call, not its displacement, and the wrapper calls wherever the call went when it was placed, so those
+// modules keep working while the passes are marked. Every site takes four integer or pointer arguments at most and returns in rax, so
 // one wrapper shape fits all. The GPU particles have no direct call (the effects system's vtable): their event runs
 // from the return of the call before them to the call after them, closed by the next pass if that call does not run.
 // 19 of the calls cross a 16-byte block, so every redirect is placed and removed on the thread that runs the renderer,

@@ -2,6 +2,7 @@
 
 #include "control/registry.h"
 #include "platform/call_redirect.h"
+#include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
 #include "render/family_boundary.h"
@@ -12,6 +13,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <format>
+#include <span>
 #include <string>
 #include <utility>
 #include <variant>
@@ -39,6 +41,7 @@ struct PassSite
     std::array<std::uint8_t, 11> bytes;
 };
 constexpr std::uintptr_t kSiteLead = 3;  // the bytes before the E8
+constexpr std::uintptr_t kCallSize = 5;  // E8 rel32
 
 constexpr auto kSites = std::to_array<PassSite>({    {L"PrePass", 0x1421E6A20, 0x1421ED010, Kind::Wrap,
      {0x89, 0x45, 0x10, 0xE8, 0xEB, 0x65, 0x00, 0x00, 0x0F, 0xB6, 0x54}},  // 1
@@ -166,14 +169,17 @@ constexpr std::size_t kCount = kSites.size();
 using PassFn = std::uint64_t (*)(std::uint64_t, std::uint64_t, std::uint64_t, std::uint64_t);
 
 // Set once by Install, then only read.
-std::array<std::uintptr_t, kCount> g_site{};    // live addresses
-std::array<std::uintptr_t, kCount> g_target{};
+std::array<std::uintptr_t, kCount> g_site{};  // live addresses
 std::atomic<bool>                  g_installed{false};
 
 std::atomic<bool> g_wanted{false};  // the switch (game thread writes)
 
 // The render thread (the thread that runs the scene renderer).
 std::array<platform::CallRedirect, kCount> g_redirects;
+/// Where each call went when its redirect was placed: the game's pass, or another module's redirect of the same call
+/// (the fog volume watch's two volumetric fog calls, the UI targets' post-processing call, both placed at start and
+/// kept), which the wrapper then calls in turn, so that module keeps working while marked.
+std::array<std::uintptr_t, kCount> g_target{};
 bool g_placed      = false;  // the redirects are in place
 bool g_bracketOpen = false;  // a BeginAfter event (the particles) waits for its EndBefore
 
@@ -282,17 +288,19 @@ bool Install(const platform::GameImage& image) noexcept
 {
     for (std::size_t i = 0; i < kCount; ++i)
     {
-        const PassSite& pass   = kSites[i];
-        const auto      site   = image.Rebase(pass.site, 5);
-        const auto      target = image.Rebase(pass.target, 1);
-        if (!site || !target || !image.BytesMatch(pass.site - kSiteLead, pass.bytes))
+        // The bytes around the call, not its displacement: another module may already redirect it (it is then
+        // wrapped in turn, BetweenFamilies).
+        const PassSite& pass = kSites[i];
+        const auto      site = image.Rebase(pass.site, kCallSize);
+        const std::span<const std::uint8_t> bytes{pass.bytes};
+        if (!site || !image.BytesMatch(pass.site - kSiteLead, bytes.first(kSiteLead + 1)) ||
+            !image.BytesMatch(pass.site + kCallSize, bytes.last(pass.bytes.size() - kSiteLead - kCallSize)))
         {
             platform::LogWarning(L"pass marks: UNAVAILABLE (the call for {} at {:#x} differs); no pass events", pass.name,
                                  pass.site);
             return false;
         }
-        g_site[i]   = *site;
-        g_target[i] = *target;
+        g_site[i] = *site;
     }
     g_installed.store(true, std::memory_order_release);  // publishes the addresses
     control::Register({.name  = L"pass-marks",
@@ -323,13 +331,26 @@ void BetweenFamilies(bool firstFamily) noexcept
     {
         static const std::array<std::uintptr_t, kCount> wrappers = WrapperAddresses(std::make_index_sequence<kCount>{});
         std::uint32_t wrapped = 0;
+        std::uint32_t chained = 0;
         for (std::size_t i = 0; i < kCount; ++i)
         {
-            wrapped += g_redirects[i].InstallFromOwnThread(g_site[i], g_target[i], wrappers[i]) ? 1 : 0;
+            std::int32_t displacement = 0;
+            if (!platform::Read(reinterpret_cast<const void*>(g_site[i] + 1), displacement))
+            {
+                continue;
+            }
+            g_target[i] = g_site[i] + kCallSize + static_cast<std::intptr_t>(displacement);
+            if (g_redirects[i].InstallFromOwnThread(g_site[i], g_target[i], wrappers[i]))
+            {
+                ++wrapped;
+                const std::uintptr_t game = g_site[i] - kSites[i].site;  // the image's slide
+                chained += g_target[i] != kSites[i].target + game ? 1 : 0;
+            }
         }
         g_wrapped.store(wrapped, std::memory_order_relaxed);
         g_refused.store(static_cast<std::uint32_t>(kCount) - wrapped, std::memory_order_relaxed);
-        platform::Log(L"pass marks: {} of {} pass calls wrapped (on the render thread)", wrapped, kCount);
+        platform::Log(L"pass marks: {} of {} pass calls wrapped (on the render thread; {} through another module's "
+                      L"redirect of the same call)", wrapped, kCount, chained);
     }
     else
     {
