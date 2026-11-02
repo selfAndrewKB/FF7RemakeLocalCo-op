@@ -26,7 +26,10 @@
 //      and removes only its own entries; the engine grows the list (its own resize).
 // Not per view (§10.4): collision, lights, decals and point/spot shadows follow the world, which is player 1's set;
 // an actor a further player's set shows but player 1's set hides stays hidden for everyone (counted in the reading).
-// Hold mode (one scripted set for everyone): nothing hidden for a further player alone.
+// Hold mode (one scripted set for everyone): nothing hidden for a further player alone. Nor while a further player's
+// view shows player 1's camera (views/scene_camera.h ShowsPlayerOne: a scene's slots, or the column on player 1's
+// picture): that view shows player 1's world, as the scene does in single player (2026-11-01: the pre-boss scene of
+// chapter 5 moved the further players' characters into the boss room, whose set hid a container from their views).
 // The set the view follows also names the area's levels; world/area_levels adds them to the game's one level request
 // (SeatArea), told after each read. A player out, or the game's hold mode, drops that player's set at once (no pause).
 

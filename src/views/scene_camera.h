@@ -81,6 +81,12 @@ void BeforeUpdateCamera(void* managerOne, int seat, void* manager) noexcept;
 /// now (null when the seat is out: nothing is touched; its own field camera slot stays on either way).
 void SetSource(int seat, bool playerOne, void* manager) noexcept;
 
+/// Whether the seat's view shows player 1's camera now: a scene's slots copied onto its manager and on there, or its
+/// column on player 1's picture. That view then shows player 1's world as well (world/env_sets.h). A seat's own shop
+/// camera, its own field camera under a lock, or the `scene-camera` switch off: false. Game thread; false for a seat
+/// outside the built ones.
+bool ShowsPlayerOne(int seat) noexcept;
+
 /// The game's scene signals, as read.
 struct Scene
 {

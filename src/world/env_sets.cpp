@@ -8,6 +8,7 @@
 #include "platform/log.h"
 #include "platform/verified_code.h"
 #include "players/seats.h"
+#include "views/scene_camera.h"
 #include "world/actor_place.h"
 #include "world/area_levels.h"
 #include "world/env_set_view.h"
@@ -102,6 +103,7 @@ struct Seat
     Ids          ids{};                  // the kept set's ids (the reading and the log)
     Ids          pacedIds{};
     bool         due        = false;     // the view's list is to be looked up again
+    bool         onOne      = false;     // the view shows player 1's camera (views/scene_camera.h): nothing of its own hidden
     bool         lookedUp   = false;     // a lookup has run (zero-based with lookedUpAt, so the records cost the DLL nothing)
     double       lookedUpAt = 0.0;
     Actors        wanted;                // this lookup's actors
@@ -388,9 +390,11 @@ bool LookUp(int seat, Seat& s, std::uint8_t* manager) noexcept
     s.hiddenEntries  = 0;
     s.shownButHidden = 0;
     s.attachedCount  = 0;
-    if (!g_enabled)
+    if (!g_enabled || s.onOne)
     {
-        return true;  // switched off: the view hides nothing of its own (Write empties the mod's entries)
+        // Switched off, or the view on player 1's camera (a scene, or the column on player 1's picture): it shows player
+        // 1's world, so it hides nothing of its own (Write empties the mod's entries). No manager read on this path.
+        return true;
     }
     LookupLevels(manager, s);
     for (const Entry& entry : s.paced.set.entries.View())
@@ -603,6 +607,27 @@ void TickSeat(int seat, void* seatMember, void* seatController) noexcept
 
 void Tick() noexcept
 {
+    // A further player's view on player 1's camera shows player 1's world: its own hides leave at once (the pre-boss
+    // scene of chapter 5, 2026-11-01: the scene moved the further players' characters into the boss room, whose set
+    // hid a container the scene shows on player 1's view). Back on its own camera, its set's hides at the next read.
+    for (int seat = 1; seat <= kSeatsBuilt; ++seat)
+    {
+        Seat&      s     = g_seats[seat];
+        const bool onOne = s.controller != nullptr && views::scene_camera::ShowsPlayerOne(seat);
+        if (onOne == s.onOne)
+        {
+            continue;
+        }
+        s.onOne = onOne;
+        s.due   = true;
+        platform::LogDebug(L"env sets: {}'s view {}", SeatName(seat),
+                           onOne ? L"on player 1's camera: it shows player 1's world (its own hides out)"
+                                 : L"on its own camera again: its set's hides from the next read");
+        if (onOne)
+        {
+            Refresh(seat, s, nullptr, true);  // LookUp reads no manager for a view on player 1's camera
+        }
+    }
     if (g_placed || g_issueSite == 0)
     {
         return;
@@ -670,9 +695,10 @@ try
     for (int seat = 1; seat <= kSeatsBuilt; ++seat)
     {
         const Seat& s = g_seats[seat];
-        text += std::format(L"; {}: ground {}; view follows {} (changes {}): hides {} actors ({} attached), {} of {} hidden "
+        text += std::format(L"; {}: ground {}; view follows {}{} (changes {}): hides {} actors ({} attached), {} of {} hidden "
                             L"entries not found, {} shown entries hidden by player 1's set; list writes {}; traces {}, reads {}{}",
-                            SeatName(seat), IdsText(s.ids), IdsText(s.pacedIds), s.changes, s.ours.count, s.attachedCount,
+                            SeatName(seat), IdsText(s.ids), IdsText(s.pacedIds),
+                            s.onOne ? L" (on player 1's camera now: player 1's world)" : L"", s.changes, s.ours.count, s.attachedCount,
                             s.notFound, s.hiddenEntries, s.shownButHidden, s.writes, s.traces, s.reads,
                             g_problems[static_cast<std::size_t>(seat)].empty()
                                 ? std::wstring{}

@@ -697,6 +697,16 @@ void SetSource(int seat, bool playerOne, void* manager) noexcept
     }
 }
 
+bool ShowsPlayerOne(int seat) noexcept
+{
+    if (!players::SeatBuilt(seat))
+    {
+        return false;
+    }
+    const SeatCopy& s = g_seats[static_cast<std::size_t>(seat)];
+    return s.playerOne || (s.engaged && s.mirrored != 0);
+}
+
 bool EventShot() noexcept
 {
     return g_slots[0].valid && ((g_slots[0].active >> facts::kCameraSlotEvent) & 1U) != 0;
