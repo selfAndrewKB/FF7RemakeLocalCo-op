@@ -93,7 +93,6 @@ add_library(LocalSplitScreen SHARED
     src/menu/coop_page.cpp
     src/menu/coop_page_open.cpp
     src/menu/coop_slider.cpp
-    src/menu/coop_pause.cpp
     src/menu/game_ui.cpp
     src/players/party_events.cpp
     src/players/party_member.cpp

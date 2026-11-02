@@ -11,7 +11,6 @@
 #include "platform/log.h"
 #include "platform/settings.h"
 #include "platform/verified_code.h"
-#include "players/weak_object.h"
 
 #include <array>
 #include <atomic>
@@ -19,15 +18,12 @@
 #include <span>
 #include <string>
 
-#include <Windows.h>
-
 namespace lss::battle::battle_rates {
 
 namespace {
 
 namespace rules    = battle_rates_rules;
 namespace settings = platform::settings;
-namespace weak     = players::weak_object;
 
 using platform::Read;
 using platform::ReadPointer;
@@ -40,7 +36,6 @@ using AwardFn       = std::uint64_t (*)(void* result);
 using ClearedFn     = char (*)();
 using DifficultyFn  = std::int32_t (*)();
 using IsPartySideFn = bool (*)(void* component);
-using OwnerFn       = void* (*)(void* component);  // the battle component's owner character (vtable +0x20)
 using FindRowFn     = std::uint8_t* (*)(const void* tables, std::uint64_t name);
 
 /// The game's functions and places, found at install.
@@ -74,17 +69,6 @@ Rates g_rates;
 thread_local void* t_overriding = nullptr;  // the component whose phase change runs on this thread
 thread_local bool  t_awardOpen  = false;    // the award call runs with the mod's rows: its bonus gate answers open
 
-// Game thread. An enemy's battle component is the game's own allocation, not an object (EndCharacter_CreatePlayerComponentCB0
-// takes it from GMalloc and holds it at its character's +0xCB0), so no weak pair can name it: its owner character is
-// kept, and the component read from it again at the re-run.
-// The game thread is this module's own reading, taken at each tick: one borrowed from the seats' camera was set only
-// once a further player joined, so a fight played alone kept no enemy (2026-11-01).
-constexpr std::size_t                 kUnitsKept = 48;
-std::array<weak::Weak, kUnitsKept>    g_units{};  // the characters of the enemies whose stats were scaled
-std::size_t                           g_unitNext = 0;
-bool                                  g_reapply  = false;  // an HP or gauge rate changed: re-run on the next tick
-std::atomic<DWORD>                    g_gameThread{0};     // set by Tick
-
 /// One of the game's Easy/Hard damage rate rows: where it is (the resident table's row) and its own value.
 struct RateRow
 {
@@ -100,50 +84,6 @@ unsigned               g_rowTicks   = 0;
 bool                   g_rowOverrideSaid = false;
 
 // --- HP and the stagger gauge --------------------------------------------------------------------------------------
-
-/// A battle component's owner character, through the component's own getter (it resolves the component's weak pair
-/// to its owner). Null if unreadable.
-void* OwnerOf(void* component) noexcept
-{
-    void**  vtable = nullptr;
-    OwnerFn get    = nullptr;
-    void*   owner  = nullptr;
-    return component != nullptr && Read(component, vtable) && Read(vtable + facts::kComponentOwnerGetterSlot, get) &&
-                   platform::CallGuarded(get, owner, component)
-               ? owner
-               : nullptr;
-}
-
-/// The component's character kept for the re-run once seen (game thread; one entry per character).
-void Keep(void* component) noexcept
-{
-    if (GetCurrentThreadId() != g_gameThread.load(std::memory_order_relaxed))
-    {
-        platform::LogDebug(L"battle rates: the enemy {:p} was scaled off the game thread; a new rate will not reach it",
-                           component);
-        return;
-    }
-    void* const owner = OwnerOf(component);
-    if (owner == nullptr || ReadPointer(owner, facts::kCharacterBattleComponent) != component)
-    {
-        platform::LogDebug(L"battle rates: the enemy {:p} has no character holding it; a new rate will not reach it",
-                           component);
-        return;
-    }
-    for (const weak::Weak& kept : g_units)
-    {
-        if (weak::Resolve(kept) == owner)
-        {
-            return;
-        }
-    }
-    const weak::Weak made = weak::MakeWeak(owner);
-    if (weak::Resolve(made) == owner)
-    {
-        g_units[g_unitNext] = made;
-        g_unitNext          = (g_unitNext + 1) % kUnitsKept;
-    }
-}
 
 /// The game's computed HP and gauge for `component`, scaled before the game sets them.
 void ScaleStats(void* component, std::int32_t* hp, std::int32_t* bp, const wchar_t* when) noexcept
@@ -165,7 +105,6 @@ void ScaleStats(void* component, std::int32_t* hp, std::int32_t* bp, const wchar
     const std::int32_t hpWas = *hp, bpWas = *bp;
     *hp = rules::Scaled(hpWas, hpRate);
     *bp = rules::Scaled(bpWas, bpRate);
-    Keep(component);
     if (hpRate != rules::kOne || bpRate != rules::kOne)
     {
         platform::LogDebug(L"battle rates: {} {:p} at {}: max HP {} to {} (x{}), stagger gauge {} to {} (x{})",
@@ -200,46 +139,6 @@ std::uint64_t Override(void* component, std::uint64_t row)
     const std::uint64_t result = reinterpret_cast<OverrideFn>(g_override.Original())(component, row);
     t_overriding = previous;
     return result;
-}
-
-/// A new HP or gauge rate: every kept enemy still standing goes through the game's phase change with the row it has.
-/// One kept from an earlier fight and not destroyed (an escape) is outside a battle: the game's function then only
-/// stores its row again, as the game's own call would.
-void Reapply() noexcept
-{
-    int  count = 0, alive = 0;
-    bool fault = false;
-    for (const weak::Weak& kept : g_units)
-    {
-        void* const owner     = weak::Resolve(kept);
-        void* const component = owner != nullptr ? ReadPointer(owner, facts::kCharacterBattleComponent) : nullptr;
-        if (component == nullptr || OwnerOf(component) != owner)
-        {
-            continue;
-        }
-        ++alive;
-        std::int32_t  hp  = 0;
-        std::uint64_t row = 0;
-        void* const   params = ReadPointer(component, facts::kBattleCompParams);
-        if (params == nullptr || !Read(static_cast<const std::uint8_t*>(params) + facts::kBattleParamsHp, hp) || hp <= 0 ||
-            !Read(static_cast<const std::uint8_t*>(component) + facts::kBattleCompOverrideName, row))
-        {
-            continue;
-        }
-        std::uint64_t ignored = 0;
-        if (platform::CallGuarded(&Override, ignored, component, row))
-        {
-            ++count;
-        }
-        else
-        {
-            t_overriding = nullptr;  // a fault inside left it set
-            fault        = true;
-        }
-    }
-    platform::Log(L"battle rates: the new HP and stagger rates reach {} enemies still standing (each keeps its share of HP "
-                  L"and gauge left; {} kept enemies still have their character){}",
-                  count, alive, fault ? L"; one faulted and keeps its stats" : L"");
 }
 
 // --- Enemy damage --------------------------------------------------------------------------------------------------
@@ -442,10 +341,6 @@ void SetRate(const OptionRate& entry, int tenths, const wchar_t* from) noexcept
     {
         g_rowsWanted = true;
     }
-    else if (entry.rate == &g_rates.hp || entry.rate == &g_rates.boss || entry.rate == &g_rates.stagger)
-    {
-        g_reapply = true;
-    }
 }
 
 }  // namespace
@@ -486,7 +381,7 @@ try
 
     // HP and the stagger gauge: the phase change named, then both enemy calls of the computation.
     // The battle start's enemy comes from the coin's wrapper of that start (one slot, one replacement).
-    if (compute && override && startSite && overSite && weak::Installed() && enemy_coin::StartWatched())
+    if (compute && override && startSite && overSite && enemy_coin::StartWatched())
     {
         g.compute     = reinterpret_cast<ComputeFn>(*compute);
         g_statsPlaced = g_override.Install(*override, std::span(f::kSpecOverrideEntry.data(), f::kSpecOverrideFirstBytes),
@@ -577,17 +472,11 @@ void Remove() noexcept
 
 void Tick() noexcept
 {
-    g_gameThread.store(GetCurrentThreadId(), std::memory_order_relaxed);
     if (g_damagePlaced && (g_rowsWanted || ++g_rowTicks >= 60))
     {
         g_rowsWanted = false;
         g_rowTicks   = 0;
         SyncRows();
-    }
-    if (g_statsPlaced && g_reapply)
-    {
-        g_reapply = false;
-        Reapply();
     }
 }
 

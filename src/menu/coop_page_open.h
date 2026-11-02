@@ -13,10 +13,6 @@
 // hidden Top window is held from the garbage collector (the engine's root set, as AddToRoot), since its Hide takes it out
 // of the overlay and nothing else keeps it: collected, the manager's tick would empty the title, help and guide (§11.7).
 // Every close lets it go. Each open and close logged at Info, the hold at Debug. Game thread.
-//
-// The page also opens over another menu's moment (a Host: the battle pause, menu/coop_pause), which has taken its own
-// menu down first: no Top window, no hold. Its close brings the host's menu back; a moment that ends under the page
-// (the host says it is no longer up) takes the page down the no-animation way, with no menu brought back.
 
 #include <cstdint>
 #include <string>
@@ -38,18 +34,6 @@ bool Place(const platform::GameImage& image) noexcept;
 void Unplace() noexcept;
 /// The unload: no UI calls (it may run off the game thread); a page open then is left to the game.
 void Remove() noexcept;
-
-/// A menu other than the main menu the page opens over (menu/coop_pause).
-struct Host
-{
-    const wchar_t* name;               // for the log: "the battle pause"
-    bool (*stillUp)() noexcept;        // the host's moment lasts (the page may stay open)
-    bool (*back)() noexcept;           // the host's menu brought back after the page closed; false if it could not be
-};
-
-/// The page (from coop_page::Ready) opened over `host`'s moment, its menu already taken down. False if it did not open
-/// (the caller brings its menu back).
-bool OpenOver(void* page, const Host& host) noexcept;
 
 /// The row's press: the page opened over the main menu manager `mgr`'s hidden first page. `openWindow` is the game's
 /// window opener, for its prelude.

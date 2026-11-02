@@ -448,8 +448,7 @@ src/
                             (battle/arena_warp.h applies it on the Dash press): two presses within kDoubleClickMs are
                             one double click, and a pair once spent starts afresh
     battle_rates            The battle's rates: enemy damage, enemy HP, boss HP, the enemies' stagger gauge, EXP and AP,
-                            each a multiplier from 0.1 to 10.0 set live from the Co-op page, the console or the settings
-                            file
+                            each a multiplier from 0.1 to 10.0 set from the Co-op page, the console or the settings file
     battle_rates_rules.h    The battle's rates (battle/battle_rates.h): the multipliers' words and the arithmetic, done
                             the game's way
     battle_warps            Which party members the game warps at a battle's start and end
@@ -501,8 +500,6 @@ src/
                             settings table's options, and its value reads and commits
     coop_page_open          Opening and closing the Co-op page over the main menu, as the game shows and closes its own
                             windows
-    coop_pause              The Co-op row in the battle pause (research/RE-battle-pause-coop.md; the user, 2026-11-01:
-                            the battle's rates changed in a fight)
     coop_slider             The Co-op page's sliders
     game_ui                 The game's UI pieces the Co-op menu's modules share: the UI system's managers, the main
                             menu's first page, weak pointers held in the game's widgets, and FStrings read and copied

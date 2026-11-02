@@ -65,8 +65,7 @@ platform::VTableEntry g_keyDown;
 std::array<platform::VTableEntry, rules::kCategoryKeys.size()> g_headings;
 
 // Game thread.
-void*         g_mgr = nullptr;  // the main menu manager while open over the main menu
-const Host*   g_host = nullptr;  // the host while open over another menu's moment
+void*         g_mgr = nullptr;  // the main menu manager while open
 weak::Weak    g_topWeak;
 void*         g_heldTop = nullptr;  // the Top window the mod put on the engine's root set while the page is open (alive
                                     // while held: the collector never frees a root)
@@ -220,13 +219,6 @@ void Closed(const wchar_t* how) noexcept
     coop_page::SetOpen(false);
     ShowPageAgain(coop_page::Page());
     SwapHeadings(false);
-    if (const Host* const host = g_host)
-    {
-        g_host        = nullptr;
-        const bool ok = host->back();
-        platform::Log(L"Co-op page: closed ({}); {} {}", how, host->name, ok ? L"is back" : L"could not be brought back");
-        return;
-    }
     RestoreTop();
     void* shown = nullptr;
     const bool ok = g_mgr != nullptr && platform::CallGuarded(g.showTop, shown, g_mgr, true) && shown != nullptr;
@@ -255,14 +247,10 @@ void ForceClose(void* page, const wchar_t* why) noexcept
         const std::uint8_t none = 0;
         platform::WriteGuarded(At(page, facts::kOptionsState), &none, sizeof(none));
     }
-    if (g_host == nullptr)
-    {
-        RestoreTop();
-        ReleaseTop();
-    }
-    g_mgr  = nullptr;
-    g_host = nullptr;
-    platform::Log(L"Co-op page: closed under it ({}); its layer popped and the page taken out", why);
+    RestoreTop();
+    ReleaseTop();
+    g_mgr = nullptr;
+    platform::Log(L"Co-op page: closed with the main menu ({}); its layer popped and the page taken out", why);
 }
 
 /// The page's state says it is closing or closed.
@@ -440,8 +428,7 @@ try
     game_ui::AssignString(At(top, facts::kWindowTitle), rules::kTitle);
     game_ui::AssignString(At(top, facts::kTopGuide), kGuide);
     SwapHeadings(true);
-    g_mgr  = mgr;
-    g_host = nullptr;
+    g_mgr = mgr;
     coop_page::SetOpen(true);
     if (!platform::CallGuarded(g.open, page, std::uint8_t{0}))
     {
@@ -461,53 +448,10 @@ catch (...)
     }
 }
 
-bool OpenOver(void* page, const Host& host) noexcept
-{
-    if (page == nullptr || coop_page::IsOpen() || coop_page::Failed())
-    {
-        return false;
-    }
-    SwapHeadings(true);
-    g_mgr     = nullptr;
-    g_host    = &host;
-    g_topWeak = {};  // no Top window: nothing of the main menu's is put back at the close
-    coop_page::SetOpen(true);
-    if (!platform::CallGuarded(g.open, page, std::uint8_t{0}))
-    {
-        coop_page::SetOpen(false);
-        SwapHeadings(false);
-        g_host = nullptr;
-        platform::LogWarning(L"Co-op page: opening the page over {} faulted", host.name);
-        return false;
-    }
-    ++g_opens;
-    platform::Log(L"Co-op page: opened over {} ({} categories, {} options)", host.name, coop_page::Categories().size(),
-                  settings::kOptions.size());
-    return true;
-}
-
 void Tick() noexcept
 {
     if (!coop_page::IsOpen())
     {
-        return;
-    }
-    if (const Host* const host = g_host)
-    {
-        void* const page = coop_page::Page();
-        if (!host->stillUp())
-        {
-            ForceClose(page, L"the moment it opened over ended");
-        }
-        else if (page == nullptr)
-        {
-            platform::LogWarning(L"Co-op page: the page is gone while open");
-            Closed(L"the page is gone");
-        }
-        else if (PageClosing(page))
-        {
-            Closed(L"seen by the tick");
-        }
         return;
     }
     // A main menu closed under the page (no game path is known to while the page has focus): take it down.

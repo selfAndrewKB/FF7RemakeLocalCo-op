@@ -5,7 +5,6 @@
 #include "menu/coop_menu_rules.h"
 #include "menu/coop_page.h"
 #include "menu/coop_page_open.h"
-#include "menu/coop_pause.h"
 #include "menu/coop_slider.h"
 #include "menu/game_ui.h"
 #include "platform/entry_redirect.h"
@@ -46,7 +45,6 @@ platform::VTableEntry   g_text, g_help, g_unlock, g_order;
 bool                    g_installed = false;
 bool                    g_pending   = false;  // the first tick places everything
 bool                    g_placed    = false;  // the row shows and opens the page
-bool                    g_pauseFound = false;  // the battle pause's row can be placed
 bool                    g_sliderFound = false;  // the long rows can be sliders
 
 /// The game's window opener: the Co-op row's kind opens the page; every other kind is the game's.
@@ -82,23 +80,15 @@ bool Place(const platform::GameImage& image) noexcept
     {
         return false;
     }
-    const bool row = g_text.Replace(g.textSlot, g.textWas, reinterpret_cast<std::uintptr_t>(rules::kRowLabel)) &&
-                     g_help.Replace(g.helpSlot, g.helpWas, reinterpret_cast<std::uintptr_t>(rules::kRowHelp)) &&
-                     g_unlock.Replace(g.unlockSlot, unlockWas, 0) &&
-                     g_order.Replace(g.orderWord, facts::kTopRowOrderWas, facts::kTopRowOrderCoop);
-    // The battle pause's row is its own: without it the main menu's row still works (logged by coop_pause).
-    if (row && g_pauseFound)
-    {
-        coop_pause::Place();
-    }
-    return row;
+    return g_text.Replace(g.textSlot, g.textWas, reinterpret_cast<std::uintptr_t>(rules::kRowLabel)) &&
+           g_help.Replace(g.helpSlot, g.helpWas, reinterpret_cast<std::uintptr_t>(rules::kRowHelp)) &&
+           g_unlock.Replace(g.unlockSlot, unlockWas, 0) &&
+           g_order.Replace(g.orderWord, facts::kTopRowOrderWas, facts::kTopRowOrderCoop);
 }
 
 void Unplace() noexcept
 {
-    // The battle pause's row, the headings and the page's key handler, then the row (its tables back), then the values
-    // and the row's opener.
-    coop_pause::Unplace();
+    // The headings and the page's key handler, then the row (its tables back), then the values and the row's opener.
     coop_page_open::Unplace();
     g_order.Restore();
     g_unlock.Restore();
@@ -163,12 +153,6 @@ try
     g.unlockSlot   = *unlockSlot;
     g.orderWord    = *orderWord;
     g_sliderFound  = coop_slider::Install(image);
-    g_pauseFound   = coop_pause::Install(image);
-    if (!g_pauseFound)
-    {
-        platform::Log(L"Co-op menu: the battle pause is not what the research read; no Co-op row in a fight (the main menu's row "
-                      L"stays)");
-    }
     g_installed    = true;
     g_pending      = true;  // placed by the first tick, on the game thread the redirected functions run on
     control::Register({.name  = L"menu.coop",

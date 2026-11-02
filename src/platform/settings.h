@@ -116,21 +116,20 @@ inline constexpr Option kEnemyDamage{  // battle/battle_rates
     L"Damage enemies deal to the party, times this. 1.0: as the game. From the next hit."};
 inline constexpr Option kEnemyHp{  // battle/battle_rates
     L"Battle", L"enemy-hp", kTenthsWords, L"1.0",
-    L"every enemy's max HP but the bosses', times this (0.1 to 10.0); enemies in a fight keep their share of HP left",
+    L"every enemy's max HP but the bosses', times this (0.1 to 10.0); from the next fight",
     false, L"Enemy HP", kTenthsWords,
-    L"Every enemy's max HP but the bosses', times this. Enemies already fighting keep the share of HP they have left."};
+    L"Every enemy's max HP but the bosses', times this. From the next fight."};
 inline constexpr Option kBossHp{  // battle/battle_rates
     L"Battle", L"boss-hp", kTenthsWords, L"1.0",
     L"the max HP of the enemies the game marks as a fight's leader (bosses, summon bosses, named foes), times this "
-    L"(0.1 to 10.0); enemies in a fight keep their share of HP left",
+    L"(0.1 to 10.0); from the next fight",
     false, L"Boss HP", kTenthsWords,
-    L"The max HP of bosses and named foes, times this. Bosses already fighting keep the share of HP they have left."};
+    L"The max HP of bosses and named foes, times this. From the next fight."};
 inline constexpr Option kEnemyStagger{  // battle/battle_rates
     L"Battle", L"enemy-stagger", kTenthsWords, L"1.0",
-    L"the size of every enemy's stagger gauge, times this (0.1 to 10.0; higher staggers later); enemies in a fight keep "
-    L"their gauge's share",
+    L"the size of every enemy's stagger gauge, times this (0.1 to 10.0; higher staggers later); from the next fight",
     false, L"Enemy stagger gauge", kTenthsWords,
-    L"How much it takes to stagger an enemy, times this. Higher: enemies stagger later."};
+    L"How much it takes to stagger an enemy, times this. Higher: enemies stagger later. From the next fight."};
 inline constexpr Option kExpGain{  // battle/battle_rates
     L"Battle", L"exp-gain", kTenthsWords, L"1.0",
     L"the EXP a won battle gives, times this (0.1 to 10.0), on top of the game's own bonus after the story or with "
