@@ -6,6 +6,7 @@
 #include "platform/module_pin.h"
 #include "platform/verified_code.h"
 #include "render/family_boundary_list.h"
+#include "render/view_marks.h"
 
 #include <array>
 #include <atomic>
@@ -126,7 +127,16 @@ ContextCheck CheckContext(const std::byte* commandList, std::byte*& context) noe
     }
 }
 
-void RunReset(const std::byte* commandList) noexcept
+/// What a node does on the list's context: the reset before a later family, and/or a GPU view mark
+/// (render/view_marks.h) before a family (`index`) or after the last (-1).
+struct NodeWork
+{
+    int  index = -1;
+    bool reset = false;
+    bool mark  = false;
+};
+
+void RunNode(const std::byte* commandList, NodeWork work) noexcept
 {
     if (g_faulted.load())
     {
@@ -140,30 +150,62 @@ void RunReset(const std::byte* commandList) noexcept
         case ContextCheck::DefaultDirect: break;
     }
     // RHIEndFrame's pair on the same context: ClearState, then close, submit and reopen the list. The submit runs only
-    // after a ClearState that returned.
-    if (!platform::CallGuarded(g_clearState, static_cast<void*>(context)) ||
-        !platform::CallGuarded(g_submit, static_cast<void*>(context)))
+    // after a ClearState that returned. A mark alone submits too (the game's own mid-frame call), so the queue position
+    // it marks is the family's exact boundary.
+    if (work.reset && !platform::CallGuarded(g_clearState, static_cast<void*>(context)))
     {
         Fault();
         return;
     }
-    g_counts.reset.fetch_add(1, std::memory_order_relaxed);
+    if (!platform::CallGuarded(g_submit, static_cast<void*>(context)))
+    {
+        Fault();
+        return;
+    }
+    if (work.reset)
+    {
+        g_counts.reset.fetch_add(1, std::memory_order_relaxed);
+    }
+    if (work.mark)
+    {
+        view_marks::Mark(context, work.index);
+    }
 }
 
-/// The node's ExecuteAndDestruct(list, node): the walk frees the arena, so there is nothing to destroy.
+/// A node's ExecuteAndDestruct(list, node): the walk frees the arena, so there is nothing to destroy. A node holds no
+/// data of its own ({Next, function}), so what it does is the function: one instance per kind.
+template <int Index, bool Reset, bool Mark>
 void NodeExecute(void* commandList, void* /*node*/) noexcept
 {
-    RunReset(static_cast<const std::byte*>(commandList));
+    RunNode(static_cast<const std::byte*>(commandList), {Index, Reset, Mark});
+}
+
+constexpr int kMarkedViews = 4;  // views marked by name; a later one gets the reset alone
+
+/// The node instance for `work`, or null when it needs none (no reset and no mark).
+boundary::NodeFn NodeFor(NodeWork work) noexcept
+{
+    if (work.mark && work.index >= -1 && work.index < kMarkedViews)
+    {
+        constexpr boundary::NodeFn kMarkOnly[] = {&NodeExecute<-1, false, true>, &NodeExecute<0, false, true>,
+                                                  &NodeExecute<1, false, true>, &NodeExecute<2, false, true>,
+                                                  &NodeExecute<3, false, true>};
+        constexpr boundary::NodeFn kResetMark[] = {&NodeExecute<-1, true, true>, &NodeExecute<0, true, true>,
+                                                   &NodeExecute<1, true, true>, &NodeExecute<2, true, true>,
+                                                   &NodeExecute<3, true, true>};
+        return (work.reset ? kResetMark : kMarkOnly)[work.index + 1];
+    }
+    return work.reset ? &NodeExecute<-1, true, false> : nullptr;
 }
 
 // --- Render thread: the task's body ----------------------------------------------------------------------------------------
 
 /// Appends the node; the arena's grow is the game's allocator, so it runs under a guard.
-bool AppendGuarded() noexcept
+bool AppendGuarded(boundary::NodeFn node) noexcept
 {
     __try
     {
-        boundary::AppendNode(g_list, &NodeExecute, g_grow);
+        boundary::AppendNode(g_list, node, g_grow);
         return true;
     }
     __except (platform::GuardFilter(GetExceptionCode()))
@@ -185,6 +227,11 @@ bool ExecutingGuarded(bool& executing) noexcept
     }
 }
 
+// The render thread (the game thread while rendering is not threaded; one of them, never both): whether this frame's
+// families are being marked. Taken at the first family and held to the end mark, so a switch flipped mid-frame cannot
+// leave a view's event open.
+bool g_markingFrame = false;
+
 void Body(family_now::Family next, bool reset, ByteWrite write) noexcept
 {
     family_now::Set(next);
@@ -198,7 +245,21 @@ void Body(family_now::Family next, bool reset, ByteWrite write) noexcept
         (platform::WriteGuarded(write.at, &write.value, sizeof(write.value)) ? g_counts.written : g_counts.unwritten)
             .fetch_add(1, std::memory_order_relaxed);
     }
-    if (!reset)
+    if (next.index == 0)
+    {
+        g_markingFrame = view_marks::On();
+    }
+    NodeWork work{next.index, reset, g_markingFrame};
+    if (next.index == 0 && !g_markingFrame && view_marks::Open())
+    {
+        work = {-1, false, true};  // an unmarked frame after one that stopped early: only close its open event
+    }
+    if (next.index < 0)
+    {
+        g_markingFrame = false;
+    }
+    const boundary::NodeFn node = NodeFor(work);
+    if (node == nullptr)
     {
         return;
     }
@@ -210,9 +271,9 @@ void Body(family_now::Family next, bool reset, ByteWrite write) noexcept
     else if (executing)
     {
         g_counts.inlined.fetch_add(1, std::memory_order_relaxed);  // walked in place: the game runs commands at once then
-        RunReset(g_list);
+        RunNode(g_list, work);
     }
-    else if (AppendGuarded())
+    else if (AppendGuarded(node))
     {
         g_counts.appended.fetch_add(1, std::memory_order_relaxed);
     }

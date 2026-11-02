@@ -65,6 +65,7 @@
 #include "render/shadows_per_view.h"
 #include "render/ssr_origin.h"
 #include "render/sun_cascades.h"
+#include "render/view_marks.h"
 #include "views/column_layout.h"
 #include "views/display_align.h"
 #include "views/letterbox_patch.h"
@@ -228,6 +229,8 @@ constexpr std::array kModules{
     Module{.name = L"family boundary", .install = Call<&render::family_boundary::Install>},
     // without it players after the first lose the motion of moving things (smear, dithered hair)
     Module{.name = L"motion history", .install = Call<&render::motion_history::Install>},
+    // a dev switch for GPU profilers (off at start): named GPU events around each player's view family
+    Module{.name = L"view marks", .install = Call<&render::view_marks::Install>},
     Module{.name = L"one family", .install = Call<&render::one_family::Install>, .remove = &render::one_family::Remove,
            .needs = {Need<&render::family_boundary::Install>()}},
     // without it a further player's bloom would be built from player 1's rows, so bloom stays off in split

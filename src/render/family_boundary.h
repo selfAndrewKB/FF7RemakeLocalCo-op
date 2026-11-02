@@ -26,6 +26,9 @@
 //      node (or runs the reset at once while the list is walked in place, the game's rule without an RHI thread);
 //   3. RHI thread, in stream order: the game's ClearState and submit on the list's context, only if it is the default
 //      direct context.
+// With GPU view marks on (render/view_marks.h, a dev switch) the render thread also appends a node before the first
+// family and after the last; every node then submits and marks the view on the context's queue. The node holds no data,
+// so the view's index is the node's function (one instance per index).
 // The exception to "only the game's code": the task's two-entry vtable, the node's function and the node append, which
 // the game inlines into every command and never exposes as a function. There is no game command that clears state
 // mid-frame; this is the least that issues one (Rebirth recorded the same exception).
