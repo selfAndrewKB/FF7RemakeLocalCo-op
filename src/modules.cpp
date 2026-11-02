@@ -60,6 +60,7 @@
 #include "render/lighting_volume.h"
 #include "render/movie_frame.h"
 #include "render/occlusion_exempt.h"
+#include "render/motion_history.h"
 #include "render/one_family.h"
 #include "render/shadows_per_view.h"
 #include "render/ssr_origin.h"
@@ -225,6 +226,8 @@ constexpr std::array kModules{
     Module{.name = L"occlusion exempt", .install = Call<&render::occlusion_exempt::Install>, .remove = &render::occlusion_exempt::Remove},
     // without these two every player is a view of one family, and views after the first lose their fog
     Module{.name = L"family boundary", .install = Call<&render::family_boundary::Install>},
+    // without it players after the first lose the motion of moving things (smear, dithered hair)
+    Module{.name = L"motion history", .install = Call<&render::motion_history::Install>},
     Module{.name = L"one family", .install = Call<&render::one_family::Install>, .remove = &render::one_family::Remove,
            .needs = {Need<&render::family_boundary::Install>()}},
     // without it a further player's bloom would be built from player 1's rows, so bloom stays off in split

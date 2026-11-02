@@ -32,6 +32,7 @@
 
 #include "render/family_now.h"
 
+#include <cstdint>
 #include <string>
 
 namespace lss::platform {
@@ -47,10 +48,18 @@ bool Install(const platform::GameImage& image) noexcept;
 /// Installed and not faulted: families may be split.
 bool Ready() noexcept;
 
+/// A byte the render thread writes in the boundary task, before the family's commands, in stream order (the motion
+/// table's paused byte, render/motion_history.h). Written under a guard; a fault there is counted and leaves the boundary on.
+struct ByteWrite
+{
+    std::uint8_t* at    = nullptr;  // null: nothing to write
+    std::uint8_t  value = 0;
+};
+
 /// Game thread, before a family's submission (or after the last, with index -1): the next family the render thread
-/// draws, and whether the boundary reset runs before it (every family after the frame's first). False if it could not
-/// be queued (not ready, or a fault now): the family must not be drawn as a family of its own.
-bool Queue(family_now::Family next, bool reset) noexcept;
+/// draws, whether the boundary reset runs before it (every family after the frame's first) and a byte to write before
+/// it. False if it could not be queued (not ready, or a fault now): the family must not be drawn as a family of its own.
+bool Queue(family_now::Family next, bool reset, ByteWrite write = {}) noexcept;
 
 /// Game thread: a fault once (Warning), and every 30 s while families are split, what the boundary did (Debug).
 void Poll() noexcept;

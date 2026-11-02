@@ -327,6 +327,9 @@ src/
                             not including b), separated by commas, e.g
     lighting_volume         The translucency lighting volume with more than one view (RE-haze-per-view.md §2, §5, §9):
                             the blue haze in players 2's and 3's views
+    motion_history          Every player's view keeps the motion of moving things: the renderer's table of where each
+                            moving object was last frame steps once a frame, as with one player, not once per player's
+                            family
     movie_frame             The pre-rendered movie in every view (research/RE-movie-view.md, pass S-RMK-MOVIEVIEW,
                             reviewed in IDA 2026-10-22)
     occlusion_exempt        A test for the blue haze in player 2's and player 3's views: chosen objects skip their

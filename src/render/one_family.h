@@ -18,7 +18,7 @@
 // game unchanged. Every game viewport submission, split or not, first publishes each view's place in the list by its
 // state (render/view_places), for the readers outside a split frame. The final pass loads the back buffer and draws into the view's unshifted rectangle, so each family keeps
 // the columns before it [CONFIRMED code, Pass 10 I.2]; GPU particles step once a frame (the later families simulate with
-// zero time, Pass 10 I.3).
+// zero time, Pass 10 I.3); the motion table steps with the first family only (render/motion_history.h).
 //
 // Switch `one-family on | off` (on at start): off hands the game its own family of several views, for an A/B. The
 // reading gives the switch, the frames split, the families of the last split frame and what the boundary did.

@@ -59,6 +59,7 @@ struct Task
     void*              subsequents   = nullptr;
     family_now::Family next;
     bool               reset = false;
+    ByteWrite          write;
 };
 static_assert(offsetof(Task, thread) == 0x08 && offsetof(Task, prerequisites) == 0x0C && offsetof(Task, storage) == 0x10 &&
               offsetof(Task, constructed) == 0x18 && offsetof(Task, subsequents) == 0x20);
@@ -85,6 +86,8 @@ struct Counts
     std::atomic<std::uint64_t> inlined{0};   // render thread: resets run at once (the list was being walked)
     std::atomic<std::uint64_t> reset{0};     // RHI thread: ClearState + submit run
     std::atomic<std::uint64_t> skipped{0};   // RHI thread: the list's context was not the default direct one
+    std::atomic<std::uint64_t> written{0};   // render thread: bytes written before a family
+    std::atomic<std::uint64_t> unwritten{0}; // render thread: byte writes that faulted
 } g_counts;
 
 /// Any thread: the boundary is off from now on, and no family's place stays set. A task queued before the fault that
@@ -182,13 +185,18 @@ bool ExecutingGuarded(bool& executing) noexcept
     }
 }
 
-void Body(family_now::Family next, bool reset) noexcept
+void Body(family_now::Family next, bool reset, ByteWrite write) noexcept
 {
     family_now::Set(next);
     if (g_faulted.load())
     {
         family_now::Set({});  // after the place: a fault on another thread between the two cannot leave it set
         return;
+    }
+    if (write.at != nullptr)
+    {
+        (platform::WriteGuarded(write.at, &write.value, sizeof(write.value)) ? g_counts.written : g_counts.unwritten)
+            .fetch_add(1, std::memory_order_relaxed);
     }
     if (!reset)
     {
@@ -218,7 +226,7 @@ void Body(family_now::Family next, bool reset) noexcept
 /// the game's small-task free list (the caller does not touch the task after this returns, Pass 10 I.1.5 point 4).
 void TaskExecute(Task* task, void* /*newTasks*/, std::uint32_t /*currentThread*/) noexcept
 {
-    Body(task->next, task->reset);
+    Body(task->next, task->reset, task->write);
     delete task;
 }
 
@@ -313,7 +321,7 @@ bool Ready() noexcept
     return g_installed.load(std::memory_order_acquire) && !g_faulted.load();
 }
 
-bool Queue(family_now::Family next, bool reset) noexcept
+bool Queue(family_now::Family next, bool reset, ByteWrite write) noexcept
 {
     if (!Ready())
     {
@@ -327,7 +335,7 @@ bool Queue(family_now::Family next, bool reset) noexcept
     }
     if (threaded == 0)
     {
-        Body(next, reset);  // the game's own rule: no rendering thread, the command runs now
+        Body(next, reset, write);  // the game's own rule: no rendering thread, the command runs now
         g_counts.direct.fetch_add(1, std::memory_order_relaxed);
         return Ready();     // the reset itself may have faulted
     }
@@ -339,6 +347,7 @@ bool Queue(family_now::Family next, bool reset) noexcept
     }
     task->next  = next;
     task->reset = reset;
+    task->write = write;
     switch (QueueGuarded(task))
     {
         case Queued::Yes: break;
@@ -392,10 +401,11 @@ void Poll() noexcept
 std::wstring Describe()
 {
     return std::format(L"{} commands queued, {} run at once; {} resets appended, {} run in place, {} done in stream order, "
-                       L"{} skipped (not the default context){}",
+                       L"{} skipped (not the default context); {} bytes written before a family, {} faulted{}",
                        g_counts.queued.load(std::memory_order_relaxed), g_counts.direct.load(std::memory_order_relaxed),
                        g_counts.appended.load(std::memory_order_relaxed), g_counts.inlined.load(std::memory_order_relaxed),
                        g_counts.reset.load(std::memory_order_relaxed), g_counts.skipped.load(std::memory_order_relaxed),
+                       g_counts.written.load(std::memory_order_relaxed), g_counts.unwritten.load(std::memory_order_relaxed),
                        g_faulted.load() ? L"; FAULTED, off" : L"");
 }
 

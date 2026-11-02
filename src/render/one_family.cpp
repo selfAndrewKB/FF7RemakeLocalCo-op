@@ -9,6 +9,7 @@
 #include "platform/vtable_entry.h"
 #include "render/family_boundary.h"
 #include "render/family_split.h"
+#include "render/motion_history.h"
 #include "render/view_places.h"
 
 #include <intrin.h>
@@ -50,18 +51,26 @@ __declspec(noinline) void Submit(void* rendererModule, void* canvas, std::uint8_
         g_submit(rendererModule, canvas, family);
         return;
     }
-    // Before each family: its place and its view's state for the render thread, and the boundary reset before every
-    // family after the first. A failed queue stops the split (family_split.h).
+    // Before each family: its place and its view's state for the render thread, the boundary reset before every family
+    // after the first, and the motion table's step kept to the first family (render/motion_history.h). A failed queue
+    // stops the split (family_split.h).
     const int made = family_split::SubmitOnePerView(
         family, [&](std::uint8_t* one) { g_submit(rendererModule, canvas, one); },
-        [](int k, int n, const void* view) {
+        [family](int k, int n, const void* view) {
             const void* state = nullptr;
             platform::CopyGuarded(&state, static_cast<const std::uint8_t*>(view) + facts::kViewState, sizeof(state));
-            return family_boundary::Queue({k, n, state}, k > 0);
+            const motion_history::Step step = motion_history::For(family, k);
+            if (!family_boundary::Queue({k, n, state}, k > 0, step.render))
+            {
+                return false;
+            }
+            motion_history::Arm(step);  // the submission follows at once
+            return true;
         });
     if (made > 1)
     {
-        family_boundary::Queue({}, false);  // after the last family: no place, until the next split frame
+        // After the last family: no place, until the next split frame; the motion table's paused byte put back.
+        family_boundary::Queue({}, false, motion_history::For(family, -1).render);
         g_frames.fetch_add(1, std::memory_order_relaxed);
     }
     if (g_lastViews.exchange(made, std::memory_order_relaxed) != made)

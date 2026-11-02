@@ -120,6 +120,7 @@ add_library(LocalSplitScreen SHARED
     src/render/occlusion_exempt.cpp
     src/render/family_boundary.cpp
     src/render/family_now.cpp
+    src/render/motion_history.cpp
     src/render/one_family.cpp
     src/render/view_places.cpp
     src/render/ssr_origin.cpp
