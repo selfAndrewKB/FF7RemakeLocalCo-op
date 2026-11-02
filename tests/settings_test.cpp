@@ -1,13 +1,18 @@
 // Host-side tests for the settings table (platform/settings.h): the table's own consistency, the judging of a
 // file's text (trim, case, spaces, the default, an invalid word), the word list and the texts the owners and the
-// warning use. Run without the game (Load, Of, Why and Path are the game side, not built here).
+// warning use, and the file write the Co-op page saves with (platform/settings_write.h) on a temporary file. Run
+// without the game (Load, Of, Why, Save and Path are the game side, not built here).
 
 #include "platform/settings.h"
+#include "platform/settings_write.h"
 
 #include <cstdio>
 #include <cwchar>
+#include <fstream>
+#include <iterator>
 #include <set>
 #include <string>
+#include <string_view>
 
 namespace lss::test {
 inline int g_failures = 0;
@@ -98,6 +103,44 @@ void Texts()
            L"LocalSplitScreen.ini [Views] multi-monitor = 'yes' is not auto, on or off; read as auto");
 }
 
+/// The value the file now holds for an option, read as Load reads it.
+std::wstring ReadBack(const std::wstring& path, const Option& option)
+{
+    wchar_t    buffer[256]{};
+    const auto length = GetPrivateProfileStringW(option.section, option.key, L"", buffer, 256, path.c_str());
+    return Judge(option, std::wstring_view(buffer, length)).word;
+}
+
+/// The Co-op page's save on a real file: the key's line replaced, a missing key and section added, the comments and
+/// every other line kept, the words read back as the next start reads them.
+void FileWrite()
+{
+    wchar_t folder[MAX_PATH]{};
+    EXPECT(GetTempPathW(MAX_PATH, folder) > 0);
+    const std::wstring path = std::wstring(folder) + L"lss_settings_test.ini";
+    {
+        std::ofstream file(path, std::ios::binary | std::ios::trunc);
+        file << "; the mod's settings\r\n\r\n[Views]\r\n; multi-monitor = off | on | auto\r\nmulti-monitor = auto\r\n\r\n"
+                "; column-order = 1 2 3 | 1 3 2\r\ncolumn-order = 1 3 2\r\n";
+    }
+    EXPECT(WriteWord(path.c_str(), kMultiMonitor, L"on") == 0);
+    EXPECT(WriteWord(path.c_str(), kEnemyDamage, L"1.5") == 0);  // no [Battle] section yet
+    EXPECT(WriteWord(path.c_str(), kExpGain, L"2.0") == 0);      // a second key in the new section
+    EXPECT(ReadBack(path, kMultiMonitor) == L"on");
+    EXPECT(ReadBack(path, kColumnOrder) == L"132");  // untouched
+    EXPECT(ReadBack(path, kEnemyDamage) == L"1.5");
+    EXPECT(ReadBack(path, kExpGain) == L"2.0");
+    std::ifstream     file(path, std::ios::binary);
+    const std::string text((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    EXPECT(text.find("; the mod's settings") == 0);
+    EXPECT(text.find("; multi-monitor = off | on | auto") != std::string::npos);
+    EXPECT(text.find("; column-order = 1 2 3 | 1 3 2") != std::string::npos);
+    EXPECT(text.find("multi-monitor = auto") == std::string::npos);  // the old line replaced, not kept beside the new
+    EXPECT(text.find("[Battle]") != std::string::npos);
+    file.close();
+    DeleteFileW(path.c_str());
+}
+
 }  // namespace
 
 int main()
@@ -105,5 +148,6 @@ int main()
     TableConsistent();
     JudgeFile();
     Texts();
+    FileWrite();
     return lss::test::Report();
 }

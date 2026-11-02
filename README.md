@@ -125,7 +125,8 @@ grey (Ctrl+F9 switches it in play). `[Battle] battle-warps =
 players-stay | off | game`: who the game warps at a battle's start and end (players-stay, the default: every player's
 own character stays where it is). `[Battle] enemy-damage`, `enemy-hp`, `boss-hp`, `enemy-stagger`, `exp-gain`,
 `ap-gain = 0.1 ... 10.0`: the battle's rates, each a multiplier on the game's own value (1.0, the default, the game's).
-The file is read once at the game's start (the log's `settings:` line lists every
+The file is read once at the game's start, and a choice made on the main menu's Co-op page is saved into it at once
+(only that key's line changes; comments stay; the console changes an option for the session only; edit it as plain text without a byte-order mark, which Windows' ini functions would read as part of the first line). The log's `settings:` line lists every
 option's word and where it came from; a word the file gets wrong is a warning and the default); a value's case and
 spaces and commas do not matter. The install never replaces an existing `LocalSplitScreen.ini`: add a new section by hand from
 the repository's copy; a key the file lacks takes its default.
@@ -164,6 +165,9 @@ src/
     settings                The mod's own settings file: LocalSplitScreen.ini in the mod's folder
                             (Mods/LocalSplitScreen/LocalSplitScreen.ini, one level above the dlls folder this module is
                             loaded from), read with the Windows profile API, so a user sets a …
+    settings_write.h        One option's word written into the settings file (platform/settings.h) with the Windows
+                            profile API, the API the file is read with: the key's line is replaced as `key=word`, a key
+                            or section the file lacks is added (the section …
     sparse_array.h          Walks the allocated elements of an Unreal TSparseArray (the element array of a TSet or TMap)
                             by reading memory only
     verified_code           Finding engine functions and vtable slots only where the research says they are

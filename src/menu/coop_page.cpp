@@ -217,6 +217,10 @@ try
         ++g_commits;
         platform::Log(L"Co-op page: {} set to {} ({} {}){}{}", row.label, row.wordLabels[static_cast<std::size_t>(value)], row.key,
                       *word, outcome.ok ? L"" : L"; refused: ", outcome.ok ? std::wstring() : outcome.detail);
+        if (outcome.ok)
+        {
+            settings::Save(row, *word);  // the next start reads the choice (logged either way)
+        }
     }
 }
 catch (...)

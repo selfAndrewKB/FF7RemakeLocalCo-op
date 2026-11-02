@@ -1,6 +1,7 @@
 #include "platform/settings.h"
 
 #include "platform/log.h"
+#include "platform/settings_write.h"
 
 #include <filesystem>
 #include <format>
@@ -17,7 +18,7 @@ namespace {
 
 constexpr const wchar_t* kFileName = L"LocalSplitScreen.ini";
 
-// Written by Load on the game thread at start, then only read.
+// Written by Load on the game thread at start, and by Save (the Co-op page's choices, game thread).
 std::array<Reading, kOptions.size()> g_readings = [] {
     std::array<Reading, kOptions.size()> defaults;
     for (std::size_t i = 0; i < kOptions.size(); ++i)
@@ -134,6 +135,33 @@ const Reading& Of(const Option& option) noexcept
 std::wstring Why(const Option& option)
 {
     return WhyText(option, Of(option));
+}
+
+bool Save(const Option& option, const std::wstring& word)
+{
+    const auto    index   = IndexOf(option);
+    const Reading judged  = Judge(option, word);
+    if (!index || judged.source != Source::File)
+    {
+        LogWarning(L"settings: [{}] {} = '{}' was not saved (not an option's word)", option.section, option.key, word);
+        return false;
+    }
+    const std::wstring path = Path();
+    if (path.empty())
+    {
+        LogWarning(L"settings: [{}] {} = {} was not saved (the module's path could not be read)", option.section, option.key,
+                   judged.word);
+        return false;
+    }
+    if (const unsigned long error = WriteWord(path.c_str(), option, judged.word.c_str()); error != 0)
+    {
+        LogWarning(L"settings: [{}] {} = {} was not saved to {} (Windows error {})", option.section, option.key, judged.word,
+                   path, error);
+        return false;
+    }
+    g_readings[*index] = judged;
+    Log(L"settings: [{}] {} = {} saved to {}", option.section, option.key, judged.word, path);
+    return true;
 }
 
 }  // namespace lss::platform::settings
