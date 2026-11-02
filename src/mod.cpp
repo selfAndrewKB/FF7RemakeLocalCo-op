@@ -65,7 +65,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.145.0-gpu-view-marks";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.146.0-gpu-pass-marks";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;

@@ -340,6 +340,9 @@ src/
                             occlusion test and count as visible, in all views or only some (the switch below)
     one_family              One view family per player: the game viewport's frame is handed to the renderer one player
                             at a time, each player the first and only view of its own family
+    pass_marks              GPU events around each render pass of a view (PrePass, Shadow depths, Base pass, Lights,
+                            Translucency, Post-processing, the Square Enix passes, ...), nested in the view's event
+                            (render/view_marks.h), so a GPU trace splits each …
     shadow_code.h           The machine code of the per-view shadow levers, built here as pure byte arrays and executed
                             over stand-ins on the host
     shadows_per_view        Shadows decided per view (RE-shadows-per-view.md, RE-shadows-per-view-build.md)

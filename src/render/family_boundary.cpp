@@ -6,6 +6,7 @@
 #include "platform/module_pin.h"
 #include "platform/verified_code.h"
 #include "render/family_boundary_list.h"
+#include "render/pass_marks.h"
 #include "render/view_marks.h"
 
 #include <array>
@@ -227,6 +228,58 @@ bool ExecutingGuarded(bool& executing) noexcept
     }
 }
 
+}  // namespace
+
+bool Append(boundary::NodeFn node) noexcept
+{
+    if (!Ready())
+    {
+        return false;
+    }
+    bool executing = false;
+    if (!ExecutingGuarded(executing))
+    {
+        Fault();
+        return false;
+    }
+    if (executing)
+    {
+        g_counts.inlined.fetch_add(1, std::memory_order_relaxed);  // walked in place: the game runs commands at once then
+        node(g_list, nullptr);
+        return true;
+    }
+    if (!AppendGuarded(node))
+    {
+        Fault();
+        return false;
+    }
+    g_counts.appended.fetch_add(1, std::memory_order_relaxed);
+    return true;
+}
+
+void* SubmitForMark(void* commandList) noexcept
+{
+    if (g_faulted.load())
+    {
+        return nullptr;
+    }
+    std::byte* context = nullptr;
+    switch (CheckContext(static_cast<const std::byte*>(commandList), context))
+    {
+        case ContextCheck::Faulted: Fault(); return nullptr;
+        case ContextCheck::Other: g_counts.skipped.fetch_add(1, std::memory_order_relaxed); return nullptr;
+        case ContextCheck::DefaultDirect: break;
+    }
+    if (!platform::CallGuarded(g_submit, static_cast<void*>(context)))
+    {
+        Fault();
+        return nullptr;
+    }
+    return context;
+}
+
+namespace {
+
 // The render thread (the game thread while rendering is not threaded; one of them, never both): whether this frame's
 // families are being marked. Taken at the first family and held to the end mark, so a switch flipped mid-frame cannot
 // leave a view's event open.
@@ -240,6 +293,7 @@ void Body(family_now::Family next, bool reset, ByteWrite write) noexcept
         family_now::Set({});  // after the place: a fault on another thread between the two cannot leave it set
         return;
     }
+    pass_marks::BetweenFamilies(next.index == 0);  // outside the scene renderer, on its thread
     if (write.at != nullptr)
     {
         (platform::WriteGuarded(write.at, &write.value, sizeof(write.value)) ? g_counts.written : g_counts.unwritten)
@@ -259,27 +313,9 @@ void Body(family_now::Family next, bool reset, ByteWrite write) noexcept
         g_markingFrame = false;
     }
     const boundary::NodeFn node = NodeFor(work);
-    if (node == nullptr)
+    if (node != nullptr)
     {
-        return;
-    }
-    bool executing = false;
-    if (!ExecutingGuarded(executing))
-    {
-        Fault();
-    }
-    else if (executing)
-    {
-        g_counts.inlined.fetch_add(1, std::memory_order_relaxed);  // walked in place: the game runs commands at once then
-        RunNode(g_list, work);
-    }
-    else if (AppendGuarded(node))
-    {
-        g_counts.appended.fetch_add(1, std::memory_order_relaxed);
-    }
-    else
-    {
-        Fault();
+        Append(node);  // a failure there faults the boundary
     }
 }
 

@@ -33,6 +33,7 @@
 // the game inlines into every command and never exposes as a function. There is no game command that clears state
 // mid-frame; this is the least that issues one (Rebirth recorded the same exception).
 
+#include "render/family_boundary_list.h"
 #include "render/family_now.h"
 
 #include <cstdint>
@@ -63,6 +64,16 @@ struct ByteWrite
 /// draws, whether the boundary reset runs before it (every family after the frame's first) and a byte to write before
 /// it. False if it could not be queued (not ready, or a fault now): the family must not be drawn as a family of its own.
 bool Queue(family_now::Family next, bool reset, ByteWrite write = {}) noexcept;
+
+/// Render thread (the game thread while rendering is not threaded): puts `node` on the immediate RHI command list, as
+/// the boundary's own nodes, or runs it at once while the list is being walked in place. False if not ready or on a
+/// fault (the boundary then goes off). For other GPU marks (render/pass_marks.h).
+bool Append(boundary::NodeFn node) noexcept;
+
+/// RHI thread, from a node: the list's context after the game's submit on it, if it is the default direct context,
+/// so a queue mark placed next falls exactly at this point of the stream; null otherwise (counted as skipped) or on a
+/// fault (the boundary goes off).
+void* SubmitForMark(void* commandList) noexcept;
 
 /// Game thread: a fault once (Warning), and every 30 s while families are split, what the boundary did (Debug).
 void Poll() noexcept;

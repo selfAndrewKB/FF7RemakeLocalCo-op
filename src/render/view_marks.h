@@ -31,12 +31,20 @@ bool Install(const platform::GameImage& image) noexcept;
 /// Any thread: installed and switched on.
 bool On() noexcept;
 
-/// Any thread: a view's event is still open on the queue (a marked frame that stopped before its end mark). The family
-/// boundary then closes it before the next frame's first family, so a trace never nests later frames inside it.
+/// Any thread: an event (a view's or a pass's) is still open on the queue (a marked frame that stopped before its end
+/// mark). The family boundary then closes it before the next frame's first family, so a trace never nests later frames
+/// inside it.
 bool Open() noexcept;
 
 /// RHI thread (the render thread without one), in stream order, on the default direct context right after its
-/// submit: ends the open view's event, then begins view `index`'s (index -1, after the last family: only ends).
+/// submit: ends every open event (a pass left open, then the view's), then begins view `index`'s (index -1, after the
+/// last family: only ends).
 void Mark(void* context, int index) noexcept;
+
+/// The same thread and point: begins a pass's event (render/pass_marks.h), nested in the open view's if there is one.
+void BeginPass(void* context, const wchar_t* name) noexcept;
+
+/// The same thread and point: ends the innermost pass event, if one is open (never a view's).
+void EndPass() noexcept;
 
 }  // namespace lss::render::view_marks

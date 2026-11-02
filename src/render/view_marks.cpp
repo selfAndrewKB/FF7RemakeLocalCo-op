@@ -63,12 +63,16 @@ constexpr std::array<const wchar_t*, 4> kNames{L"LSS view 1", L"LSS view 2", L"L
 std::atomic<bool> g_installed{false};
 std::atomic<bool> g_on{false};
 
-// RHI thread only (the render thread without one): whether a view's event is open on the queue it was begun on.
-ID3D12CommandQueue* g_openOn = nullptr;
+// RHI thread only (the render thread without one): the events open on the queue they were begun on, a view's at the
+// bottom and passes' (render/pass_marks.h) above it.
+ID3D12CommandQueue* g_openOn    = nullptr;  // null: nothing open
+bool                g_viewOpen  = false;
+int                 g_passDepth = 0;
 std::atomic<bool>   g_open{false};  // g_openOn != nullptr, for Open() on the thread that appends the nodes
 
 std::atomic<std::uint64_t> g_begun{0};    // views begun
 std::atomic<std::uint64_t> g_ended{0};    // views ended
+std::atomic<std::uint64_t> g_passes{0};   // pass events begun (render/pass_marks.h)
 std::atomic<std::uint64_t> g_noQueue{0};  // marks dropped: the context's queue could not be read
 std::atomic<std::uint64_t> g_faults{0};   // a queue call faulted
 bool                       g_firstLogged = false;  // RHI thread
@@ -142,9 +146,10 @@ catch (...)
 control::Value Get()
 try
 {
-    return control::Value{std::format(L"{}; {} views begun, {} ended; {} marks without a queue, {} faulted",
-                                      g_on.load() ? L"on" : L"off", g_begun.load(), g_ended.load(), g_noQueue.load(),
-                                      g_faults.load())};
+    return control::Value{std::format(L"{}; {} views begun, {} ended; {} pass events; {} marks without a queue, {} "
+                                      L"faulted",
+                                      g_on.load() ? L"on" : L"off", g_begun.load(), g_ended.load(), g_passes.load(),
+                                      g_noQueue.load(), g_faults.load())};
 }
 catch (...)
 {
@@ -185,46 +190,89 @@ bool Open() noexcept
     return g_open.load(std::memory_order_relaxed);
 }
 
+namespace {
+
+/// RHI thread: ends the event on top of the stack (a pass's, else the view's).
+void EndTop() noexcept
+{
+    if (!EndGuarded(g_openOn))
+    {
+        Problem(g_faults, L"a queue's EndEvent faulted");
+    }
+    if (g_passDepth > 0)
+    {
+        --g_passDepth;
+    }
+    else
+    {
+        g_viewOpen = false;
+        g_ended.fetch_add(1, std::memory_order_relaxed);
+    }
+    if (g_passDepth == 0 && !g_viewOpen)
+    {
+        g_openOn = nullptr;
+        g_open.store(false, std::memory_order_relaxed);
+    }
+}
+
+/// RHI thread: begins `name` on the context's queue (the queue of the events already open, if any). False if not.
+bool BeginOn(void* context, const wchar_t* name) noexcept
+{
+    ID3D12CommandQueue* const queue = g_openOn != nullptr ? g_openOn : QueueOf(context);
+    if (queue == nullptr)
+    {
+        Problem(g_noQueue, L"the context's direct queue could not be read");
+        return false;
+    }
+    if (!BeginGuarded(queue, name))
+    {
+        Problem(g_faults, L"a queue's BeginEvent faulted");
+        return false;
+    }
+    g_openOn = queue;
+    g_open.store(true, std::memory_order_relaxed);
+    return true;
+}
+
+}  // namespace
+
 void Mark(void* context, int index) noexcept
 {
     if (!g_installed.load(std::memory_order_acquire))
     {
         return;
     }
-    if (g_openOn != nullptr)
+    while (g_openOn != nullptr)
     {
-        if (EndGuarded(g_openOn))
-        {
-            g_ended.fetch_add(1, std::memory_order_relaxed);
-        }
-        else
-        {
-            Problem(g_faults, L"a queue's EndEvent faulted");
-        }
-        g_openOn = nullptr;
-        g_open.store(false, std::memory_order_relaxed);
+        EndTop();  // a pass left open (its end mark lost) closes with its view
     }
-    if (index < 0 || index >= static_cast<int>(kNames.size()))
+    if (index < 0 || index >= static_cast<int>(kNames.size()) ||
+        !BeginOn(context, kNames[static_cast<std::size_t>(index)]))
     {
         return;
     }
-    ID3D12CommandQueue* const queue = QueueOf(context);
-    if (queue == nullptr)
-    {
-        Problem(g_noQueue, L"the context's direct queue could not be read");
-        return;
-    }
-    if (!BeginGuarded(queue, kNames[static_cast<std::size_t>(index)]))
-    {
-        Problem(g_faults, L"a queue's BeginEvent faulted");
-        return;
-    }
-    g_openOn = queue;
-    g_open.store(true, std::memory_order_relaxed);
+    g_viewOpen = true;
     g_begun.fetch_add(1, std::memory_order_relaxed);
     if (!std::exchange(g_firstLogged, true))
     {
         platform::LogDebug(L"view marks: the first view event begun on the direct queue");
+    }
+}
+
+void BeginPass(void* context, const wchar_t* name) noexcept
+{
+    if (g_installed.load(std::memory_order_acquire) && BeginOn(context, name))
+    {
+        ++g_passDepth;
+        g_passes.fetch_add(1, std::memory_order_relaxed);
+    }
+}
+
+void EndPass() noexcept
+{
+    if (g_passDepth > 0)  // never a view's event: a pass begun before its marks were on has no begin to end
+    {
+        EndTop();
     }
 }
 

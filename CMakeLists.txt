@@ -123,6 +123,7 @@ add_library(LocalSplitScreen SHARED
     src/render/motion_history.cpp
     src/render/view_marks.cpp
     src/render/one_family.cpp
+    src/render/pass_marks.cpp
     src/render/view_places.cpp
     src/render/ssr_origin.cpp
     src/render/sun_cascades.cpp
