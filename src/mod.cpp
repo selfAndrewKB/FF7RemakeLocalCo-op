@@ -66,7 +66,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.149.2-claim-notes";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.149.3-claim-lines";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;

@@ -51,7 +51,8 @@ constexpr float kMinScale     = 1.6f;
 constexpr float kLineAt1      = 20.0f;  // a line's height at scale 1, before the first draw reports the real one
 constexpr float kPadAt1       = 8.0f;
 constexpr float kBoxWidth     = 0.70f;  // of the view's width, centred
-constexpr float kBoxTop       = 0.60f;  // of the view's height
+constexpr float kBoxTop       = 0.60f;  // of the view's height, raised when a taller box would pass kBoxBottom
+constexpr float kBoxBottom    = 0.95f;
 
 // Set at install, then only read.
 platform::VTableEntry g_entry;
@@ -153,8 +154,9 @@ void Draw(void* hud) noexcept
     const float pad   = kPadAt1 * scale;
     const float lineH = g_lineAt1 * scale;
     const float boxX  = clipX * (1.0f - kBoxWidth) / 2.0f;
-    const float boxY  = clipY * kBoxTop;
-    DrawRect(hud, boxX, boxY, clipX * kBoxWidth, lineH * static_cast<float>(lines) + 2.0f * pad);
+    const float boxH  = lineH * static_cast<float>(lines) + 2.0f * pad;
+    const float boxY  = std::min(clipY * kBoxTop, clipY * kBoxBottom - boxH);
+    DrawRect(hud, boxX, boxY, clipX * kBoxWidth, boxH);
     float y = boxY + pad;
     for (int i = 0; i < kLines; ++i)
     {

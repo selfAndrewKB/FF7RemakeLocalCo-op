@@ -21,7 +21,7 @@ class GameImage;
 
 namespace lss::hud::view_prompt {
 
-inline constexpr int kLines = 3;
+inline constexpr int kLines = 6;
 
 struct Prompt
 {
