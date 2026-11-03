@@ -16,6 +16,7 @@
 #include <array>
 #include <cstdint>
 #include <format>
+#include <span>
 
 namespace lss::views::column_layout {
 
@@ -51,6 +52,9 @@ int            g_localPlayers   = 0;        // the engine's local players at the
 bool           g_written        = false;    // the entry holds one of the mod's entries (columns, or arranged)
 Order          g_order{};                   // the column order (the setting, the console)
 Records        g_wanted{};                  // the entry the last Apply wanted
+Records        g_columnsBase{};             // the columns in screen order: the span's monitors' widths, else equal thirds
+Records        g_lastWrite{};               // the entry the mod wrote last (the stock one before any write, after a restore)
+std::array<std::int32_t, kThreePlayerRecords> g_widths{};  // the span's three monitors' widths, 0 when not three
 ListSeats      g_seats{0, -1, -1};          // whose view each place of the engine's list held at the last tick
 bool           g_reached        = false;    // the entry was read once (the first reconcile is done)
 bool           g_foreign        = false;    // the entry holds neither the stock records nor the mod's (logged once)
@@ -72,6 +76,9 @@ struct TwoEntry
     const wchar_t* name;                       // "top and bottom", "side by side"
     const wchar_t* first;                      // the first screen's word ("top", "left")
     const wchar_t* second;
+    TwoRecords     base{};                     // the records in screen order: the stock ones, or side by side on a two-monitor
+                                               // span the monitors' widths
+    TwoRecords     lastWrite{};                // the entry the mod wrote last (the stock one before any write)
     TwoRecords     wanted{};
     bool           written = false;
     bool           foreign = false;
@@ -252,12 +259,23 @@ void HoldSetting(bool hold) noexcept
     }
 }
 
+/// The columns as the log names them: "three equal columns side by side", or with the span's widths in pixels.
+std::wstring ColumnsText()
+{
+    if (g_widths[0] == 0 || (g_widths[0] == g_widths[1] && g_widths[1] == g_widths[2]))
+    {
+        return L"three equal columns side by side";
+    }
+    return std::format(L"three columns side by side, each its monitor's width ({} | {} | {} px)", g_widths[0], g_widths[1],
+                       g_widths[2]);
+}
+
 /// The entry as it should be: `wanted` written, the stock one restored, or left alone (logged).
 void Apply(const Records& wanted) noexcept
 {
     g_wanted                  = wanted;
     const bool  ours          = !column_rules::Same(wanted.record, kStockFavorTop);
-    const bool  columns       = column_rules::ArrangementOf(wanted.record, kThreeColumns);
+    const bool  columns       = column_rules::ArrangementOf(wanted.record, g_columnsBase.record);
     const wchar_t* why     = L"";
     std::uint8_t*  records = FindRecords(&why);
     if (records == nullptr)
@@ -277,7 +295,7 @@ void Apply(const Records& wanted) noexcept
         Fault(L"the engine's three-player layout could not be read; tried again twice a second");
         return;
     }
-    const Action action = column_rules::Decide(entry, wanted.record);
+    const Action action = column_rules::Decide(entry, wanted.record, g_columnsBase.record, g_lastWrite.record);
     if (action != Action::Foreign && g_foreign)
     {
         g_foreign = false;
@@ -289,15 +307,16 @@ void Apply(const Records& wanted) noexcept
         case Action::Write:
             if (platform::WriteGuarded(records, wanted.record, sizeof(wanted.record)))
             {
-                g_written = true;
-                g_fault   = nullptr;
+                g_written   = true;
+                g_lastWrite = wanted;
+                g_fault     = nullptr;
                 ++g_writes;
                 HoldSetting(true);
                 platform::Log(L"column layout: the engine's three-player layout now shows {}, screens {}: {} (was {}); the engine "
                               L"lays three local players out from it on the next redraw (write {})",
-                              columns ? L"three equal columns side by side" : L"player 1 on top, two below",
+                              columns ? ColumnsText().c_str() : L"player 1 on top, two below",
                               columns ? L"left to right" : L"top, bottom left, bottom right",
-                              ScreensText(wanted, columns ? kThreeColumns : kStockFavorTop),
+                              ScreensText(wanted, columns ? g_columnsBase.record : kStockFavorTop),
                               column_rules::Same(entry, kStockFavorTop) ? L"the stock one" : L"another of the mod's", g_writes);
             }
             else
@@ -309,7 +328,8 @@ void Apply(const Records& wanted) noexcept
         case Action::Restore:
             if (platform::WriteGuarded(records, kStockFavorTop, sizeof(kStockFavorTop)))
             {
-                g_written = false;
+                g_written   = false;
+                g_lastWrite = Records{{kStockFavorTop[0], kStockFavorTop[1], kStockFavorTop[2]}};
                 g_fault   = nullptr;
                 ++g_restores;
                 HoldSetting(false);
@@ -352,7 +372,7 @@ std::wstring TwoScreensText(const TwoEntry& e, const Record (&entry)[kTwoPlayerR
     {
         for (int place = 0; place < kTwoPlayerRecords; ++place)
         {
-            if (entry[place] == (*e.stock)[slot])
+            if (entry[place] == e.base.record[slot])
             {
                 const int seat = g_seats[static_cast<std::size_t>(place)];
                 text += std::format(L"{}{} {}", slot == 0 ? L"" : L", ",
@@ -398,7 +418,7 @@ void ApplyTwo(TwoEntry& e, const TwoRecords& wanted) noexcept
         TwoFault(e, L"could not be read; tried again twice a second");
         return;
     }
-    const Action action = column_rules::DecideTwo(entry, wanted.record, stock);
+    const Action action = column_rules::DecideTwo(entry, wanted.record, stock, e.base.record, e.lastWrite.record);
     if (action != Action::Foreign && e.foreign)
     {
         e.foreign = false;
@@ -410,8 +430,9 @@ void ApplyTwo(TwoEntry& e, const TwoRecords& wanted) noexcept
         case Action::Write:
             if (platform::WriteGuarded(records, wanted.record, sizeof(wanted.record)))
             {
-                e.written = true;
-                e.fault   = nullptr;
+                e.written   = true;
+                e.lastWrite = wanted;
+                e.fault     = nullptr;
                 ++e.writes;
                 platform::Log(L"column layout: the engine's two-player layout ({}) now shows {} (was {}); the engine lays two "
                               L"local players out from it on the next redraw (write {})",
@@ -426,7 +447,8 @@ void ApplyTwo(TwoEntry& e, const TwoRecords& wanted) noexcept
         case Action::Restore:
             if (platform::WriteGuarded(records, stock, sizeof(entry)))
             {
-                e.written = false;
+                e.written   = false;
+                e.lastWrite = TwoRecords{{stock[0], stock[1]}};
                 e.fault   = nullptr;
                 ++e.restores;
                 platform::Log(L"column layout: the engine's two-player layout ({}) put back to player 1 first (restore {})", e.name,
@@ -467,7 +489,7 @@ std::wstring TwoReading(const TwoEntry& e)
         return std::format(L"{} unread", e.name);
     }
     const std::wstring what = column_rules::Same(entry, stock)            ? std::wstring(L"stock")
-                              : column_rules::ArrangementOf(entry, stock) ? L"arranged (" + TwoScreensText(e, entry) + L")"
+                              : column_rules::ArrangementOf(entry, e.base.record) ? L"arranged (" + TwoScreensText(e, entry) + L")"
                                                                           : L"other: " + RecordsText(entry);
     return std::format(L"{} {} (writes {}, restores {}{})", e.name, what, e.writes, e.restores,
                        e.fault != nullptr ? std::format(L"; fault: {}", e.fault) : L"");
@@ -486,9 +508,13 @@ bool Install(const platform::GameImage& image) noexcept
     g_engineGlobal = *engineGlobal;
     g_installed    = true;
     g_wanted       = Records{{kStockFavorTop[0], kStockFavorTop[1], kStockFavorTop[2]}};
+    g_lastWrite    = g_wanted;
+    g_columnsBase  = Records{{kThreeColumns[0], kThreeColumns[1], kThreeColumns[2]}};
     for (TwoEntry& e : g_two)
     {
-        e.wanted = TwoRecords{{(*e.stock)[0], (*e.stock)[1]}};
+        e.wanted    = TwoRecords{{(*e.stock)[0], (*e.stock)[1]}};
+        e.lastWrite = e.wanted;
+        e.base      = e.wanted;
     }
     // The file's word is one of the table's, so it parses.
     SetOrder(column_rules::ParseOrder(platform::settings::Of(platform::settings::kColumnOrder).word).value_or(column_rules::kJoinOrder),
@@ -554,7 +580,7 @@ catch (...)
 {
 }
 
-void Tick(int columns, int localPlayers, int spanColumns, const ListSeats& seats) noexcept
+void Tick(int columns, int localPlayers, int spanColumns, std::span<const std::int32_t> spanWidths, const ListSeats& seats) noexcept
 {
     if (!g_installed)
     {
@@ -564,12 +590,29 @@ void Tick(int columns, int localPlayers, int spanColumns, const ListSeats& seats
     g_columns      = columns;
     g_localPlayers = localPlayers;
     g_seats        = seats;
+    // The columns' widths: the span's monitors' own (three for the three-player entry, two for side by side), equal
+    // otherwise. A width list that does not match the span's columns is not used.
+    const bool threeWide = spanColumns == kThreePlayerRecords && spanWidths.size() == kThreePlayerRecords;
+    const bool twoWide   = spanColumns == kTwoPlayerRecords && spanWidths.size() == kTwoPlayerRecords;
+    g_widths             = threeWide ? std::array<std::int32_t, kThreePlayerRecords>{spanWidths[0], spanWidths[1], spanWidths[2]}
+                                     : std::array<std::int32_t, kThreePlayerRecords>{};
+    const Records three  = threeWide ? column_rules::ColumnRecords(g_widths) : Records{};
+    g_columnsBase        = threeWide && three.record[0].sizeX > 0.0f
+                               ? three
+                               : Records{{kThreeColumns[0], kThreeColumns[1], kThreeColumns[2]}};
+    for (TwoEntry& e : g_two)
+    {
+        const TwoRecords side = twoWide && e.type == facts::kSplitTypeTwoPlayerVertical
+                                    ? column_rules::ColumnRecords(std::array<std::int32_t, kTwoPlayerRecords>{spanWidths[0], spanWidths[1]})
+                                    : TwoRecords{};
+        e.base = side.record[0].sizeX > 0.0f ? side : TwoRecords{{(*e.stock)[0], (*e.stock)[1]}};
+    }
     // Columns on a span or by the console; in one window the engine's own entry (column_rules::ThreeColumns); either
     // arranged by the column order while three views exist.
     const bool    threeWanted = column_rules::ThreeColumns(columns, localPlayers, spanColumns, g_override);
     const bool    threeViews  = columns >= kThreePlayerRecords || localPlayers >= kThreePlayerRecords;
     g_views = threeViews ? kThreePlayerRecords : columns == kTwoPlayerRecords || localPlayers == kTwoPlayerRecords ? kTwoPlayerRecords : 1;
-    const Records wanted      = column_rules::EntryWanted(threeWanted, threeViews, g_order, seats);
+    const Records wanted      = column_rules::EntryWanted(threeWanted, g_columnsBase.record, threeViews, g_order, seats);
     const bool    ours        = !column_rules::Same(wanted.record, kStockFavorTop);
     const bool    change      = !column_rules::Same(wanted.record, g_wanted.record) && !g_foreign && g_fault == nullptr;
     const bool    cadence     = g_ticks % kCheckTicks == 0 &&
@@ -582,7 +625,7 @@ void Tick(int columns, int localPlayers, int spanColumns, const ListSeats& seats
     for (TwoEntry& e : g_two)
     {
         const auto& stock = *e.stock;
-        const TwoRecords two      = column_rules::TwoEntryWanted(stock, g_views == kTwoPlayerRecords, g_order, seats);
+        const TwoRecords two      = column_rules::TwoEntryWanted(e.base.record, g_views == kTwoPlayerRecords, g_order, seats);
         const bool       twoOurs  = !column_rules::Same(two.record, stock);
         const bool       twoNew   = !column_rules::Same(two.record, e.wanted.record) && !e.foreign && e.fault == nullptr;
         const bool       twoCheck = g_ticks % kCheckTicks == 0 && (e.written || e.foreign || e.fault != nullptr || twoOurs);
@@ -624,8 +667,8 @@ std::wstring Reading()
     if (records != nullptr && platform::CopyGuarded(entry, records, sizeof(entry)))
     {
         table = column_rules::Same(entry, kStockFavorTop)            ? std::wstring(L"stock (player 1 on top, two quadrants)")
-                : column_rules::ArrangementOf(entry, kThreeColumns)  ? L"the mod's three columns (screens left to right: " +
-                                                                           ScreensText({{entry[0], entry[1], entry[2]}}, kThreeColumns) + L")"
+                : column_rules::ArrangementOf(entry, g_columnsBase.record) ? L"the mod's " + ColumnsText() + L" (screens left to right: " +
+                                                                           ScreensText({{entry[0], entry[1], entry[2]}}, g_columnsBase.record) + L")"
                 : column_rules::ArrangementOf(entry, kStockFavorTop) ? L"player 1 on top, two below, arranged (top, bottom left, "
                                                                        L"bottom right: " +
                                                                            ScreensText({{entry[0], entry[1], entry[2]}}, kStockFavorTop) + L")"

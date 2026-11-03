@@ -32,11 +32,12 @@ std::optional<Stop> Mismatch(const Monitor& base, const Monitor& candidate)
                     std::format(L"the monitor at {} is scaled to {} % in Windows (needs 100 %)", At(candidate.rect),
                                 candidate.dpi * 100 / 96)};
     }
-    if (candidate.rect.Width() != base.rect.Width() || candidate.rect.Height() != base.rect.Height())
+    if (candidate.rect.Height() != base.rect.Height())
     {
         return Stop{candidate.rect, 1,
-                    std::format(L"the monitor at {} is {}x{}, not {}x{}", At(candidate.rect), candidate.rect.Width(),
-                                candidate.rect.Height(), base.rect.Width(), base.rect.Height())};
+                    std::format(L"the monitor at {} is {}x{}, {} px tall where its neighbour is {} (a row needs one height)",
+                                At(candidate.rect), candidate.rect.Width(), candidate.rect.Height(), candidate.rect.Height(),
+                                base.rect.Height())};
     }
     const auto off = candidate.rect.top - base.rect.top;
     if (off > kAlignTolerance || off < -kAlignTolerance)
@@ -95,7 +96,7 @@ bool Attached(std::span<const Monitor> monitors, const std::vector<Member>& row,
     return false;
 }
 
-/// The row of equal monitors around `base`: outward to each side until one is missing or unequal. The row's top is
+/// The row around `base`: outward to each side until a monitor is missing, of another height or scaled. The row's top is
 /// the top of its first monitor attached to the rest of the desktop (the leftmost's if none is); the others are
 /// read as if moved there (the span moves them first).
 Row RowAround(std::span<const Monitor> monitors, const Monitor& base)
@@ -226,12 +227,12 @@ Choice Choose(std::span<const Monitor> monitors, std::size_t gameMonitor, std::i
         if (game.dpi != 96 && rows.empty())
         {
             choice.why = std::format(L"the game's monitor is scaled to {} % in Windows (needs 100 %) and no other row of "
-                                     L"unscaled equal monitors exists",
+                                     L"unscaled monitors exists",
                                      game.dpi * 100 / 96);
         }
         else
         {
-            choice.why = std::format(L"{} equal monitor(s) in the longest row, {} needed{}{}", longest, columns,
+            choice.why = std::format(L"{} monitor(s) of one height in the longest row, {} needed{}{}", longest, columns,
                                      stopped.empty() ? L"" : L"; ", stopped);
         }
         return choice;
@@ -250,6 +251,7 @@ Choice Choose(std::span<const Monitor> monitors, std::size_t gameMonitor, std::i
                            members[last].aligned.bottom};
     for (std::size_t i = first; i <= last; ++i)
     {
+        choice.widths.push_back(members[i].aligned.Width());
         if (members[i].placed.top != members[i].aligned.top)
         {
             choice.moves.push_back({members[i].placed, members[i].aligned.top});

@@ -51,11 +51,13 @@ inline constexpr std::array<const wchar_t*, 3> kBattleWarpsLabels{L"Players stay
 
 inline constexpr Option kMultiMonitor{  // views/window_span
     L"Views", L"multi-monitor", kMultiMonitorWords, L"auto",
-    L"the game window across a row of equal monitors, one full view per player: auto (while a further player is in), "
+    L"the game window across a row of monitors of one height, one full view per player, each its monitor's width: auto "
+    L"(while a further player is in), "
     L"on (held with any player count, from the game's next steady frame; a column no player fills mirrors player 1's "
     L"picture), off (no span until window-span on, window-span.hold on or Ctrl+F2; from the console: leaves now)",
     false, L"Multiple monitors", kMultiMonitorLabels,
-    L"One full view per player across a row of equal monitors. Auto: while a further player is in. On: always. Off: "
+    L"One full view per player across a row of monitors of the same height, each as wide as its monitor. Auto: while a "
+    L"further player is in. On: always. Off: "
     L"every view in one window."};
 inline constexpr Option kColumnOrder{  // views/column_layout
     L"Views", L"column-order", kColumnOrderWords, L"123",

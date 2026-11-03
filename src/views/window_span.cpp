@@ -105,6 +105,7 @@ Resolution    g_savedRes;             // GSystemResolution before the span
 Rect          g_target;               // the row
 Resolution    g_targetRes;
 std::int32_t  g_columns    = 0;
+std::vector<std::int32_t> g_widths;   // the span's monitors' widths, left to right (one per column), while in
 std::uint32_t g_ticks      = 0;
 std::uint32_t g_reapplies  = 0;
 std::uint32_t g_entries    = 0;
@@ -371,6 +372,7 @@ void Forget() noexcept
     g_native    = nullptr;
     g_hwnd      = nullptr;
     g_columns   = 0;
+    g_widths.clear();
     g_ticks     = 0;
 }
 
@@ -415,11 +417,17 @@ bool Proceed(const NativeWindow& window, const monitor_row::Choice& choice) noex
     g_step      = Step::Requested;
     g_stepTicks = 0;
     g_target    = choice.span;
+    g_widths    = choice.widths;
     ++g_entries;
-    platform::Log(L"window span: entering: {} columns over the row of {} equal monitor(s){}{}; the game's resolution request "
-                  L"sent for {} (was {}; the window's client area {} in {} mode, the viewport {}); the reshape to {} follows "
-                  L"once the engine applies it",
-                  g_columns, choice.rowMonitors, choice.gamesRow ? L"" : L" (not the game's own monitor's row)",
+    std::wstring widths;
+    for (const std::int32_t width : g_widths)
+    {
+        widths += std::format(L"{}{}", widths.empty() ? L"" : L" | ", width);
+    }
+    platform::Log(L"window span: entering: {} columns over the row of {} monitor(s) (the columns {} px wide){}{}; the game's "
+                  L"resolution request sent for {} (was {}; the window's client area {} in {} mode, the viewport {}); the reshape "
+                  L"to {} follows once the engine applies it",
+                  g_columns, choice.rowMonitors, widths, choice.gamesRow ? L"" : L" (not the game's own monitor's row)",
                   display_align::Moved() ? std::format(L" (lined up: {})", display_align::Reading()).c_str() : L"",
                   ResolutionText(g_targetRes), ResolutionText(before), RectText(client), ModeName(window.mode), ViewportText(),
                   RectText(choice.span));
@@ -472,7 +480,7 @@ bool Install(const platform::GameImage& image) noexcept
     g_installed    = true;
     control::Register({.name  = L"window-span",
                        .shape = control::Shape::OnOff,
-                       .help  = L"the game window across a row of equal monitors, one full view per player (on: enters "
+                       .help  = L"the game window across a row of monitors of one height, one full view per player on each (on: enters "
                                 L"now and on each join; off: leaves and stays single; Ctrl+F2 toggles)",
                        .set   = [](const control::Value& v) {
                            g_auto = std::get<bool>(v);
@@ -526,7 +534,7 @@ bool Install(const platform::GameImage& image) noexcept
         [] { return Preset(); });
     SetPreset(platform::settings::Of(platform::settings::kMultiMonitor).word, platform::settings::Why(platform::settings::kMultiMonitor).c_str());
     const auto res = ReadResolution();
-    platform::Log(L"window span: ready (on by default: with a further player in, the window spans a row of equal monitors through "
+    platform::Log(L"window span: ready (on by default: with a further player in, the window spans a row of monitors of one height through "
                   L"the game's resolution request and the engine's window reshape; Ctrl+F2 toggles; window-span.hold on "
                   L"spans with any player count); the game's resolution is {} now",
                   ResolutionText(res));
@@ -585,7 +593,7 @@ bool Enter(std::int32_t columns) noexcept
     while (!choice.ok && columns > 2 && choice.rowMonitors >= 2)
     {
         const std::int32_t fewer = std::min(columns - 1, choice.rowMonitors);
-        platform::Log(L"window span: the longest row has {} equal monitor(s); {} columns instead of {}", choice.rowMonitors, fewer,
+        platform::Log(L"window span: the longest row has {} monitor(s); {} columns instead of {}", choice.rowMonitors, fewer,
                       columns);
         columns = fewer;
         choice  = monitor_row::Choose(monitors.list, monitors.gameAt, columns);
@@ -593,7 +601,7 @@ bool Enter(std::int32_t columns) noexcept
     if (!choice.ok)
     {
         platform::Log(L"window span: refused: {} ({} monitor(s) listed; the mod lines up a row's tops itself within {} px "
-                      L"and changes no display mode or scaling: arrange equal monitors in a row at 100 % scaling)",
+                      L"and changes no display mode or scaling: arrange monitors of one height in a row at 100 % scaling)",
                       choice.why, monitors.list.size(), monitor_row::kAlignTolerance);
         return false;
     }
@@ -671,6 +679,11 @@ void Toggle() noexcept
 std::int32_t Columns() noexcept
 {
     return In() ? g_columns : 0;
+}
+
+std::span<const std::int32_t> ColumnWidths() noexcept
+{
+    return In() ? std::span<const std::int32_t>(g_widths) : std::span<const std::int32_t>();
 }
 
 void SetPreset(const std::wstring& preset, const wchar_t* why) noexcept

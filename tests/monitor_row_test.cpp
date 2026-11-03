@@ -5,10 +5,12 @@
 // off monitor is listed as a move to the row's top); Rebirth's three-monitor row (the game in it; a two-column span
 // starting at the game's monitor and shifted left at the row's end; moves only for the span's columns); the row
 // broken by a monitor of another size, a top too far off (beyond the tolerance), a gap, or Windows scaling; the
-// game's monitor scaled with and without another row; one column always possible; bad inputs.
+// game's monitor scaled with and without another row; one column always possible; bad inputs; rows of one height
+// and different widths (the user's 2560 | 3440 | 2560 of 2026-11-02), the span's widths listed.
 
 #include "views/monitor_row.h"
 
+#include <cstdint>
 #include <cstdio>
 #include <vector>
 
@@ -164,12 +166,12 @@ void TestTheGamesRowWinsATie()
 
 void TestRowBrokenByAnotherSize()
 {
-    std::printf("the TV at 4K breaks the row: two equal monitors, the reason names the TV\n");
+    std::printf("the TV at 4K breaks the row (another height): two monitors, the reason names the TV\n");
     std::vector<Monitor> monitors{At(0, 0, 3440, 1440), At(-3251, 1440, 3840, 2160), At(589, 1440), At(3149, 1440)};
     const Choice         c = Choose(monitors, 2, 3);
     EXPECT(!c.ok);
     EXPECT(c.rowMonitors == 2);
-    EXPECT(c.why.find(L"2 equal monitor(s)") != std::wstring::npos);
+    EXPECT(c.why.find(L"2 monitor(s) of one height") != std::wstring::npos);
     EXPECT(c.why.find(L"3840x2160") != std::wstring::npos);
 }
 
@@ -199,7 +201,7 @@ void TestRowBrokenByAGap()
     std::vector<Monitor> twoApart{At(-1971, 1440), At(600, 1440)};
     c = Choose(twoApart, 0, 2);
     EXPECT(!c.ok && c.rowMonitors == 1);
-    EXPECT(c.why.find(L"1 equal monitor(s)") != std::wstring::npos);
+    EXPECT(c.why.find(L"1 monitor(s) of one height") != std::wstring::npos);
 }
 
 void TestScalingBreaksTheRow()
@@ -215,6 +217,31 @@ void TestScalingBreaksTheRow()
     std::vector<Monitor> scaledGameRowBelow{At(0, 0, 3440, 1440, 144), At(873, 1440), At(3433, 1440)};
     c = Choose(scaledGameRowBelow, 0, 2);  // the game's monitor is scaled, the pair below is not
     EXPECT((c.ok && !c.gamesRow && c.span == Rect{873, 1440, 5993, 2880}));
+}
+
+void TestOneHeightOfDifferentWidths()
+{
+    // The user's desktop of 2026-11-02: a 2560 | 3440 | 2560 row at 1440 (the ultrawide primary in the middle, the game
+    // on it) and a 2560x1440 above, sitting on the ultrawide.
+    std::printf("the user's 2560 | 3440 | 2560 row: three columns of their own widths; two from the game's monitor\n");
+    std::vector<Monitor> monitors{At(3440, 0), At(0, 0, 3440, 1440), At(-2560, 0), At(2546, -1440)};
+    Choice               c = Choose(monitors, 1, 3);
+    EXPECT((c.ok && c.gamesRow && c.rowMonitors == 3 && c.span == Rect{-2560, 0, 6000, 1440} && c.moves.empty()));
+    EXPECT((c.widths == std::vector<std::int32_t>{2560, 3440, 2560}));
+    c = Choose(monitors, 1, 2);
+    EXPECT((c.ok && c.span == Rect{0, 0, 6000, 1440} && (c.widths == std::vector<std::int32_t>{3440, 2560})));
+    c = Choose(monitors, 0, 2);  // the game on the right one: shifted left at the row's end
+    EXPECT((c.ok && c.span == Rect{0, 0, 6000, 1440}));
+    c = Choose(monitors, 3, 3);  // the game on the monitor above: the row below it
+    EXPECT((c.ok && !c.gamesRow && c.span == Rect{-2560, 0, 6000, 1440}));
+    c = Choose(monitors, 1, 1);
+    EXPECT((c.ok && (c.widths == std::vector<std::int32_t>{3440})));
+
+    std::printf("  another height in the row still ends it, naming the height\n");
+    std::vector<Monitor> mixed{At(0, 0, 3440, 1440), At(3440, 0, 1920, 1080), At(-2560, 0)};
+    c = Choose(mixed, 0, 3);
+    EXPECT(!c.ok && c.rowMonitors == 2);
+    EXPECT(c.why.find(L"1080 px tall where its neighbour is 1440") != std::wstring::npos);
 }
 
 void TestBadInputs()
@@ -242,6 +269,7 @@ int main()
     TestRowBrokenByAMisalignedTop();
     TestRowBrokenByAGap();
     TestScalingBreaksTheRow();
+    TestOneHeightOfDifferentWidths();
     TestBadInputs();
     if (g_failures == 0)
     {

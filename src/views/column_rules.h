@@ -24,6 +24,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <optional>
 #include <string_view>
@@ -71,7 +72,7 @@ inline constexpr Record kStockFavorTop[kThreePlayerRecords] = {
     {0.5f, 0.5f, 0.5f, 0.5f},
 };
 
-/// Three equal full-height columns, left to right.
+/// Three equal full-height columns, left to right: the console's `view-columns 3` in one window.
 inline constexpr Record kThreeColumns[kThreePlayerRecords] = {
     {1.0f / 3.0f, 1.0f, 0.0f, 0.0f},
     {1.0f / 3.0f, 1.0f, 1.0f / 3.0f, 0.0f},
@@ -219,6 +220,50 @@ struct RecordSet
 using Records    = RecordSet<kThreePlayerRecords>;
 using TwoRecords = RecordSet<kTwoPlayerRecords>;
 
+/// `pixels` of `total` as the fraction the engine turns back into exactly `pixels`. The engine places a view at
+/// TruncToInt(fraction * viewport size), the product in float (ULocalPlayer::GetProjectionData, stock 4.18 [CONFIRMED
+/// src]), and the nearest float to 2560/8560 lands a hair below 2560: the view would start a pixel short of its monitor's
+/// edge. So the fraction is stepped up to the first float whose product truncates to `pixels` (0 for bad input).
+inline float EdgeFraction(std::int32_t pixels, std::int32_t total) noexcept
+{
+    if (pixels <= 0 || total <= 0 || pixels > total)
+    {
+        return 0.0f;
+    }
+    const float size     = static_cast<float>(total);
+    float       fraction = static_cast<float>(pixels) / size;
+    for (int step = 0; step < 4 && std::trunc(fraction * size) < static_cast<float>(pixels); ++step)
+    {
+        fraction = std::nextafter(fraction, 2.0f);
+    }
+    return fraction;
+}
+
+/// Full-height columns for a row of monitors of these widths, left to right (the span's, views/monitor_row): each view
+/// fills its own monitor edge to edge, a wider monitor a wider view (the user, 2026-11-02: "the game automatically fits
+/// the width of the monitor it is on"). Equal widths give equal columns. Any width not above 0: every record empty.
+template <std::size_t N>
+RecordSet<N> ColumnRecords(const std::array<std::int32_t, N>& widths) noexcept
+{
+    RecordSet<N> out{};
+    std::int32_t total = 0;
+    for (const std::int32_t width : widths)
+    {
+        if (width <= 0)
+        {
+            return out;
+        }
+        total += width;
+    }
+    std::int32_t left = 0;
+    for (std::size_t i = 0; i < N; ++i)
+    {
+        out.record[i] = {EdgeFraction(widths[i], total), 1.0f, left == 0 ? 0.0f : EdgeFraction(left, total), 0.0f};
+        left += widths[i];
+    }
+    return out;
+}
+
 /// The entry for those slots: place i's record is base's record slots[i].
 template <std::size_t N>
 constexpr RecordSet<N> Arrange(const Record (&base)[N], const std::array<int, N>& slots) noexcept
@@ -265,9 +310,14 @@ enum class Action
     Foreign,  // the entry is neither the stock one nor one of the mod's: left alone (logged once)
 };
 
-constexpr Action Decide(const Record (&entry)[kThreePlayerRecords], const Record (&wanted)[kThreePlayerRecords]) noexcept
+/// `columns` the columns in effect (the span's monitors' widths, or equal thirds); `written` the entry the mod wrote
+/// last (the stock one before any write): the columns follow the span's monitors, so the entry may still hold the
+/// records of an earlier row.
+constexpr Action Decide(const Record (&entry)[kThreePlayerRecords], const Record (&wanted)[kThreePlayerRecords],
+                        const Record (&columns)[kThreePlayerRecords], const Record (&written)[kThreePlayerRecords]) noexcept
 {
-    if (!ArrangementOf(entry, kStockFavorTop) && !ArrangementOf(entry, kThreeColumns))
+    if (!ArrangementOf(entry, kStockFavorTop) && !ArrangementOf(entry, columns) && !ArrangementOf(entry, kThreeColumns) &&
+        !Same(entry, written))
     {
         return Action::Foreign;
     }
@@ -294,25 +344,29 @@ constexpr std::array<int, kThreePlayerRecords> ScreenSlots(int views, const Orde
     return {0, 1, 2};
 }
 
-/// The three-player entry wanted: the mod's columns while three columns are wanted, else the stock records, arranged
-/// while three views exist.
-constexpr Records EntryWanted(bool threeColumns, bool threeViews, const Order& order, const ListSeats& seats) noexcept
+/// The three-player entry wanted: the mod's columns (`columns`: the span's widths, or equal thirds) while three columns
+/// are wanted, else the stock records, arranged while three views exist.
+constexpr Records EntryWanted(bool threeColumns, const Record (&columns)[kThreePlayerRecords], bool threeViews,
+                              const Order& order, const ListSeats& seats) noexcept
 {
-    return Arrange(threeColumns ? kThreeColumns : kStockFavorTop, ScreenSlots(threeViews ? kThreePlayerRecords : 1, order, seats));
+    return Arrange(threeColumns ? columns : kStockFavorTop, ScreenSlots(threeViews ? kThreePlayerRecords : 1, order, seats));
 }
 
-/// A two-player entry wanted (`stock` its constructor's records): arranged while exactly two views exist.
-constexpr TwoRecords TwoEntryWanted(const Record (&stock)[kTwoPlayerRecords], bool twoViews, const Order& order,
+/// A two-player entry wanted (`base` its records in screen order: the constructor's, or for side by side on a span the
+/// two monitors' widths): arranged while exactly two views exist.
+constexpr TwoRecords TwoEntryWanted(const Record (&base)[kTwoPlayerRecords], bool twoViews, const Order& order,
                                     const ListSeats& seats) noexcept
 {
-    return Arrange(stock, twoViews ? TwoSlots(order, seats) : std::array<int, kTwoPlayerRecords>{0, 1});
+    return Arrange(base, twoViews ? TwoSlots(order, seats) : std::array<int, kTwoPlayerRecords>{0, 1});
 }
 
-/// What to do with a two-player entry: as Decide, its own stock records the only base.
+/// What to do with a two-player entry: as Decide, with its own stock records, the base in effect (`base`) and the entry
+/// last written (`written`) as the known contents.
 constexpr Action DecideTwo(const Record (&entry)[kTwoPlayerRecords], const Record (&wanted)[kTwoPlayerRecords],
-                           const Record (&stock)[kTwoPlayerRecords]) noexcept
+                           const Record (&stock)[kTwoPlayerRecords], const Record (&base)[kTwoPlayerRecords],
+                           const Record (&written)[kTwoPlayerRecords]) noexcept
 {
-    if (!ArrangementOf(entry, stock))
+    if (!ArrangementOf(entry, stock) && !ArrangementOf(entry, base) && !Same(entry, written))
     {
         return Action::Foreign;
     }

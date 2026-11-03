@@ -420,8 +420,8 @@ src/
                             gates, lifting ropes, gap jumps, pole slides and …
   views/                    the views: the span over a row of monitors, the columns, the mirror player, the scene
                             camera, the split scale
-    column_layout           Three equal columns through the engine's own layout table (plan/seats.md step 5;
-                            research/RE-three-views.md)
+    column_layout           Three columns through the engine's own layout table; on a span of monitors of different
+                            widths each column is its own monitor's width (v0.147.0)
     column_rules.h          The pure rules of the view columns (plan/seats.md step 5: three columns)
     column_source           Where each column's view comes from, decided in one place each tick
     columns.h               The view columns: how many views the screen shows and whose each one is, read once per tick
@@ -433,7 +433,7 @@ src/
                             while they exist
     mirror_player           The mirror players: an extra local player of the mod's in every column no player fills,
                             showing player 1's picture, so a spanned window never shows one view across the whole row
-    monitor_row             Which monitors a spanned game window may cover: a row of equal monitors
+    monitor_row             Which monitors a spanned game window may cover: a row of monitors of one height
     scene_camera            The scene camera on every further player's view: a cutscene, a talk scene or an event camera
                             plays on each further player's view as it does on player 1's
     split_fov               A view wider than the game's 16:9 image (two players in one window, the top view of three)

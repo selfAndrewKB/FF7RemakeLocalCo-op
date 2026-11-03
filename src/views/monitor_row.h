@@ -1,12 +1,15 @@
 #pragma once
 
-// Which monitors a spanned game window may cover: a row of equal monitors.
+// Which monitors a spanned game window may cover: a row of monitors of one height.
 //
 // A window that spans several monitors shows one view per monitor only if every monitor it covers has the same
-// pixel size, the same top edge and no gap to its neighbour, and if none of them is scaled by Windows (the game's
+// height, the same top edge and no gap to its neighbour, and if none of them is scaled by Windows (the game's
 // exe is per-monitor DPI aware and the engine resizes the window itself on a DPI change; research
-// RE-multi-monitor-views.md §1, §4). This module decides that from a list of monitors and the index of the game's
-// one; it touches no OS and no engine, so it is unit-tested on the host (tests/monitor_row_test.cpp).
+// RE-multi-monitor-views.md §1, §4). Widths may differ (v0.147.0, the user 2026-11-02: "the game automatically fits the
+// width of the monitor it is on"): each column is then its monitor's own width (views/column_rules ColumnRecords), so
+// the choice lists the widths. Until v0.146 a row needed equal monitors, and the user's 2560 | 3440 | 2560 row was
+// refused. This module decides from a list of monitors and the index of the game's one; it touches no OS and no
+// engine, so it is unit-tested on the host (tests/monitor_row_test.cpp).
 //
 // Taken from Rebirth's views/monitor_row. Changed: the row need not contain the game's monitor. Remake's entry
 // moves the window through the game's own resolution request and the engine's reshape, so a row of equal monitors
@@ -66,13 +69,14 @@ struct Choice
 {
     bool              ok          = false;
     Rect              span;             // the window rect to take, when ok (with the moves made)
-    std::int32_t      rowMonitors = 0;  // monitors in the chosen row (equal, within the tolerance, touching, unscaled)
+    std::int32_t      rowMonitors = 0;  // monitors in the chosen row (one height, within the tolerance, touching, unscaled)
     bool              gamesRow    = false;  // the chosen row holds the game's monitor
     std::vector<Move> moves;            // when ok: the monitors of the span to line up first (usually none)
+    std::vector<std::int32_t> widths;   // when ok: the span's monitors' widths, left to right (one per column)
     std::wstring      why;              // when not ok: what is missing or wrong, and what to change in Windows
 };
 
-/// `columns` >= 1 monitors of a row of equal monitors; the row around `monitors[gameMonitor]` when it qualifies.
+/// `columns` >= 1 monitors of a row of monitors of one height; the row around `monitors[gameMonitor]` when it qualifies.
 Choice Choose(std::span<const Monitor> monitors, std::size_t gameMonitor, std::int32_t columns);
 
 }  // namespace lss::views::monitor_row

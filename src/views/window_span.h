@@ -36,6 +36,7 @@
 // step and change, at Debug for the status.
 
 #include <cstdint>
+#include <span>
 #include <string>
 
 namespace lss::platform {
@@ -72,6 +73,10 @@ bool Held() noexcept;
 
 /// The columns the span is in with (0 when out): one per real player, the rest the mirror player's.
 std::int32_t Columns() noexcept;
+
+/// The span's monitors' widths, left to right, one per column (empty when out): the column layout gives each view its
+/// own monitor's width (views/column_layout). Game thread.
+std::span<const std::int32_t> ColumnWidths() noexcept;
 
 /// The preset (`[Views] multi-monitor`, platform/settings.h; the console's `multi-monitor`), one of its words:
 /// `auto` the span while a further player is in, `on` the span held with any player count (from the game's next

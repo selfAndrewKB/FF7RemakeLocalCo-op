@@ -1,6 +1,7 @@
 #pragma once
 
-// Three equal columns through the engine's own layout table (plan/seats.md step 5; research/RE-three-views.md).
+// Three columns through the engine's own layout table (plan/seats.md step 5; research/RE-three-views.md); on a span of
+// monitors of different widths each column is its own monitor's width (v0.147.0).
 //
 // UGameViewportClient lays its local players out every redraw from its own layout table (SplitscreenInfo, filled by
 // its constructor): with three local players it takes the three-player entry the settings name, ThreePlayer_FavorTop
@@ -40,6 +41,7 @@
 #include "views/column_rules.h"
 
 #include <cstdint>
+#include <span>
 #include <string>
 
 namespace lss::platform {
@@ -53,11 +55,14 @@ bool Install(const platform::GameImage& image) noexcept;
 
 /// Each engine tick, after the span's: `columns` the columns wanted this frame (views/column_rules::Wanted);
 /// `localPlayers` the local players the engine lists (player 1, the seats in, the mirrors); `spanColumns` the span's
-/// columns (0 when out); `seats` whose view each place of the engine's list holds now. Three columns while three views
-/// exist (wanted, or three local players still listed) and the window spans monitors or the console asks for them
-/// (column_rules::ThreeColumns); in one window three players take the engine's own layout, player 1 across the top and
-/// two below. Either is arranged by the column order while three views exist.
-void Tick(int columns, int localPlayers, int spanColumns, const column_rules::ListSeats& seats) noexcept;
+/// columns (0 when out) and `spanWidths` its monitors' widths, left to right; `seats` whose view each place of the
+/// engine's list holds now. Three columns while three views exist (wanted, or three local players still listed) and the
+/// window spans monitors or the console asks for them (column_rules::ThreeColumns); in one window three players take the
+/// engine's own layout, player 1 across the top and two below. Either is arranged by the column order while three views
+/// exist. On a span each column is its own monitor's width (column_rules::ColumnRecords; two players on a two-monitor
+/// span likewise, through the side-by-side entry); the console's three columns in one window are equal.
+void Tick(int columns, int localPlayers, int spanColumns, std::span<const std::int32_t> spanWidths,
+          const column_rules::ListSeats& seats) noexcept;
 
 /// The console's override (`view-columns`): 0 for none.
 int Override() noexcept;
