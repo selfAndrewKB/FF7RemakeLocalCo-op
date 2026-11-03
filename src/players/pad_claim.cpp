@@ -28,6 +28,7 @@
 #include <cstdint>
 #include <format>
 #include <string>
+#include <utility>
 
 namespace lss::players::pad_claim {
 
@@ -85,6 +86,7 @@ std::array<int, kScreens>            g_joinedBy{-1, -1, -1};  // by seat: the pa
 std::array<ScreenNote, kScreens>     g_notes{};      // by screen
 std::array<bool, rules::kSlots>      g_bSeen{};      // by pad: B pressed while the claim is open (arms its leave)
 int                                  g_startWhenSplit = -1;  // a spare pad's Start during one view: joins once split
+bool                                 g_redraw = false;  // a join or leave answered outside Tick: the prompts again
 unsigned long long                   g_gameClosedSeen = 0;  // view_window's count of windows the game closed, as last shown
 
 std::int64_t NowMs() noexcept
@@ -536,6 +538,7 @@ void HoldLeave(int user)
 /// now, or refused (no member free: the wait stopped).
 void AnswerJoin(const JoinAsk& j)
 {
+    g_redraw = true;  // the screen's "Joining..." gives way to its note or its new player
     using party_member::Wait;
     if (j.screen >= 0)
     {
@@ -623,7 +626,9 @@ try
             pad_table::Set(table, L"a pad joins");
             g_claim.pads = pad_table::Table();
         }
-        // The new view on the screen chosen: the column order shows that player there.
+        // The new view on the screen chosen: the column order shows that player there (put back if the join is
+        // refused).
+        const views::column_rules::Order before = views::column_layout::CurrentOrder();
         if (j.screen >= 0 && g_claim.screens >= 2)
         {
             std::array<int, kScreens> seatOn = g_claim.seatOn;
@@ -635,6 +640,10 @@ try
         }
         g_session->Join(j.seat);
         AnswerJoin(j);
+        if (!g_session->In(j.seat) && !g_session->Awaiting(j.seat) && !(views::column_layout::CurrentOrder() == before))
+        {
+            views::column_layout::ChangeOrder(before, L"the join was refused: put back");
+        }
         j = JoinAsk{};
     }
 }
@@ -674,7 +683,7 @@ try
         platform::LogDebug(L"pad claim: {} pad press(es) dropped (more than {} in one tick)", g_dropped, kQueue);
         g_dropped = 0;
     }
-    bool changed = false;
+    bool changed = std::exchange(g_redraw, false);
     if (g_active)
     {
         const int screens = std::clamp(frame.screens, 1, kScreens);
