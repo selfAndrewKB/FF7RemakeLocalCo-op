@@ -15,7 +15,8 @@
 //     so each player always has exactly one pad;
 //   - on its screen the d-pad asks for the next party member no other human plays (the caller steps the player's
 //     rank, players/party_rank_rules.h); player 1's character is the game's leader and does not step;
-//   - A keeps it, B steps back (a kept screen unkept, a taken one let go); the claim ends when at most one screen is
+//   - A keeps it, B steps back (a kept screen unkept, a taken one let go; B counts at its let-go, before the leave's
+//     hold, so a hold never also steps back); the claim ends when at most one screen is
 //     not kept and one is (the last person takes what is left), or, while a screen is open, when every player's
 //     screen is kept; the opener again (View held) puts back the tables from the opening;
 //   - a spare pad (one on a slot no player holds) joins: an open screen's button (a mirror's screen) asks for a new
@@ -128,8 +129,9 @@ constexpr Gated Gate(OpenHold& h, std::uint16_t raw, std::int64_t nowMs) noexcep
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
-// A long press that is not held back from the game (the leave's B): it fires once after `ms` down, again only after a
-// let-go.
+// A button that is a tap or a long press, not held back from the game (the claim's B: Back, or the leave): the hold
+// fires once after `ms` down, again only after a let-go; a let-go before then is the tap, told at the let-go, so a
+// press that grows into the hold never also taps.
 
 struct Held
 {
@@ -138,12 +140,20 @@ struct Held
     std::int64_t since = 0;
 };
 
-constexpr bool Hold(Held& h, bool down, std::int64_t nowMs, std::int64_t ms) noexcept
+enum class Long : std::uint8_t
+{
+    None,
+    Tap,   // let go before `ms`
+    Hold,  // down `ms`
+};
+
+constexpr Long Hold(Held& h, bool down, std::int64_t nowMs, std::int64_t ms) noexcept
 {
     if (!down)
     {
-        h = Held{};
-        return false;
+        const bool tapped = h.down && !h.fired;
+        h                 = Held{};
+        return tapped ? Long::Tap : Long::None;
     }
     if (!h.down)
     {
@@ -153,9 +163,9 @@ constexpr bool Hold(Held& h, bool down, std::int64_t nowMs, std::int64_t ms) noe
     if (!h.fired && nowMs - h.since >= ms)
     {
         h.fired = true;
-        return true;
+        return Long::Hold;
     }
-    return false;
+    return Long::None;
 }
 
 /// What the game sees of a pad on `slot` while `playing` (bit N: slot N holds a player): Start only on a player's slot

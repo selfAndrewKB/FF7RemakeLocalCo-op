@@ -197,17 +197,24 @@ void Leaving()
     EXPECT(Leave(two, 2).did == Did::Nothing);  // slot 3 holds no player
 }
 
-/// The leave's hold fires once, after a second, and again only after a let-go; B itself is never held back.
+/// B is a tap or a hold, never both: a let-go within a second is the tap (at the let-go); a second down is the hold,
+/// once, again only after a let-go, and that let-go is no tap.
 void TheLeaveHold()
 {
     Held h{};
-    EXPECT(!Hold(h, true, 0, kLeaveHoldMs));
-    EXPECT(!Hold(h, true, kLeaveHoldMs - 1, kLeaveHoldMs));
-    EXPECT(Hold(h, true, kLeaveHoldMs, kLeaveHoldMs));
-    EXPECT(!Hold(h, true, kLeaveHoldMs + 500, kLeaveHoldMs));
-    EXPECT(!Hold(h, false, kLeaveHoldMs + 600, kLeaveHoldMs));
-    EXPECT(!Hold(h, true, 5000, kLeaveHoldMs));
-    EXPECT(Hold(h, true, 5000 + kLeaveHoldMs, kLeaveHoldMs));
+    EXPECT(Hold(h, false, 0, kLeaveHoldMs) == Long::None);  // never down: no tap
+    EXPECT(Hold(h, true, 0, kLeaveHoldMs) == Long::None);   // the press itself says nothing yet
+    EXPECT(Hold(h, true, kLeaveHoldMs - 1, kLeaveHoldMs) == Long::None);
+    EXPECT(Hold(h, true, kLeaveHoldMs, kLeaveHoldMs) == Long::Hold);
+    EXPECT(Hold(h, true, kLeaveHoldMs + 500, kLeaveHoldMs) == Long::None);
+    EXPECT(Hold(h, false, kLeaveHoldMs + 600, kLeaveHoldMs) == Long::None);  // the hold's let-go is no tap
+    EXPECT(Hold(h, true, 5000, kLeaveHoldMs) == Long::None);
+    EXPECT(Hold(h, true, 5000 + kLeaveHoldMs, kLeaveHoldMs) == Long::Hold);
+    Held t{};
+    EXPECT(Hold(t, true, 0, kLeaveHoldMs) == Long::None);
+    EXPECT(Hold(t, true, 200, kLeaveHoldMs) == Long::None);
+    EXPECT(Hold(t, false, 250, kLeaveHoldMs) == Long::Tap);  // let go within the second: the tap, once
+    EXPECT(Hold(t, false, 300, kLeaveHoldMs) == Long::None);
 }
 
 /// A pad on a slot no player holds never pauses the game; player 1's slot always does.

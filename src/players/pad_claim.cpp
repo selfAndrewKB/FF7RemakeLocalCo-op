@@ -44,7 +44,8 @@ struct Event
     int           user    = 0;
     std::uint16_t pressed = 0;
     bool          open    = false;
-    bool          leave   = false;  // B held a second
+    bool          bTap    = false;  // B let go within a second: Back
+    bool          bHeld   = false;  // B held a second: the leave
 };
 
 /// A join the claim asked for, made by RunRequests before the session's tick.
@@ -84,7 +85,7 @@ std::array<JoinAsk, kScreens>        g_joins{};      // asked, not yet made (sea
 std::array<int, kScreens>            g_leaves{-1, -1, -1};  // players asked to leave, not yet out
 std::array<int, kScreens>            g_joinedBy{-1, -1, -1};  // by seat: the pad that joined it, to take its screen
 std::array<ScreenNote, kScreens>     g_notes{};      // by screen
-std::array<bool, rules::kSlots>      g_bSeen{};      // by pad: B pressed while the claim is open (arms its leave)
+std::array<bool, rules::kSlots>      g_bSeen{};      // by pad: B pressed while the claim is open (arms its tap and hold)
 int                                  g_startWhenSplit = -1;  // a spare pad's Start during one view: joins once split
 bool                                 g_redraw = false;  // a join or leave answered outside Tick: the prompts again
 unsigned long long                   g_gameClosedSeen = 0;  // view_window's count of windows the game closed, as last shown
@@ -94,11 +95,11 @@ std::int64_t NowMs() noexcept
     return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
 }
 
-void Note(int user, std::uint16_t pressed, bool open, bool leave) noexcept
+void Note(int user, std::uint16_t pressed, bool open, bool bTap, bool bHeld) noexcept
 {
     if (g_queued < kQueue)
     {
-        g_events[g_queued++] = {user, pressed, open, leave};
+        g_events[g_queued++] = {user, pressed, open, bTap, bHeld};
     }
     else
     {
@@ -577,7 +578,8 @@ bool Install() noexcept
     pad_table::Listen(&Note);
     g_installed = true;
     platform::Log(L"pad claim: View held a second on any pad opens the pad claim (each screen's button takes it, the "
-                  L"d-pad picks the character, A keeps, B held a second leaves); Start on a pad that plays no one joins, "
+                  L"d-pad picks the character, A selects, B let go steps back, B held a second leaves); Start on a pad that "
+                  L"plays no one joins, "
                   L"and so does a copy's screen's button in the claim");
     return true;
 }
@@ -755,12 +757,13 @@ try
         {
             continue;
         }
-        if ((e.pressed & rules::kB) != 0 && e.user >= 0 && e.user < rules::kSlots)
+        const bool known = e.user >= 0 && e.user < rules::kSlots;
+        if ((e.pressed & rules::kB) != 0 && known)
         {
             g_bSeen[static_cast<std::size_t>(e.user)] = true;
         }
-        for (const std::uint16_t button :
-             {rules::kA, rules::kB, rules::kX, rules::kY, rules::kDpadLeft, rules::kDpadRight, rules::kStart})
+        // B's own press waits for its let-go: Back then, or the leave's hold instead, never both.
+        for (const std::uint16_t button : {rules::kA, rules::kX, rules::kY, rules::kDpadLeft, rules::kDpadRight, rules::kStart})
         {
             if ((e.pressed & button) != 0 && g_active)
             {
@@ -768,7 +771,12 @@ try
                 changed = true;
             }
         }
-        if (e.leave && g_active)
+        if (e.bTap && g_active && known && g_bSeen[static_cast<std::size_t>(e.user)])
+        {
+            Press(e.user, rules::kB);
+            changed = true;
+        }
+        if (e.bHeld && g_active)
         {
             HoldLeave(e.user);
             changed = true;

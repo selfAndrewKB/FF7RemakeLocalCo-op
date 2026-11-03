@@ -34,7 +34,7 @@ constexpr int kSlots = rules::kSlots;
 struct Pad
 {
     rules::OpenHold  hold;
-    rules::Held      leave;  // B held: the claim's leave
+    rules::Held      leave;  // B: the claim's Back (a tap) or its leave (a hold)
     rules::LetGo     letGo;  // idle to the game until it lets go of what it held at a change
     std::uint16_t    last = 0;  // the buttons on its last poll (the listener's presses)
 };
@@ -117,12 +117,14 @@ DWORD WINAPI GetStateFor(DWORD slot, XINPUT_STATE* state) noexcept
     const std::int64_t  now   = NowMs();
     const rules::Gated  gated = rules::Gate(pad.hold, raw, now);
     const auto          pressed = static_cast<std::uint16_t>(raw & ~pad.last);
-    const bool          leave   = rules::Hold(pad.leave, (raw & rules::kB) != 0, now, rules::kLeaveHoldMs);
+    const rules::Long   b       = rules::Hold(pad.leave, (raw & rules::kB) != 0, now, rules::kLeaveHoldMs);
+    const bool          bTap    = b == rules::Long::Tap;
+    const bool          bHeld   = b == rules::Long::Hold;
     pad.last                    = raw;
     if (const Listener listener = g_listener.load(std::memory_order_relaxed);
-        listener != nullptr && (pressed != 0 || gated.open || leave))
+        listener != nullptr && (pressed != 0 || gated.open || bTap || bHeld))
     {
-        listener(user, pressed, gated.open, leave);
+        listener(user, pressed, gated.open, bTap, bHeld);
     }
     if (gated.open)
     {
