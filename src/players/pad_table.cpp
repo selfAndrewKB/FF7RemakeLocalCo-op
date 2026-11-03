@@ -34,6 +34,7 @@ constexpr int kSlots = rules::kSlots;
 struct Pad
 {
     rules::OpenHold  hold;
+    rules::Held      leave;  // B held: the claim's leave
     rules::LetGo     letGo;  // idle to the game until it lets go of what it held at a change
     std::uint16_t    last = 0;  // the buttons on its last poll (the listener's presses)
 };
@@ -49,10 +50,11 @@ bool                  g_installed  = false;
 std::array<std::atomic<int>, kSlots> g_table{0, 1, 2, 3};
 std::atomic<Listener>                g_listener{nullptr};
 std::atomic<bool>                    g_idle{false};
+std::atomic<std::uint32_t>           g_playing{1};  // the slots a player holds (SetPlaying)
 
 // Game thread.
 std::array<Pad, kSlots> g_pads{};
-std::uint32_t           g_opens = 0, g_waited = 0, g_rechecks = 0, g_changes = 0;
+std::uint32_t           g_opens = 0, g_waited = 0, g_rechecks = 0, g_changes = 0, g_startsHeld = 0;
 std::wstring            g_last   = L"none yet";
 
 std::int64_t NowMs() noexcept
@@ -105,8 +107,9 @@ DWORD WINAPI GetStateFor(DWORD slot, XINPUT_STATE* state) noexcept
     if (result != ERROR_SUCCESS)
     {
         *state = XINPUT_STATE{};  // the engine reads the buffer as left after a failure (RE-pad-slots.md §3)
-        g_pads[static_cast<std::size_t>(user)].hold = {};  // a View held back as it dropped out is not a tap on its return
-        g_pads[static_cast<std::size_t>(user)].last = 0;
+        g_pads[static_cast<std::size_t>(user)].hold  = {};  // a View held back as it dropped out is not a tap on its return
+        g_pads[static_cast<std::size_t>(user)].leave = {};
+        g_pads[static_cast<std::size_t>(user)].last  = 0;
         return result;
     }
     Pad&                pad   = g_pads[static_cast<std::size_t>(user)];
@@ -114,10 +117,12 @@ DWORD WINAPI GetStateFor(DWORD slot, XINPUT_STATE* state) noexcept
     const std::int64_t  now   = NowMs();
     const rules::Gated  gated = rules::Gate(pad.hold, raw, now);
     const auto          pressed = static_cast<std::uint16_t>(raw & ~pad.last);
+    const bool          leave   = rules::Hold(pad.leave, (raw & rules::kB) != 0, now, rules::kLeaveHoldMs);
     pad.last                    = raw;
-    if (const Listener listener = g_listener.load(std::memory_order_relaxed); listener != nullptr && (pressed != 0 || gated.open))
+    if (const Listener listener = g_listener.load(std::memory_order_relaxed);
+        listener != nullptr && (pressed != 0 || gated.open || leave))
     {
-        listener(user, pressed, gated.open);
+        listener(user, pressed, gated.open, leave);
     }
     if (gated.open)
     {
@@ -168,7 +173,15 @@ DWORD WINAPI GetStateFor(DWORD slot, XINPUT_STATE* state) noexcept
         }
         return result;
     }
-    state->Gamepad.wButtons = gated.buttons;
+    // A pad that plays no one never pauses the game: its Start is the claim's join (heard above).
+    const std::uint16_t shown = rules::StartGate(gated.buttons, static_cast<int>(slot), g_playing.load(std::memory_order_relaxed));
+    if ((pressed & rules::kStart) != 0 && (shown & rules::kStart) == 0)
+    {
+        ++g_startsHeld;
+        platform::LogDebug(L"pads: {}'s Start held back from the game (player {}'s slot, no player there): a join",
+                           PadName(user), slot + 1);
+    }
+    state->Gamepad.wButtons = shown;
     return result;
 }
 
@@ -242,9 +255,10 @@ namespace {
 
 std::wstring Reading()
 {
-    return std::format(L"{}{}; {}; View held {}, waits for a let-go {}, re-checks {}, changes {}; last: {}",
+    return std::format(L"{}{}; {}; slots with a player {:#x}; View held {}, Starts held back {}, waits for a let-go {}, "
+                       L"re-checks {}, changes {}; last: {}",
                        g_installed ? L"on" : L"not installed", g_idle.load() ? L" (every pad idle)" : L"",
-                       TableText(Table()), g_opens, g_waited, g_rechecks, g_changes, g_last);
+                       TableText(Table()), g_playing.load(), g_opens, g_startsHeld, g_waited, g_rechecks, g_changes, g_last);
 }
 
 }  // namespace
@@ -312,6 +326,11 @@ try
 }
 catch (...)
 {
+}
+
+void SetPlaying(std::uint32_t slots) noexcept
+{
+    g_playing.store(slots | 1u, std::memory_order_relaxed);
 }
 
 void Listen(Listener listener) noexcept

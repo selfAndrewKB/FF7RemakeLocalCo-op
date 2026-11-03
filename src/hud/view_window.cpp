@@ -2,6 +2,7 @@
 
 #include "control/registry.h"
 #include "engine_facts.h"
+#include "hud/overlay_pass.h"
 #include "platform/game_array.h"
 #include "platform/guarded.h"
 #include "platform/image.h"
@@ -39,6 +40,7 @@ using SourceFn     = void* (*)();
 using GetWorldFn   = void* (*)(void* object);
 
 constexpr int kPlayers = players::scopes::kMaxPlayers;
+static_assert(kPlayers == kSeatViews, "a copy's view follows the seats'");
 
 using platform::GameArray;
 
@@ -62,11 +64,12 @@ struct Game
     std::array<std::uintptr_t, 3> cues{};  // the sounds' FNames, by Sound
 };
 
-/// A window the mod opened, by the seat whose view shows it. `object` is compared first; the weak pair confirms it is
+/// A window the mod opened, by the view that shows it (a seat's, or a copy's column: MirrorView). `object` is compared
+/// first; the weak pair confirms it is
 /// still that object (a freed window's address may hold another widget).
 struct Window
 {
-    int          seat = -1;
+    int          view = -1;
     void*        object = nullptr;
     weak::Weak   pair;
     std::wstring text;
@@ -77,7 +80,7 @@ Game g;
 bool g_installed = false;
 
 // Game thread.
-std::array<Window, kPlayers> g_open;     // each seat's open window (seat -1: none)
+std::array<Window, kViews>   g_open;     // each view's open window (view -1: none)
 std::vector<Window>          g_closing;  // closed ones still playing Out
 std::uint64_t                g_opened = 0, g_changes = 0, g_failed = 0, g_gameClosed = 0, g_inScope = 0;
 bool                         g_failLogged = false;
@@ -132,7 +135,14 @@ bool SetText(void* window, const std::wstring& text) noexcept
 
 /// The game's sequence for one window (EndUI_ShowMessageWindow's, §12.9), its focus layer popped at once. Refused inside
 /// a player's scope: Open pushes onto whichever focus context is current, and the swapped one is that player's copy.
-void* OpenWindow(int seat, const std::wstring& text) noexcept
+/// "player 2" for a seat's view, "the copy in column 2" for a copy's.
+std::wstring ViewName(int view)
+{
+    return view >= 0 && view < kPlayers ? std::wstring(players::SeatName(view))
+                                        : std::format(L"the copy in column {}", view - kPlayers + 1);
+}
+
+void* OpenWindow(int view, const std::wstring& text) noexcept
 {
     if (players::scopes::OpenPlayer(players::scopes::All) != 0)
     {
@@ -151,7 +161,7 @@ void* OpenWindow(int seat, const std::wstring& text) noexcept
         !platform::CallGuarded(g.addToRoot, added, w, z) || !added)
     {
         platform::LogWarning(L"view window: {}'s window was made but could not be added to the HUD overlay",
-                             players::SeatName(seat));
+                             ViewName(view));
         return nullptr;  // never opened: no layer, no sound; the game collects it
     }
     const GameArray    none{};
@@ -178,9 +188,9 @@ void* OpenWindow(int seat, const std::wstring& text) noexcept
             const std::uint8_t remove = 1;
             platform::WriteGuarded(At(w, facts::kMessageWindowRemoveAfterOut), &remove, sizeof(remove));
             platform::CallGuarded(g.close, w);
-            g_closing.push_back(Window{.seat = seat, .object = w, .pair = weak::MakeWeak(w)});
+            g_closing.push_back(Window{.view = view, .object = w, .pair = weak::MakeWeak(w)});
         }
-        platform::LogWarning(L"view window: {}'s window faulted while opening ({}); {}", players::SeatName(seat),
+        platform::LogWarning(L"view window: {}'s window faulted while opening ({}); {}", ViewName(view),
                              !filled ? L"its text or options" : !opened ? L"its open" : L"its focus pop",
                              state == 0 ? L"taken out of the overlay" : L"closed again");
         return nullptr;
@@ -196,12 +206,12 @@ void* OpenWindow(int seat, const std::wstring& text) noexcept
     {
         platform::Log(L"view window: opened in {}'s view (the game's message window, z {}; focus layers {} before and "
                       L"after{})",
-                      players::SeatName(seat), z, before, unlisted);
+                      ViewName(view), z, before, unlisted);
     }
     else
     {
         platform::LogWarning(L"view window: opened in {}'s view, but the focus layers are {} after and were {} before{}",
-                             players::SeatName(seat), after, before, unlisted);
+                             ViewName(view), after, before, unlisted);
     }
     return w;
 }
@@ -216,9 +226,9 @@ std::wstring Reading()
     std::wstring open;
     for (const Window& w : g_open)
     {
-        if (w.seat >= 0)
+        if (w.view >= 0)
         {
-            open += std::format(L"{}{}", open.empty() ? L"" : L", ", players::SeatName(w.seat));
+            open += std::format(L"{}{}", open.empty() ? L"" : L", ", ViewName(w.view));
         }
     }
     return std::format(L"{}; open in: {}; closing {}; opened {}, text changes {}, failed {} ({} inside a player's scope), "
@@ -313,15 +323,15 @@ void Remove() noexcept
     }
 }
 
-bool Show(int seat, const std::wstring& markup) noexcept
+bool Show(int view, const std::wstring& markup) noexcept
 try
 {
-    if (!g_installed || seat < 0 || seat >= kPlayers)
+    if (!g_installed || view < 0 || view >= kViews)
     {
         return false;
     }
-    Window& w = g_open[static_cast<std::size_t>(seat)];
-    if (w.seat >= 0 && Alive(w))
+    Window& w = g_open[static_cast<std::size_t>(view)];
+    if (w.view >= 0 && Alive(w))
     {
         if (w.text != markup)
         {
@@ -332,12 +342,12 @@ try
             }
             w.text = markup;
             ++g_changes;
-            platform::LogDebug(L"view window: {}'s text changed", players::SeatName(seat));
+            platform::LogDebug(L"view window: {}'s text changed", ViewName(view));
         }
         return true;
     }
     Forget(w);
-    void* const object = OpenWindow(seat, markup);
+    void* const object = OpenWindow(view, markup);
     if (object == nullptr)
     {
         ++g_failed;
@@ -346,11 +356,11 @@ try
             g_failLogged = true;
             platform::LogWarning(L"view window: no game window could be shown in {}'s view (no world, or the game made "
                                  L"none); the caller falls back",
-                                 players::SeatName(seat));
+                                 ViewName(view));
         }
         return false;
     }
-    w = Window{.seat = seat, .object = object, .pair = weak::MakeWeak(object), .text = markup};
+    w = Window{.view = view, .object = object, .pair = weak::MakeWeak(object), .text = markup};
     return true;
 }
 catch (...)
@@ -358,15 +368,15 @@ catch (...)
     return false;
 }
 
-void Close(int seat) noexcept
+void Close(int view) noexcept
 try
 {
-    if (seat < 0 || seat >= kPlayers)
+    if (view < 0 || view >= kViews)
     {
         return;
     }
-    Window& w = g_open[static_cast<std::size_t>(seat)];
-    if (w.seat < 0)
+    Window& w = g_open[static_cast<std::size_t>(view)];
+    if (w.view < 0)
     {
         return;
     }
@@ -378,11 +388,11 @@ try
             platform::CallGuarded(g.close, w.object))
         {
             g_closing.push_back(w);
-            platform::Log(L"view window: closed in {}'s view", players::SeatName(seat));
+            platform::Log(L"view window: closed in {}'s view", ViewName(view));
         }
         else
         {
-            platform::LogWarning(L"view window: {}'s window could not be closed", players::SeatName(seat));
+            platform::LogWarning(L"view window: {}'s window could not be closed", ViewName(view));
         }
     }
     Forget(w);
@@ -393,13 +403,13 @@ catch (...)
 
 void CloseAll() noexcept
 {
-    for (int seat = 0; seat < kPlayers; ++seat)
+    for (int view = 0; view < kViews; ++view)
     {
-        Close(seat);
+        Close(view);
     }
 }
 
-int SeatOf(const void* widget) noexcept
+int ViewOf(const void* widget) noexcept
 {
     if (widget == nullptr)
     {
@@ -407,16 +417,16 @@ int SeatOf(const void* widget) noexcept
     }
     for (const Window& w : g_open)
     {
-        if (w.seat >= 0 && w.object == widget && weak::Resolve(w.pair) == widget)
+        if (w.view >= 0 && w.object == widget && weak::Resolve(w.pair) == widget)
         {
-            return w.seat;
+            return w.view;
         }
     }
     for (const Window& w : g_closing)
     {
         if (w.object == widget && weak::Resolve(w.pair) == widget)
         {
-            return w.seat;
+            return w.view;
         }
     }
     return -1;
@@ -429,7 +439,7 @@ std::uint64_t ClosedByGame() noexcept
 
 bool Any() noexcept
 {
-    return !g_closing.empty() || std::any_of(g_open.begin(), g_open.end(), [](const Window& w) { return w.seat >= 0; });
+    return !g_closing.empty() || std::any_of(g_open.begin(), g_open.end(), [](const Window& w) { return w.view >= 0; });
 }
 
 void Play(Sound sound) noexcept
@@ -468,11 +478,11 @@ try
     }
     for (Window& w : g_open)
     {
-        if (w.seat >= 0 && !Alive(w))
+        if (w.view >= 0 && !Alive(w))
         {
             ++g_gameClosed;
             platform::Log(L"view window: the game closed {}'s window (a load, a map change or an overlay rebuild)",
-                          players::SeatName(w.seat));
+                          ViewName(w.view));
             Forget(w);
         }
     }

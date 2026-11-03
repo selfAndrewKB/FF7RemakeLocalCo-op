@@ -37,6 +37,7 @@
 #include "players/session.h"
 #include "players/single_view.h"
 #include "players/pad_claim.h"
+#include "players/pad_table.h"
 #include "players/split_switch.h"
 #include "players/split_render.h"
 #include "players/weak_object.h"
@@ -65,7 +66,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.149.0-claim-characters";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.149.1-claim-joins";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
@@ -321,6 +322,10 @@ private:
         // The console's lines (joins and leaves among them) before the session and the column map, as the keys, so
         // this frame's HUD passes never name a player the console just took out.
         remote_.Tick();
+        // The pads' joins and leaves from the claim, at the keys' place; then which slots the players hold (a pad on any
+        // other slot never pauses the game: its Start joins).
+        lss::players::pad_claim::RunRequests();
+        lss::players::pad_table::SetPlaying(session_.SeatIds());
         lss::modules::TickBeforeSession(CameraManagerOf(0));
         session_.Tick();
         // The columns' tick (modules.h): the span, the layout and the mirrors toward the columns the frame shows.
@@ -359,7 +364,8 @@ private:
         // The pad claim (players/pad_claim.h) over this tick's views, its prompts shown in each player's own view.
         lss::players::pad_claim::Tick({.screens   = columns_.count,
                                        .listSeats = ListSeatsOf(columns_),
-                                       .single    = singleView_.Single()});
+                                       .single    = singleView_.Single(),
+                                       .seatIds   = session_.SeatIds()});
         // The next shop a further player opens: its camera on the screen's one view in one window (where the single
         // view can show it), on the opener's on a row or under the console's off (world/shop_act.h).
         lss::world::shop_act::SetOneWindow(!columns.columnsHeld &&

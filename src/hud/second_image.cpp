@@ -158,7 +158,7 @@ bool RenderFurther(void* overlay, int column) noexcept
     const double deltaTime = *g_deltaTime;
     Fade         fade;
     platform::CopyGuarded(&fade, static_cast<const std::uint8_t*>(overlay) + facts::kOverlayFade, sizeof(fade));
-    pass_hide::BeginFurtherPass(overlay_pass::SeatOf(column));
+    pass_hide::BeginFurtherPass(column);
     battle::command_menu::BeginPass(column);
     battle::target_cursor::BeginPass(column);
     *g_deltaTime = 0.0;

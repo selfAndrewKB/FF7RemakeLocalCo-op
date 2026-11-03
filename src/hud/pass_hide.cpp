@@ -10,6 +10,7 @@
 #include <Unreal/UObjectGlobals.hpp>
 
 #include "engine_facts.h"
+#include "hud/overlay_pass.h"
 #include "hud/user_widgets.h"
 #include "hud/view_window.h"
 #include "platform/guarded.h"
@@ -107,8 +108,9 @@ bool SetColor(UObject* widget, const float (&color)[4]) noexcept
 }
 
 /// Every cursor root on the overlay, shown and opaque, that the pass of `seat` (0 player 1's) does not show, made
-/// transparent. `playerOneCursors`: player 1's own cursors too (a further pass).
-int Begin(int seat, bool playerOneCursors) noexcept
+/// transparent. `playerOneCursors`: player 1's own cursors too (a further pass). `view`: the claim windows' view the
+/// pass shows (hud/view_window.h: the seat's, or a copy's column's); every other window is hidden.
+int Begin(int seat, bool playerOneCursors, int view) noexcept
 try
 {
     g_hidden.clear();
@@ -119,11 +121,11 @@ try
     for (const auto& widget : user_widgets::Live())
     {
         const Cursor cursor = CursorOf(widget.object);
-        const int    window = cursor == Cursor::None ? view_window::SeatOf(widget.object) : -1;  // a claim window's seat
+        const int    window = cursor == Cursor::None ? view_window::ViewOf(widget.object) : -1;  // a claim window's view
         const bool   hide   = cursor == Cursor::PlayerOne ? playerOneCursors
                               : cursor == Cursor::TargetIcon  ? world::target_icons::OwnerSeat(widget.object) != seat
                               : cursor == Cursor::SearchArrow ? world::search_arrows::OwnerSeat(widget.object) != seat
-                              : window >= 0                   ? window != seat
+                              : window >= 0                   ? window != view
                                                               : false;
         void* canvas = nullptr;
         float color[4]{};
@@ -153,16 +155,26 @@ catch (...)
 
 }  // namespace
 
-int BeginFurtherPass(int seat) noexcept
+int BeginFurtherPass(int column) noexcept
 {
-    return seat >= 1 ? Begin(seat, true) : BeginOwnPass();
+    const int seat = overlay_pass::SeatOf(column);
+    if (seat >= 1)
+    {
+        return Begin(seat, true, seat);
+    }
+    // A copy of player 1's picture: player 1's hides, but its claim window is the copy's own, not player 1's.
+    g_hidden.clear();
+    return world::target_icons::AnySeatIcons() || world::search_arrows::AnySeatArrows() || view_window::Any()
+               ? Begin(0, false, view_window::MirrorView(column))
+               : 0;
 }
 
 int BeginOwnPass() noexcept
 {
     g_hidden.clear();
-    return world::target_icons::AnySeatIcons() || world::search_arrows::AnySeatArrows() || view_window::Any() ? Begin(0, false)
-                                                                                                              : 0;
+    return world::target_icons::AnySeatIcons() || world::search_arrows::AnySeatArrows() || view_window::Any()
+               ? Begin(0, false, 0)
+               : 0;
 }
 
 void EndPass() noexcept

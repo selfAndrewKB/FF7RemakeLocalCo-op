@@ -19,7 +19,11 @@
 //     that ended a claim never reaches the game as an attack or a talk (pad_claim_rules LetGo: a resting trigger or a
 //     stuck button never holds a pad for good); every pad's rumble is set off at a change;
 //   - the opener, View held for a second (pad_claim_rules::Gate): a shorter View press reaches the game at its let-go,
-//     so a tap still opens the map (a tap's length late) and the hold never does.
+//     so a tap still opens the map (a tap's length late) and the hold never does;
+//   - Start only on a slot a player holds (pad_claim_rules::StartGate; slot 0 always): a pad that plays no one never
+//     pauses the game, and its Start, heard by the listener, joins (players/pad_claim); the rest of such a pad still
+//     reaches the game as before;
+//   - B held a second (pad_claim_rules::Hold), told to the listener: the claim's leave. B itself is not held back.
 // A PlayStation pad the game reads through its own scePad device is not XInput and is not moved (logged at install).
 // Console: `pad-table` (the pads of players 1-3 and the spare slot, e.g. `pad-table 2 1 3 4`), `pads-idle`; reading `players.pad-table`.
 
@@ -45,12 +49,16 @@ bool Set(const pad_claim_rules::PadTable& table, const wchar_t* why) noexcept;
 /// Every connected pad reads idle to the game while on. Game thread.
 void SetIdle(bool on, const wchar_t* why) noexcept;
 
-/// Each physical pad's new presses (the buttons down on this poll and up on its last) and the opener, as the game's
-/// poll reads them, idle or not: the claim's input (players/pad_claim). Called inside the engine's poll, so the
-/// listener only notes them (a table change there would lose its re-check: the poll clears the byte at its end).
-/// Game thread.
-using Listener = void (*)(int user, std::uint16_t pressed, bool open) noexcept;
+/// Each physical pad's new presses (the buttons down on this poll and up on its last), the opener and the leave's B
+/// hold, as the game's poll reads them, idle or not, Start included: the claim's input (players/pad_claim). Called
+/// inside the engine's poll, so the listener only notes them (a table change there would lose its re-check: the poll
+/// clears the byte at its end). Game thread.
+using Listener = void (*)(int user, std::uint16_t pressed, bool open, bool leave) noexcept;
 void Listen(Listener listener) noexcept;
+
+/// The slots a player holds (bit N: slot N, the controller id the session's seat N plays; bit 0 always): the others'
+/// Start is held back from the game. Once per engine tick from the session's players. Game thread.
+void SetPlaying(std::uint32_t slots) noexcept;
 
 /// Logs the engine's other input devices (a PlayStation pad read through scePad is not moved by the table). Game thread.
 void LogDevices() noexcept;

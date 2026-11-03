@@ -97,7 +97,7 @@ void TakenScreens()
     EXPECT(Has(barret.markup, L"PLAYER 2    <button=left,pad>  <color=yellow>BARRET</color>  <button=right,pad>"));
     EXPECT(Has(barret.markup, L"<button=cross,pad> Keep    <button=circle,pad> Back"));
     EXPECT(barret.plain[0] == L"PLAYER 2    <   BARRET   >");
-    EXPECT(barret.plain[1] == L"Left/Right: character    A: keep    B: back");
+    EXPECT(barret.plain[1] == L"Left/Right: character    A: keep    B: back    hold B: leave");
     // Player 1's character is the game's leader: named, no arrows.
     EXPECT(Has(cloud.markup, L"PLAYER 1    <color=yellow>CLOUD</color>"));
     EXPECT(!Has(cloud.markup, L"<button=left,pad>"));
@@ -119,11 +119,49 @@ void KeptScreen()
     EXPECT(tifa.plain[1] == L"Kept    (B: change)");
 }
 
-/// A screen with no player, or outside the screens, has no text.
+/// A copy's screen is open: it offers a join with its own button, says a join under way, and never names player 1.
+void OpenScreens()
+{
+    rules::Claim c = rules::Open(3, {-1, 0, -1}, rules::kIdentity, 0b1);
+    const ScreenText left = TextFor(c, 0, kSeats);
+    EXPECT(Has(left.markup, L"<color=yellow>NEW PLAYER</color>"));
+    EXPECT(Has(left.markup, L"Press <button=cross,pad> to join here"));
+    EXPECT(!Has(left.markup, L"CLOUD") && !Has(left.markup, L"PLAYER 1"));
+    EXPECT(TextFor(c, 2, kSeats).plain[1] == L"Press Y to join here");
+    rules::Press(c, 1, rules::kA);
+    EXPECT(TextFor(c, 0, kSeats).plain[1] == L"Joining...");
+}
+
+/// A note replaces the keys' line for a while: a refusal on an open screen, player 1 staying in.
+void Notes()
+{
+    const rules::Claim c = rules::Open(3, {-1, 0, -1}, rules::kIdentity, 0b1);
+    EXPECT(TextFor(c, 0, kSeats, Note::NoMember).plain[1] == L"No party member is free to play");
+    EXPECT(TextFor(c, 1, kSeats, Note::PlayerOneStays).plain[1] == L"Player 1 stays in");
+    EXPECT(Has(TextFor(c, 0, kSeats, Note::Waits).markup, L"Joins once a party member is free"));
+}
+
+/// A further player can leave by holding B; player 1's screen never offers it. In one window with no screen open,
+/// player 1's screen tells another pad to press Start.
+void LeaveAndStartHints()
+{
+    rules::Claim c = rules::Open(2, {0, 1, -1}, rules::kIdentity, 0b11);
+    rules::Press(c, 1, rules::kX);
+    rules::Press(c, 0, rules::kA);
+    EXPECT(Has(TextFor(c, 1, kSeats).markup, L"Hold <button=circle,pad> Leave"));
+    EXPECT(Has(TextFor(c, 1, kSeats).plain[1], L"hold B: leave"));
+    EXPECT(!Has(TextFor(c, 0, kSeats).markup, L"Leave"));
+    Seats one = kSeats;
+    one.startJoins = true;
+    EXPECT(Has(TextFor(c, 0, one).markup, L"<button=options,pad> on another pad: join"));
+    EXPECT(!Has(TextFor(c, 1, one).markup, L"<button=options,pad>"));  // player 1's screen only
+}
+
+/// Outside the screens, there is no text.
 void EmptyScreens()
 {
     const rules::Claim c = rules::Open(2, {0, 1, 2}, rules::kIdentity);
-    EXPECT(TextFor(c, 2, kSeats).markup.empty());
+    EXPECT(TextFor(c, 2, kSeats).markup.empty());  // beyond the two screens
     EXPECT(TextFor(c, -1, kSeats).markup.empty());
     EXPECT(TextFor(c, 3, kSeats).plain[0].empty());
 }
@@ -137,6 +175,9 @@ int main()
     LinesJoinedLikeTheGame();
     TakenScreens();
     KeptScreen();
+    OpenScreens();
+    Notes();
+    LeaveAndStartHints();
     EmptyScreens();
     return lss::test::Report();
 }

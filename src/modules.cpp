@@ -659,12 +659,13 @@ bool ReadView(const void* localPlayer, hud::overlay_layout::ViewShare& out) noex
 
 /// Whether the mirrors' columns, `from` up to `read`, get HUD passes of their own: each column there is a mirror's (no
 /// seat in the map) and one of them has another shape than player 1's view (overlay_pass::OtherShape: a monitor of
-/// another width in a span). Then every mirror's column gets a pass (the columns with an image of their own stay the
-/// first ones, as the target and slot rules expect), showing player 1's HUD laid out for its own monitor.
-bool MirrorsOwnImage(const hud::overlay_layout::ViewShares& shares, int from, int read) noexcept
+/// another width in a span), or `always` (the pad claim is open: each copy's screen shows its own prompt, never player
+/// 1's). Then every mirror's column gets a pass (the columns with an image of their own stay the first ones, as the
+/// target and slot rules expect), showing player 1's HUD laid out for its own monitor.
+bool MirrorsOwnImage(const hud::overlay_layout::ViewShares& shares, int from, int read, bool always) noexcept
 {
     namespace op = hud::overlay_pass;
-    bool other = false;
+    bool other = always;
     for (int column = std::max(from, 1); column < read; ++column)
     {
         if (op::SeatOf(column) != op::kNoSeat)
@@ -701,7 +702,7 @@ void TickHud(const Frame& frame) noexcept
     // A split, or the mirror beside player 1; not on the frame the single view's switch is written (the engine's sizes
     // change at the redraw, after this tick: the switch set means it shows, the fallback above decides otherwise).
     const bool views      = read >= 2 && !frame.shown.Single();
-    const bool ownMirrors = views && read > players && MirrorsOwnImage(shares, players, read);
+    const bool ownMirrors = views && read > players && MirrorsOwnImage(shares, players, read, lss::players::pad_claim::Active());
     columns.count         = ownMirrors ? read : players;  // the columns with a pass
     // The mirrors beside player 1 sample player 1's image (the single view: one view, nothing to sample).
     const bool mirror = !frame.shown.SplitShown() && frame.map.count > 1 && !frame.shown.Single() && !ownMirrors;
@@ -709,8 +710,10 @@ void TickHud(const Frame& frame) noexcept
     if (ownMirrors != g_mirrorsOwnImage)
     {
         g_mirrorsOwnImage = ownMirrors;
-        platform::Log(L"HUD: {}", ownMirrors ? std::format(L"the mirrors' columns get HUD images of their own (a monitor of another shape "
-                                                           L"than player 1's view; columns {}-{})",
+        platform::Log(L"HUD: {}", ownMirrors ? std::format(L"the mirrors' columns get HUD images of their own ({}; columns {}-{})",
+                                                           lss::players::pad_claim::Active()
+                                                               ? L"the pad claim is open: each copy shows its own prompt"
+                                                               : L"a monitor of another shape than player 1's view",
                                                            players + 1, read)
                                              : std::wstring(L"the mirrors' columns sample player 1's HUD image"));
     }

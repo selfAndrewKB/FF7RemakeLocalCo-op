@@ -77,8 +77,9 @@ void TakingIsExclusive()
     EXPECT(Press(c, 3, kX).did == Did::Took);    // the spare pad (user 3) takes player 2's screen
     EXPECT(c.pads[1] == 3 && c.pads[3] == 1);    // player 2's old pad goes spare
     EXPECT(Press(c, 1, kX).did == Did::Nothing); // taken
-    EXPECT(Press(c, 1, kY).did == Did::Nothing); // a mirror's screen
-    EXPECT(Press(c, 1, kA).did == Did::Took);    // player 1's screen
+    EXPECT(Press(c, 1, kY).did == Did::Join);    // a mirror's screen: the spare pad joins there
+    EXPECT(Press(c, 1, kA).did == Did::Nothing); // a pad whose join is under way waits for it
+    EXPECT(Press(c, 2, kA).did == Did::Took);    // player 1's screen
     EXPECT(Press(c, 2, kDpadRight).did == Did::Nothing);  // user 2 is on no screen
     EXPECT(Whole(c));
 }
@@ -118,6 +119,105 @@ void KeepBackAndCancel()
     Cancel(c);
     EXPECT(c.seatOn == (std::array<int, kScreens>{0, 1, 2}) && c.pads == kIdentity);
     EXPECT(ScreenOf(c, 1) < 0 && !Done(c));
+}
+
+/// The night's case (2026-11-02): player 1 alone, copies on the other two monitors. A spare pad joins on a copy's
+/// screen with that screen's button; player 1's pad cannot; Start joins on the first open screen.
+void JoiningFromTheClaim()
+{
+    // Player 1 on the middle monitor (order 2 1 3), copies left and right; pad 1 plays player 1, pads 2-4 spare.
+    Claim c = Open(3, {-1, 0, -1}, kIdentity, 0b1);
+    EXPECT(Spare(c, 1) && Spare(c, 3) && !Spare(c, 0));
+    EXPECT(Press(c, 0, kA).did == Did::Nothing);       // player 1's pad on an open screen: nothing
+    Result r = Press(c, 1, kA);                         // pad 2 on the left copy's button
+    EXPECT(r.did == Did::Join && r.screen == 0 && c.joiningBy[0] == 1);
+    EXPECT(Press(c, 1, kY).did == Did::Nothing);       // one join per pad
+    EXPECT(Press(c, 2, kA).did == Did::Nothing);       // that screen is being joined
+    r = Press(c, 2, kStart);                            // pad 3's Start: the first open screen left, the right one
+    EXPECT(r.did == Did::Join && r.screen == 2 && c.joiningBy[2] == 2);
+    EXPECT(!Done(c));                                   // joins under way
+    r = Press(c, 3, kStart);                            // no open screen left: a new view (the caller refuses on a row)
+    EXPECT(r.did == Did::Join && r.screen == -1);
+    EXPECT(Press(c, 0, kStart).did == Did::Nothing);   // player 1's Start never joins
+    EXPECT(IsPermutation(c.pads));
+
+    // One window, player 1 alone: Start asks for a new view.
+    Claim one = Open(1, {0, -1, -1}, kIdentity, 0b1);
+    r         = Press(one, 1, kStart);
+    EXPECT(r.did == Did::Join && r.screen == -1);
+}
+
+/// After a join the claim goes on: each player's take and keep carried by player, a join still under way carried,
+/// the opening re-based so a cancel keeps the join.
+void TheRebase()
+{
+    Claim c = Open(3, {-1, 0, -1}, kIdentity, 0b1);
+    EXPECT(Press(c, 0, kX).did == Did::Took);  // pad 1 takes player 1's screen (the middle: X)
+    EXPECT(Press(c, 0, kA).did == Did::Kept);
+    EXPECT(Press(c, 1, kA).did == Did::Join);  // pad 2 joins on the left
+    EXPECT(Press(c, 2, kY).did == Did::Join);  // pad 3 joins on the right
+    // Player 2 is in on the left; player 3's join still runs.
+    Claim n = Rebase(c, 3, {1, 0, -1}, kIdentity, 0b11);
+    EXPECT(n.takenBy[1] == 0 && n.kept[1]);     // player 1's take and keep, carried
+    EXPECT(n.takenBy[0] < 0 && !n.kept[0]);     // the new player's screen: the caller gives it to its pad
+    EXPECT(n.joiningBy[2] == 2 && n.joiningBy[0] < 0);
+    EXPECT(!Done(n));
+    EXPECT(n.openSeatOn == (std::array<int, kScreens>{1, 0, -1}));
+    n.takenBy[0] = 1;
+    EXPECT(Press(n, 1, kDpadRight).did == Did::Step);  // the joiner steps its character
+    EXPECT(Press(n, 1, kA).did == Did::Kept);
+    EXPECT(!Done(n));                                  // the right screen is still being joined
+    n.joiningBy[2] = -1;                               // that join refused: the screen stays open
+    EXPECT(Done(n));                                   // every player kept, a screen open: done
+    Cancel(n);
+    EXPECT(n.seatOn == (std::array<int, kScreens>{1, 0, -1}));  // the join stays
+}
+
+/// The claim opened by a spare pad's Start: everyone in kept, the joiner alone chooses.
+void OpenedByAJoin()
+{
+    Claim c = Open(2, {0, 1, -1}, {0, 1, 2, 3}, 0b11);
+    KeepAll(c);
+    EXPECT(c.kept[0] && c.kept[1] && c.takenBy[0] == 0 && c.takenBy[1] == 1);
+    EXPECT(Done(c));  // nothing to choose yet: the caller holds it open while the join runs
+    EXPECT(Press(c, 2, kStart).did == Did::Join);
+    EXPECT(Press(c, 1, kB).did == Did::Unkept);  // anyone may still change
+}
+
+/// B held a second: a further player's pad takes that player out; player 1's is refused; a spare pad's does nothing.
+void Leaving()
+{
+    Claim c = Open(3, {0, 1, 2}, {0, 2, 1, 3}, 0b111);
+    Result r = Leave(c, 2);  // pad 3 answers player 2's slot
+    EXPECT(r.did == Did::Leave && r.seat == 1 && r.screen == 1);
+    r = Leave(c, 0);
+    EXPECT(r.did == Did::Refused && r.seat == 0 && r.screen == 0);
+    EXPECT(Leave(c, 3).did == Did::Nothing);  // the spare slot
+    Claim two = Open(2, {0, 1, -1}, kIdentity, 0b11);
+    EXPECT(Leave(two, 2).did == Did::Nothing);  // slot 3 holds no player
+}
+
+/// The leave's hold fires once, after a second, and again only after a let-go; B itself is never held back.
+void TheLeaveHold()
+{
+    Held h{};
+    EXPECT(!Hold(h, true, 0, kLeaveHoldMs));
+    EXPECT(!Hold(h, true, kLeaveHoldMs - 1, kLeaveHoldMs));
+    EXPECT(Hold(h, true, kLeaveHoldMs, kLeaveHoldMs));
+    EXPECT(!Hold(h, true, kLeaveHoldMs + 500, kLeaveHoldMs));
+    EXPECT(!Hold(h, false, kLeaveHoldMs + 600, kLeaveHoldMs));
+    EXPECT(!Hold(h, true, 5000, kLeaveHoldMs));
+    EXPECT(Hold(h, true, 5000 + kLeaveHoldMs, kLeaveHoldMs));
+}
+
+/// A pad on a slot no player holds never pauses the game; player 1's slot always does.
+void StartOnlyForPlayers()
+{
+    EXPECT(StartGate(kStart | kA, 0, 0b1) == (kStart | kA));
+    EXPECT(StartGate(kStart | kA, 0, 0) == (kStart | kA));       // slot 0 whatever the mask
+    EXPECT(StartGate(kStart | kA, 1, 0b1) == kA);                // no player 2: Start held back, A passes
+    EXPECT(StartGate(kStart | kA, 1, 0b11) == (kStart | kA));
+    EXPECT(StartGate(kStart, 3, 0b111) == 0);                    // the spare slot
 }
 
 /// One screen: the claim ends at its keep. Two screens: one keep ends it.
@@ -246,6 +346,12 @@ int main()
     EverySwapKeepsTheWhole();
     TheOpener();
     TheLetGo();
+    JoiningFromTheClaim();
+    TheRebase();
+    OpenedByAJoin();
+    Leaving();
+    TheLeaveHold();
+    StartOnlyForPlayers();
     if (g_failures != 0)
     {
         std::printf("pad_claim_rules: %d failure(s)\n", g_failures);

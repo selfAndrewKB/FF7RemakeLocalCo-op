@@ -19,9 +19,11 @@
 #include "players/seats.h"
 #include "players/session.h"
 #include "views/column_layout.h"
+#include "views/whole_screen.h"
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cwctype>
 #include <cstdint>
 #include <format>
@@ -41,7 +43,25 @@ struct Event
     int           user    = 0;
     std::uint16_t pressed = 0;
     bool          open    = false;
+    bool          leave   = false;  // B held a second
 };
+
+/// A join the claim asked for, made by RunRequests before the session's tick.
+struct JoinAsk
+{
+    int seat   = -1;
+    int user   = -1;  // the joining pad
+    int screen = -1;  // the open screen it goes on, -1 a new view (one window)
+};
+
+/// A line a screen shows for a while: a refusal, or a join that waits.
+struct ScreenNote
+{
+    pad_claim_text::Note note  = pad_claim_text::Note::None;
+    std::int64_t         until = 0;
+};
+
+constexpr std::int64_t kNoteMs = 3000;
 
 // Noted by the pad table's listener during the engine's poll, taken in Tick. Game thread both.
 constexpr std::size_t       kQueue = 32;
@@ -58,13 +78,25 @@ std::array<int, kScreens>            g_openSeats{};  // the seats on screens at 
 pad_claim_text::Seats                g_seats{};      // each seat's character and whether it can step, as last read
 views::column_rules::Order           g_openOrder{};  // the column order at the opening, put back by a cancel
 std::array<int, kScreens>            g_openRanks{};  // each further seat's rank at the opening, put back by a cancel
+std::array<int, kScreens>            g_columnOn{-1, -1, -1};  // each screen's column (its place in the engine's list)
+std::array<JoinAsk, kScreens>        g_joins{};      // asked, not yet made (seat -1: none)
+std::array<int, kScreens>            g_leaves{-1, -1, -1};  // players asked to leave, not yet out
+std::array<int, kScreens>            g_joinedBy{-1, -1, -1};  // by seat: the pad that joined it, to take its screen
+std::array<ScreenNote, kScreens>     g_notes{};      // by screen
+std::array<bool, rules::kSlots>      g_bSeen{};      // by pad: B pressed while the claim is open (arms its leave)
+int                                  g_startWhenSplit = -1;  // a spare pad's Start during one view: joins once split
 unsigned long long                   g_gameClosedSeen = 0;  // view_window's count of windows the game closed, as last shown
 
-void Note(int user, std::uint16_t pressed, bool open) noexcept
+std::int64_t NowMs() noexcept
+{
+    return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
+void Note(int user, std::uint16_t pressed, bool open, bool leave) noexcept
 {
     if (g_queued < kQueue)
     {
-        g_events[g_queued++] = {user, pressed, open};
+        g_events[g_queued++] = {user, pressed, open, leave};
     }
     else
     {
@@ -130,7 +162,10 @@ std::wstring Character(int seat)
     return seat >= 0 && seat < kScreens ? g_seats.names[static_cast<std::size_t>(seat)] : std::wstring(L"nobody");
 }
 
-/// Each seat's character and whether its player can step now.
+int FreeSeat();
+
+/// Each seat's character and whether its player can step now; whether Start can add a view (no screen open, a seat
+/// free).
 void ReadSeats()
 {
     for (int seat = 0; seat < kScreens; ++seat)
@@ -138,6 +173,8 @@ void ReadSeats()
         g_seats.names[static_cast<std::size_t>(seat)]   = NameOf(seat);
         g_seats.canStep[static_cast<std::size_t>(seat)] = seat >= 1 && g_session != nullptr && g_session->CanStepMember(seat);
     }
+    g_seats.startJoins = rules::FirstOpen(g_claim) < 0 && FreeSeat() >= 0 &&
+                         std::none_of(g_claim.seatOn.begin(), g_claim.seatOn.begin() + g_claim.screens, [](int s) { return s < 0; });
 }
 
 /// "the first screen CLOUD (pad 2), the second screen BARRET (pad 1)".
@@ -169,10 +206,12 @@ std::array<int, kScreens> SeatsShown(int screens, const ListSeats& seats)
     return shown;
 }
 
-/// Each screen's player now: the engine's list placed by the column order, as the layout places it.
-std::array<int, kScreens> SeatOnScreens(const Frame& frame)
+/// Each screen's player now: the engine's list placed by the column order, as the layout places it. `columnOn`: each
+/// screen's place in the list (its column), -1 for none.
+std::array<int, kScreens> SeatOnScreens(const Frame& frame, std::array<int, kScreens>* columnOn = nullptr)
 {
     std::array<int, kScreens> seatOn{-1, -1, -1};
+    std::array<int, kScreens> column{-1, -1, -1};
     const int  screens = std::clamp(frame.screens, 1, kScreens);
     const auto slots   = views::column_rules::ScreenSlots(views::column_layout::Views(), views::column_layout::CurrentOrder(),
                                                           frame.listSeats);
@@ -182,27 +221,72 @@ std::array<int, kScreens> SeatOnScreens(const Frame& frame)
         if (slot >= 0 && slot < kScreens)
         {
             seatOn[static_cast<std::size_t>(slot)] = frame.listSeats[static_cast<std::size_t>(place)];
+            column[static_cast<std::size_t>(slot)] = place;
         }
+    }
+    if (columnOn != nullptr)
+    {
+        *columnOn = column;
     }
     return seatOn;
 }
 
-/// Each screen's text from the claim (players/pad_claim_text.h): in the game's message window in that player's view, or,
-/// where no window can be shown, the engine-font prompt. A player no longer on a screen has neither.
+/// A further seat no player holds, waits for, rejoins or is joining now (the lowest), or -1.
+int FreeSeat()
+{
+    for (int seat = 1; g_session != nullptr && seat <= kSeatsBuilt; ++seat)
+    {
+        const bool asked = std::any_of(g_joins.begin(), g_joins.end(), [seat](const JoinAsk& j) { return j.seat == seat; });
+        if (!asked && !g_session->In(seat) && !g_session->Awaiting(seat) && !g_session->RejoinPending(seat))
+        {
+            return seat;
+        }
+    }
+    return -1;
+}
+
+/// A note on `screen`, or, for a join that had no screen (a new view in one window), on player 1's.
+void SetNote(int screen, pad_claim_text::Note note)
+{
+    screen = screen >= 0 ? screen : rules::ScreenShowing(g_claim, 0);
+    if (screen >= 0 && screen < kScreens)
+    {
+        g_notes[static_cast<std::size_t>(screen)] = {note, NowMs() + kNoteMs};
+    }
+}
+
+bool AnyNote()
+{
+    return std::any_of(g_notes.begin(), g_notes.end(), [](const ScreenNote& n) { return n.note != pad_claim_text::Note::None; });
+}
+
+bool AnyRequest()
+{
+    return std::any_of(g_joins.begin(), g_joins.end(), [](const JoinAsk& j) { return j.seat >= 0; }) ||
+           std::any_of(g_leaves.begin(), g_leaves.end(), [](int seat) { return seat >= 0; });
+}
+
+/// Each screen's text from the claim (players/pad_claim_text.h): in the game's message window in that screen's view (a
+/// player's, or a copy's own: hud/view_window MirrorView), or, where no window can be shown, the engine-font prompt (a
+/// player's view only). A view no longer on a screen has neither.
 void ShowPrompts()
 {
+    constexpr int kViews = hud::view_window::kViews;
     hud::view_prompt::ClearAll();
-    std::array<bool, kScreens> shown{};  // by seat
+    std::array<bool, kViews> shown{};
     for (int s = 0; s < g_claim.screens; ++s)
     {
-        const int seat = g_claim.seatOn[static_cast<std::size_t>(s)];
-        if (seat < 0 || seat >= kScreens)
+        const auto at     = static_cast<std::size_t>(s);
+        const int  seat   = g_claim.seatOn[at];
+        const int  column = g_columnOn[at];
+        const int  view   = seat >= 0 ? seat : column >= 1 ? hud::view_window::MirrorView(column) : -1;
+        if (view < 0 || view >= kViews || seat >= kScreens)
         {
             continue;
         }
-        shown[static_cast<std::size_t>(seat)] = true;
-        const pad_claim_text::ScreenText text = pad_claim_text::TextFor(g_claim, s, g_seats);
-        if (!hud::view_window::Show(seat, text.markup))
+        shown[static_cast<std::size_t>(view)] = true;
+        const pad_claim_text::ScreenText text = pad_claim_text::TextFor(g_claim, s, g_seats, g_notes[at].note);
+        if (!hud::view_window::Show(view, text.markup) && seat >= 0)
         {
             hud::view_prompt::Prompt p;
             p.lines     = text.plain;
@@ -210,11 +294,11 @@ void ShowPrompts()
             hud::view_prompt::Show(seat, p);
         }
     }
-    for (int seat = 0; seat < kScreens; ++seat)
+    for (int view = 0; view < kViews; ++view)
     {
-        if (!shown[static_cast<std::size_t>(seat)])
+        if (!shown[static_cast<std::size_t>(view)])
         {
-            hud::view_window::Close(seat);
+            hud::view_window::Close(view);
         }
     }
 }
@@ -230,6 +314,7 @@ void End(const wchar_t* why, bool putBack)
 {
     if (putBack)
     {
+        g_joins = {};  // asked, not yet made: dropped with the rest
         rules::Cancel(g_claim);
         pad_table::Set(g_claim.pads, L"the pad claim, put back");
         if (!(views::column_layout::CurrentOrder() == g_openOrder))
@@ -249,35 +334,77 @@ void End(const wchar_t* why, bool putBack)
         }
     }
     g_active = false;
+    g_notes  = {};
     ClearPrompts();
     pad_table::SetIdle(false, L"the pad claim ended");
     platform::Log(L"pad claim: {}: {}", why, Summary(g_claim));
 }
 
-void Open(const Frame& frame, int user)
+/// The opening's tables (what a cancel puts back): the screens, the order and the ranks now.
+void TakeOpening(const Frame& frame)
 {
-    if (frame.single)
-    {
-        platform::Log(L"pad claim: View held on pad {}, but the views are one now (a scene or a menu): hold it again once "
-                      L"they are split",
-                      user + 1);
-        return;
-    }
-    const int screens = std::clamp(frame.screens, 1, kScreens);
-    g_claim           = rules::Open(screens, SeatOnScreens(frame), pad_table::Table());
-    g_openSeats       = SeatsShown(screens, frame.listSeats);
-    g_openOrder       = views::column_layout::CurrentOrder();
+    g_openSeats = SeatsShown(std::clamp(frame.screens, 1, kScreens), frame.listSeats);
+    g_openOrder = views::column_layout::CurrentOrder();
     for (int seat = 1; seat < kScreens; ++seat)
     {
         g_openRanks[static_cast<std::size_t>(seat)] = party_member::Rank(seat);
     }
+}
+
+/// `why` for the log: "pad 2 held View".
+void Open(const Frame& frame, const std::wstring& why)
+{
+    if (frame.single)
+    {
+        platform::Log(L"pad claim: {}, but the views are one now (a scene or a menu): hold View again once they are split", why);
+        return;
+    }
+    const int screens = std::clamp(frame.screens, 1, kScreens);
+    g_claim           = rules::Open(screens, SeatOnScreens(frame, &g_columnOn), pad_table::Table(), frame.seatIds);
+    TakeOpening(frame);
+    g_notes    = {};
+    g_bSeen    = {};
+    g_joinedBy = {-1, -1, -1};
     ReadSeats();
     g_active         = true;
     g_gameClosedSeen = hud::view_window::ClosedByGame();
     pad_table::SetIdle(true, L"the pad claim");
     pad_table::LogDevices();
-    platform::Log(L"pad claim: open (pad {} held View); {}", user + 1, Summary(g_claim));
+    platform::Log(L"pad claim: open ({}); {}", why, Summary(g_claim));
     ShowPrompts();
+}
+
+/// A join or a leave changed the screens: the claim goes on over them, each player's take and keep carried, a joiner's
+/// pad on its new player's screen; the opening re-based.
+void Rebase(const Frame& frame)
+{
+    const int screens = std::clamp(frame.screens, 1, kScreens);
+    g_claim           = rules::Rebase(g_claim, screens, SeatOnScreens(frame, &g_columnOn), pad_table::Table(), frame.seatIds);
+    for (int seat = 1; seat < kScreens; ++seat)
+    {
+        const int user   = g_joinedBy[static_cast<std::size_t>(seat)];
+        const int screen = rules::ScreenShowing(g_claim, seat);
+        if (user >= 0 && screen >= 0)
+        {
+            g_claim.takenBy[static_cast<std::size_t>(screen)] = user;
+            g_claim.kept[static_cast<std::size_t>(screen)]    = false;
+            g_notes[static_cast<std::size_t>(screen)]         = {};
+            g_joinedBy[static_cast<std::size_t>(seat)]        = -1;
+        }
+    }
+    TakeOpening(frame);
+    platform::Log(L"pad claim: the players on the screens changed; it goes on: {}", Summary(g_claim));
+}
+
+/// A spare pad's Start outside the claim: the claim opens with everyone in kept (only the joiner chooses; anyone may
+/// still press B to change); the caller then presses the Start into it.
+void OpenForJoin(const Frame& frame, int user)
+{
+    Open(frame, std::format(L"pad {} pressed Start to join", user + 1));
+    if (g_active)
+    {
+        rules::KeepAll(g_claim);
+    }
 }
 
 /// One pad's press on the open claim.
@@ -328,9 +455,116 @@ void Press(int user, std::uint16_t button)
         hud::view_window::Play(Sound::Cancel);
         platform::Log(L"pad claim: pad {} lets {} go", user + 1, where);
         break;
+    case rules::Did::Join:
+    {
+        const bool openPending = std::any_of(g_claim.seatOn.begin(), g_claim.seatOn.begin() + g_claim.screens,
+                                             [](int shown) { return shown < 0; });
+        const bool asked = std::any_of(g_joins.begin(), g_joins.end(), [user](const JoinAsk& j) { return j.user == user; });
+        if (asked || (r.screen < 0 && openPending))
+        {
+            if (r.screen >= 0 && asked)
+            {
+                g_claim.joiningBy[static_cast<std::size_t>(r.screen)] = -1;
+            }
+            platform::LogDebug(L"pad claim: pad {}'s join press: it already joins, or every open screen has a join under way", user + 1);
+            break;  // a new view only where no screen is open (one window); the open ones are being joined
+        }
+        const int free = FreeSeat();
+        if (free < 0 || (r.screen < 0 && g_claim.screens >= kScreens))
+        {
+            if (r.screen >= 0)
+            {
+                g_claim.joiningBy[static_cast<std::size_t>(r.screen)] = -1;
+            }
+            SetNote(r.screen, pad_claim_text::Note::AllIn);
+            hud::view_window::Play(Sound::Cancel);
+            platform::Log(L"pad claim: pad {} asked to join{}, but every player is in or on the way", user + 1,
+                          r.screen >= 0 ? L" on " + where : std::wstring());
+            break;
+        }
+        for (JoinAsk& j : g_joins)
+        {
+            if (j.seat < 0)
+            {
+                j = {free, user, r.screen};
+                break;
+            }
+        }
+        hud::view_window::Play(Sound::Decide);
+        platform::Log(L"pad claim: pad {} joins as player {}{}", user + 1, free + 1,
+                      r.screen >= 0 ? L" on " + where : std::wstring(L" (a new view)"));
+        break;
+    }
+    case rules::Did::Leave:
+    case rules::Did::Refused:
     case rules::Did::Nothing:
         break;
     }
+}
+
+/// B held a second on a pad whose B the claim saw pressed: the pad's player leaves (player 1 never does).
+void HoldLeave(int user)
+{
+    if (user < 0 || user >= rules::kSlots || !g_bSeen[static_cast<std::size_t>(user)])
+    {
+        return;
+    }
+    const rules::Result r = rules::Leave(g_claim, user);
+    using hud::view_window::Sound;
+    if (r.did == rules::Did::Refused)
+    {
+        SetNote(r.screen, pad_claim_text::Note::PlayerOneStays);
+        hud::view_window::Play(Sound::Cancel);
+        platform::Log(L"pad claim: pad {} held B, but player 1 stays in", user + 1);
+    }
+    else if (r.did == rules::Did::Leave && std::find(g_leaves.begin(), g_leaves.end(), r.seat) == g_leaves.end())
+    {
+        for (int& seat : g_leaves)
+        {
+            if (seat < 0)
+            {
+                seat = r.seat;
+                break;
+            }
+        }
+        hud::view_window::Play(Sound::Cancel);
+        platform::Log(L"pad claim: pad {} held B: player {} leaves", user + 1, r.seat + 1);
+    }
+}
+
+/// The session's answer to a join: in (its pad takes the new screen at the re-base), waiting for a member that is busy
+/// now, or refused (no member free: the wait stopped).
+void AnswerJoin(const JoinAsk& j)
+{
+    using party_member::Wait;
+    if (j.screen >= 0)
+    {
+        g_claim.joiningBy[static_cast<std::size_t>(j.screen)] = -1;
+    }
+    if (g_session->In(j.seat))
+    {
+        g_joinedBy[static_cast<std::size_t>(j.seat)] = j.user;
+        return;
+    }
+    if (g_session->Awaiting(j.seat))
+    {
+        const Wait why = g_session->WaitReason(j.seat);
+        if (why == Wait::NoSlot || why == Wait::Support || why == Wait::Unread)
+        {
+            g_session->Leave(j.seat);  // a wait that no moment of play ends: refused, said on the screen
+            SetNote(j.screen, pad_claim_text::Note::NoMember);
+            platform::Log(L"pad claim: player {}'s join refused: {}", j.seat + 1, party_member::Describe(why));
+        }
+        else
+        {
+            g_joinedBy[static_cast<std::size_t>(j.seat)] = j.user;  // its screen is its pad's once the member frees up
+            SetNote(j.screen, pad_claim_text::Note::Waits);
+            platform::Log(L"pad claim: player {} joins once its member is free ({})", j.seat + 1, party_member::Describe(why));
+        }
+        return;
+    }
+    SetNote(j.screen, pad_claim_text::Note::Failed);
+    platform::Log(L"pad claim: player {}'s join failed (see the session's lines above)", j.seat + 1);
 }
 
 }  // namespace
@@ -340,13 +574,75 @@ bool Install() noexcept
     pad_table::Listen(&Note);
     g_installed = true;
     platform::Log(L"pad claim: View held a second on any pad opens the pad claim (each screen's button takes it, the "
-                  L"d-pad picks the character, A keeps)");
+                  L"d-pad picks the character, A keeps, B held a second leaves); Start on a pad that plays no one joins, "
+                  L"and so does a copy's screen's button in the claim");
     return true;
 }
 
 void SetSession(Session* session) noexcept
 {
     g_session = session;
+}
+
+bool Active() noexcept
+{
+    return g_active;
+}
+
+void RunRequests() noexcept
+try
+{
+    if (!g_installed || g_session == nullptr || !AnyRequest())
+    {
+        return;
+    }
+    if (views::whole_screen::Shown())
+    {
+        return;  // a menu or a scene over the screen: the joins and leaves wait for the field
+    }
+    for (int& seat : g_leaves)
+    {
+        if (seat >= 1)
+        {
+            g_session->Leave(seat);
+        }
+        seat = -1;
+    }
+    for (JoinAsk& j : g_joins)
+    {
+        if (j.seat < 0)
+        {
+            continue;
+        }
+        // The joiner's pad onto the new player's slot (the pad there to the slot the joiner answered).
+        rules::PadTable table = pad_table::Table();
+        const int       from  = rules::SlotOf(table, j.user);
+        if (from >= 0 && from != j.seat)
+        {
+            std::swap(table[static_cast<std::size_t>(from)], table[static_cast<std::size_t>(j.seat)]);
+            pad_table::Set(table, L"a pad joins");
+            g_claim.pads = pad_table::Table();
+        }
+        // The new view on the screen chosen: the column order shows that player there.
+        if (j.screen >= 0 && g_claim.screens >= 2)
+        {
+            std::array<int, kScreens> seatOn = g_claim.seatOn;
+            seatOn[static_cast<std::size_t>(j.screen)] = j.seat;
+            if (const auto order = views::column_rules::OrderShowing(seatOn); order && !(*order == views::column_layout::CurrentOrder()))
+            {
+                views::column_layout::ChangeOrder(*order, L"a pad joins on that screen");
+            }
+        }
+        g_session->Join(j.seat);
+        AnswerJoin(j);
+        j = JoinAsk{};
+    }
+}
+catch (...)
+{
+    platform::Log(L"pad claim: an exception while joining or leaving; the requests are dropped");
+    g_joins  = {};
+    g_leaves = {-1, -1, -1};
 }
 
 void Remove() noexcept
@@ -358,7 +654,10 @@ void Remove() noexcept
         hud::view_prompt::ClearAll();
         pad_table::SetIdle(false, L"the mod's end");
     }
-    g_installed = false;
+    g_joins          = {};
+    g_leaves         = {-1, -1, -1};
+    g_startWhenSplit = -1;
+    g_installed      = false;
 }
 
 void Tick(const Frame& frame) noexcept
@@ -375,6 +674,7 @@ try
         platform::LogDebug(L"pad claim: {} pad press(es) dropped (more than {} in one tick)", g_dropped, kQueue);
         g_dropped = 0;
     }
+    bool changed = false;
     if (g_active)
     {
         const int screens = std::clamp(frame.screens, 1, kScreens);
@@ -382,13 +682,26 @@ try
         {
             End(L"the views became one (a scene or a menu); ended with the choices so far", false);
         }
-        else if (screens != g_claim.screens || SeatsShown(screens, frame.listSeats) != g_openSeats)
+        else if (screens != g_claim.screens || SeatsShown(screens, frame.listSeats) != g_openSeats ||
+                 (frame.seatIds | 1u) != g_claim.playing)
         {
-            End(L"a player joined or left; ended with the choices so far", false);
+            Rebase(frame);
+            changed = true;
         }
     }
-    bool changed = false;
-    bool opened  = false;  // presses of the poll that opened it reached the game too (idle starts at the next poll)
+    // A spare pad's Start remembered over one view (a scene or a menu): the join once the views are split.
+    if (!g_active && g_startWhenSplit >= 0 && !frame.single && !views::whole_screen::Shown())
+    {
+        const int user   = g_startWhenSplit;
+        g_startWhenSplit = -1;
+        OpenForJoin(frame, user);
+        if (g_active)
+        {
+            Press(user, rules::kStart);
+            changed = true;
+        }
+    }
+    bool opened = false;  // presses of the poll that opened it reached the game too (idle starts at the next poll)
     for (std::size_t i = 0; i < count; ++i)
     {
         const Event e = g_events[i];
@@ -396,12 +709,36 @@ try
         {
             if (g_active)
             {
-                End(L"cancelled (View held again): the pads and screens from the opening", true);
+                End(L"cancelled (View held again): the pads, screens and characters from the opening or the last join", true);
             }
             else
             {
-                Open(frame, e.user);
+                Open(frame, std::format(L"pad {} held View", e.user + 1));
                 opened = g_active;
+            }
+            continue;
+        }
+        // A spare pad's Start with the claim shut: the claim opens onto its join (a scene or a menu: remembered).
+        if (!g_active && (e.pressed & rules::kStart) != 0 && g_session != nullptr)
+        {
+            const rules::Claim probe = rules::Open(1, {0, -1, -1}, pad_table::Table(), frame.seatIds);
+            if (rules::Spare(probe, e.user) && FreeSeat() >= 0)
+            {
+                if (frame.single || views::whole_screen::Shown())
+                {
+                    g_startWhenSplit = e.user;
+                    platform::Log(L"pad claim: pad {} pressed Start to join during one view; it joins once the views split",
+                                  e.user + 1);
+                }
+                else
+                {
+                    OpenForJoin(frame, e.user);
+                    if (g_active)
+                    {
+                        Press(e.user, rules::kStart);
+                        changed = true;
+                    }
+                }
             }
             continue;
         }
@@ -409,7 +746,12 @@ try
         {
             continue;
         }
-        for (const std::uint16_t button : {rules::kA, rules::kB, rules::kX, rules::kY, rules::kDpadLeft, rules::kDpadRight})
+        if ((e.pressed & rules::kB) != 0 && e.user >= 0 && e.user < rules::kSlots)
+        {
+            g_bSeen[static_cast<std::size_t>(e.user)] = true;
+        }
+        for (const std::uint16_t button :
+             {rules::kA, rules::kB, rules::kX, rules::kY, rules::kDpadLeft, rules::kDpadRight, rules::kStart})
         {
             if ((e.pressed & button) != 0 && g_active)
             {
@@ -417,10 +759,25 @@ try
                 changed = true;
             }
         }
-        if (g_active && rules::Done(g_claim))
+        if (e.leave && g_active)
         {
-            End(L"done", false);
+            HoldLeave(e.user);
+            changed = true;
         }
+    }
+    // Notes run out; the claim ends once everything is kept and nothing is under way or still said.
+    const std::int64_t now = NowMs();
+    for (ScreenNote& n : g_notes)
+    {
+        if (n.note != pad_claim_text::Note::None && now >= n.until)
+        {
+            n       = {};
+            changed = true;
+        }
+    }
+    if (g_active && rules::Done(g_claim) && !AnyRequest() && !AnyNote())
+    {
+        End(L"done", false);
     }
     // The game closed a window under the claim (a script's clear of its message windows): shown again.
     if (g_active && hud::view_window::ClosedByGame() != g_gameClosedSeen)
