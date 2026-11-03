@@ -6,6 +6,7 @@
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
+#include "platform/sparse_array.h"
 #include "platform/verified_code.h"
 #include "platform/vtable_entry.h"
 #include "players/scopes.h"
@@ -44,6 +45,8 @@ using ActorFn   = void (*)(void* actor);  // the focus clear
 using LostFn    = double (*)(void* actor);
 using EndPlayFn = char (*)(void* actor, std::uint32_t reason);
 using SlotFn    = std::uint64_t (*)(void* slot);  // ClearAll, Tick
+using PlaceFn   = bool (*)(void* unused, void* arrow, const void* worldLocation);
+using ContextPcFn = void* (*)(const void* context);
 using BitsFn    = void (*)(void* bits, std::uint32_t value, std::int32_t count);
 using AllocFn   = void* (*)(std::uint64_t size, std::uint32_t alignment);
 
@@ -97,9 +100,17 @@ BitsFn                                    g_bitsInit   = nullptr;
 AllocFn                                   g_alloc      = nullptr;
 std::uintptr_t                            g_resetSite  = 0;
 bool                                      g_installed  = false;
+PlaceFn                                   g_place      = nullptr;  // null: a mirror's view shows player 1's placement
+ContextPcFn                               g_contextAt  = nullptr;
+std::uintptr_t                            g_placeSite  = 0;
 
 // Game thread.
 platform::CallRedirect   g_resetCall;
+platform::CallRedirect   g_placeLookup;            // the placement's controller lookup (crosses a block)
+bool                     g_placeTried    = false;
+void*                    g_placeOverride = nullptr;  // what the lookup answers while a mirror's placement runs
+bool                     g_mirrorPlaced  = false;    // player 1's arrows stand placed through a mirror's camera
+std::uint64_t            g_mirrorPlacements = 0, g_mirrorFaults = 0;
 bool                     g_resetTried = false;
 bool                     g_enabled    = true;  // switch search-arrows
 bool                     g_inside     = false;  // a seat's call runs now (the game's functions never nest these)
@@ -598,6 +609,45 @@ void TickSlot(Seat& seat) noexcept
     platform::CallGuarded(g_tick, ignored, seat.slot);
 }
 
+/// The placement's controller lookup: the mirror's controller while a mirror's placement runs, else the game's answer.
+void* PlaceLookup(const void* context)
+{
+    return g_placeOverride != nullptr ? g_placeOverride : g_contextAt(context);
+}
+
+/// Player 1's arrows placed again with the game's own per-arrow placement alone, through `controller` (null: each
+/// arrow's own player, the game's answer). Player 1's slot tick is never run again (it steps the slot's state).
+void PlacePlayerOneArrows(void* controller) noexcept
+try
+{
+    auto* slot = static_cast<std::uint8_t*>(PlayerOneSlot());
+    if (slot == nullptr)
+    {
+        return;
+    }
+    g_placeOverride = controller;
+    platform::ForEachSparseElement(reinterpret_cast<std::uintptr_t>(slot) + facts::kSearchSlotMap, facts::kSearchArrowStride,
+                                   platform::kSmallSetMaxBits, [](std::uintptr_t element) {
+                                       std::int32_t pair[2]{};
+                                       void*        arrow = platform::CopyGuarded(pair, reinterpret_cast<const void*>(element), sizeof(pair))
+                                                                ? players::weak_object::ObjectOf(pair)
+                                                                : nullptr;
+                                       bool collapsed = false;
+                                       if (arrow != nullptr &&
+                                           !platform::CallGuarded(g_place, collapsed, nullptr, arrow,
+                                                                  reinterpret_cast<const void*>(element + facts::kSearchArrowLocation)))
+                                       {
+                                           ++g_mirrorFaults;
+                                       }
+                                       return true;
+                                   });
+    g_placeOverride = nullptr;
+}
+catch (...)
+{
+    g_placeOverride = nullptr;
+}
+
 }  // namespace
 
 bool Install(const platform::GameImage& image) noexcept
@@ -627,6 +677,21 @@ bool Install(const platform::GameImage& image) noexcept
     g_bitsInit   = reinterpret_cast<BitsFn>(*bits);
     g_alloc      = reinterpret_cast<AllocFn>(*alloc);
     g_resetSite  = *reset;
+    // Optional: the per-arrow placement, for a mirror's own HUD pass (without it a mirror shows player 1's placement).
+    const auto place = platform::FindFunction(image, facts::kSearchPlaceArrow);
+    const auto site  = image.Rebase(facts::kSearchPlaceArrowContextCall, 5);
+    const auto pc    = image.Rebase(facts::kPlayerContextController, 16);
+    if (place && site && pc && image.BytesMatch(facts::kPlayerContextController, facts::kPlayerContextControllerFirst))
+    {
+        g_place     = reinterpret_cast<PlaceFn>(*place);
+        g_contextAt = reinterpret_cast<ContextPcFn>(*pc);
+        g_placeSite = *site;
+    }
+    else
+    {
+        platform::Log(L"search arrows: the per-arrow placement is not as the research read it; a mirror's view shows player 1's "
+                      L"search arrows as placed for player 1's view");
+    }
     for (std::size_t i = 0; i < kCalls; ++i)
     {
         if (!platform::ReplaceSlot(image, *kFacts[i], kWrappers[i], g_slots[i]))
@@ -676,6 +741,7 @@ void Remove() noexcept
     {
         ClearAllSeats(L"the mod is unloading");
         g_resetCall.Restore();  // crosses a block: only from the game thread, outside the reset
+        g_placeLookup.Restore();  // the same, outside the placement
     }
     g_installed = false;
 }
@@ -717,6 +783,15 @@ void Tick() noexcept
                                  L"up across a reset until their next hook area");
         }
     }
+    if (!g_placeTried && g_place != nullptr)
+    {
+        g_placeTried = true;  // outside the HUD tick here, as InstallFromOwnThread requires
+        const bool ok = g_placeLookup.InstallFromOwnThread(g_placeSite, reinterpret_cast<std::uintptr_t>(g_contextAt),
+                                                           reinterpret_cast<std::uintptr_t>(&PlaceLookup));
+        platform::Log(L"search arrows: the per-arrow placement's controller lookup {}",
+                      ok ? L"redirected (a mirror's own HUD pass places player 1's arrows through the mirror's camera)"
+                         : L"could not be redirected (a mirror's view shows player 1's arrows as placed for player 1's view)");
+    }
     for (int seat = 1; seat <= players::kSeatsBuilt; ++seat)
     {
         Seat& s = g_seats[seat];
@@ -742,6 +817,27 @@ void TickForPass(int seat) noexcept
         s.passTicked = true;
         ++s.passTicks;
     }
+}
+
+void PlaceForMirror(void* controller) noexcept
+{
+    if (!g_installed || !g_placeLookup.IsInstalled() || controller == nullptr || !OnGameThread())
+    {
+        return;
+    }
+    PlacePlayerOneArrows(controller);
+    g_mirrorPlaced = true;
+    ++g_mirrorPlacements;
+}
+
+void RestorePlayerOne() noexcept
+{
+    if (!g_mirrorPlaced || !OnGameThread())
+    {
+        return;
+    }
+    g_mirrorPlaced = false;
+    PlacePlayerOneArrows(nullptr);
 }
 
 int OwnerSeat(const void* widget) noexcept
@@ -778,10 +874,12 @@ bool AnySeatArrows() noexcept
 std::wstring Reading() noexcept
 try
 {
-    std::wstring out = std::format(L"{} (switch {}); reset clear {}, resets {} (skipped {}); player 1's arrows {}; slot failures {}",
+    std::wstring out = std::format(L"{} (switch {}); reset clear {}, resets {} (skipped {}); player 1's arrows {}; slot failures {}; "
+                                   L"player 1's arrows placed through a mirror's camera {} times (placement {}, faults {})",
                                    g_installed ? L"installed" : L"not installed", g_enabled ? L"on" : L"off",
                                    g_resetCall.IsInstalled() ? L"redirected" : L"not redirected", g_resets, g_resetsSkipped,
-                                   ArrowCount(PlayerOneSlot()), g_slotFailures);
+                                   ArrowCount(PlayerOneSlot()), g_slotFailures, g_mirrorPlacements,
+                                   g_placeLookup.IsInstalled() ? L"redirected" : L"not redirected", g_mirrorFaults);
     for (int seat = 1; seat <= players::kSeatsBuilt; ++seat)
     {
         const Seat&  s    = g_seats[seat];

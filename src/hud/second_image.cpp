@@ -237,6 +237,10 @@ void Driver(void* delegate)
                 outside_icons::RunForColumn(column, g_columns.controller[column]);
                 world::target_icons::PlaceForPass();  // each player's target icons through its own view into this one
                 world::search_arrows::TickForPass(overlay_pass::SeatOf(column));  // the seat's search arrows from its own camera
+                if (overlay_pass::ShownSeat(column) == 0)
+                {
+                    world::search_arrows::PlaceForMirror(g_columns.controller[column]);  // player 1's, from the mirror's camera
+                }
             }
             if (!RenderFurther(overlay, column))
             {
@@ -249,6 +253,7 @@ void Driver(void* delegate)
             marker_replay::Replay(0, g_columns.localPlayer[0], g_columns.controller[0]);
             field_icons::Replay(0, g_columns.controller[0], nullptr);
             outside_icons::RestorePlayerOne();
+            world::search_arrows::RestorePlayerOne();
             world::target_icons::PlaceForPass();
         }
     }

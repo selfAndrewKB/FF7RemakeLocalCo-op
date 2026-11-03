@@ -51,11 +51,17 @@ void* g_override = nullptr;  // what the tick's controller lookups answer during
 std::array<arrow_timers::SeatTimers, players::scopes::kMaxPlayers> g_timers;  // index = seat ([0] unused)
 std::array<bool, players::scopes::kMaxPlayers> g_ran{};                       // the seat's column ran this frame
 std::array<bool, players::scopes::kMaxPlayers> g_told{};                      // its first run logged since its last stop
+// A mirror's column with a HUD pass of its own (hud/second_image.h): player 1's arrows through the mirror's camera,
+// with timers of its own. Index = column ([0] unused).
+std::array<arrow_timers::SeatTimers, overlay_pass::kMaxColumns> g_mirrorTimers;
+std::array<bool, overlay_pass::kMaxColumns>                      g_mirrorRan{};
+std::array<bool, overlay_pass::kMaxColumns>                      g_mirrorTold{};
 bool g_furtherRan = false;
 
 struct Seen
 {
     std::array<std::uint32_t, players::scopes::kMaxPlayers> runs{};
+    std::array<std::uint32_t, overlay_pass::kMaxColumns>   mirrorRuns{};
     std::uint32_t restores     = 0;
     std::uint32_t answered     = 0;  // controller lookups answered with a seat's controller
     std::uint32_t countChanged = 0;  // runs after which the arrow count differed (the game's own churn, or ours)
@@ -169,6 +175,12 @@ std::wstring Reading()
         text += std::format(L" {} {} ({} arrows timed)", players::SeatName(seat), g_seen.runs[static_cast<std::size_t>(seat)],
                             g_timers[static_cast<std::size_t>(seat)].Count());
     }
+    for (int column = 1; column < overlay_pass::kMaxColumns; ++column)
+    {
+        const auto index = static_cast<std::size_t>(column);
+        text += std::format(L", the mirror in column {} {} ({} arrows timed)", column + 1, g_seen.mirrorRuns[index],
+                            g_mirrorTimers[index].Count());
+    }
     text += std::format(L"; player 1's restored {}; lookups answered {}; runs that changed the arrow count {}; skipped: no "
                         L"controller {}, no game mode {}, more arrows than a store holds {}{}",
                         g_seen.restores, g_seen.answered, g_seen.countChanged, g_seen.noController, g_seen.noGameMode,
@@ -257,8 +269,11 @@ void Tick() noexcept
 
 void RunForColumn(int column, void* controller) noexcept
 {
-    const int seat = overlay_pass::SeatOf(column);
-    if (!g_on || !g_ready || g_refused || seat < 1 || seat > players::kSeatsBuilt)
+    // A seat's column: the seat's arrows. A mirror's column with a pass of its own (no seat): player 1's arrows, placed
+    // through the mirror's camera, with player 1's highlight and timers of the mirror's own.
+    const int  seat   = overlay_pass::SeatOf(column);
+    const bool mirror = seat == overlay_pass::kNoSeat && column >= 1 && column < overlay_pass::kMaxColumns;
+    if (!g_on || !g_ready || g_refused || (!mirror && (seat < 1 || seat > players::kSeatsBuilt)))
     {
         return;
     }
@@ -290,8 +305,15 @@ void RunForColumn(int column, void* controller) noexcept
         StandAside(L"reading the arrows");
         return;
     }
-    battle::target_cursor::HighlightName(seat, seatName);  // 0 before the seat's first target, as a new manager
-    auto& timers = g_timers[static_cast<std::size_t>(seat)];
+    if (mirror)
+    {
+        seatName = liveName;  // player 1's last target, as player 1's own arrows
+    }
+    else
+    {
+        battle::target_cursor::HighlightName(seat, seatName);  // 0 before the seat's first target, as a new manager
+    }
+    auto& timers = mirror ? g_mirrorTimers[static_cast<std::size_t>(column)] : g_timers[static_cast<std::size_t>(seat)];
     timers.BeginIn();
     for (std::size_t i = 0; i < before.count; ++i)
     {
@@ -317,24 +339,34 @@ void RunForColumn(int column, void* controller) noexcept
         }
     }
     timers.EndOut();
+    const std::wstring who = mirror ? std::format(L"the mirror in column {}", column + 1) : std::wstring(players::SeatName(seat));
     if (after.count != before.count && g_seen.countChanged++ == 0)
     {
-        platform::LogDebug(L"HUD arrows: a run by {} changed the arrow count ({} -> {}); counted in hud.outside-icons",
-                           players::SeatName(seat), before.count, after.count);
+        platform::LogDebug(L"HUD arrows: a run by {} changed the arrow count ({} -> {}); counted in hud.outside-icons", who,
+                           before.count, after.count);
     }
     if (!ok)
     {
         StandAside(L"the arrow tick in a player's pass");
     }
-    ++g_seen.runs[seat];
-    g_ran[static_cast<std::size_t>(seat)] = true;
-    g_furtherRan                          = true;
-    if (!g_told[static_cast<std::size_t>(seat)])
+    g_furtherRan = true;
+    bool& told   = mirror ? g_mirrorTold[static_cast<std::size_t>(column)] : g_told[static_cast<std::size_t>(seat)];
+    if (mirror)
     {
-        g_told[static_cast<std::size_t>(seat)] = true;
-        platform::LogDebug(L"HUD arrows: {}'s arrows placed through that player's camera (column {}, {} arrows, highlight {})",
-                           players::SeatName(seat), column + 1, after.count,
-                           seatName != 0 ? L"its last target" : L"none yet");
+        ++g_seen.mirrorRuns[static_cast<std::size_t>(column)];
+        g_mirrorRan[static_cast<std::size_t>(column)] = true;
+    }
+    else
+    {
+        ++g_seen.runs[static_cast<std::size_t>(seat)];
+        g_ran[static_cast<std::size_t>(seat)] = true;
+    }
+    if (!told)
+    {
+        told = true;
+        platform::LogDebug(L"HUD arrows: {}'s arrows placed through {} camera (column {}, {} arrows, highlight {})", who,
+                           mirror ? L"the mirror's (player 1's arrows)" : L"that player's", column + 1, after.count,
+                           seatName != 0 ? L"the last target" : L"none yet");
     }
 }
 
@@ -382,6 +414,15 @@ void EndFrame() noexcept
             g_told[index] = false;
         }
         g_ran[index] = false;
+    }
+    for (std::size_t column = 1; column < g_mirrorRan.size(); ++column)
+    {
+        if (!g_mirrorRan[column])
+        {
+            g_mirrorTimers[column].Forget();  // no mirror pass in that column this frame: its arrows start again at 0
+            g_mirrorTold[column] = false;
+        }
+        g_mirrorRan[column] = false;
     }
     g_furtherRan = false;
 }

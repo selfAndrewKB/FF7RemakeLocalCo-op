@@ -11,6 +11,8 @@
 //   - a further column: the seat's timers swapped into the arrows, the seat's highlight name (its copy in
 //     battle/target_cursor), the two lookups answering the seat's controller, the real step (the seat's arrows
 //     fade at the game's rate); then player 1's timers and name put back;
+//   - a mirror's column with a HUD pass of its own (hud/second_image.h): player 1's arrows through the mirror's
+//     controller, player 1's highlight, timers of the mirror's own per column, the real step;
 //   - column 0, before player 1's render once a further column ran: the tick with player 1's inputs and the HUD step
 //     at 0 for that run. An arrow on screen then keeps its timer and one off screen gets the full value the tick
 //     already left, so every placement, angle, visibility, alpha and picture comes out as the tick made it.
@@ -34,7 +36,9 @@ void Remove() noexcept;
 void Tick() noexcept;
 
 /// Game thread, from the overlay driver, the column's host set in: the arrows as the column's seat sees them through
-/// `controller`. A mirror's column (no seat) and a missing controller run nothing.
+/// `controller`. A mirror's column with a pass of its own (no seat, hud/second_image.h): player 1's arrows through the
+/// mirror's `controller` (its camera), player 1's highlight, timers of the mirror's own per column (stepped at the real
+/// step, as a seat's). A missing controller runs nothing.
 void RunForColumn(int column, void* controller) noexcept;
 
 /// Game thread, from the overlay driver before player 1's render, player 1's host set in: the tick's own placement

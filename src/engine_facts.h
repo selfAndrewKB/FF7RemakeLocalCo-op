@@ -2573,6 +2573,17 @@ inline constexpr platform::FunctionFact kSearchSlotClearAll{L"EndUISlot55_FieldT
 inline constexpr std::array<std::uint8_t, 16> kSearchSlotTickEntry{
     0x48, 0x89, 0x5C, 0x24, 0x08, 0x55, 0x48, 0x8D, 0x6C, 0x24, 0xA9, 0x48, 0x81, 0xEC, 0x90, 0x00};
 inline constexpr platform::FunctionFact kSearchSlotTick{L"EndUISlot55_FieldTargetSearch_Tick", 0x14140EED0, kSearchSlotTickEntry};
+/// The tick's per-arrow placement, bool(void* unused, UUserWidget* arrow, const FVector* worldLocation): projects the
+/// point through the arrow's own player (one FLocalPlayerContext::GetPlayerController call, the site below, which crosses
+/// a block) and the overlay's host set of the pass, and writes only the arrow's angle (+0xA8, UpdateRenderTransform) and
+/// place (+0x1B0..+0x1C7): no timer, state or map entry (research/RE-hookshot-arrows.md §8). The tick walks the slot's
+/// map (a TSparseArray at +0x30 of 32-byte elements: the weak widget pair, then the world location at +0x08).
+inline constexpr std::array<std::uint8_t, 16> kSearchPlaceArrowEntry{
+    0x48, 0x89, 0x4C, 0x24, 0x08, 0x55, 0x53, 0x57, 0x48, 0x8D, 0x6C, 0x24, 0xB9, 0x48, 0x81, 0xEC};
+inline constexpr platform::FunctionFact kSearchPlaceArrow{L"EndUISlot55_FieldTargetSearch_PlaceArrow", 0x14140F0A0,
+                                                          kSearchPlaceArrowEntry};
+inline constexpr std::uintptr_t kSearchPlaceArrowContextCall = 0x14140F11E;  // E8 CD 7B C0 01, to kPlayerContextController
+inline constexpr std::uint32_t  kSearchSlotMap = 0x30, kSearchArrowStride = 0x20, kSearchArrowLocation = 0x08;
 inline constexpr std::array<std::uint8_t, 16> kBitArrayInitEntry{
     0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x6C, 0x24, 0x10, 0x48, 0x89, 0x74, 0x24, 0x18, 0x48};
 inline constexpr platform::FunctionFact kBitArrayInit{L"TBitArray init (bits, value, count)", 0x14063F170, kBitArrayInitEntry};

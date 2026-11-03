@@ -20,7 +20,9 @@
 // the game tick), so its arrow turns toward the hook point from the seat's camera; hud/pass_hide.h shows each search
 // widget only in its owner's view (OwnerSeat). An area's EndPlay clears every seat's arrow of it with the game's own
 // clear, the game mode's reset clears the seats' slots where it clears player 1's, and a seat's slot is cleared when its
-// player leaves or changes local player. Player 1's slot, flags and arrows stay the game's own throughout. Switch
+// player leaves or changes local player. Player 1's slot, flags and arrows stay the game's own throughout; only in a
+// mirror's own HUD pass are player 1's arrows placed again through the mirror's camera, and put back for player 1's pass
+// (PlaceForMirror). Switch
 // `search-arrows` (on: each player's own; off: the game's one arrow, as before). Game thread only.
 // Logged: Info at install and at the switch; Debug per enter, leave, focus, re-show and EndPlay of a seat (the flag and
 // arrow before and after, the seat's and player 1's arrow counts) and when a seat's slot is made or cleared; Trace per
@@ -52,6 +54,15 @@ void Tick() noexcept;
 /// Game thread, from the overlay driver after a further column's view geometry is written: that column's seat's slot
 /// ticked (its arrows placed through its own player into this view).
 void TickForPass(int seat) noexcept;
+
+/// Game thread, from the overlay driver in a mirror's own HUD pass (hud/second_image.h), the column's host set in:
+/// player 1's arrows placed through `controller` (the mirror's camera) by the game's own per-arrow placement alone
+/// (EndUISlot55 PlaceArrow, its one controller lookup answered with the mirror's; RE-hookshot-arrows.md §8). It writes
+/// only each arrow's angle and place: player 1's slot tick, which steps the slot's state, is never run again.
+void PlaceForMirror(void* controller) noexcept;
+/// Game thread, after the further passes with player 1's host set back: player 1's arrows placed through their own
+/// player again, if a mirror placed them this frame.
+void RestorePlayerOne() noexcept;
 
 /// The seat whose search widget this is (1..), or 0 (player 1's, or not a seat's). Game thread.
 int OwnerSeat(const void* widget) noexcept;
