@@ -134,7 +134,7 @@ void NoteShape(const void* localPlayer, const rules::Shape& shape, bool applies,
     else
     {
         platform::Log(L"split FOV: the {}x{} view of a {}x{} window keeps the engine's FOV (not wider than the camera's image, or "
-                      L"as tall as the single-player picture)",
+                      L"the whole window at the single-player picture's height)",
                       width, height, windowW, windowH);
     }
     seen->applies = applies;
@@ -221,7 +221,7 @@ bool Install(const platform::GameImage& image) noexcept
     control::Register({.name  = L"split-fov",
                        .shape = control::Shape::OnOff,
                        .help  = L"a view wider than the game's 16:9 image (two players in one window, the top view of three) shows "
-                                L"more height (views/split_fov.h; on)",
+                                L"more height, and a span's monitor wider than 16:9 more to the sides (views/split_fov.h; on)",
                        .set   = [](const control::Value& value) {
                            g_on.store(std::get<bool>(value), std::memory_order_relaxed);
                            platform::Log(L"split FOV {}", std::get<bool>(value) ? L"on" : L"off");

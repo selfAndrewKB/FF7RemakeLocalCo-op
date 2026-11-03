@@ -12,8 +12,10 @@
 // (research/RE-view-size-fov.md §4.4, §7 item 3): the single-player picture is the camera's image fitted into the
 // window (min(window height, window width / camera aspect)), so a window of another shape keeps the single-player
 // framing; and the rule applies only where it is needed: a view wider than the camera's image and shorter than the
-// single-player picture. A 16:9 quarter, one monitor of a row, a full-height column and the single view all keep the
-// engine's FOV unchanged (the user, 2026-10-27: "3 player FOV only for the player with the widest view").
+// single-player picture. A 16:9 quarter, a 16:9 monitor of a row, a narrow full-height column and the single view all
+// keep the engine's FOV unchanged (the user, 2026-10-27: "3 player FOV only for the player with the widest view").
+// v0.147.0 adds a span's monitor wider than 16:9 (a full-height column of a wider window): its height ratio is 1, so
+// the same formula keeps the camera's vertical FOV there (Hor+), whatever the weight.
 
 #include <algorithm>
 #include <cmath>
@@ -46,15 +48,22 @@ inline float HeightRatio(const Shape& shape, float cameraAspect) noexcept
     return picture > 0.0f ? shape.viewHeight / picture : 0.0f;
 }
 
-/// Whether the rule applies: the view is wider than the camera's image and shorter than the single-player picture.
+/// Whether the rule applies: the view is wider than the camera's image, and either shorter than the single-player
+/// picture or a full-height column of a wider window. The column is a span's monitor wider than 16:9 (the 3440 between
+/// two 2560s, v0.147.0): at its full height the rule keeps the camera's vertical FOV, so it shows more to the sides at
+/// the 16:9 monitors' scale instead of the same width zoomed in (the user, 2026-11-02: each view fits the width of its
+/// monitor). A single view filling the window is left to the engine.
 inline bool Applies(const Shape& shape, float cameraAspect) noexcept
 {
     if (!(shape.viewWidth > 0.0f) || !(shape.viewHeight > 0.0f) || !(cameraAspect > 0.0f))
     {
         return false;
     }
-    const float ratio = HeightRatio(shape, cameraAspect);
-    return shape.viewWidth / shape.viewHeight > cameraAspect * (1.0f + kAspectSlack) && ratio > 0.0f && ratio < 1.0f - kAspectSlack;
+    const float ratio   = HeightRatio(shape, cameraAspect);
+    const bool  wider   = shape.viewWidth / shape.viewHeight > cameraAspect * (1.0f + kAspectSlack);
+    const bool  shorter = ratio > 0.0f && ratio < 1.0f - kAspectSlack;
+    const bool  column  = ratio >= 1.0f - kAspectSlack && shape.viewWidth < shape.windowWidth;
+    return wider && (shorter || column);
 }
 
 /// The view's horizontal FOV (degrees) from the camera's (`fovDegrees`, horizontal at `cameraAspect`); `fovDegrees`

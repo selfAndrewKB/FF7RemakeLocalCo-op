@@ -46,6 +46,9 @@ void WhoTakesIt()
     EXPECT(!Applies({960, 1080, 1920, 1080}, kSolo));   // side by side
     EXPECT(!Applies({2560, 1080, 2560, 1080}, kSolo));  // a 21:9 single view: as tall as the single-player picture
     EXPECT(Applies({2560, 540, 2560, 1080}, kSolo));    // two players in a 21:9 window
+    EXPECT(Applies({3440, 1440, 8560, 1440}, kSolo));   // the ultrawide of a 2560 | 3440 | 2560 span (v0.147.0)
+    EXPECT(!Applies({2560, 1440, 8560, 1440}, kSolo));  // a 16:9 monitor of that span
+    EXPECT(Applies({3440, 1440, 6000, 1440}, kSolo));   // the ultrawide of a two-monitor span
     EXPECT(!Applies({0, 540, 1920, 1080}, kSolo));      // unread sizes
     EXPECT(!Applies({1920, 540, 1920, 1080}, 0.0f));
 }
@@ -66,6 +69,12 @@ void Values()
     const float wide = SplitFov(fov, kSolo, {2560, 540, 2560, 1080}, kDefaultWeight);
     const float tanVertical = TanHalf(fov) / kSolo * std::sqrt(0.5f);
     EXPECT(Near(TanHalf(wide), tanVertical * 2560.0f / 540.0f, 0.001f));
+    // The ultrawide of a span keeps the camera's vertical FOV (Hor+) at any weight: the horizontal tangent grows by the
+    // view's aspect over the camera's.
+    const float columnTan = TanHalf(fov) * (3440.0f / 1440.0f) / kSolo;
+    EXPECT(Near(TanHalf(SplitFov(fov, kSolo, {3440, 1440, 8560, 1440}, kDefaultWeight)), columnTan, 0.001f));
+    EXPECT(Near(TanHalf(SplitFov(fov, kSolo, {3440, 1440, 8560, 1440}, 1.0f)), columnTan, 0.001f));
+    EXPECT(SplitFov(fov, kSolo, {2560, 1440, 8560, 1440}, kDefaultWeight) == fov);
     // Views the rule leaves alone, and unusable inputs, come back unchanged.
     EXPECT(SplitFov(fov, kSolo, {960, 540, 1920, 1080}, kDefaultWeight) == fov);
     EXPECT(SplitFov(fov, kSolo, {1920, 540, 1920, 1080}, 1.5f) == fov);
