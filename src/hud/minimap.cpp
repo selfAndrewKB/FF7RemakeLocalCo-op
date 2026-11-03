@@ -475,7 +475,11 @@ void* AcquirePool0(void* renderer, U64 pool)
 {
     using Take = minimap_rules::PoolHandover::Take;
     const int pass  = PassIndex(g_column);
-    const int owner = OwnerOf(g_navi.seen);
+    int       owner = OwnerOf(g_navi.seen);
+    if (owner == 0 && g_column >= 1 && overlay_pass::ShownSeat(g_column) == 0)
+    {
+        owner = g_column;  // player 1's map in a mirror's own pass: that column's octagon, held as a seat's is
+    }
     ++g_counts.acquiresBy[pass][owner == 0 ? 0 : owner >= 1 ? 1 : 2];
     switch (g_pool.OnAcquire(g_column, owner))
     {
@@ -1029,11 +1033,11 @@ void BeginPass(int column) noexcept
     {
         g_seats[seat].paint = g_seats[seat].manager != nullptr ? PaintInterfaceOf(g_seats[seat].manager) : 0;
     }
-    if (column >= 1)
+    const int own = overlay_pass::ShownSeat(column);
+    if (column >= 1 && own >= 1)
     {
         // The column's seat's map alone in its image: player 1's minimap and compass out of it, every other seat's
         // too; each octagon renders in its own player's pass only (every other octagon's span skipped in this one).
-        const int own = overlay_pass::SeatOf(column);
         SkipSpan(g_seats[0].paint);
         HideRoots(one);
         for (int seat = 1; seat <= kSeatsBuilt; ++seat)
@@ -1047,13 +1051,14 @@ void BeginPass(int column) noexcept
     }
     else
     {
-        // Player 1's pass, or the single render while a seat's map still shows after a leave: every seat's map out of
-        // the image. Painted at alpha 0: the only pass with a real DeltaTime, so its animations (In, Out) advance; no
+        // Player 1's pass, a mirror's column with a pass of its own (player 1's map, laid out for its monitor), or the
+        // single render while a seat's map still shows after a leave: every seat's map out of the image. Painted at
+        // alpha 0: player 1's pass is the only one with a real DeltaTime, so its animations (In, Out) advance; no
         // seat's octagon renders here (its span skipped).
         for (int seat = 1; seat <= kSeatsBuilt; ++seat)
         {
             const Seat& s = g_seats[seat];
-            if (s.manager != nullptr && (column == 0 || RootShown(s.manager)))
+            if (s.manager != nullptr && (column >= 0 || RootShown(s.manager)))
             {
                 SkipSpan(s.paint);
                 HideRoots(s.manager);

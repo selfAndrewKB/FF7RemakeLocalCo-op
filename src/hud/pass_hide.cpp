@@ -155,7 +155,7 @@ catch (...)
 
 int BeginFurtherPass(int seat) noexcept
 {
-    return Begin(seat, true);
+    return seat >= 1 ? Begin(seat, true) : BeginOwnPass();
 }
 
 int BeginOwnPass() noexcept

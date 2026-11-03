@@ -16,8 +16,8 @@
 
 namespace lss::hud::pass_hide {
 
-/// Just before a further column's pass (its seat, overlay_pass::SeatOf): what that seat does not see, transparent.
-/// Returns how many were.
+/// Just before a further column's pass (its seat, overlay_pass::SeatOf): what that seat does not see, transparent. A
+/// mirror's column (no seat, `seat` < 1) shows player 1's HUD: the hides of player 1's pass. Returns how many were.
 int BeginFurtherPass(int seat) noexcept;
 /// Just before player 1's pass or the single render: the seats' icons and windows transparent (nothing while no seat
 /// has one).

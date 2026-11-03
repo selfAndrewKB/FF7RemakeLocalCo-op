@@ -44,4 +44,10 @@ int ColumnOf(int seat) noexcept
     return g_map.ColumnOf(seat);
 }
 
+int ShownSeat(int column) noexcept
+{
+    const int seat = column >= 1 ? SeatOf(column) : 0;
+    return seat >= 1 ? seat : 0;  // no seat in a further column: a mirror's, player 1's picture and HUD
+}
+
 }  // namespace lss::hud::overlay_pass

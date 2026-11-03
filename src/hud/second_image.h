@@ -21,7 +21,9 @@
 // fade) is player 1's, as without the split. The render thread draws each entry in its own view (hud/image_entries.h)
 // into the view's own target (hud/ui_targets.h, switched on with the image).
 // Content: a further column's image shows what the HUD holds this frame (player 1's) except where that column's own
-// content follows (the per-pass modules and the replays).
+// content follows (the per-pass modules and the replays). A mirror's column with a pass of its own (Columns) shows
+// player 1's content throughout (overlay_pass::ShownSeat 0: the hides, the cursor, the command menu and the minimap of
+// player 1's pass); only its layout and its world markers' placement (through the mirror's own view) are its own.
 
 #include "hud/overlay_pass.h"
 
@@ -34,10 +36,12 @@ namespace lss::hud::second_image {
 bool Install(const platform::GameImage& image) noexcept;
 void Remove() noexcept;
 
-/// The columns real players fill this tick: player 1's (0) and one per seat in, in the engine's local-player order (a
-/// seat's column is its index, players/seats.h). The mirror's columns beyond `count` show column 0's image and get no
-/// pass. Per column: its ULocalPlayer and player controller for the replays, and for a further column the seat's member
-/// (the field icons' range gate).
+/// The columns with a pass this tick: player 1's (0) and one per seat in, in the engine's local-player order (a seat's
+/// column is its index, players/seats.h), and the mirrors' columns after them when one has another shape than player
+/// 1's view (modules.cpp MirrorsOwnImage): a mirror's pass shows player 1's HUD laid out for its own monitor
+/// (overlay_pass::ShownSeat 0). The mirrors' columns beyond `count` show column 0's image and get no pass. Per column:
+/// its ULocalPlayer and player controller for the replays, and for a seat's column the seat's member (the field icons'
+/// range gate).
 struct Columns
 {
     int   count                                 = 1;

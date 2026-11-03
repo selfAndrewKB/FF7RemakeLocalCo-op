@@ -721,7 +721,8 @@ void BeginPass(int column) noexcept
 {
     g_column = column;
     // A further column is its seat's (hud/overlay_pass.h's map): that seat's menu shows in it, the other seats' stay
-    // transparent (nothing gives them a colour outside their own pass). A mirror's column has no pass.
+    // transparent (nothing gives them a colour outside their own pass). A mirror's column (no seat, Ready false) keeps
+    // player 1's menu, as player 1's pass does.
     const int seat = column >= 1 ? hud::overlay_pass::SeatOf(column) : 0;
     g_passSeat     = seat;
     if (column < 1 || !Ready(seat) || !g_enabled)

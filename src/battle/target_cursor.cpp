@@ -412,8 +412,8 @@ void BeginPass(int column) noexcept
         return;
     }
     // A seat's column is its place in the engine's list (hud/overlay_pass.h's map): the column's own cursor stays,
-    // every other player's goes transparent.
-    if (column >= 1)
+    // every other player's goes transparent. A mirror's column with a pass of its own shows player 1's.
+    if (hud::overlay_pass::ShownSeat(column) >= 1)
     {
         void* one = nullptr;
         if (Read(static_cast<const std::uint8_t*>(system) + facts::kBattleSysCursorWidget, one))

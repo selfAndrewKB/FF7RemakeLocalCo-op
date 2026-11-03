@@ -39,6 +39,23 @@ void SetMap(const views::columns::Map& map) noexcept;
 int SeatOf(int column) noexcept;
 /// The column the seat's view fills (-1 none).
 int ColumnOf(int seat) noexcept;
+/// The player whose HUD the pass of `column` shows: a seat's column its seat's; column 0, the single render and a
+/// mirror's column with a pass of its own (hud/second_image.h, OtherShape) player 1's (0).
+int ShownSeat(int column) noexcept;
+
+/// Whether a view of `sizeX` x `sizeY` (fractions of the window) has another shape than player 1's `oneX` x `oneY`:
+/// width over height more than 1 % apart. A mirror of another shape gets a HUD pass of its own (the user's choice of
+/// 2026-11-02: the game's composite cover-fits player 1's image to a mirror's shape, so a wider mirror showed player
+/// 1's HUD enlarged and cut, a narrower one inset); one of the same shape samples player 1's image, at no cost.
+constexpr bool OtherShape(float sizeX, float sizeY, float oneX, float oneY) noexcept
+{
+    if (!(sizeX > 0.0f) || !(sizeY > 0.0f) || !(oneX > 0.0f) || !(oneY > 0.0f))
+    {
+        return false;
+    }
+    const float ratio = (sizeX / sizeY) / (oneX / oneY);  // the window's own shape cancels out
+    return ratio > 1.01f || ratio < 1.0f / 1.01f;
+}
 
 /// The FName value of a column's layer entry: the stock name for column 0 (and the single render); for a further column
 /// the stock name with another number, column + 1 (a distinct FName to the entry search's 8-byte compare, which needs

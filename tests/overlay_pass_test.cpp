@@ -79,14 +79,33 @@ void DrawGate()
     EXPECT(DrawSkipped(1, 2, false));
 }
 
+/// A mirror gets a HUD pass of its own only on a monitor of another shape than player 1's view.
+void MirrorShapes()
+{
+    constexpr float kTotal = 2560.0f + 3440.0f + 2560.0f;  // the user's span, 1440 tall
+    constexpr float kNarrow = 2560.0f / kTotal, kWide = 3440.0f / kTotal;
+    EXPECT(OtherShape(kWide, 1.0f, kNarrow, 1.0f));     // a mirror on the ultrawide, player 1 on a 16:9 monitor
+    EXPECT(OtherShape(kNarrow, 1.0f, kWide, 1.0f));     // player 1 on the ultrawide, a mirror on a 16:9 monitor
+    EXPECT(!OtherShape(kNarrow, 1.0f, kNarrow, 1.0f));  // two 16:9 monitors of the row
+    EXPECT(!OtherShape(1.0f / 3.0f, 1.0f, 1.0f / 3.0f, 1.0f));  // three equal monitors
+    // A pixel's rounding between equal monitors stays the same shape.
+    EXPECT(!OtherShape(2561.0f / kTotal, 1.0f, kNarrow, 1.0f));
+    // Unread sizes never ask for a pass.
+    EXPECT(!OtherShape(0.0f, 1.0f, kNarrow, 1.0f));
+    EXPECT(!OtherShape(kWide, 1.0f, 0.0f, 1.0f));
+    EXPECT(!OtherShape(kWide, -1.0f, kNarrow, 1.0f));
+}
+
 }  // namespace
 
 int main()
 {
     static_assert(kMaxColumns == 3, "three views (plan/seats.md)");
     static_assert(kSingle < 0, "the single render is no column");
+    static_assert(OtherShape(0.5f, 1.0f, 0.25f, 1.0f), "constexpr");
     EntryNames();
     AcquireRule();
     DrawGate();
+    MirrorShapes();
     return lss::test::Report();
 }
