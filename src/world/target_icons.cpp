@@ -44,6 +44,7 @@ using DestroyFn    = void (*)(void* ui15, void* widget);
 using IconTickFn   = void (*)(void* ui15);
 using RemoveFn     = void (*)(void* mgr, const std::uint64_t* name);
 using FindEntryFn  = void* (*)(void* mgr, const std::uint64_t* name);
+using ContextPcFn  = void* (*)(const void* context);
 
 constexpr int           kSeats         = players::scopes::kMaxPlayers;
 constexpr std::uint32_t kMaxMismatches = 8;  // icons made with the wrong owner before the seats' icons stop
@@ -67,9 +68,12 @@ std::uintptr_t g_showSite = 0, g_show = 0, g_ownerSite = 0, g_firstLocal = 0, g_
 DestroyFn      g_destroy   = nullptr;
 IconTickFn     g_iconTick  = nullptr;
 FindEntryFn    g_findEntry = nullptr;
+ContextPcFn    g_contextAt = nullptr;  // null: a mirror's view shows player 1's icons as placed for player 1's view
+std::uintptr_t g_lookupSite = 0;
 bool           g_installed = false;
 
 platform::CallRedirect  g_showCall, g_ownerCall;
+platform::CallRedirect  g_lookupCall;  // the icon tick's controller lookup (crosses a block)
 platform::EntryRedirect g_remove;
 bool                    g_placeTried = false;
 bool                    g_placed     = false;
@@ -81,7 +85,9 @@ void*                    g_swapPlayer = nullptr;  // its local player
 std::vector<std::pair<const void*, int>> g_owned;  // the seats' widgets, for OwnerSeat
 bool                     g_ownedStale = true;
 bool                     g_passFaulted = false;
-std::uint32_t            g_mismatched = 0, g_passes = 0, g_answered = 0, g_playerOneFreed = 0, g_offThreadSeen = 0;
+void*                    g_mirrorController = nullptr;  // what the lookup answers for player 1's icons while a mirror's placement runs
+bool                     g_mirrorPlaced     = false;    // player 1's icons stand placed into a mirror's view
+std::uint32_t            g_mismatched = 0, g_passes = 0, g_mirrorPasses = 0, g_answered = 0, g_playerOneFreed = 0, g_offThreadSeen = 0;
 
 // Any thread.
 std::atomic<DWORD>  g_gameThread{0};
@@ -326,6 +332,19 @@ void* FirstLocalPlayer(void* world)
     return reinterpret_cast<FirstLocalFn>(g_firstLocal)(world);
 }
 
+/// The icon tick's controller lookup, given the widget's player context: while a mirror's placement runs, player 1's
+/// icons answer the mirror's controller, so they are projected through the mirror's view; every other call gets the
+/// game's answer.
+void* PlacementController(const void* context)
+{
+    if (g_mirrorController != nullptr && context != nullptr &&
+        OwnerSeat(static_cast<const std::uint8_t*>(context) - facts::kWidgetOwnerPlayer) == 0)
+    {
+        return g_mirrorController;
+    }
+    return g_contextAt(context);
+}
+
 /// The one function that frees a target: the seats' widgets of it are destroyed first (the game's own call then destroys
 /// the live one). Inside a seat's run the seat's array holds player 1's widgets, so the free is handled then even while
 /// no seat holds an icon (else player 1's widget of the freed target would come back into the freed item). A free on
@@ -372,7 +391,8 @@ void RemoveRedirects() noexcept
     g_showCall.Restore();
     if (OnGameThreadNow())
     {
-        g_ownerCall.Restore();  // crosses a block: only from the game thread, outside the creation
+        g_ownerCall.Restore();   // crosses a block: only from the game thread, outside the creation
+        g_lookupCall.Restore();  // the same, outside the icon tick
     }
 }
 
@@ -466,6 +486,19 @@ bool Install(const platform::GameImage& image) noexcept
     g_destroy   = reinterpret_cast<DestroyFn>(*destroy);
     g_iconTick  = reinterpret_cast<IconTickFn>(*iconTick);
     g_findEntry = reinterpret_cast<FindEntryFn>(*findEntry);
+    // Optional: the icon tick's controller lookup, for a mirror's own HUD pass.
+    const auto lookupSite = image.Rebase(facts::kTargetIconTickContextCall, 5);
+    const auto contextAt  = image.Rebase(facts::kPlayerContextController, 16);
+    if (lookupSite && contextAt && image.BytesMatch(facts::kPlayerContextController, facts::kPlayerContextControllerFirst))
+    {
+        g_lookupSite = *lookupSite;
+        g_contextAt  = reinterpret_cast<ContextPcFn>(*contextAt);
+    }
+    else
+    {
+        platform::Log(L"target icons: the icon tick's controller lookup is not as the research read it; a mirror's view shows player "
+                      L"1's icons as placed for player 1's view");
+    }
     g_installed = true;
     return true;
 }
@@ -493,6 +526,15 @@ bool Place() noexcept
         return false;
     }
     platform::Log(L"target icons: each further player's pick makes its own target icons, shown in its own view");
+    if (g_contextAt != nullptr)
+    {
+        // Separate from the rest: without it only a mirror's view of player 1's icons is off.
+        const bool lookup = g_lookupCall.InstallFromOwnThread(g_lookupSite, reinterpret_cast<std::uintptr_t>(g_contextAt),
+                                                              reinterpret_cast<std::uintptr_t>(&PlacementController));
+        platform::Log(L"target icons: the icon tick's controller lookup {}",
+                      lookup ? L"redirected (a mirror's own HUD pass places player 1's icons through the mirror's view)"
+                             : L"could not be redirected (a mirror's view shows player 1's icons as placed for player 1's view)");
+    }
     return true;
 }
 
@@ -725,12 +767,12 @@ bool AnySeatIcons() noexcept
     return g_anyHeld.load(std::memory_order_relaxed);
 }
 
-void PlaceForPass() noexcept
+namespace {
+
+/// The game's icon tick run again with the HUD step at 0 (the icons' clocks keep their total time), `mirror` answering
+/// player 1's icons' controller lookup when not null. False if it raised (the passes then stop, logged).
+bool RunIconTick(void* mirror) noexcept
 {
-    if (!AnySeatIcons() || g_passFaulted)
-    {
-        return;
-    }
     void*           ui15 = Ui15();
     auto*           mode = static_cast<std::uint8_t*>(ReadPointer(reinterpret_cast<const void*>(g_gameMode), 0));
     float           step = 0.0f;
@@ -738,18 +780,53 @@ void PlaceForPass() noexcept
     if (ui15 == nullptr || mode == nullptr || !Read(mode + facts::kGameModeHudStep, step) ||
         !platform::WriteGuarded(mode + facts::kGameModeHudStep, &zero, sizeof(zero)))
     {
-        return;
+        return true;
     }
-    const bool ok = platform::CallGuarded(g_iconTick, ui15);
+    g_mirrorController = mirror;
+    const bool ok      = platform::CallGuarded(g_iconTick, ui15);
+    g_mirrorController = nullptr;
     platform::WriteGuarded(mode + facts::kGameModeHudStep, &step, sizeof(step));
     if (!ok)
     {
         g_passFaulted = true;
-        platform::LogWarning(L"target icons: placing the icons for a view raised; each further player's icons stay where player 1's "
-                             L"view placed them");
+        platform::LogWarning(L"target icons: placing the icons for a view raised; every view shows the icons as player 1's view "
+                             L"placed them");
+    }
+    return ok;
+}
+
+}  // namespace
+
+void PlaceForPass(void* mirrorController) noexcept
+{
+    const bool mirror = mirrorController != nullptr && g_lookupCall.IsInstalled();
+    if ((!mirror && !AnySeatIcons()) || g_passFaulted || !OnGameThreadNow())
+    {
+        return;
+    }
+    if (!RunIconTick(mirror ? mirrorController : nullptr))
+    {
         return;
     }
     ++g_passes;
+    if (mirror)
+    {
+        g_mirrorPlaced = true;
+        ++g_mirrorPasses;
+    }
+}
+
+void PlaceForPlayerOne() noexcept
+{
+    const bool mirrored = std::exchange(g_mirrorPlaced, false);
+    if ((!mirrored && !AnySeatIcons()) || g_passFaulted || !OnGameThreadNow())
+    {
+        return;
+    }
+    if (RunIconTick(nullptr))
+    {
+        ++g_passes;
+    }
 }
 
 std::wstring Report()
@@ -759,10 +836,12 @@ std::wstring Report()
     std::int32_t count = 0, free = 0;
     const bool   read  = ui15 != nullptr && Read(ui15 + facts::kTargetIconMapCount, count) && Read(ui15 + facts::kTargetIconMapFree, free);
     std::wstring out   = std::format(L"icons {}; on screen (the game's count) {}; owners answered {}, not the player's {}, view placements "
-                                     L"{}{}; player 1's freed during a seat's run {}, frees off the game thread {}",
+                                     L"{}{} (through a mirror's view {}; lookup {}); player 1's freed during a seat's run {}, frees off "
+                                     L"the game thread {}",
                                      g_placed ? L"per player" : g_placeTried ? L"NOT placed" : L"waiting for the game thread",
                                      read ? std::to_wstring(count - free) : std::wstring(L"?"), g_answered, g_mismatched, g_passes,
-                                     g_passFaulted ? L" (stopped after a fault)" : L"", g_playerOneFreed,
+                                     g_passFaulted ? L" (stopped after a fault)" : L"", g_mirrorPasses,
+                                     g_lookupCall.IsInstalled() ? L"redirected" : L"not redirected", g_playerOneFreed,
                                      g_offThreadFrees.load(std::memory_order_relaxed));
     for (int seat = 1; seat <= players::kSeatsBuilt; ++seat)
     {

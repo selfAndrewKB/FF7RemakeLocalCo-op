@@ -23,8 +23,9 @@
 // Content: a further column's image shows what the HUD holds this frame (player 1's) except where that column's own
 // content follows (the per-pass modules and the replays). A mirror's column with a pass of its own (Columns) shows
 // player 1's content throughout (overlay_pass::ShownSeat 0: the hides, the cursor, the command menu and the minimap of
-// player 1's pass); only its layout and the placement of player 1's markers, off-screen enemy arrows and search arrows
-// (through the mirror's own view: marker_replay, outside_icons, world/search_arrows PlaceForMirror) are its own.
+// player 1's pass); only its layout and the placement of player 1's markers, off-screen enemy arrows, search arrows and
+// target icons (through the mirror's own view: marker_replay, outside_icons, world/search_arrows PlaceForMirror,
+// world/target_icons PlaceForPass) are its own.
 
 #include "hud/overlay_pass.h"
 

@@ -2965,6 +2965,9 @@ inline constexpr platform::FunctionFact kTargetIconHideDestroy{L"EndUI15_FieldTa
 inline constexpr std::array<std::uint8_t, 16> kTargetIconTickEntry{
     0x48, 0x89, 0x74, 0x24, 0x20, 0x55, 0x48, 0x8D, 0x6C, 0x24, 0xA9, 0x48, 0x81, 0xEC, 0xA0, 0x00};
 inline constexpr platform::FunctionFact kTargetIconTick{L"EndUISlot15_FieldTargetIcon_Tick", 0x14142B740, kTargetIconTickEntry};
+/// The icon tick's one controller lookup, on the widget's player context (+0x1E8) before each icon's placement
+/// (RE-field-icons-two.md §9): the only player read of the placement.
+inline constexpr std::uintptr_t kTargetIconTickContextCall = 0x14142B907;  // E8 E4 B3 BE 01, to kPlayerContextController
 /// The one path that frees a pool item (void(mgr, const FName*)): destroys the item's live widget, then frees the item.
 /// First instruction mov [rsp+10h], rbx (5 bytes, no RIP-relative operand, aligned): the one relocated, exactly the
 /// jump's length (then push rdi; sub rsp, 30h).

@@ -19,7 +19,9 @@
 //     member, and with the passes when a run faults;
 //   - per HUD pass the game's slot-15 tick runs again with the HUD step at 0 after the pass's host set (every icon placed
 //     through its own player into that view: hud/second_image.h), and hud/pass_hide.h makes transparent the icons that are
-//     not the pass's player's (OwnerSeat).
+//     not the pass's player's (OwnerSeat);
+//   - a mirror's pass shows player 1's icons, so the tick's one controller lookup answers the mirror's controller for
+//     them and they are projected through the mirror's view; player 1's own pass then places them again through player 1's.
 // Player 1's widgets are the game's own throughout. Game thread only, but the free redirect, which queues a target freed
 // on another thread for the next tick.
 
@@ -99,9 +101,13 @@ int OwnerSeat(const void* widget) noexcept;
 /// A seat holds at least one widget now. Game thread.
 bool AnySeatIcons() noexcept;
 
-/// Game thread, from the overlay driver after a pass's host set is written: every icon placed again through its own
-/// player into this pass's view (the game's slot-15 tick, HUD step 0). Nothing while no seat holds an icon.
-void PlaceForPass() noexcept;
+/// Game thread, from the overlay driver after a further column's host set is written: every icon placed again into this
+/// pass's view (the game's slot-15 tick, HUD step 0), each through its own player, or player 1's through
+/// `mirrorController` when the column is a mirror's. Nothing while no seat holds an icon, unless it is a mirror's pass.
+void PlaceForPass(void* mirrorController) noexcept;
+/// Game thread, from the overlay driver after player 1's host set is put back: every icon placed again through its own
+/// player, when a pass placed them for another view.
+void PlaceForPlayerOne() noexcept;
 
 /// For the `field.targets` reading.
 std::wstring Report();

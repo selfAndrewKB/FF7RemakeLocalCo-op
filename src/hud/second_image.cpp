@@ -235,9 +235,11 @@ void Driver(void* delegate)
                 marker_replay::Replay(column, g_columns.localPlayer[column], g_columns.controller[column]);
                 field_icons::Replay(column, g_columns.controller[column], g_columns.member[column]);
                 outside_icons::RunForColumn(column, g_columns.controller[column]);
-                world::target_icons::PlaceForPass();  // each player's target icons through its own view into this one
+                const bool mirror = overlay_pass::ShownSeat(column) == 0;
+                // The target icons into this view, each through its own player's, a mirror's player 1's through the mirror's.
+                world::target_icons::PlaceForPass(mirror ? g_columns.controller[column] : nullptr);
                 world::search_arrows::TickForPass(overlay_pass::SeatOf(column));  // the seat's search arrows from its own camera
-                if (overlay_pass::ShownSeat(column) == 0)
+                if (mirror)
                 {
                     world::search_arrows::PlaceForMirror(g_columns.controller[column]);  // player 1's, from the mirror's camera
                 }
@@ -254,7 +256,7 @@ void Driver(void* delegate)
             field_icons::Replay(0, g_columns.controller[0], nullptr);
             outside_icons::RestorePlayerOne();
             world::search_arrows::RestorePlayerOne();
-            world::target_icons::PlaceForPass();
+            world::target_icons::PlaceForPlayerOne();
         }
     }
     const double middle = NowMs();
