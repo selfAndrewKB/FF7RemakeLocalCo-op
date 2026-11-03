@@ -3,23 +3,22 @@
 // The pure rules of the live pad assignment (players/pad_claim; plan/topics/input.md State "Planned", the user's
 // design of 2026-10-30 18:43). Host-tested (tests/pad_claim_rules_test.cpp).
 //
-// A person is a pad and the screen in front of them; the character is whoever the game's party order gives that
-// player (Remake has no party reorder, and nothing here changes the game's party). Three tables:
+// A person is a pad and the screen in front of them: the screen first, then the character. Three tables:
 //   - the pad table: the game's pad slot N (its controller id N, XInput user N as the game asks for it) answered by a
 //     physical XInput user, always a permutation of 0..3;
 //   - the screens: which player (seat 0..2) each screen position shows, left to right (in one window, three players:
 //     the top, the bottom left, the bottom right), -1 for a screen no player has (a mirror's);
 //   - the claims of one claim screen: which physical pad took each screen, and whether it is kept (locked).
-// Every change is a swap, so each player always has exactly one pad and one screen, also halfway through:
-//   - a pad takes a screen with that screen's button (screen 0 A, 1 X, 2 Y): it swaps pad slots with the player
-//     there (the pad it displaced goes to the slot the pressing pad answered before);
-//   - on its screen the d-pad steps through the players: the player there swaps screens and pads with the next one
-//     whose screen is not kept, so the person keeps pad and screen and the character changes;
+// The steps:
+//   - a pad takes a screen with that screen's button (screen 0 A, 1 X, 2 Y): it becomes that screen's player by
+//     swapping pad slots with the pad there (the pad it displaced goes to the slot the pressing pad answered before),
+//     so each player always has exactly one pad;
+//   - on its screen the d-pad asks for the next party member no other human plays (the caller steps the player's
+//     rank, players/party_rank_rules.h); player 1's character is the game's leader and does not step;
 //   - A keeps it, B steps back (a kept screen unkept, a taken one let go); the claim ends when at most one screen is
 //     not kept and one is (the last person takes what is left), or the opener again (View held) puts back the tables
 //     from the opening.
-// Any player may take any screen, player 1 too (2026-10-31: the views are told apart by their place in the engine's
-// list, not on screen; plan/topics/views.md History 2026-10-31).
+// Any player's screen may be taken by any pad, player 1's too; the screens themselves stay where they are.
 
 #include <array>
 #include <cstdint>
@@ -288,7 +287,7 @@ enum class Did : std::uint8_t
 {
     Nothing,   // the press changes nothing (logged at Debug by the caller)
     Took,      // the pad took a screen (and that player's slot)
-    Stepped,   // the character on the pad's screen changed
+    Step,      // the pad asks for the next party member on its screen (`dir`); the caller steps the rank
     Kept,      // the pad's screen is kept
     Unkept,    // a kept screen is open again
     LetGo,     // the pad let its screen go
@@ -298,6 +297,7 @@ struct Result
 {
     Did did    = Did::Nothing;
     int screen = -1;  // the screen it concerns
+    int dir    = 0;   // Step: +1 right, -1 left
 };
 
 /// One button press (a down edge) of physical user `user`. `button` is one of the bits above.
@@ -352,31 +352,11 @@ constexpr Result Press(Claim& c, int user, std::uint16_t button) noexcept
         c.kept[m] = true;
         return {Did::Kept, mine};
     }
-    if (button != kDpadLeft && button != kDpadRight)
+    if ((button != kDpadLeft && button != kDpadRight) || c.seatOn[m] < 1)
     {
-        return {};
+        return {};  // player 1's character is the game's leader
     }
-    // The next player in the party order (wrapping) on a screen not kept.
-    const int here = c.seatOn[m];
-    const int dir  = button == kDpadRight ? 1 : kScreens - 1;
-    for (int k = 1; k < kScreens; ++k)
-    {
-        const int seat  = (here + dir * k) % kScreens;
-        const int there = ScreenShowing(c, seat);
-        if (there < 0 || c.kept[static_cast<std::size_t>(there)])
-        {
-            continue;
-        }
-        // Screens and pads swap together: the person here keeps pad and screen, the other screen's person too.
-        const auto t = static_cast<std::size_t>(there);
-        c.seatOn[m]  = seat;
-        c.seatOn[t]  = here;
-        const int padHere                        = c.pads[static_cast<std::size_t>(here)];
-        c.pads[static_cast<std::size_t>(here)]   = c.pads[static_cast<std::size_t>(seat)];
-        c.pads[static_cast<std::size_t>(seat)]   = padHere;
-        return {Did::Stepped, mine};
-    }
-    return {};
+    return {Did::Step, mine, button == kDpadRight ? 1 : -1};
 }
 
 /// The opener again: the tables from the opening.

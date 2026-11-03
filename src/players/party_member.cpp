@@ -10,6 +10,7 @@
 #include "players/field_root.h"
 #include "players/lead_gate.h"
 
+#include <array>
 #include <cstdint>
 #include <format>
 #include <string>
@@ -27,6 +28,7 @@ using SetActorTypeFn   = void (*)(void* character800, std::uint8_t type);
 
 constexpr std::int32_t  kRows             = 3;      // the deployed formation's rows
 constexpr std::uint8_t  kStatusSlots      = 8;      // the player types with a party status (EPlayerType below MAX)
+constexpr std::size_t   kSeatSlots        = 3;      // player 1 and two further seats (scopes::kMaxPlayers)
 
 GetPlayerActorFn g_getPlayerActor = nullptr;
 ReconcileFn      g_reconcile      = nullptr;
@@ -80,6 +82,60 @@ std::int32_t Anchor(const Party& party) noexcept
     }
     return 0;
 }
+
+/// Player 1's character by its controller's leader or pawn (during a switch the pawn may name the old one for a tick:
+/// the session's grace covers it).
+bool IsPlayerOne(const Party& party, const void* actor) noexcept
+{
+    return actor != nullptr && (actor == party.leaderOne || actor == party.pawnOne);
+}
+
+/// The rows a further player may play, by rank: the rows after the field leader's in the formation's order, wrapping,
+/// that are not battle support, and player 1's only while player 1 is away from the field leader (on another row's
+/// member: a battle leader, a switch; that row still counts as its rank's, and the field leader's character, left by
+/// player 1, is played instead, while the field leader is a deployed member of the formation).
+struct FreeRows
+{
+    std::int32_t ordinal[kRows]{};
+    bool         playerOnes[kRows]{};  // that rank's row is player 1's character now
+    std::int32_t count   = 0;
+    bool         support = false;      // a row was skipped for its battle-support status
+};
+
+FreeRows FreeRowsOf(const Party& party) noexcept
+{
+    FreeRows           rows;
+    const std::int32_t anchor           = Anchor(party);
+    const bool         fieldInFormation = party.fieldLeader < kStatusSlots && party.types[anchor] == party.fieldLeader &&
+                                  party.statuses[party.fieldLeader] == facts::kStatusParty;
+    const bool playerOneOut = fieldInFormation && !IsPlayerOne(party, ActorOfType(party, party.fieldLeader));
+    for (std::int32_t step = 1; step < kRows; ++step)
+    {
+        const std::int32_t ordinal = (anchor + step) % kRows;
+        const std::uint8_t type    = party.types[ordinal];
+        if (type >= kStatusSlots || type == party.fieldLeader)
+        {
+            continue;
+        }
+        if (party.statuses[type] == facts::kStatusBattleSupport)
+        {
+            rows.support = true;
+            continue;
+        }
+        const bool ones = IsPlayerOne(party, ActorOfType(party, type));
+        if (ones && !playerOneOut)
+        {
+            continue;
+        }
+        rows.ordinal[rows.count]    = ordinal;
+        rows.playerOnes[rows.count] = ones;
+        ++rows.count;
+    }
+    return rows;
+}
+
+/// Each seat's rank (party_rank_rules.h); [0] unused. Game thread.
+std::array<int, kSeatSlots> g_rank{0, 1, 2};
 
 /// The field take tests of RE-slot-member.md §2.5 with the hold rule of field_hold.h, as a wait reason; None when
 /// the member is free.
@@ -244,22 +300,16 @@ Choice Choose(int seat, void* playerOneController, void* taker, bool log, std::u
     // A seat standing in for player 1's former character (the game's leader change took the seat's member: the
     // battle leader option, a forced switch) plays that character, wherever its row is, while it is in the deployed
     // formation and not player 1's again (the session clears the mark when the game's leader returns home).
-    const std::int32_t anchor  = Anchor(party);
-    std::int32_t       target  = -1;
-    bool               support = false;  // a row skipped for its battle-support status (the wait's reason with no row)
-    bool               stood   = false;  // the stand-in was used
-    // Player 1's character by its controller's leader or pawn (during a switch the pawn may name the old one for a
-    // tick: the session's grace covers it).
-    const auto isPlayerOne = [&party](const void* actor) {
-        return actor != nullptr && (actor == party.leaderOne || actor == party.pawnOne);
-    };
+    const std::int32_t anchor = Anchor(party);
+    std::int32_t       target = -1;
+    bool               stood  = false;  // the stand-in was used
     if (standIn < kStatusSlots && party.statuses[standIn] == facts::kStatusParty)
     {
         for (std::int32_t i = 0; i < kRows; ++i)
         {
             if (party.types[i] == standIn)
             {
-                if (!isPlayerOne(ActorOfType(party, standIn)))
+                if (!IsPlayerOne(party, ActorOfType(party, standIn)))
                 {
                     target = i;
                     stood  = true;
@@ -268,40 +318,16 @@ Choice Choose(int seat, void* playerOneController, void* taker, bool log, std::u
             }
         }
     }
-    // Player 1 away from the field leader (on another row's member: a battle leader, a switch): that row still counts
-    // as its seat's, and the field leader's character, left by player 1, is that seat's for now (a seat without its
-    // stand-in mark, e.g. after a rejoin); only while the field leader is a deployed member of the formation.
-    const bool fieldInFormation = party.fieldLeader < kStatusSlots && party.types[anchor] == party.fieldLeader &&
-                                  party.statuses[party.fieldLeader] == facts::kStatusParty;
-    void* const fieldActor   = fieldInFormation ? ActorOfType(party, party.fieldLeader) : nullptr;
-    const bool  playerOneOut = fieldInFormation && !isPlayerOne(fieldActor);
-    bool        toField      = false;
-    // Otherwise the rows after the field leader's, in the formation's order, wrapping; the seat-th one not a
-    // battle-support member is this seat's (player 1's row only while player 1 is out). Temporary states are waited on,
-    // never stepped over.
-    for (std::int32_t step = 1, free = 0; target < 0 && step < kRows; ++step)
+    // Otherwise the row at the seat's rank (FreeRowsOf; a temporary state is waited on, never stepped over). A rank
+    // whose row is player 1's now (player 1 away from the field leader) gives the field leader's character instead.
+    const FreeRows rows    = FreeRowsOf(party);
+    const int      rank    = Rank(seat);
+    const bool     support = rows.support;  // a row skipped for its battle-support status (the wait's reason with no row)
+    bool           toField = false;
+    if (target < 0 && rank >= 1 && rank <= rows.count)
     {
-        const std::int32_t ordinal = (anchor + step) % kRows;
-        const std::uint8_t type    = party.types[ordinal];
-        if (type >= kStatusSlots || type == party.fieldLeader)
-        {
-            continue;
-        }
-        if (party.statuses[type] == facts::kStatusBattleSupport)
-        {
-            support = true;
-            continue;
-        }
-        const bool ones = isPlayerOne(ActorOfType(party, type));
-        if (ones && !playerOneOut)
-        {
-            continue;
-        }
-        if (++free == seat)
-        {
-            target  = ordinal;
-            toField = ones;
-        }
+        target  = rows.ordinal[rank - 1];
+        toField = rows.playerOnes[rank - 1];
     }
     if (toField)
     {
@@ -337,14 +363,35 @@ Choice Choose(int seat, void* playerOneController, void* taker, bool log, std::u
     }
     if (log)
     {
-        platform::LogDebug(L"party member: formation types {} {} {}, field leader type {} at ordinal {}; seat {}'s row: ordinal {} type {}{}: {}",
-                           party.types[0], party.types[1], party.types[2], party.fieldLeader, anchor, seat, choice.ordinal, choice.type,
+        platform::LogDebug(L"party member: formation types {} {} {}, field leader type {} at ordinal {}; seat {}'s row (rank {} of {}): "
+                           L"ordinal {} type {}{}: {}",
+                           party.types[0], party.types[1], party.types[2], party.fieldLeader, anchor, seat, rank, rows.count,
+                           choice.ordinal, choice.type,
                            stood     ? std::format(L" (standing in for player 1's former character, type {})", standIn)
                            : toField ? std::wstring(L" (player 1 plays this seat's row: the field leader's character instead)")
                                      : std::wstring(),
                            Describe(choice.wait));
     }
     return choice;
+}
+
+int Rank(int seat) noexcept
+{
+    return seat >= 1 && seat < static_cast<int>(kSeatSlots) ? g_rank[static_cast<std::size_t>(seat)] : 0;
+}
+
+void SetRank(int seat, int rank) noexcept
+{
+    if (seat >= 1 && seat < static_cast<int>(kSeatSlots))
+    {
+        g_rank[static_cast<std::size_t>(seat)] = rank;
+    }
+}
+
+int Ranks(void* playerOneController) noexcept
+{
+    Party party;
+    return g_getPlayerActor != nullptr && ReadParty(playerOneController, party) ? FreeRowsOf(party).count : 0;
 }
 
 void* RowActor(int seat, void* playerOneController, std::uint8_t standIn) noexcept

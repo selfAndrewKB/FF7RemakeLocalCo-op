@@ -269,6 +269,8 @@ src/
     party_events            The game's party funnels, heard by the session (RE-slot-member.md §1.5, §2.5, §3; Rebirth's
                             player_two/party_events)
     party_member            Which deployed party member a further player plays, and when it is the player's to take
+    party_rank_rules.h      Which party member each further player plays, as a place in the game's party order
+                            (players/party_member; the claim's arrows, players/pad_claim)
     party_seat              A further player's controller takes a party member through the game's own leader funnel, and
                             gives it back
     player_trigger          Each seat's own PlayerTrigger: a copy of the game's one placed trigger actor
@@ -516,5 +518,5 @@ src/
     game_ui                 The game's UI pieces the Co-op menu's modules share: the UI system's managers, the main
                             menu's first page, weak pointers held in the game's widgets, and FStrings read and copied
                             the game's way
-tests/                      60 host-side test programs (ctest), one per pure header or code stub; run without the game
+tests/                      61 host-side test programs (ctest), one per pure header or code stub; run without the game
 ```

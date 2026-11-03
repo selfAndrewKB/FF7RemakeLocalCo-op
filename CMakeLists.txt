@@ -272,6 +272,13 @@ target_include_directories(PadClaimTextTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR
 target_compile_features(PadClaimTextTests PRIVATE cxx_std_20)
 add_test(NAME pad_claim_text COMMAND PadClaimTextTests)
 
+add_executable(PartyRankRulesTests
+    tests/party_rank_rules_test.cpp
+)
+target_include_directories(PartyRankRulesTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(PartyRankRulesTests PRIVATE cxx_std_20)
+add_test(NAME party_rank_rules COMMAND PartyRankRulesTests)
+
 add_executable(SunOwnerTests
     tests/sun_owner_test.cpp
 )

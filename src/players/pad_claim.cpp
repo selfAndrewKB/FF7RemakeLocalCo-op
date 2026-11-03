@@ -13,9 +13,11 @@
 #include "players/field_root.h"
 #include "players/pad_claim_rules.h"
 #include "players/pad_claim_text.h"
+#include "players/party_member.h"
 #include "players/pad_table.h"
 #include "players/scopes.h"
 #include "players/seats.h"
+#include "players/session.h"
 #include "views/column_layout.h"
 
 #include <algorithm>
@@ -50,10 +52,12 @@ std::uint32_t               g_dropped = 0;
 // Game thread.
 bool                                 g_installed = false;
 bool                                 g_active    = false;
+Session*                             g_session   = nullptr;
 rules::Claim                         g_claim{};
 std::array<int, kScreens>            g_openSeats{};  // the seats on screens at the opening, sorted (a join or leave ends it)
-std::array<std::wstring, kScreens>   g_names{};      // each seat's character, upper case ("BARRET")
+pad_claim_text::Seats                g_seats{};      // each seat's character and whether it can step, as last read
 views::column_rules::Order           g_openOrder{};  // the column order at the opening, put back by a cancel
+std::array<int, kScreens>            g_openRanks{};  // each further seat's rank at the opening, put back by a cancel
 unsigned long long                   g_gameClosedSeen = 0;  // view_window's count of windows the game closed, as last shown
 
 void Note(int user, std::uint16_t pressed, bool open) noexcept
@@ -78,10 +82,14 @@ catch (...)
     out->clear();
 }
 
-/// The seat's character in capitals, from its class ("PC0001_00_Barret_Standard_C": BARRET), else "PLAYER n".
+/// The seat's character in capitals, from its class ("PC0001_00_Barret_Standard_C": BARRET), else "PLAYER n". A
+/// further seat's is its row's (the rank's, so a step shows at once; the member follows a tick later).
 std::wstring NameOf(int seat)
 {
-    void* const member = seat == 0 ? players::field_root::PartyLeader(facts::kLeaderCurrent) : scopes::Member(seat);
+    void* member = seat == 0 ? players::field_root::PartyLeader(facts::kLeaderCurrent)
+                   : g_session != nullptr ? g_session->RowActor(seat)
+                                          : nullptr;
+    member = member != nullptr || seat == 0 ? member : scopes::Member(seat);
     std::wstring cls;
     if (member != nullptr)
     {
@@ -119,7 +127,17 @@ std::wstring ScreenName(int screen, int screens)
 
 std::wstring Character(int seat)
 {
-    return seat >= 0 && seat < kScreens ? g_names[static_cast<std::size_t>(seat)] : std::wstring(L"nobody");
+    return seat >= 0 && seat < kScreens ? g_seats.names[static_cast<std::size_t>(seat)] : std::wstring(L"nobody");
+}
+
+/// Each seat's character and whether its player can step now.
+void ReadSeats()
+{
+    for (int seat = 0; seat < kScreens; ++seat)
+    {
+        g_seats.names[static_cast<std::size_t>(seat)]   = NameOf(seat);
+        g_seats.canStep[static_cast<std::size_t>(seat)] = seat >= 1 && g_session != nullptr && g_session->CanStepMember(seat);
+    }
 }
 
 /// "the first screen CLOUD (pad 2), the second screen BARRET (pad 1)".
@@ -183,7 +201,7 @@ void ShowPrompts()
             continue;
         }
         shown[static_cast<std::size_t>(seat)] = true;
-        const pad_claim_text::ScreenText text = pad_claim_text::TextFor(g_claim, s, g_names);
+        const pad_claim_text::ScreenText text = pad_claim_text::TextFor(g_claim, s, g_seats);
         if (!hud::view_window::Show(seat, text.markup))
         {
             hud::view_prompt::Prompt p;
@@ -214,7 +232,21 @@ void End(const wchar_t* why, bool putBack)
     {
         rules::Cancel(g_claim);
         pad_table::Set(g_claim.pads, L"the pad claim, put back");
-        views::column_layout::ChangeOrder(g_openOrder, L"the pad claim, put back");  // the order itself, join order included
+        if (!(views::column_layout::CurrentOrder() == g_openOrder))
+        {
+            views::column_layout::ChangeOrder(g_openOrder, L"the pad claim, put back");  // the order itself, join order included
+        }
+        // The characters stepped to: each seat's rank back (the opening's ranks were distinct, so they are again); the
+        // session's follow gives the member back and seats the old one, as after a step.
+        for (int seat = 1; seat < kScreens; ++seat)
+        {
+            const int rank = g_openRanks[static_cast<std::size_t>(seat)];
+            if (party_member::Rank(seat) != rank)
+            {
+                party_member::SetRank(seat, rank);
+                platform::Log(L"pad claim: player {} back on rank {} of the party order", seat + 1, rank);
+            }
+        }
     }
     g_active = false;
     ClearPrompts();
@@ -235,10 +267,11 @@ void Open(const Frame& frame, int user)
     g_claim           = rules::Open(screens, SeatOnScreens(frame), pad_table::Table());
     g_openSeats       = SeatsShown(screens, frame.listSeats);
     g_openOrder       = views::column_layout::CurrentOrder();
-    for (int seat = 0; seat < kScreens; ++seat)
+    for (int seat = 1; seat < kScreens; ++seat)
     {
-        g_names[static_cast<std::size_t>(seat)] = NameOf(seat);
+        g_openRanks[static_cast<std::size_t>(seat)] = party_member::Rank(seat);
     }
+    ReadSeats();
     g_active         = true;
     g_gameClosedSeen = hud::view_window::ClosedByGame();
     pad_table::SetIdle(true, L"the pad claim");
@@ -261,13 +294,6 @@ void Press(int user, std::uint16_t button)
     {
         pad_table::Set(g_claim.pads, L"the pad claim");
     }
-    if (g_claim.seatOn != before.seatOn)
-    {
-        if (const auto order = views::column_rules::OrderShowing(g_claim.seatOn); order && g_claim.screens >= 2)
-        {
-            views::column_layout::ChangeOrder(*order, L"the pad claim");
-        }
-    }
     const int    seat  = r.screen >= 0 ? g_claim.seatOn[static_cast<std::size_t>(r.screen)] : -1;
     const auto   where = ScreenName(r.screen, g_claim.screens);
     // Each step with the game's own menu sound for it: a take or a keep decides, a step moves, a let-go cancels.
@@ -276,10 +302,18 @@ void Press(int user, std::uint16_t button)
     {
     case rules::Did::Took:
         hud::view_window::Play(Sound::Decide);
-        platform::Log(L"pad claim: pad {} took {}: it plays {}", user + 1, where, Character(seat));
+        platform::Log(L"pad claim: pad {} took {}: it plays player {} ({})", user + 1, where, seat + 1, Character(seat));
         break;
-    case rules::Did::Stepped:
+    case rules::Did::Step:
+        if (g_session == nullptr || !g_session->StepMember(seat, r.dir))
+        {
+            platform::LogDebug(L"pad claim: pad {}'s step on {} changes nothing (no other party member free, in battle, or "
+                               L"standing in for player 1's former character)",
+                               user + 1, where);
+            break;
+        }
         hud::view_window::Play(Sound::Cursor);
+        ReadSeats();
         platform::Log(L"pad claim: pad {} stepped to {} on {}", user + 1, Character(seat), where);
         break;
     case rules::Did::Kept:
@@ -308,6 +342,11 @@ bool Install() noexcept
     platform::Log(L"pad claim: View held a second on any pad opens the pad claim (each screen's button takes it, the "
                   L"d-pad picks the character, A keeps)");
     return true;
+}
+
+void SetSession(Session* session) noexcept
+{
+    g_session = session;
 }
 
 void Remove() noexcept
@@ -392,6 +431,7 @@ try
     }
     if (g_active && changed)
     {
+        ReadSeats();  // a battle start or a party change since the last press: the arrows follow
         ShowPrompts();
     }
 }

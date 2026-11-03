@@ -18,12 +18,14 @@
 #include "platform/verified_code.h"
 #include "players/field_exit.h"
 #include "players/field_hold.h"
+#include "players/field_root.h"
 #include "players/game_state.h"
 #include "players/lead_gate.h"
 #include "players/local_player_list.h"
 #include "players/own_controller.h"
 #include "players/party_events.h"
 #include "players/party_member.h"
+#include "players/party_rank_rules.h"
 #include "players/party_seat.h"
 #include "players/seat_camera.h"
 #include "players/seat_objects.h"
@@ -425,8 +427,9 @@ try
         {
             return;  // the seat funnel refused the member last time; not tried again before its retry tick
         }
-        const party_member::Choice choice =
-            party_member::Choose(seat.index, Field((*players)[0], facts::kLocalPlayerController), nullptr, false, seat.standIn);
+        UObject* const playerOneController = Field((*players)[0], facts::kLocalPlayerController);
+        SettleRank(seat, playerOneController);
+        const party_member::Choice choice = party_member::Choose(seat.index, playerOneController, nullptr, false, seat.standIn);
         LogFormation(seat, choice);
         if (choice.member == nullptr)
         {
@@ -437,7 +440,7 @@ try
         seat.awaiting = false;  // Join sets it again if the member is gone by then
     }
     const bool afterWorldChange = seat.rejoin.pending;
-    Join(seat.index);
+    JoinNow(seat.index);
     if (seat.localPlayer == nullptr)
     {
         if (seat.awaiting)
@@ -481,6 +484,7 @@ void Session::LeaveToAwait(Seat& seat, const wchar_t* why) noexcept
 
 void Session::LogWait(Seat& seat, const party_member::Choice& choice, const wchar_t* who) noexcept
 {
+    seat.lastWait           = choice.wait;
     const std::uint32_t key = 1u | static_cast<std::uint32_t>(choice.type) << 8 | static_cast<std::uint32_t>(choice.wait) << 16 |
                               static_cast<std::uint32_t>(choice.ordinal + 1) << 24;
     if (key == seat.waitLogged)
@@ -539,10 +543,105 @@ void Session::Forget(Seat& seat) noexcept
     }
     seat.ResetMember();
     seat.waitLogged      = 0;
+    seat.lastWait        = party_member::Wait::None;
     seat.formationLogged = 0;
 }
 
+UObject* Session::PlayerOneController() const noexcept
+{
+    return Field(LocalPlayer(0), facts::kLocalPlayerController);
+}
+
+std::uint32_t Session::RanksHeldBesides(int index) const noexcept
+{
+    std::uint32_t held = 0;
+    for (int other = 1; other <= kSeatsBuilt; ++other)
+    {
+        const Seat& o = seats_[other];
+        if (other != index && (o.localPlayer != nullptr || o.awaiting || o.rejoin.pending))
+        {
+            const int rank = party_member::Rank(other);
+            held |= rank >= 1 && rank < 32 ? 1u << rank : 0u;
+        }
+    }
+    return held;
+}
+
+void Session::SettleRank(Seat& seat, void* playerOneController) noexcept
+{
+    const int count = party_member::Ranks(playerOneController);
+    const int rank  = party_member::Rank(seat.index);
+    if (count < 1 || rank <= count)
+    {
+        return;
+    }
+    if (const int lowest = party_rank_rules::Lowest(RanksHeldBesides(seat.index), count); lowest != 0)
+    {
+        party_member::SetRank(seat.index, lowest);
+        platform::Log(L"{}'s place in the party order (rank {}) is gone with the party's {} free row(s): it takes rank {}",
+                      seat.Name(), rank, count, lowest);
+    }
+}
+
 void Session::Join(int index) noexcept
+{
+    if (SeatBuilt(index))
+    {
+        Seat& seat = seats_[index];
+        if (seat.localPlayer == nullptr && !seat.awaiting && !seat.rejoin.pending)
+        {
+            // The next party member no other player plays (party_rank_rules::Lowest; none free: its own number, and the
+            // member test below says why it waits).
+            const int lowest = party_rank_rules::Lowest(RanksHeldBesides(index), party_rank_rules::kMaxRanks);
+            const int rank   = lowest != 0 ? lowest : index;
+            if (rank != party_member::Rank(index))
+            {
+                platform::Log(L"{} takes rank {} of the party order (the next member no other player plays)", seat.Name(), rank);
+            }
+            party_member::SetRank(index, rank);
+        }
+    }
+    JoinNow(index);
+}
+
+bool Session::CanStepMember(int index) const noexcept
+{
+    // Seated and playing (not handed to its AI for a hold), in the field: a member swap mid-fight is unbuilt ground.
+    if (!In(index) || !Seated(index) || HandedToAi(index) || seats_[index].standIn != facts::kPlayerTypeNone ||
+        field_root::InBattle())
+    {
+        return false;
+    }
+    const int rank = party_member::Rank(index);
+    const int next = party_rank_rules::Step(rank, 1, RanksHeldBesides(index), party_member::Ranks(PlayerOneController()));
+    return next != rank;
+}
+
+bool Session::StepMember(int index, int dir) noexcept
+{
+    if (!CanStepMember(index))
+    {
+        return false;
+    }
+    const int rank  = party_member::Rank(index);
+    const int count = party_member::Ranks(PlayerOneController());
+    const int next  = party_rank_rules::Step(rank, dir, RanksHeldBesides(index), count);
+    if (next == rank)
+    {
+        return false;
+    }
+    party_member::SetRank(index, next);
+    platform::Log(L"{} steps {} to rank {} of {} in the party order: its member is given back and the new row's seated",
+                  seats_[index].Name(), dir >= 0 ? L"right" : L"left", next, count);
+    return true;
+}
+
+void* Session::RowActor(int index) const noexcept
+{
+    return SeatBuilt(index) ? party_member::RowActor(index, PlayerOneController(), seats_[index].standIn) : nullptr;
+}
+
+void Session::JoinNow(int index) noexcept
 try
 {
     if (!SeatBuilt(index))
@@ -687,6 +786,7 @@ void Session::Leave(int index) noexcept
     {
         seat.awaiting   = false;
         seat.waitLogged = 0;
+        seat.lastWait   = party_member::Wait::None;
         platform::Log(L"{} no longer waits for a party member", seat.Name());
     }
     if (seat.localPlayer == nullptr)

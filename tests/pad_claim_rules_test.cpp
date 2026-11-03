@@ -40,36 +40,34 @@ bool Whole(const Claim& c)
     return IsPermutation(c.pads);
 }
 
-/// The user's case (2026-10-30 18:43): person C sits at the middle screen, which shows Tifa (player 3); C wants Barret
-/// (player 2, on the right). C's pad is XInput user 0 (Steam's order).
-void TheMiddleScreenWantsBarret()
+/// The user's case (2026-10-30 18:43): person C sits at the middle screen, which shows player 3 (Tifa); C wants to
+/// play there. C's pad is XInput user 0 (Steam's order). The screens stay where they are; the character steps by rank.
+void TheMiddleScreenTakesItsPlayer()
 {
     Claim c = Open(3, {0, 2, 1}, kIdentity);
     EXPECT(Whole(c));
 
-    // C presses X, the middle screen's button: C's pad answers Tifa's slot; the pad there goes to C's old slot.
+    // C presses X, the middle screen's button: C's pad answers player 3's slot; the pad there goes to C's old slot.
     Result r = Press(c, 0, kX);
     EXPECT(r.did == Did::Took && r.screen == 1);
     EXPECT(c.pads[2] == 0 && c.pads[0] == 2);
     EXPECT(Whole(c));
 
-    // C steps left (the party order backwards from Tifa): Barret comes to the middle screen with C's pad.
+    // C steps left: the claim asks for the next member; the screens and pads stay.
     r = Press(c, 0, kDpadLeft);
-    EXPECT(r.did == Did::Stepped);
-    EXPECT(c.seatOn[1] == 1 && c.seatOn[2] == 2);
-    EXPECT(c.pads[1] == 0);   // C's pad drives Barret
-    EXPECT(c.pads[2] == 1);   // the right screen's person now has Tifa, with the pad that had Barret
-    EXPECT(Whole(c));
+    EXPECT(r.did == Did::Step && r.screen == 1 && r.dir == -1);
+    EXPECT(c.seatOn == (std::array<int, kScreens>{0, 2, 1}) && c.pads[2] == 0);
+    EXPECT(Press(c, 0, kDpadRight).dir == 1);
 
     r = Press(c, 0, kA);
     EXPECT(r.did == Did::Kept && !Done(c));
 
-    // The right screen's person takes it (Y) and keeps it: the last screen, Cloud's, takes what is left.
+    // The right screen's person takes it (Y) and keeps it: the last screen, player 1's, takes what is left.
     EXPECT(Press(c, 1, kY).did == Did::Took);
-    EXPECT(c.pads[2] == 1);  // already that player's pad: no change
+    EXPECT(c.pads[1] == 1);  // already that player's pad: no change
     EXPECT(Press(c, 1, kA).did == Did::Kept);
     EXPECT(Done(c));
-    EXPECT(c.pads[0] == 2 && c.pads[1] == 0 && c.pads[2] == 1 && c.pads[3] == 3);
+    EXPECT(c.pads[0] == 2 && c.pads[1] == 1 && c.pads[2] == 0 && c.pads[3] == 3);
 }
 
 /// A screen taken by one pad is not another's; a mirror's screen is no one's; a pad not on a screen only takes.
@@ -80,43 +78,41 @@ void TakingIsExclusive()
     EXPECT(c.pads[1] == 3 && c.pads[3] == 1);    // player 2's old pad goes spare
     EXPECT(Press(c, 1, kX).did == Did::Nothing); // taken
     EXPECT(Press(c, 1, kY).did == Did::Nothing); // a mirror's screen
-    EXPECT(Press(c, 1, kA).did == Did::Took);    // Cloud's screen
+    EXPECT(Press(c, 1, kA).did == Did::Took);    // player 1's screen
     EXPECT(Press(c, 2, kDpadRight).did == Did::Nothing);  // user 2 is on no screen
     EXPECT(Whole(c));
 }
 
-/// Player 1's view moves like the others: a step from it or toward it swaps screens; with two screens the two swap.
-void PlayerOneMoves()
+/// Player 1's character is the game's leader: its screen does not step; any pad may still take player 1's screen.
+void PlayerOneDoesNotStep()
 {
     Claim c = Open(3, {0, 1, 2}, kIdentity);
-    EXPECT(Press(c, 0, kA).did == Did::Took);
-    EXPECT(Press(c, 0, kDpadRight).did == Did::Stepped);  // the first screen's person now has Barret
-    EXPECT(c.seatOn[0] == 1 && c.seatOn[1] == 0 && c.pads[1] == 0 && c.pads[0] == 1);
+    EXPECT(Press(c, 2, kA).did == Did::Took);  // pad 3 becomes player 1
+    EXPECT(c.pads[0] == 2 && c.pads[2] == 0);
+    EXPECT(Press(c, 2, kDpadRight).did == Did::Nothing);
+    EXPECT(Press(c, 2, kDpadLeft).did == Did::Nothing);
+    EXPECT(c.seatOn == (std::array<int, kScreens>{0, 1, 2}));
     EXPECT(Whole(c));
 
     Claim two = Open(2, {0, 1, 2}, kIdentity);
     EXPECT(two.seatOn[2] == -1);  // beyond the screens: none
     EXPECT(Press(two, 1, kX).did == Did::Took);
-    EXPECT(Press(two, 1, kDpadLeft).did == Did::Stepped);
-    EXPECT(two.seatOn[1] == 0 && two.seatOn[0] == 1 && two.pads[0] == 1 && two.pads[1] == 0);
-    EXPECT(Whole(two));
+    EXPECT(Press(two, 1, kDpadLeft).did == Did::Step);
+    EXPECT(two.seatOn[1] == 1 && two.pads[1] == 1);
 }
 
-/// A kept screen is skipped by other people's steps; B unkeeps, then lets go; the combination again puts all back.
+/// A kept screen does not step; B unkeeps, then lets go; the opener again puts the pads back.
 void KeepBackAndCancel()
 {
     Claim c = Open(3, {0, 1, 2}, kIdentity);
-    EXPECT(Press(c, 1, kX).did == Did::Took);
-    EXPECT(Press(c, 1, kA).did == Did::Kept);
-    EXPECT(Press(c, 2, kY).did == Did::Took);
-    EXPECT(Press(c, 2, kDpadLeft).did == Did::Stepped);   // player 2's screen is kept: the step skips it to Cloud
-    EXPECT(c.seatOn[2] == 0 && c.seatOn[0] == 2 && c.seatOn[1] == 1);
-    EXPECT(Press(c, 1, kDpadRight).did == Did::Nothing);  // a kept screen does not step
-    EXPECT(Press(c, 1, kB).did == Did::Unkept);
-    EXPECT(Press(c, 2, kDpadRight).did == Did::Stepped);  // Barret's screen is free again: right from Cloud is Barret
-    EXPECT(c.seatOn[2] == 1 && c.seatOn[1] == 0);
-    EXPECT(Press(c, 2, kB).did == Did::LetGo);
-    EXPECT(ScreenOf(c, 2) < 0);
+    EXPECT(Press(c, 0, kX).did == Did::Took);  // pad 1 takes player 2's screen
+    EXPECT(Press(c, 0, kA).did == Did::Kept);
+    EXPECT(Press(c, 0, kDpadRight).did == Did::Nothing);  // a kept screen does not step
+    EXPECT(Press(c, 0, kB).did == Did::Unkept);
+    EXPECT(Press(c, 0, kDpadRight).did == Did::Step);
+    EXPECT(Press(c, 0, kB).did == Did::LetGo);
+    EXPECT(ScreenOf(c, 0) < 0);
+    EXPECT(c.pads[1] == 0);  // let go: the pad stays that player's until the claim is put back
     EXPECT(Whole(c));
 
     Cancel(c);
@@ -140,7 +136,7 @@ void WhenItEnds()
     EXPECT(two.pads[1] == 0 && two.pads[0] == 1);
 }
 
-/// Any run of presses keeps every player on one screen and the table a permutation.
+/// Any run of presses keeps every player on its screen and the table a permutation.
 void EverySwapKeepsTheWhole()
 {
     constexpr std::uint16_t kButtons[] = {kA, kB, kX, kY, kDpadLeft, kDpadRight};
@@ -153,6 +149,7 @@ void EverySwapKeepsTheWhole()
             seed = seed * 1103515245u + 12345u;
             Press(c, static_cast<int>((seed >> 8) % kSlots), kButtons[(seed >> 16) % 6]);
             EXPECT(Whole(c));
+            EXPECT(c.seatOn == c.openSeatOn);
             for (int s = 0; s < c.screens; ++s)
             {
                 const int user = c.takenBy[static_cast<std::size_t>(s)];
@@ -241,9 +238,9 @@ void TheLetGo()
 
 int main()
 {
-    TheMiddleScreenWantsBarret();
+    TheMiddleScreenTakesItsPlayer();
     TakingIsExclusive();
-    PlayerOneMoves();
+    PlayerOneDoesNotStep();
     KeepBackAndCancel();
     WhenItEnds();
     EverySwapKeepsTheWhole();

@@ -65,7 +65,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.148.2-mirror-icons";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.149.0-claim-characters";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
@@ -277,6 +277,7 @@ public:
             session_.SetMirrorPlayers({&lss::views::mirror_player::Count, &lss::views::mirror_player::Clear,
                                        &lss::views::mirror_player::FillAtLeave});
         }
+        lss::players::pad_claim::SetSession(&session_);
         RegisterSessionCommands(session_);
         lss::views::column_source::RegisterCommands(singleViewChoice_);
         remote_.Open();

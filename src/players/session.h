@@ -70,8 +70,25 @@ public:
     /// Puts back the field-exit calls (unload).
     void Remove() noexcept;
 
-    /// The seat's player joins on its member; with none free, waits outside the game for one (the player's intent).
+    /// The seat's player joins on its member; with none free, waits outside the game for one (the player's intent). A
+    /// seat fully out first takes the lowest rank no other player holds (party_member::Rank): the next party member no
+    /// human plays.
     void Join(int seat) noexcept;
+    /// The seat's player steps its rank to the next one no other player holds, `dir` +1 right or -1 left (the claim's
+    /// arrows): its member is given back and the new row's seated by the session's follow, as at a story party change.
+    /// False (nothing changed) when the seat cannot step (CanStepMember).
+    bool StepMember(int seat, int dir) noexcept;
+    /// The seat plays its member (seated, not handed to its AI, standing in for no one), no battle is on, and another
+    /// rank is free to step to.
+    bool CanStepMember(int seat) const noexcept;
+    /// The actor of the seat's row now (its rank's, or the stand-in's), whatever its state: the claim's name. Null
+    /// without one.
+    void* RowActor(int seat) const noexcept;
+    /// Why the seat's last join or wait found no member (party_member::Wait::None after a seat or a leave).
+    party_member::Wait WaitReason(int seat) const noexcept
+    {
+        return SeatBuilt(seat) ? seats_[seat].lastWait : party_member::Wait::None;
+    }
     /// The seat's player leaves (the player's intent); also cancels a rejoin after a world change and a wait.
     void Leave(int seat) noexcept;
     /// Once per engine tick, after players/game_state's: lets go of a player the engine no longer lists, takes
@@ -159,6 +176,7 @@ private:
         bool                 keptThroughLock = false;   // the game's leader is with its AI for an interaction lock; the member stayed
         std::int32_t         memberWeak[2]  = {-1, 0};  // the seated member, to notice it destroyed
         std::uint32_t        waitLogged     = 0;        // the wait last logged (type, reason, ordinal), 0 none
+        party_member::Wait   lastWait       = party_member::Wait::None;  // the reason of the last wait (WaitReason)
         std::uint32_t        seatRetryAt    = 0;        // the tick a refused seat is tried again
         std::uint32_t        seatGraceUntil = 0;        // after a leader change took its member: no leave to wait before this tick
         std::uint8_t         standIn        = 9;        // player 1's former character's type the seat plays since the game's leader
@@ -180,6 +198,14 @@ private:
     };
 
     static void OnFieldExit(void* self, const wchar_t* caller) noexcept;
+    /// Join's work, for the player's intent and for a rejoin or a wait (which keep the seat's rank).
+    void JoinNow(int index) noexcept;
+    /// The ranks the other seats hold (in, waiting for a member, or to rejoin), as party_rank_rules' bits.
+    std::uint32_t RanksHeldBesides(int index) const noexcept;
+    /// A seat whose rank the party no longer has (a story party change shrank it) takes the lowest free one.
+    void SettleRank(Seat& seat, void* playerOneController) noexcept;
+    /// Player 1's controller, or null.
+    RC::Unreal::UObject* PlayerOneController() const noexcept;
     /// Leave's work for one seat. A world change cannot wait: it takes the player out even if the member's release
     /// failed.
     bool TakeOut(Seat& seat, bool worldChange) noexcept;

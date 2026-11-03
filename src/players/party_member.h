@@ -6,8 +6,10 @@
 // The first further player plays the member in the 2nd slot of the game's own party order: the row after the field
 // leader in the deployed formation (PartyManager+0x230..+0x232, the deployed types in ascending order, the order the
 // party panel shows and the battle switch cycles), stepping past player 1's character and the battle-support status
-// as that cycle does; the next player takes the next row. The game's order is the only control: a story party change
-// moves the slot and the session follows it. The row's member is taken only while it is free the way the game
+// as that cycle does; the next player takes the next row. Each further player's place among those rows is its rank
+// (players/party_rank_rules.h): a join takes the lowest rank no other player holds, and the claim's arrows step it
+// (players/pad_claim). The game's order is the only other control: a story party change moves the rows and the
+// session follows it. The row's member is taken only while it is free the way the game
 // hands members to players: nobody else's controller holds it; in the field its AI runs the level's staging or the
 // party's follow (players/field_hold.h: no script layer active, no animation or one-shot kind), it is in the FIELD
 // or CAUTION actor mode, no push-button event holds the field with another lock and the game's own leader is with its
@@ -71,11 +73,21 @@ struct Choice
     std::uint32_t formation = 0;  // the formation as read: types[0] | types[1] << 8 | types[2] << 16 | field leader << 24; 0 unread
 };
 
-/// The member seat `seat` plays now, or why it waits. `taker` is that seat's controller (a member it already
-/// holds counts as free). `standIn`: the type of player 1's former character the seat stands in for since the game's
-/// leader change took its member (facts::kPlayerTypeNone: none); it is the seat's while deployed and not player 1's.
-/// Logged at Debug when `log` is set.
+/// The member seat `seat` plays now, or why it waits: the row at the seat's rank (Rank). `taker` is that seat's
+/// controller (a member it already holds counts as free). `standIn`: the type of player 1's former character the seat
+/// stands in for since the game's leader change took its member (facts::kPlayerTypeNone: none); it is the seat's while
+/// deployed and not player 1's, whatever the rank. Logged at Debug when `log` is set.
 Choice Choose(int seat, void* playerOneController, void* taker, bool log, std::uint8_t standIn) noexcept;
+
+/// The seat's rank: its place among the rows a further player may play, counted from the field leader's in the
+/// formation's order (players/party_rank_rules.h; 1 the first). The seat's own number until the session sets it. A
+/// changed rank makes the seat's member no longer its row (WhyNotInSlot), so the session gives it back and seats the
+/// new row's. Game thread.
+int  Rank(int seat) noexcept;
+void SetRank(int seat, int rank) noexcept;
+/// How many ranks the party has now: the rows past the field leader that are neither battle support nor player 1's
+/// (player 1's counts while player 1 is away from the field leader, as Choose counts it). 0 when unread.
+int Ranks(void* playerOneController) noexcept;
 
 /// The actor in seat `seat`'s row whatever its state (null without a row or an actor).
 void* RowActor(int seat, void* playerOneController, std::uint8_t standIn) noexcept;
