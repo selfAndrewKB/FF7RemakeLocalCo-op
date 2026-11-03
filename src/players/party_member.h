@@ -7,8 +7,8 @@
 // leader in the deployed formation (PartyManager+0x230..+0x232, the deployed types in ascending order, the order the
 // party panel shows and the battle switch cycles), stepping past player 1's character and the battle-support status
 // as that cycle does; the next player takes the next row. Each further player's place among those rows is its rank
-// (players/party_rank_rules.h): a join takes the lowest rank no other player holds, and the claim's arrows step it
-// (players/pad_claim). The game's order is the only other control: a story party change moves the rows and the
+// (players/party_rank_rules.h): a join takes the lowest rank no other player holds, and a player window's arrows step it
+// (players/player_window). The game's order is the only other control: a story party change moves the rows and the
 // session follows it. The row's member is taken only while it is free the way the game
 // hands members to players: nobody else's controller holds it; in the field its AI runs the level's staging or the
 // party's follow (players/field_hold.h: no script layer active, no animation or one-shot kind), it is in the FIELD

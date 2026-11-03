@@ -86,7 +86,7 @@ add_library(LocalSplitScreen SHARED
     src/players/pad_buttons.cpp
     src/players/pad_presence.cpp
     src/players/pad_table.cpp
-    src/players/pad_claim.cpp
+    src/players/player_window.cpp
     src/hud/view_prompt.cpp
     src/hud/view_window.cpp
     src/menu/coop_menu.cpp
@@ -258,19 +258,19 @@ target_include_directories(MenuPadsTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/sr
 target_compile_features(MenuPadsTests PRIVATE cxx_std_20)
 add_test(NAME menu_pads COMMAND MenuPadsTests)
 
-add_executable(PadClaimRulesTests
-    tests/pad_claim_rules_test.cpp
+add_executable(PadRulesTests
+    tests/pad_rules_test.cpp
 )
-target_include_directories(PadClaimRulesTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
-target_compile_features(PadClaimRulesTests PRIVATE cxx_std_20)
-add_test(NAME pad_claim_rules COMMAND PadClaimRulesTests)
+target_include_directories(PadRulesTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(PadRulesTests PRIVATE cxx_std_20)
+add_test(NAME pad_rules COMMAND PadRulesTests)
 
-add_executable(PadClaimTextTests
-    tests/pad_claim_text_test.cpp
+add_executable(PlayerWindowTests
+    tests/player_window_test.cpp
 )
-target_include_directories(PadClaimTextTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
-target_compile_features(PadClaimTextTests PRIVATE cxx_std_20)
-add_test(NAME pad_claim_text COMMAND PadClaimTextTests)
+target_include_directories(PlayerWindowTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(PlayerWindowTests PRIVATE cxx_std_20)
+add_test(NAME player_window COMMAND PlayerWindowTests)
 
 add_executable(PartyRankRulesTests
     tests/party_rank_rules_test.cpp

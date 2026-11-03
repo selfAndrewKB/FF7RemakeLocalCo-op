@@ -263,7 +263,7 @@ try
     if (!create || !addToRoot || !inRoot || !setText || !setOptions || !open || !pop || !close || !remove || !listAdd || !ui ||
         !engine)
     {
-        platform::Log(L"view window: an engine check failed; the claim's prompts are drawn in the engine's own font instead");
+        platform::Log(L"view window: an engine check failed; the player windows are drawn in the engine's own font instead");
         return false;
     }
     g.create     = reinterpret_cast<CreateFn>(*create);
@@ -286,13 +286,13 @@ try
     }
     else
     {
-        platform::Log(L"view window: the game's menu sounds were not found as expected; the claim's steps play none");
+        platform::Log(L"view window: the game's menu sounds were not found as expected; the player windows' steps play none");
     }
     g_installed = true;
     control::Register({.name  = L"views.window",
                        .shape = control::Shape::Text,
-                       .help  = L"(read only) the game's message windows the mod shows in the players' views (the pad "
-                                L"claim's)",
+                       .help  = L"(read only) the game's message windows the mod shows in the players' views (the "
+                                L"player windows)",
                        .get   = [] {
                            try
                            {

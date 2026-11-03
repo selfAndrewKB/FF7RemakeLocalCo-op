@@ -23,7 +23,7 @@ namespace lss::players::pad_table {
 
 namespace {
 
-namespace rules = pad_claim_rules;
+namespace rules = pad_rules;
 
 using GetStateFn = DWORD(WINAPI*)(DWORD user, XINPUT_STATE* state);
 using SetStateFn = DWORD(WINAPI*)(DWORD user, XINPUT_VIBRATION* vibration);
@@ -34,8 +34,8 @@ constexpr int kSlots = rules::kSlots;
 struct Pad
 {
     rules::OpenHold  hold;
-    rules::Held      leave;  // B: the claim's Back (a tap) or its leave (a hold)
-    rules::LetGo     letGo;  // idle to the game until it lets go of what it held at a change
+    rules::Held      leave;  // B: a window's close (a tap) or its leave (a hold)
+    rules::LetGo     letGo;  // idle to the game until it lets go of what it held at a change or its idle's end
     std::uint16_t    last = 0;  // the buttons on its last poll (the listener's presses)
 };
 
@@ -49,7 +49,7 @@ bool                  g_installed  = false;
 
 std::array<std::atomic<int>, kSlots> g_table{0, 1, 2, 3};
 std::atomic<Listener>                g_listener{nullptr};
-std::atomic<bool>                    g_idle{false};
+std::atomic<std::uint32_t>           g_idleUsers{0};  // bit N: XInput user N reads idle to the game
 std::atomic<std::uint32_t>           g_playing{1};  // the slots a player holds (SetPlaying)
 
 // Game thread.
@@ -138,7 +138,7 @@ DWORD WINAPI GetStateFor(DWORD slot, XINPUT_STATE* state) noexcept
         {
         }
     }
-    if (g_idle.load(std::memory_order_relaxed))
+    if ((g_idleUsers.load(std::memory_order_relaxed) >> user & 1u) != 0)
     {
         Idle(*state);
         return result;
@@ -175,7 +175,7 @@ DWORD WINAPI GetStateFor(DWORD slot, XINPUT_STATE* state) noexcept
         }
         return result;
     }
-    // A pad that plays no one never pauses the game: its Start is the claim's join (heard above).
+    // A pad that plays no one never pauses the game: its Start is a join (players/player_window) (heard above).
     const std::uint16_t shown = rules::StartGate(gated.buttons, static_cast<int>(slot), g_playing.load(std::memory_order_relaxed));
     if ((pressed & rules::kStart) != 0 && (shown & rules::kStart) == 0)
     {
@@ -187,7 +187,7 @@ DWORD WINAPI GetStateFor(DWORD slot, XINPUT_STATE* state) noexcept
     return result;
 }
 
-/// The game's rumble for `slot`: to the assigned pad; off while idle.
+/// The game's rumble for `slot`: to the assigned pad; off while that pad is idle.
 DWORD WINAPI SetStateFor(DWORD slot, XINPUT_VIBRATION* vibration) noexcept
 {
     if (slot >= static_cast<DWORD>(kSlots))
@@ -195,7 +195,7 @@ DWORD WINAPI SetStateFor(DWORD slot, XINPUT_VIBRATION* vibration) noexcept
         return g_set(slot, vibration);
     }
     const auto user = static_cast<DWORD>(g_table[slot].load(std::memory_order_relaxed));
-    if (g_idle.load(std::memory_order_relaxed))
+    if ((g_idleUsers.load(std::memory_order_relaxed) >> user & 1u) != 0)
     {
         XINPUT_VIBRATION off{};
         return g_set(user, &off);
@@ -255,11 +255,26 @@ void LogDevices() noexcept
 
 namespace {
 
+/// "pad 1, pad 3" for the idle bits.
+std::wstring IdleText(std::uint32_t users)
+{
+    std::wstring text;
+    for (int user = 0; user < kSlots; ++user)
+    {
+        if ((users >> user & 1u) != 0)
+        {
+            text += (text.empty() ? L"" : L", ") + PadName(user);
+        }
+    }
+    return text;
+}
+
 std::wstring Reading()
 {
     return std::format(L"{}{}; {}; slots with a player {:#x}; View held {}, Starts held back {}, waits for a let-go {}, "
                        L"re-checks {}, changes {}; last: {}",
-                       g_installed ? L"on" : L"not installed", g_idle.load() ? L" (every pad idle)" : L"",
+                       g_installed ? L"on" : L"not installed",
+                       g_idleUsers.load() != 0 ? std::format(L" (idle to the game: {})", IdleText(g_idleUsers.load())) : std::wstring(),
                        TableText(Table()), g_playing.load(), g_opens, g_startsHeld, g_waited, g_rechecks, g_changes, g_last);
 }
 
@@ -311,19 +326,25 @@ catch (...)
     return false;
 }
 
-void SetIdle(bool on, const wchar_t* why) noexcept
+void SetIdleUsers(std::uint32_t users, const wchar_t* why) noexcept
 try
 {
-    if (!g_installed || g_idle.exchange(on) == on)
+    users &= (1u << kSlots) - 1u;
+    const std::uint32_t before = g_idleUsers.exchange(users);
+    if (!g_installed || before == users)
     {
         return;
     }
-    if (!on)
+    const std::uint32_t back = before & ~users;
+    for (int user = 0; user < kSlots; ++user)
     {
-        AwaitReleases();
-        ++g_waited;
+        if ((back >> user & 1u) != 0)
+        {
+            rules::AwaitLetGo(g_pads[static_cast<std::size_t>(user)].letGo);  // the press that ended it stays out
+            ++g_waited;
+        }
     }
-    g_last = std::format(L"every pad {} to the game: {}", on ? L"idle" : L"back", why);
+    g_last = std::format(L"idle to the game: {}: {}", users != 0 ? IdleText(users) : std::wstring(L"none"), why);
     platform::Log(L"pads: {}", g_last);
 }
 catch (...)
@@ -402,13 +423,13 @@ bool Install(const platform::GameImage& image) noexcept
                        .get = [] { return control::Value{TableText(Table())}; }});
     control::Register({.name  = L"pads-idle",
                        .shape = control::Shape::OnOff,
-                       .help  = L"every connected pad reads idle to the game, rumble off (the claim screen's state; "
-                                L"off: each pad holding a button stays idle until it lets go)",
+                       .help  = L"every connected pad reads idle to the game, rumble off (an open window's state, "
+                                L"for every pad; off: each pad holding a button stays idle until it lets go)",
                        .set   = [](const control::Value& value) {
-                           SetIdle(std::get<bool>(value), L"the console");
+                           SetIdleUsers(std::get<bool>(value) ? (1u << kSlots) - 1u : 0u, L"the console");
                            return control::Outcome{};
                        },
-                       .get = [] { return control::Value{g_idle.load()}; }});
+                       .get = [] { return control::Value{g_idleUsers.load() != 0}; }});
     control::Register({.name  = L"players.pad-table",
                        .shape = control::Shape::Text,
                        .help  = L"(read only) the pad table, the View holds and the waits for a let-go",
@@ -428,7 +449,7 @@ bool Install(const platform::GameImage& image) noexcept
 void Remove() noexcept
 {
     g_listener.store(nullptr);
-    g_idle.store(false);
+    g_idleUsers.store(0);
     g_setEntry.Restore();
     g_getEntry.Restore();
     if (g_installed)

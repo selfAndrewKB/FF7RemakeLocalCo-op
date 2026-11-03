@@ -36,8 +36,8 @@
 #include "players/scopes.h"
 #include "players/session.h"
 #include "players/single_view.h"
-#include "players/pad_claim.h"
 #include "players/pad_table.h"
+#include "players/player_window.h"
 #include "players/split_switch.h"
 #include "players/split_render.h"
 #include "players/weak_object.h"
@@ -66,7 +66,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.149.4-claim-b-release";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.150.0-player-windows";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
@@ -278,7 +278,7 @@ public:
             session_.SetMirrorPlayers({&lss::views::mirror_player::Count, &lss::views::mirror_player::Clear,
                                        &lss::views::mirror_player::FillAtLeave});
         }
-        lss::players::pad_claim::SetSession(&session_);
+        lss::players::player_window::SetSession(&session_);
         RegisterSessionCommands(session_);
         lss::views::column_source::RegisterCommands(singleViewChoice_);
         remote_.Open();
@@ -322,9 +322,9 @@ private:
         // The console's lines (joins and leaves among them) before the session and the column map, as the keys, so
         // this frame's HUD passes never name a player the console just took out.
         remote_.Tick();
-        // The pads' joins and leaves from the claim, at the keys' place; then which slots the players hold (a pad on any
-        // other slot never pauses the game: its Start joins).
-        lss::players::pad_claim::RunRequests();
+        // The pads' joins and leaves from the player windows, at the keys' place; then which slots the players hold (a
+        // pad on any other slot never pauses the game: its Start joins).
+        lss::players::player_window::RunRequests();
         lss::players::pad_table::SetPlaying(session_.SeatIds());
         lss::modules::TickBeforeSession(CameraManagerOf(0));
         session_.Tick();
@@ -361,11 +361,11 @@ private:
         // The other way round (the split decided while the switch stays set: a clear that failed, or someone else's
         // switch) the screen stays single; the policy's log says so, and the HUD follows the engine's view sizes.
         FollowShown(shown);
-        // The pad claim (players/pad_claim.h) over this tick's views, its prompts shown in each player's own view.
-        lss::players::pad_claim::Tick({.screens   = columns_.count,
-                                       .listSeats = ListSeatsOf(columns_),
-                                       .single    = singleView_.Single(),
-                                       .seatIds   = session_.SeatIds()});
+        // The player windows (players/player_window.h) over this tick's views, each in its player's own view.
+        lss::players::player_window::Tick({.screens   = columns_.count,
+                                           .listSeats = ListSeatsOf(columns_),
+                                           .single    = singleView_.Single(),
+                                           .seatIds   = session_.SeatIds()});
         // The next shop a further player opens: its camera on the screen's one view in one window (where the single
         // view can show it), on the opener's on a row or under the console's off (world/shop_act.h).
         lss::world::shop_act::SetOneWindow(!columns.columnsHeld &&

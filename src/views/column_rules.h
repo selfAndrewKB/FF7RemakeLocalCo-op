@@ -112,13 +112,13 @@ constexpr bool Same(const Record (&a)[N], const Record (&b)[N]) noexcept
 struct Order
 {
     std::array<int, kThreePlayerRecords> player{1, 2, 3};
-    bool byNumber = false;  // `1 2 3` by player number, not the join order (the pad claim's: players/pad_claim)
+    bool byNumber = false;  // `1 2 3` by player number, not the join order (a player window's move: players/player_window)
     constexpr bool operator==(const Order&) const noexcept = default;
 };
 
 /// The default, `1 2 3`: the join order. The entry keeps the engine's list order (EntryWanted arranges nothing), so the
 /// player who joined first shows in the middle (bottom left), the next on the right (bottom right), as before the
-/// setting existed. `1 3 2` arranges by player number, and so does `1 2 3` with byNumber (the pad claim's choice,
+/// setting existed. `1 3 2` arranges by player number, and so does `1 2 3` with byNumber (the player windows' choice,
 /// whatever order the players joined in).
 inline constexpr Order kJoinOrder{};
 

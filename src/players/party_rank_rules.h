@@ -1,11 +1,11 @@
 #pragma once
 
 // Which party member each further player plays, as a place in the game's party order (players/party_member; the
-// claim's arrows, players/pad_claim). Pure: host-tested (tests/party_rank_rules_test.cpp).
+// a player window's arrows, players/player_window). Pure: host-tested (tests/party_rank_rules_test.cpp).
 //
 // A rank is a place among the rows a further player may play, counted from the field leader's in the formation's
 // order: rank 1 the first such row, rank 2 the next. No two players hold one rank. A player joining takes the lowest
-// rank no other player holds (the next party member no human plays); the claim's arrows step it over the ranks no
+// rank no other player holds (the next party member no human plays); a player window's arrows step it over the ranks no
 // other player holds, wrapping. The count of ranks is the game's party at that moment (a story party change moves it).
 
 #include <cstdint>

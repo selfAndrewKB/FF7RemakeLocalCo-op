@@ -74,14 +74,14 @@ public:
     /// seat fully out first takes the lowest rank no other player holds (party_member::Rank): the next party member no
     /// human plays.
     void Join(int seat) noexcept;
-    /// The seat's player steps its rank to the next one no other player holds, `dir` +1 right or -1 left (the claim's
+    /// The seat's player steps its rank to the next one no other player holds, `dir` +1 right or -1 left (a player window's
     /// arrows): its member is given back and the new row's seated by the session's follow, as at a story party change.
     /// False (nothing changed) when the seat cannot step (CanStepMember).
     bool StepMember(int seat, int dir) noexcept;
     /// The seat plays its member (seated, not handed to its AI, standing in for no one), no battle is on, and another
     /// rank is free to step to.
     bool CanStepMember(int seat) const noexcept;
-    /// The actor of the seat's row now (its rank's, or the stand-in's), whatever its state: the claim's name. Null
+    /// The actor of the seat's row now (its rank's, or the stand-in's), whatever its state: a player window's name. Null
     /// without one.
     void* RowActor(int seat) const noexcept;
     /// Why the seat's last join or wait found no member (party_member::Wait::None after a seat or a leave).

@@ -235,7 +235,7 @@ void ColumnsOfTheirWidths()
 
 }  // namespace
 
-/// The pad claim's orders (players/pad_claim): by player number whatever the join order, a slot no player has taking the
+/// The player windows' orders (players/player_window): by player number whatever the join order, a slot no player has taking the
 /// player left over; player 1 on any slot.
 void ClaimOrders()
 {

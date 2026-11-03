@@ -1,7 +1,7 @@
 #pragma once
 
-// A few lines of text in one player's own view: the pad claim's prompts where the game's own window cannot be shown
-// (players/pad_claim, hud/view_window; research/RE-view-text.md).
+// A few lines of text in one player's own view: the player windows where the game's own window cannot be shown
+// (players/player_window, hud/view_window; research/RE-view-text.md).
 //
 // The engine's own per-player HUD pass draws them: UGameViewportClient::Draw hands each local player's HUD a canvas
 // already offset to that player's view, above the game's HUD, and calls its PostRender through the AHUD vtable (every

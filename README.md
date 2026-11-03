@@ -215,10 +215,10 @@ src/
     target_rotation.h       Which UI target each view samples, with N columns (hud/ui_targets.h; plan/seats.md step 5)
     ui_targets              One UI image per view, on the render thread (RE-hud-two-images.md §4, §5, §7: H1 and H4)
     user_widgets            The live UUserWidgets, kept current without walking every UObject
-    view_prompt             A few lines of text in one player's own view: the pad claim's prompts where the game's own
-                            window cannot be shown
-    view_window             The game's own framed message window in one player's view: the claim screen's prompts
-                            (players/pad_claim; research/RE-game-widgets.md §12)
+    view_prompt             A few lines of text in one player's own view: the player windows where the game's own window
+                            cannot be shown
+    view_window             The game's own framed message window in one player's view: the player windows
+                            (players/player_window; research/RE-game-widgets.md §12)
   players/                  the seats: the session, the party member and its funnels, the scopes, the pads, each seat's
                             camera and trigger
     action_key              One of the game's action getters (Input_IsActionHeld_ByKey, Input_IsActionPressed_ByKey) on
@@ -257,24 +257,26 @@ src/
                             joining player
     pad_buttons             Each pad's buttons for its own player (RE-input.md §1, §8; RE-input-p2.md §2: the design, a
                             written exception)
-    pad_claim               The claim screen: which pad plays which character, chosen by the people holding them
-    pad_claim_rules.h       The pure rules of the live pad assignment (players/pad_claim; plan/topics/input.md State
-                            "Planned", the user's design of 2026-10-30 18:43)
-    pad_claim_text.h        What each screen of the claim says (players/pad_claim; the rules: players/pad_claim_rules.h)
     pad_presence            Which XInput users have a pad, asked of XInput itself once a second on the game thread (the
                             game's own input system polls the same API every frame; a disconnected slot's query is the
                             slow one, so never per frame)
+    pad_rules.h             The pure rules of each physical pad's input, as the pad table reads it (players/pad_table)
+                            and the player windows hear it (players/player_window)
     pad_table               Which physical pad answers each of the game's pad slots (plan/topics/input.md State
                             "Planned"; the user's design of 2026-10-30 18:43; research/RE-pad-slots.md)
     party_events            The game's party funnels, heard by the session (RE-slot-member.md §1.5, §2.5, §3; Rebirth's
                             player_two/party_events)
     party_member            Which deployed party member a further player plays, and when it is the player's to take
     party_rank_rules.h      Which party member each further player plays, as a place in the game's party order
-                            (players/party_member; the claim's arrows, players/pad_claim)
+                            (players/party_member; the a player window's arrows, players/player_window)
     party_seat              A further player's controller takes a party member through the game's own leader funnel, and
                             gives it back
     player_trigger          Each seat's own PlayerTrigger: a copy of the game's one placed trigger actor
                             (RE-player-trigger.md §4-§5, Fix A)
+    player_window           Each player's own window: joining, the character, where the view is, and leaving, by pad
+    player_window_rules.h   The pure rules of the player windows (players/player_window)
+    player_window_text.h    What a player's window says (players/player_window; the rules:
+                            players/player_window_rules.h)
     scopes                  The game's single slots answered for one further player
     seat_camera             Each seat's own field camera: a further AEndFieldCameraOperator per seat, driven by the
                             game's own code

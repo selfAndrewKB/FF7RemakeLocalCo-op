@@ -41,7 +41,7 @@
 #include "players/pad_buttons.h"
 #include "players/pad_presence.h"
 #include "players/pad_table.h"
-#include "players/pad_claim.h"
+#include "players/player_window.h"
 #include "hud/view_prompt.h"
 #include "hud/view_window.h"
 #include "menu/coop_menu.h"
@@ -264,12 +264,12 @@ constexpr std::array kModules{
     Module{.name = L"pads reading", .install = Call<&players::pad_presence::Register>},
     // without it each pad is the player with its XInput number, whatever order Windows and Steam Input gave them
     Module{.name = L"pad table", .install = Call<&players::pad_table::Install>, .remove = &players::pad_table::Remove},
-    // without it no prompt can be drawn in a player's own view (the pad claim's)
+    // without it no prompt can be drawn in a player's own view (the player windows')
     Module{.name = L"view prompts", .install = Call<&hud::view_prompt::Install>, .remove = &hud::view_prompt::Remove},
-    // without it the pad claim's prompts are drawn in the engine's own font (the view prompts) instead of the game's window
+    // without it the player windows are drawn in the engine's own font (the view prompts) instead of the game's window
     Module{.name = L"view windows", .install = Call<&hud::view_window::Install>, .remove = &hud::view_window::Remove},
     // without it the pads can be changed only from the console (pad-table)
-    Module{.name = L"pad claim", .install = Call<&players::pad_claim::Install>, .remove = &players::pad_claim::Remove,
+    Module{.name = L"player windows", .install = Call<&players::player_window::Install>, .remove = &players::player_window::Remove,
            .needs = {Need<&players::pad_table::Install>(), Need<&hud::view_prompt::Install>()}},
     // without it the mod's options are set only from the console and the settings file
     Module{.name = L"Co-op menu", .install = Call<&menu::coop_menu::Install>, .remove = &menu::coop_menu::Remove},
@@ -659,8 +659,8 @@ bool ReadView(const void* localPlayer, hud::overlay_layout::ViewShare& out) noex
 
 /// Whether the mirrors' columns, `from` up to `read`, get HUD passes of their own: each column there is a mirror's (no
 /// seat in the map) and one of them has another shape than player 1's view (overlay_pass::OtherShape: a monitor of
-/// another width in a span), or `always` (the pad claim is open: each copy's screen shows its own prompt, never player
-/// 1's). Then every mirror's column gets a pass (the columns with an image of their own stay the first ones, as the
+/// another width in a span), or `always` (player 1's window shows: a copy must not show it, so each copy draws its
+/// own HUD). Then every mirror's column gets a pass (the columns with an image of their own stay the first ones, as the
 /// target and slot rules expect), showing player 1's HUD laid out for its own monitor.
 bool MirrorsOwnImage(const hud::overlay_layout::ViewShares& shares, int from, int read, bool always) noexcept
 {
@@ -702,7 +702,7 @@ void TickHud(const Frame& frame) noexcept
     // A split, or the mirror beside player 1; not on the frame the single view's switch is written (the engine's sizes
     // change at the redraw, after this tick: the switch set means it shows, the fallback above decides otherwise).
     const bool views      = read >= 2 && !frame.shown.Single();
-    const bool ownMirrors = views && read > players && MirrorsOwnImage(shares, players, read, lss::players::pad_claim::Active());
+    const bool ownMirrors = views && read > players && MirrorsOwnImage(shares, players, read, lss::players::player_window::PlayerOneShown());
     columns.count         = ownMirrors ? read : players;  // the columns with a pass
     // The mirrors beside player 1 sample player 1's image (the single view: one view, nothing to sample).
     const bool mirror = !frame.shown.SplitShown() && frame.map.count > 1 && !frame.shown.Single() && !ownMirrors;
@@ -711,8 +711,8 @@ void TickHud(const Frame& frame) noexcept
     {
         g_mirrorsOwnImage = ownMirrors;
         platform::Log(L"HUD: {}", ownMirrors ? std::format(L"the mirrors' columns get HUD images of their own ({}; columns {}-{})",
-                                                           lss::players::pad_claim::Active()
-                                                               ? L"the pad claim is open: each copy shows its own prompt"
+                                                           lss::players::player_window::PlayerOneShown()
+                                                               ? L"player 1's window shows: never on a copy"
                                                                : L"a monitor of another shape than player 1's view",
                                                            players + 1, read)
                                              : std::wstring(L"the mirrors' columns sample player 1's HUD image"));

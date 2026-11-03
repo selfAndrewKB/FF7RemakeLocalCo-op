@@ -1,6 +1,6 @@
 #pragma once
 
-// The game's own framed message window in one player's view: the claim screen's prompts (players/pad_claim;
+// The game's own framed message window in one player's view: the player windows (players/player_window;
 // research/RE-game-widgets.md §12).
 //
 // Each window is the game's Com_Window_01_C (UEndMessageWindow), made and shown by the game's own sequence
@@ -8,7 +8,7 @@
 // the game's window list) at a ZOrder above the HUD and below subtitles and the pause menu. Its text is the game's
 // markup (button icons, colours), drawn by the game's text block in the game's font. Open always pushes a focus layer
 // (no game path shows one without); the window's own layer is popped in the same call (UEndUserWidget::
-// PopFromFocusStack), so focus never leaves what had it and no key ever reaches the window: the claim reads the pads
+// PopFromFocusStack), so focus never leaves what had it and no key ever reaches the window: the player windows read the pads
 // itself. Every root on the overlay is painted in every player's column; hud/pass_hide makes a window transparent in
 // every pass but its view's (ViewOf), as it does for the cursors, and the window's animations never write that
 // colour (§12.5). A closed window plays the game's Out and close sound and is taken out of the overlay by its own tick

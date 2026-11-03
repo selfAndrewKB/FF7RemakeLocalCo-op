@@ -108,7 +108,7 @@ bool SetColor(UObject* widget, const float (&color)[4]) noexcept
 }
 
 /// Every cursor root on the overlay, shown and opaque, that the pass of `seat` (0 player 1's) does not show, made
-/// transparent. `playerOneCursors`: player 1's own cursors too (a further pass). `view`: the claim windows' view the
+/// transparent. `playerOneCursors`: player 1's own cursors too (a further pass). `view`: the player windows' view the
 /// pass shows (hud/view_window.h: the seat's, or a copy's column's); every other window is hidden.
 int Begin(int seat, bool playerOneCursors, int view) noexcept
 try
@@ -121,7 +121,7 @@ try
     for (const auto& widget : user_widgets::Live())
     {
         const Cursor cursor = CursorOf(widget.object);
-        const int    window = cursor == Cursor::None ? view_window::ViewOf(widget.object) : -1;  // a claim window's view
+        const int    window = cursor == Cursor::None ? view_window::ViewOf(widget.object) : -1;  // a player window's view
         const bool   hide   = cursor == Cursor::PlayerOne ? playerOneCursors
                               : cursor == Cursor::TargetIcon  ? world::target_icons::OwnerSeat(widget.object) != seat
                               : cursor == Cursor::SearchArrow ? world::search_arrows::OwnerSeat(widget.object) != seat
@@ -162,7 +162,7 @@ int BeginFurtherPass(int column) noexcept
     {
         return Begin(seat, true, seat);
     }
-    // A copy of player 1's picture: player 1's hides, but its claim window is the copy's own, not player 1's.
+    // A copy of player 1's picture: player 1's hides, but player 1's window is not drawn there.
     g_hidden.clear();
     return world::target_icons::AnySeatIcons() || world::search_arrows::AnySeatArrows() || view_window::Any()
                ? Begin(0, false, view_window::MirrorView(column))

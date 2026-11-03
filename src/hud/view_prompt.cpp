@@ -247,7 +247,7 @@ try
     g_installed = true;
     control::Register({.name  = L"views.prompt",
                        .shape = control::Shape::Text,
-                       .help  = L"(read only) the prompts shown in the players' views (the pad claim's) and how often drawn",
+                       .help  = L"(read only) the prompts shown in the players' views (the player windows') and how often drawn",
                        .get   = [] {
                            try
                            {

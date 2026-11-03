@@ -3382,7 +3382,7 @@ inline constexpr std::array<std::uint8_t, 16> kScrollBoxRefreshEntry{
 inline constexpr platform::FunctionFact kScrollBoxRefresh{L"EndVSB_RefreshItems_cand", 0x14137D8F0, kScrollBoxRefreshEntry};
 
 // ---------------------------------------------------------------------------------------------------------------------
-// Claim windows: the game's message window (Com_Window_01_C, UEndMessageWindow) in each player's own view
+// Player windows: the game's message window (Com_Window_01_C, UEndMessageWindow) in each player's own view
 // (hud/view_window; research/RE-game-widgets.md §12). The game's own sequence (EndUI_ShowMessageWindow 0x1413B12A0) with
 // its focus layer popped at once: create (world) -> the window or null; AddToRootOverlay (kAddToRootOverlayFn) at the
 // ZOrder also written at kEndWidgetZOrder; set the text (window, const FString*: text ID or literal markup); the options

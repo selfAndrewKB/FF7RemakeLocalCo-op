@@ -1,0 +1,696 @@
+#include "players/player_window.h"
+
+#define RC_UNREAL_DISABLE_PROPERTY_DEPRECATION_WARNINGS
+#define RC_UNREAL_DISABLE_CLASS_DEPRECATION_WARNINGS
+#include <Unreal/CoreUObject/UObject/Class.hpp>
+#include <Unreal/UObject.hpp>
+
+#include "engine_facts.h"
+#include "hud/view_prompt.h"
+#include "hud/view_window.h"
+#include "platform/guarded.h"
+#include "platform/log.h"
+#include "platform/settings.h"
+#include "players/field_root.h"
+#include "players/game_state.h"
+#include "players/pad_rules.h"
+#include "players/pad_table.h"
+#include "players/party_member.h"
+#include "players/player_window_rules.h"
+#include "players/player_window_text.h"
+#include "players/scopes.h"
+#include "players/seats.h"
+#include "players/session.h"
+#include "views/column_layout.h"
+#include "views/whole_screen.h"
+#include "views/whole_screen_rules.h"
+
+#include <algorithm>
+#include <array>
+#include <chrono>
+#include <cstdint>
+#include <cwctype>
+#include <format>
+#include <optional>
+#include <string>
+#include <utility>
+
+namespace lss::players::player_window {
+
+namespace {
+
+namespace pad   = pad_rules;
+namespace rules = player_window_rules;
+namespace text  = player_window_text;
+
+constexpr int kSeats = rules::kSeats;
+
+struct Event
+{
+    int           user    = 0;
+    std::uint16_t pressed = 0;
+    bool          open    = false;  // View held a second
+    bool          bTap    = false;  // B let go within a second
+    bool          bHeld   = false;  // B held a second
+};
+
+/// A join a pad asked for, made by RunRequests before the session's tick.
+struct JoinAsk
+{
+    int seat = -1;
+    int user = -1;  // the joining pad
+};
+
+/// A line a window shows for a while: a join that waits, a refusal.
+struct SeatNote
+{
+    text::Note   note  = text::Note::None;
+    int          about = 0;
+    std::int64_t until = 0;
+};
+
+constexpr std::int64_t kNoteMs = 3000;
+
+// Noted by the pad table's listener during the engine's pad poll, taken in Tick. Game thread both.
+constexpr std::size_t     kQueue = 32;
+std::array<Event, kQueue> g_events{};
+std::size_t               g_queued  = 0;
+std::uint32_t             g_dropped = 0;
+
+// Game thread.
+bool                             g_installed = false;
+Session*                         g_session   = nullptr;
+std::array<bool, kSeats>         g_open{};                // by seat: the player's window is open
+std::array<SeatNote, kSeats>     g_notes{};               // by seat
+std::array<bool, pad::kSlots>    g_bSeen{};               // by pad: B went down while its window was open (arms B)
+std::array<JoinAsk, kSeats>      g_joins{};               // asked, not yet made
+std::array<int, kSeats>          g_leaves{-1, -1, -1};    // players asked to leave, not yet out
+std::array<bool, kSeats>         g_waiting{};             // by seat: a join that waits; its window opens once in
+int                              g_startWhenSplit = -1;   // a spare pad's Start during one view: joins once split
+bool                             g_redraw         = false;
+bool                             g_title          = false;
+std::uint32_t                    g_playing        = 1;    // the slots a player holds, as of the last tick
+std::uint32_t                    g_idleUsers      = 0;    // the pads read idle now (the open windows' pads)
+unsigned long long               g_gameClosedSeen = 0;    // view_window's count of windows the game closed
+int                              g_lastScreens    = 0;    // the views as last shown
+views::column_rules::ListSeats   g_lastList{};
+
+std::int64_t NowMs() noexcept
+{
+    return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
+void Note(int user, std::uint16_t pressed, bool open, bool bTap, bool bHeld) noexcept
+{
+    if (g_queued < kQueue)
+    {
+        g_events[g_queued++] = {user, pressed, open, bTap, bHeld};
+    }
+    else
+    {
+        ++g_dropped;
+    }
+}
+
+void ClassText(void* object, std::wstring* out) noexcept
+try
+{
+    *out = static_cast<RC::Unreal::UObject*>(object)->GetClassPrivate()->GetName();
+}
+catch (...)
+{
+    out->clear();
+}
+
+/// The seat's character in capitals, from its class ("PC0001_00_Barret_Standard_C": BARRET), else "PLAYER n". A
+/// further seat's is its row's (the rank's, so a step shows at once; the member follows a tick later).
+std::wstring NameOf(int seat)
+{
+    void* member = seat == 0 ? players::field_root::PartyLeader(facts::kLeaderCurrent)
+                   : g_session != nullptr ? g_session->RowActor(seat)
+                                          : nullptr;
+    member = member != nullptr || seat == 0 ? member : scopes::Member(seat);
+    std::wstring cls;
+    if (member != nullptr)
+    {
+        platform::CallGuarded(&ClassText, member, &cls);
+    }
+    // PC<number>_<variant>_<Name>_...
+    if (cls.starts_with(L"PC"))
+    {
+        const auto first  = cls.find(L'_');
+        const auto second = first == std::wstring::npos ? first : cls.find(L'_', first + 1);
+        const auto third  = second == std::wstring::npos ? second : cls.find(L'_', second + 1);
+        if (third != std::wstring::npos && third > second + 1)
+        {
+            std::wstring name = cls.substr(second + 1, third - second - 1);
+            for (wchar_t& c : name)
+            {
+                c = static_cast<wchar_t>(std::towupper(c));
+            }
+            return name;
+        }
+    }
+    return std::format(L"PLAYER {}", seat + 1);
+}
+
+bool Plays(int seat) noexcept
+{
+    return seat == 0 || (seat > 0 && seat < kSeats && (g_playing & (1u << seat)) != 0);
+}
+
+/// A further seat no player holds, waits for, rejoins or is joining now (the lowest), or -1.
+int FreeSeat()
+{
+    for (int seat = 1; g_session != nullptr && seat <= kSeatsBuilt; ++seat)
+    {
+        const bool asked = std::any_of(g_joins.begin(), g_joins.end(), [seat](const JoinAsk& j) { return j.seat == seat; });
+        if (!asked && !g_session->In(seat) && !g_session->Awaiting(seat) && !g_session->RejoinPending(seat))
+        {
+            return seat;
+        }
+    }
+    return -1;
+}
+
+void SetNote(int seat, text::Note note, int about)
+{
+    g_notes[static_cast<std::size_t>(seat)] = {note, about, NowMs() + kNoteMs};
+    g_redraw                                = true;
+}
+
+bool AnyRequest()
+{
+    return std::any_of(g_joins.begin(), g_joins.end(), [](const JoinAsk& j) { return j.seat >= 0; }) ||
+           std::any_of(g_leaves.begin(), g_leaves.end(), [](int seat) { return seat >= 0; });
+}
+
+/// Each screen's seat now (-1 for a copy's): the engine's list placed by the column order, as the layout places it.
+std::array<int, kSeats> SeatOnScreens(const Frame& frame)
+{
+    std::array<int, kSeats> seatOn{-1, -1, -1};
+    const int  screens = std::clamp(frame.screens, 1, kSeats);
+    const auto slots   = views::column_rules::ScreenSlots(views::column_layout::Views(), views::column_layout::CurrentOrder(),
+                                                          frame.listSeats);
+    for (int place = 0; place < screens; ++place)
+    {
+        const int slot = slots[static_cast<std::size_t>(place)];
+        if (slot >= 0 && slot < kSeats)
+        {
+            seatOn[static_cast<std::size_t>(slot)] = frame.listSeats[static_cast<std::size_t>(place)];
+        }
+    }
+    return seatOn;
+}
+
+void Open(int seat, const std::wstring& why)
+{
+    g_open[static_cast<std::size_t>(seat)] = true;
+    g_redraw                               = true;
+    hud::view_window::Play(hud::view_window::Sound::Decide);
+    platform::Log(L"player window: player {}'s opens ({})", seat + 1, why);
+}
+
+void Close(int seat, const wchar_t* why)
+{
+    if (!g_open[static_cast<std::size_t>(seat)])
+    {
+        return;
+    }
+    g_open[static_cast<std::size_t>(seat)] = false;
+    g_redraw                               = true;
+    platform::Log(L"player window: player {}'s closes ({})", seat + 1, why);
+}
+
+/// Every window and note in each player's own view (hud/view_window, else the engine-font prompt); the rest closed.
+void ShowWindows(const Frame& frame)
+{
+    constexpr int kViews = hud::view_window::kViews;
+    hud::view_prompt::ClearAll();
+    std::array<bool, kViews> shown{};
+    const int screens = std::clamp(frame.screens, 1, kSeats);
+    for (int seat = 0; seat < kSeats; ++seat)
+    {
+        const SeatNote& note = g_notes[static_cast<std::size_t>(seat)];
+        if (!Plays(seat) || (!g_open[static_cast<std::size_t>(seat)] && note.note == text::Note::None))
+        {
+            continue;
+        }
+        text::Window w;
+        w.seat       = seat;
+        w.name       = NameOf(seat);
+        w.open       = g_open[static_cast<std::size_t>(seat)];
+        w.canStep    = seat >= 1 && g_session != nullptr && g_session->CanStepMember(seat);
+        w.canMove    = screens >= 2;
+        w.startJoins = seat == 0 && FreeSeat() >= 0;
+        w.note       = note.note;
+        w.about      = note.about;
+        const text::ScreenText t = text::TextFor(w);
+        shown[static_cast<std::size_t>(seat)] = true;
+        if (!hud::view_window::Show(seat, t.markup))
+        {
+            hud::view_prompt::Prompt p;
+            p.lines     = t.plain;
+            p.highlight = 0;
+            hud::view_prompt::Show(seat, p);
+        }
+    }
+    for (int view = 0; view < kViews; ++view)
+    {
+        if (!shown[static_cast<std::size_t>(view)])
+        {
+            hud::view_window::Close(view);
+        }
+    }
+}
+
+/// The pads of the open windows read idle to the game; the others play on.
+void SetIdlePads()
+{
+    std::uint32_t   users = 0;
+    const auto      table = pad_table::Table();
+    for (int seat = 0; seat < kSeats; ++seat)
+    {
+        if (g_open[static_cast<std::size_t>(seat)])
+        {
+            users |= 1u << table[static_cast<std::size_t>(seat)];
+        }
+    }
+    if (users != g_idleUsers)
+    {
+        g_idleUsers = users;
+        pad_table::SetIdleUsers(users, L"the open player windows");
+    }
+}
+
+/// `seat`'s view one screen `dir`: swapped with what is there, the column order changed and saved.
+void MoveView(const Frame& frame, int seat, int dir)
+{
+    using hud::view_window::Sound;
+    const int  screens = std::clamp(frame.screens, 1, kSeats);
+    const auto moved   = rules::Moved(SeatOnScreens(frame), screens, seat, dir);
+    const auto order   = moved ? views::column_rules::OrderShowing(*moved) : std::nullopt;
+    if (!order)
+    {
+        hud::view_window::Play(Sound::Cancel);
+        platform::LogDebug(L"player window: player {}'s view cannot move {} (the row's edge, or one screen)", seat + 1,
+                           dir < 0 ? L"left" : L"right");
+        return;
+    }
+    views::column_layout::ChangeOrder(*order, L"a player moved their view");
+    platform::settings::Save(platform::settings::kColumnOrder, rules::OrderWord(order->player));
+    hud::view_window::Play(Sound::Cursor);
+    g_redraw = true;
+    platform::Log(L"player window: player {}'s view moves {}; the screen order is now {} {} {}", seat + 1,
+                  dir < 0 ? L"left" : L"right", order->player[0], order->player[1], order->player[2]);
+}
+
+/// A spare pad's Start: a join on the lowest seat out (during one view, once the views split).
+void AskJoin(const Frame& frame, int user)
+{
+    using hud::view_window::Sound;
+    if (std::any_of(g_joins.begin(), g_joins.end(), [user](const JoinAsk& j) { return j.user == user; }))
+    {
+        return;  // asked already: its join is made before the session's next tick
+    }
+    const int free = FreeSeat();
+    if (free < 0)
+    {
+        SetNote(0, text::Note::AllIn, 0);
+        hud::view_window::Play(Sound::Cancel);
+        platform::Log(L"player window: pad {} pressed Start, but every player is in or on the way", user + 1);
+        return;
+    }
+    if (frame.single || views::whole_screen::Shown())
+    {
+        g_startWhenSplit = user;
+        platform::Log(L"player window: pad {} pressed Start during one view (a scene or a menu); it joins once the views split",
+                      user + 1);
+        return;
+    }
+    for (JoinAsk& j : g_joins)
+    {
+        if (j.seat < 0)
+        {
+            j = {free, user};
+            break;
+        }
+    }
+    hud::view_window::Play(Sound::Decide);
+    platform::Log(L"player window: pad {} pressed Start: it joins as player {}", user + 1, free + 1);
+}
+
+/// The session's answer to a join: in (its window opens), waiting for a member that is busy now, or refused (no member
+/// free: the wait stopped). Said on player 1's window.
+void AnswerJoin(const JoinAsk& j)
+{
+    using party_member::Wait;
+    g_redraw = true;
+    g_bSeen[static_cast<std::size_t>(j.user)] = false;  // a B from before the join never closes or leaves
+    if (g_session->In(j.seat))
+    {
+        g_open[static_cast<std::size_t>(j.seat)] = true;
+        platform::Log(L"player window: player {} is in on pad {}; its window opens", j.seat + 1, j.user + 1);
+        return;
+    }
+    if (g_session->Awaiting(j.seat))
+    {
+        const Wait why = g_session->WaitReason(j.seat);
+        if (why == Wait::NoSlot || why == Wait::Support || why == Wait::Unread)
+        {
+            g_session->Leave(j.seat);  // a wait that no moment of play ends: refused
+            SetNote(0, text::Note::NoMember, j.seat);
+            platform::Log(L"player window: player {}'s join refused: {}", j.seat + 1, party_member::Describe(why));
+        }
+        else
+        {
+            g_waiting[static_cast<std::size_t>(j.seat)] = true;
+            SetNote(0, text::Note::Waits, j.seat);
+            platform::Log(L"player window: player {} joins once its member is free ({})", j.seat + 1, party_member::Describe(why));
+        }
+        return;
+    }
+    SetNote(0, text::Note::Failed, j.seat);
+    platform::Log(L"player window: player {}'s join failed (see the session's lines above)", j.seat + 1);
+}
+
+/// B held on `seat`'s pad with its window open: player 2 or 3 leaves; player 1 is refused.
+void HoldLeave(int seat, int user)
+{
+    using hud::view_window::Sound;
+    hud::view_window::Play(Sound::Cancel);
+    if (seat == 0)
+    {
+        SetNote(0, text::Note::PlayerOneStays, 0);
+        platform::Log(L"player window: pad {} held B, but player 1 stays in", user + 1);
+        return;
+    }
+    if (std::find(g_leaves.begin(), g_leaves.end(), seat) == g_leaves.end())
+    {
+        for (int& s : g_leaves)
+        {
+            if (s < 0)
+            {
+                s = seat;
+                break;
+            }
+        }
+        platform::Log(L"player window: pad {} held B: player {} leaves", user + 1, seat + 1);
+    }
+}
+
+/// On the title screen: the pad that pressed becomes player 1's.
+void TitlePress(int user)
+{
+    const auto table = pad_table::Table();
+    if (pad::SlotOf(table, user) == 0)
+    {
+        return;
+    }
+    pad_table::Set(rules::WithPlayerOne(table, user), L"a pad pressed on the title screen: it plays player 1");
+}
+
+/// One pad's input while its player's window is open.
+void WindowInput(const Frame& frame, const Event& e, int seat)
+{
+    const auto at = static_cast<std::size_t>(e.user);
+    if ((e.pressed & pad::kB) != 0)
+    {
+        g_bSeen[at] = true;
+    }
+    for (const std::uint16_t button : {rules::kDpadLeft, rules::kDpadRight, rules::kLB, rules::kRB, pad::kA, pad::kStart})
+    {
+        if ((e.pressed & button) == 0 || !g_open[static_cast<std::size_t>(seat)])
+        {
+            continue;
+        }
+        const rules::Action a = rules::OnPress(seat, button);
+        switch (a.act)
+        {
+        case rules::Act::Step:
+            if (g_session != nullptr && g_session->StepMember(seat, a.dir))
+            {
+                hud::view_window::Play(hud::view_window::Sound::Cursor);
+                g_redraw = true;
+                platform::Log(L"player window: player {} steps to {}", seat + 1, NameOf(seat));
+            }
+            else
+            {
+                platform::LogDebug(L"player window: player {}'s step changes nothing (no other party member free, in battle, "
+                                   L"or standing in for player 1's former character)",
+                                   seat + 1);
+            }
+            break;
+        case rules::Act::Move: MoveView(frame, seat, a.dir); break;
+        case rules::Act::Close:
+            hud::view_window::Play(hud::view_window::Sound::Decide);
+            Close(seat, L"done");
+            break;
+        default: break;
+        }
+    }
+    if (!g_bSeen[at] || !g_open[static_cast<std::size_t>(seat)])
+    {
+        return;
+    }
+    const rules::Action b = rules::OnB(seat, e.bTap, e.bHeld);
+    if (b.act == rules::Act::Close)
+    {
+        hud::view_window::Play(hud::view_window::Sound::Cancel);
+        Close(seat, L"B");
+    }
+    else if (b.act == rules::Act::Leave || b.act == rules::Act::Refused)
+    {
+        HoldLeave(seat, e.user);
+    }
+}
+
+}  // namespace
+
+bool Install() noexcept
+{
+    pad_table::Listen(&Note);
+    g_installed = true;
+    platform::Log(L"player window: Start on a pad that plays no one adds a player on it; View held a second opens that "
+                  L"player's own window (d-pad: character, LB/RB: move the view, A: done, B held: leave); on the title "
+                  L"screen the pad that presses plays player 1");
+    return true;
+}
+
+void SetSession(Session* session) noexcept
+{
+    g_session = session;
+}
+
+bool PlayerOneShown() noexcept
+{
+    return g_open[0] || g_notes[0].note != text::Note::None;
+}
+
+void RunRequests() noexcept
+try
+{
+    if (!g_installed || g_session == nullptr || !AnyRequest())
+    {
+        return;
+    }
+    if (views::whole_screen::Shown())
+    {
+        return;  // a menu or a scene over the screen: the joins and leaves wait for the field
+    }
+    for (int& seat : g_leaves)
+    {
+        if (seat >= 1)
+        {
+            g_session->Leave(seat);
+        }
+        seat = -1;
+    }
+    for (JoinAsk& j : g_joins)
+    {
+        if (j.seat < 0)
+        {
+            continue;
+        }
+        pad_table::Set(rules::WithPadOn(pad_table::Table(), j.user, j.seat), L"a pad joins as a new player");
+        g_session->Join(j.seat);
+        AnswerJoin(j);
+        j = JoinAsk{};
+    }
+}
+catch (...)
+{
+    platform::Log(L"player window: an exception while joining or leaving; the requests are dropped");
+    g_joins  = {};
+    g_leaves = {-1, -1, -1};
+}
+
+void Remove() noexcept
+{
+    pad_table::Listen(nullptr);
+    pad_table::SetIdleUsers(0, L"the mod's end");
+    hud::view_prompt::ClearAll();
+    g_open           = {};
+    g_notes          = {};
+    g_joins          = {};
+    g_leaves         = {-1, -1, -1};
+    g_startWhenSplit = -1;
+    g_idleUsers      = 0;
+    g_installed      = false;
+}
+
+void Tick(const Frame& frame) noexcept
+try
+{
+    if (!g_installed)
+    {
+        return;
+    }
+    const std::size_t count = g_queued;
+    g_queued                = 0;
+    if (g_dropped != 0)
+    {
+        platform::LogDebug(L"player window: {} pad press(es) dropped (more than {} in one tick)", g_dropped, kQueue);
+        g_dropped = 0;
+    }
+    g_playing = frame.seatIds | 1u;
+    const players::game_state::Snapshot& state = players::game_state::Current();
+    const bool title = state.valid && views::whole_screen::IsTitle(state.location);
+    if (title != g_title)
+    {
+        g_title = title;
+        platform::LogDebug(L"player window: {} the title screen", title ? L"on" : L"off");
+    }
+
+    // Players gone (a leave, Ctrl+F8, a field exit) take their windows; one view (a scene, a menu) closes them all.
+    for (int seat = 1; seat < kSeats; ++seat)
+    {
+        if (!Plays(seat))
+        {
+            Close(seat, L"the player is out");
+            g_notes[static_cast<std::size_t>(seat)] = {};
+        }
+        // A join that waited is in now: its window opens.
+        if (g_waiting[static_cast<std::size_t>(seat)] && Plays(seat))
+        {
+            g_waiting[static_cast<std::size_t>(seat)] = false;
+            Open(seat, L"its join was waiting for a party member");
+        }
+        else if (g_waiting[static_cast<std::size_t>(seat)] && g_session != nullptr && !g_session->Awaiting(seat))
+        {
+            g_waiting[static_cast<std::size_t>(seat)] = false;  // the wait was stopped (Ctrl+F8, a field exit)
+        }
+    }
+    if (frame.single || title)
+    {
+        for (int seat = 0; seat < kSeats; ++seat)
+        {
+            Close(seat, frame.single ? L"the views became one (a scene or a menu)" : L"the title screen");
+            if (g_notes[static_cast<std::size_t>(seat)].note != text::Note::None)
+            {
+                g_notes[static_cast<std::size_t>(seat)] = {};
+                g_redraw                                = true;
+            }
+        }
+    }
+    // The views changed (a join's new view, a leave, a move): every window again in its player's view.
+    if (frame.screens != g_lastScreens || frame.listSeats != g_lastList)
+    {
+        g_lastScreens = frame.screens;
+        g_lastList    = frame.listSeats;
+        g_redraw      = true;
+    }
+
+    // A spare pad's Start remembered over one view: the join once the views are split.
+    if (g_startWhenSplit >= 0 && !frame.single && !views::whole_screen::Shown())
+    {
+        const int user   = g_startWhenSplit;
+        g_startWhenSplit = -1;
+        AskJoin(frame, user);
+    }
+
+    for (std::size_t i = 0; i < count; ++i)
+    {
+        const Event e = g_events[i];
+        if (e.user < 0 || e.user >= pad::kSlots)
+        {
+            continue;
+        }
+        if (title)
+        {
+            if (e.pressed != 0)
+            {
+                TitlePress(e.user);
+            }
+            continue;
+        }
+        const int seat = rules::SeatOf(pad_table::Table(), g_playing, e.user);
+        if (e.open)
+        {
+            if (seat < 0)
+            {
+                continue;  // a pad that plays no one: Start joins
+            }
+            if (g_open[static_cast<std::size_t>(seat)])
+            {
+                hud::view_window::Play(hud::view_window::Sound::Cancel);
+                Close(seat, L"View held again");
+            }
+            else if (frame.single)
+            {
+                platform::Log(L"player window: pad {} held View, but the views are one now (a scene or a menu)", e.user + 1);
+            }
+            else
+            {
+                g_bSeen[static_cast<std::size_t>(e.user)] = false;
+                Open(seat, std::format(L"pad {} held View", e.user + 1));
+            }
+            continue;
+        }
+        if (seat < 0)
+        {
+            if ((e.pressed & pad::kStart) != 0 && g_session != nullptr)
+            {
+                AskJoin(frame, e.user);
+            }
+            continue;
+        }
+        if (g_open[static_cast<std::size_t>(seat)])
+        {
+            WindowInput(frame, e, seat);
+        }
+    }
+
+    // Notes run out.
+    const std::int64_t now = NowMs();
+    for (SeatNote& n : g_notes)
+    {
+        if (n.note != text::Note::None && now >= n.until)
+        {
+            n        = {};
+            g_redraw = true;
+        }
+    }
+    // The game closed a window under a player's (a script's clear of its message windows): shown again.
+    if (hud::view_window::ClosedByGame() != g_gameClosedSeen)
+    {
+        g_gameClosedSeen = hud::view_window::ClosedByGame();
+        g_redraw         = true;
+    }
+    SetIdlePads();
+    if (std::exchange(g_redraw, false))
+    {
+        ShowWindows(frame);
+    }
+}
+catch (...)
+{
+    platform::Log(L"player window: an exception; every window closes");
+    g_open = {};
+    hud::view_window::CloseAll();
+    hud::view_prompt::ClearAll();
+    pad_table::SetIdleUsers(0, L"the player windows' exception");
+    g_idleUsers = 0;
+}
+
+}  // namespace lss::players::player_window

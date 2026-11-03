@@ -67,14 +67,14 @@ void Tick(int columns, int localPlayers, int spanColumns, std::span<const std::i
 /// The console's override (`view-columns`): 0 for none.
 int Override() noexcept;
 
-/// The column order now (the setting, the console, the pad claim).
+/// The column order now (the setting, the console, the player windows).
 column_rules::Order CurrentOrder() noexcept;
 
-/// The views the last Tick placed by the column order: 3 (columns or local players three), 2 (two), else 1. The claim
-/// places its screens by the same count (column_rules::ScreenSlots).
+/// The views the last Tick placed by the column order: 3 (columns or local players three), 2 (two), else 1. The player
+/// windows place their screens by the same count (column_rules::ScreenSlots).
 int Views() noexcept;
 
-/// Sets the column order (logged with `why`); the next Tick arranges the entry. Game thread (players/pad_claim).
+/// Sets the column order (logged with `why`); the next Tick arranges the entry. Game thread (players/player_window).
 void ChangeOrder(const column_rules::Order& order, const wchar_t* why) noexcept;
 
 /// Puts the stock records and the setting back if the mod's are in. At the mod's end.
