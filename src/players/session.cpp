@@ -146,6 +146,7 @@ void Session::Seat::ResetMember() noexcept
     keptThroughLock = false;
     returnWaitLogged = false;  // the next member's "stays with its AI" line is its own
     hold            = party_member::Wait::None;
+    joinedInHold    = false;
 }
 
 Session::Session() noexcept
@@ -433,7 +434,8 @@ try
         LogFormation(seat, choice);
         if (choice.member == nullptr)
         {
-            LogWait(seat, choice, L"joins once its member is free");
+            // After a world change the reason is said again even when unchanged: the field is a new one.
+            LogWait(seat, choice, L"joins once its member is free", seat.rejoin.pending);
             seat.rejoin = Rejoin{};  // the field has settled; the wait goes on without the rejoin's delay
             return;
         }
@@ -482,12 +484,12 @@ void Session::LeaveToAwait(Seat& seat, const wchar_t* why) noexcept
     seat.awaiting = true;  // the wait's reason stays logged: the join's wait line names it again only when it changes
 }
 
-void Session::LogWait(Seat& seat, const party_member::Choice& choice, const wchar_t* who) noexcept
+void Session::LogWait(Seat& seat, const party_member::Choice& choice, const wchar_t* who, bool again) noexcept
 {
     seat.lastWait           = choice.wait;
     const std::uint32_t key = 1u | static_cast<std::uint32_t>(choice.type) << 8 | static_cast<std::uint32_t>(choice.wait) << 16 |
                               static_cast<std::uint32_t>(choice.ordinal + 1) << 24;
-    if (key == seat.waitLogged)
+    if (key == seat.waitLogged && !again)
     {
         return;
     }
@@ -896,6 +898,12 @@ try
     {
         platform::Log(L"{} keeps a still camera; each player's sticks are still their own pad's", seat.Name());
     }
+    if (party_member::JoinsThroughHold(choice.wait))
+    {
+        // Taken in a walk its AI makes: handed straight back, on the tick it was seated, as a seated player's member is
+        // at the walk's start; the walk starts again from where the member stands (party_member::JoinsThroughHold).
+        HandForHold(seat, choice.member, choice.wait, true);
+    }
     Report();
     return true;
 }
@@ -933,21 +941,25 @@ catch (...)
     platform::Log(L"release: an engine lookup raised an exception");
 }
 
-void Session::HandForHold(Seat& seat, void* member, party_member::Wait hold) noexcept
+void Session::HandForHold(Seat& seat, void* member, party_member::Wait hold, bool joined) noexcept
 {
     // The game's own hand (what it does for its leader at an event's start), the seat and the player's camera
     // operator kept: the member's AI runs the script, the player watches it, and the seat takes it back when the
     // hold ends.
-    if (hold == party_member::Wait::Guide)
+    // A join's hand that faulted is retried by the follow check: still a join's, with no catch-up run.
+    joined            = joined || seat.joinedInHold;
+    seat.joinedInHold = joined;
+    if (hold == party_member::Wait::Guide && !joined)
     {
         world::run_catch_up::BeforeGuide(seat.index, member);  // taken past its own story box: brought back for the run
     }
     seat.handedToAi      = party_member::HandToAi(member);
     seat.holdHand        = seat.handedToAi;
     seat.hold            = hold;
-    platform::Log(L"{}'s member (type {}) handed to its AI: {}: {}; {}'s view stays on it, its controller takes it back "
+    platform::Log(L"{}'s member (type {}) handed to its AI{}: {}: {}; {}'s view stays on it, its controller takes it back "
                   L"when the hold ends{}",
-                  seat.Name(), party_seat::MemberType(seat.index), party_member::Describe(hold),
+                  seat.Name(), party_seat::MemberType(seat.index), joined ? L" as it joins (the walk goes on)" : L"",
+                  party_member::Describe(hold),
                   seat.handedToAi ? L"yes" : L"NO (the hand faulted; tried again)", seat.Name(),
                   hold == party_member::Wait::Guide || hold == party_member::Wait::AtMark
                       ? std::format(L" (lead gate: {})", lead_gate::Reading())
@@ -964,8 +976,9 @@ void Session::HandForHold(Seat& seat, void* member, party_member::Wait hold) noe
 
 void Session::ReturnFromHold(Seat& seat, void* member) noexcept
 {
-    seat.handedToAi = false;
-    seat.holdHand   = false;
+    seat.handedToAi   = false;
+    seat.holdHand     = false;
+    seat.joinedInHold = false;  // the next hold is the seated player's own
     platform::Log(L"{}'s member (type {}) back on its controller: its hold ended ({}): {}; the member: {}", seat.Name(),
                   party_seat::MemberType(seat.index), party_member::Describe(seat.hold),
                   party_member::ReturnTo(member, Controller(seat)) ? L"yes" : L"NO", party_member::AiDetail(member));

@@ -12,7 +12,10 @@
 // A further player exists only with a member to play (the user, 2026-10-21, as in Rebirth): a join first asks the
 // member test, and with the row's member not free nothing is created; the player waits outside the game and joins,
 // seating at once, when the member is free (the field steady, player 1 on a character; Ctrl+F8 stops the wait). A
-// second camera without a member would float alone over an empty view.
+// second camera without a member would float alone over an empty view. A member in a walk its AI makes (a guide, a
+// kept move at its point: party_member::JoinsThroughHold) is taken through it, as a seated player rides it: seated,
+// handed straight back to its AI with the seat and the view kept, and taken by the controller when the walk ends; so a
+// save and its reload inside such a walk no longer change whether a player can join.
 // Member: the seat takes the member in its row of the game's party order (players/party_member.h: seat 1 the 2nd
 // row) through the game's leader funnel (players/party_seat.h), and its own field camera operator follows that
 // member (players/seat_camera.h). It follows the row through the game's own funnels (players/party_events.h):
@@ -172,6 +175,7 @@ private:
         bool                 handedToAi     = false;    // its member is with its AI, as the game's leader is, or for its own hold
         bool                 holdHand       = false;    // the hand is for the member's own scripted hold: it ends with the hold, not the game's return
         party_member::Wait   hold           = party_member::Wait::None;  // that hold, for the reading
+        bool                 joinedInHold   = false;    // seated inside that walk at its join: a retried hand is still a join's
         bool                 returnWaitLogged = false;  // the game took its leader back while a script still held the member
         bool                 keptThroughLock = false;   // the game's leader is with its AI for an interaction lock; the member stayed
         std::int32_t         memberWeak[2]  = {-1, 0};  // the seated member, to notice it destroyed
@@ -216,8 +220,8 @@ private:
     void TryRejoin(Seat& seat) noexcept;
     /// The seat's player is in without a member and none is free: it leaves and waits outside the game for one.
     void LeaveToAwait(Seat& seat, const wchar_t* why) noexcept;
-    /// The wait for a member, logged once per reason (the row, its type, the reason).
-    void LogWait(Seat& seat, const party_member::Choice& choice, const wchar_t* who) noexcept;
+    /// The wait for a member, logged once per reason (the row, its type, the reason); `again` logs an unchanged one too.
+    void LogWait(Seat& seat, const party_member::Choice& choice, const wchar_t* who, bool again = false) noexcept;
     void LogFormation(Seat& seat, const party_member::Choice& choice) noexcept;  // at Debug, once per formation change under the wait
     /// The seat's player is gone by the engine's hand: the mod's own records of it are dropped, nothing is touched.
     void Forget(Seat& seat) noexcept;
@@ -227,8 +231,9 @@ private:
     /// leaves to wait for one.
     void ReleaseMember(Seat& seat, const wchar_t* why) noexcept;
     /// A scripted hold on the member (a script layer, an animation, a cutscene mode, a guide the level waits on): the
-    /// member to its AI with the seat kept (the game's own hand), and back when the hold ends.
-    void HandForHold(Seat& seat, void* member, party_member::Wait hold) noexcept;
+    /// member to its AI with the seat kept (the game's own hand), and back when the hold ends. `joined`: seated in the
+    /// walk on this tick, the member with its AI all along (nobody took it past its own story box: no catch-up run).
+    void HandForHold(Seat& seat, void* member, party_member::Wait hold, bool joined = false) noexcept;
     void ReturnFromHold(Seat& seat, void* member) noexcept;
     /// The party order, the member's existence and its AI's hold, checked while the seat holds a member.
     void FollowSlot(Seat& seat) noexcept;

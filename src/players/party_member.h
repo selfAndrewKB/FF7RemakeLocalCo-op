@@ -64,17 +64,29 @@ constexpr bool ScriptHold(Wait wait) noexcept
     return wait == Wait::Cinema || wait == Wait::AiHeld || wait == Wait::Animation || wait == Wait::Guide || wait == Wait::AtMark;
 }
 
+/// The holds a joining player takes the member through, as a seated player rides them: a guide or a kept move at its
+/// point, both a walk the member's AI makes. A walk survives the take: a request on a member a player holds freezes,
+/// and handed back it starts again from where the member stands; only a one-shot animation reports itself finished
+/// when taken (RE-fieldai-kinds.md, "Possession"). So the join seats the member and hands it straight back to its AI
+/// (the seat and the player's view kept), and the controller takes it when the walk ends. The other holds (a cutscene
+/// mode, a script layer, an animation) still wait: taking the member could end the script's step.
+constexpr bool JoinsThroughHold(Wait wait) noexcept
+{
+    return wait == Wait::Guide || wait == Wait::AtMark;
+}
+
 struct Choice
 {
-    void*        member  = nullptr;
+    void*        member  = nullptr;  // the one to take: free (wait None), or in a walk a join takes it through (wait names it)
     std::uint8_t type    = 9;   // the row's player type (facts::kPlayerTypeNone with no row)
     std::int32_t ordinal = -1;  // its ordinal in the formation
     Wait         wait    = Wait::NoSlot;
     std::uint32_t formation = 0;  // the formation as read: types[0] | types[1] << 8 | types[2] << 16 | field leader << 24; 0 unread
 };
 
-/// The member seat `seat` plays now, or why it waits: the row at the seat's rank (Rank). `taker` is that seat's
-/// controller (a member it already holds counts as free). `standIn`: the type of player 1's former character the seat
+/// The member seat `seat` plays now, or why it waits: the row at the seat's rank (Rank). A member in a walk its AI makes
+/// (JoinsThroughHold) is given with the walk as its wait; the session hands it back to its AI once seated. `taker` is
+/// that seat's controller (a member it already holds counts as free). `standIn`: the type of player 1's former character the seat
 /// stands in for since the game's leader change took its member (facts::kPlayerTypeNone: none); it is the seat's while
 /// deployed and not player 1's, whatever the rank. Logged at Debug when `log` is set.
 Choice Choose(int seat, void* playerOneController, void* taker, bool log, std::uint8_t standIn) noexcept;

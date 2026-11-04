@@ -351,7 +351,7 @@ Choice Choose(int seat, void* playerOneController, void* taker, bool log, std::u
         else
         {
             choice.wait = FieldWait(actor);
-            if (choice.wait == Wait::None)
+            if (choice.wait == Wait::None || JoinsThroughHold(choice.wait))
             {
                 choice.member = actor;
             }
