@@ -14,8 +14,8 @@
 //     plays the scene; the opener's view zooms on the shop);
 //   - PlayerOne: the column stays and the mod puts player 1's camera and HUD in it, as a mirror player's column
 //     shows them (views/mirror_player.h): every slot of player 1's camera manager is set on the seat's each frame
-//     (scene_camera's every-slot copy) and no HUD pass runs for the seat (its view samples player 1's image;
-//     known gap, the dev override only: while another seat's own shop keeps the split, this seat's pass still runs);
+//     (scene_camera's every-slot copy), and the HUD passes count the column a mirror's (HudMap): it samples player
+//     1's image, or, on a monitor of another shape, gets a pass of player 1's HUD laid out for it, as a mirror's does;
 //   - Screen: no column at all; the whole screen is the engine's single view, player 1's (players/single_view.h
 //     holds the viewport's split switch to it): the one-window look for the game's whole-screen moments (the user's
 //     ruling of 2026-10-26: cutscenes, menus and minigames collapse as in Rebirth; the mirror look is the row's).
@@ -27,7 +27,7 @@
 // the console's columns): a held column is never black and never a split with a menu over it. A seat's own shop
 // camera on its manager (a row's shop) is that seat's moment: every seat keeps Self through it (the opener's view zooms, the others play on; the shop holds the game for all), never
 // the single view while a seat's own view is wanted; under the console's `on` the others go on player 1's picture
-// (the dev gap above). The mirror policy
+// (with player 1's HUD: HudMap). The mirror policy
 // (the user, 2026-10-22: every column no player fills shows player 1's picture) is Why::NoPlayer; a handed seat (its
 // member with the game's AI) keeps its own view, which the scene camera copy serves; the console's `single-view
 // on|off` is the development override. The entry point applies the single view through the switch and, when the
@@ -44,6 +44,7 @@
 
 #include <array>
 #include <cstdint>
+#include <span>
 #include <string>
 
 namespace lss::views::column_source {
@@ -211,6 +212,24 @@ constexpr Shown Decide(const Moment& moment) noexcept
         }
     }
     return shown;
+}
+
+/// The map the HUD passes read (hud/overlay_pass.h SetMap): `map` with each further column whose source is PlayerOne
+/// listed as a mirror's, since it shows what a mirror's shows, player 1's camera and HUD. Such a column on a monitor of
+/// another shape than player 1's view then gets a pass of its own with player 1's HUD laid out for its monitor
+/// (modules.cpp MirrorsOwnImage), where it sampled player 1's image before and the game's cover fit cut the image's top
+/// and bottom off on a wider monitor (menus and subtitles). Pure.
+constexpr columns::Map HudMap(const columns::Map& map, const Shown& shown) noexcept
+{
+    std::array<int, columns::kMaxColumns> places{};
+    const int count = map.count < columns::kMaxColumns ? map.count : columns::kMaxColumns;
+    for (int column = 0; column < count; ++column)
+    {
+        const auto at   = static_cast<std::size_t>(column);
+        const int  seat = map.seatAt[at];
+        places[at]      = column >= 1 && seat >= 1 && shown.columns[at].source == Source::PlayerOne ? columns::kMirror : seat;
+    }
+    return columns::MapOf(std::span<const int>(places.data(), static_cast<std::size_t>(count)));
 }
 
 /// For the log: `seat`'s source as it changed (empty while the same). The entry point logs a seat's change once,

@@ -5,8 +5,9 @@
 // the game's own render of the overlay, run last in the frame; the further columns (1..) are the seats' (a seat's
 // column is its place in the engine's list: the columns map, views/columns.h, set each tick) and get the mod's extra
 // renders before it, highest first (hud/second_image.h runs them). The
-// mirror's columns, and a seat's column on player 1's picture (views/column_source.h), show column 0's image and get
-// no pass. Outside the passes, and during the game's one render while no
+// mirror's columns, and a seat's column on player 1's picture (listed as a mirror's: views/column_source.h HudMap),
+// show column 0's image, or player 1's HUD laid out for a monitor of another shape (modules.cpp MirrorsOwnImage).
+// Outside the passes, and during the game's one render while no
 // further column has an image, the column is kSingle. Set by second_image, the one module that runs the passes; read by
 // everything that paints into a menu-renderer slot during them (hud/overlay_layout.cpp, hud/minimap.cpp, the
 // battle widgets). The rules the pass modules share are pure functions here (tests/overlay_pass_test.cpp). Game
@@ -32,13 +33,17 @@ bool Further() noexcept;
 /// No seat: a mirror's column, an empty one, or a seat with no column.
 inline constexpr int kNoSeat = -1;
 
-/// The columns map as the engine lists the local players this tick (views/columns.h; mod.cpp sets it before the
-/// HUD's tick and the frame's passes). Game thread, as everything that asks.
-void SetMap(const views::columns::Map& map) noexcept;
-/// The seat whose pass `column` is (0 player 1's, kNoSeat a mirror's or none).
+/// The columns maps this tick (mod.cpp sets them before the HUD's tick and the frame's passes): `listed`, the engine's
+/// list as columns (views/columns.h), and `hud`, its HUD form, where a seat's column on player 1's picture reads as a
+/// mirror's (views/column_source.h HudMap). Game thread, as everything that asks.
+void SetMap(const views::columns::Map& listed, const views::columns::Map& hud) noexcept;
+/// The seat whose pass `column` is (0 player 1's, kNoSeat a mirror's or none), by the HUD's map.
 int SeatOf(int column) noexcept;
-/// The column the seat's view fills (-1 none).
+/// The column the seat's HUD fills (-1 none, also while its column shows player 1's), by the HUD's map.
 int ColumnOf(int seat) noexcept;
+/// The column the seat's view is in, whatever it shows (-1 not listed), by the engine's list: for what follows the
+/// seat's own local player, its sound listener.
+int ListedColumnOf(int seat) noexcept;
 /// The player whose HUD the pass of `column` shows: a seat's column its seat's; column 0, the single render and a
 /// mirror's column with a pass of its own (hud/second_image.h, OtherShape) player 1's (0).
 int ShownSeat(int column) noexcept;

@@ -4,7 +4,8 @@ namespace lss::hud::overlay_pass {
 
 namespace {
 int                 g_column = kSingle;  // game thread only
-views::columns::Map g_map;               // game thread only
+views::columns::Map g_map;               // the HUD's map; game thread only
+views::columns::Map g_listed;            // the engine's list as columns; game thread only
 }
 
 int Column() noexcept
@@ -27,9 +28,15 @@ bool Further() noexcept
     return g_column >= 1;
 }
 
-void SetMap(const views::columns::Map& map) noexcept
+void SetMap(const views::columns::Map& listed, const views::columns::Map& hud) noexcept
 {
-    g_map = map;
+    g_listed = listed;
+    g_map    = hud;
+}
+
+int ListedColumnOf(int seat) noexcept
+{
+    return g_listed.ColumnOf(seat);
 }
 
 int SeatOf(int column) noexcept

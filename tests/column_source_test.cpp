@@ -218,6 +218,54 @@ void Overrides()
     }
 }
 
+/// The HUD's map: a seat's column on player 1's picture reads as a mirror's; its own view, a mirror's and player 1's
+/// stay as listed.
+void HudMaps()
+{
+    using lss::views::columns::Map;
+    {
+        // Field play on a row: every column its player's; the HUD's map is the list's.
+        const Moment m = At(kTwoAndMirror, SeatState::Playing, SeatState::Out, kHeld);
+        const Map    h = HudMap(m.map, Decide(m));
+        EXPECT(h == m.map);
+    }
+    {
+        // A menu on a row (a wider monitor beside it cut the menu's top and bottom): player 2's column on player 1's
+        // picture reads as a mirror's, beside the mirror itself; player 1's stays.
+        const Moment m = At(kTwoAndMirror, SeatState::Playing, SeatState::Out, kHeld, Override::Auto, kWhole);
+        const Map    h = HudMap(m.map, Decide(m));
+        EXPECT(h.count == 3 && h.SeatOf(0) == 0 && h.SeatOf(1) == kMirror && h.SeatOf(2) == kMirror);
+        EXPECT(h.ColumnOf(1) == -1 && h.ColumnOf(0) == 0 && h.mirrors == 2);
+    }
+    {
+        // Three players, a menu on a row: both seats' columns read as mirrors'.
+        const Moment m = At(kThreePlayers, SeatState::Playing, SeatState::Playing, kHeld, Override::Auto, kWhole);
+        const Map    h = HudMap(m.map, Decide(m));
+        EXPECT(h.SeatOf(1) == kMirror && h.SeatOf(2) == kMirror && h.SeatOf(0) == 0);
+    }
+    {
+        // The console's `on` while seat 1's own shop keeps the split: seat 1's column stays its own, seat 2's is
+        // player 1's picture and reads as a mirror's (its pass shows player 1's HUD, not its own).
+        Moment m      = At(kThreePlayers, SeatState::Playing, SeatState::Playing, kHeld, Override::Single, false, true);
+        const Shown s = Decide(m);
+        const Map   h = HudMap(m.map, s);
+        EXPECT(s.columns[1] == kSelf && s.columns[2] == kColumnConsole);
+        EXPECT(h.SeatOf(1) == 1 && h.SeatOf(2) == kMirror && h.ColumnOf(1) == 1);
+    }
+    {
+        // One window: the single view has no further column to list differently (Screen, not PlayerOne).
+        const Moment m = At(kTwoPlayers, SeatState::Playing, SeatState::Out, false, Override::Auto, kWhole);
+        const Map    h = HudMap(m.map, Decide(m));
+        EXPECT(h == m.map);
+    }
+    {
+        // Player 3 in with player 2 out, a menu on a row: player 3's column reads as a mirror's.
+        const Moment m = At(kThreeOutOfOrder, SeatState::Out, SeatState::Playing, kHeld, Override::Auto, kWhole);
+        const Map    h = HudMap(m.map, Decide(m));
+        EXPECT(h.SeatOf(1) == kMirror && h.SeatOf(2) == kMirror && h.ColumnOf(2) == -1);
+    }
+}
+
 bool Says(const std::wstring& text, const wchar_t* part)
 {
     return text.find(part) != std::wstring::npos;
@@ -244,6 +292,7 @@ int main()
     WholeScreen();
     Mirrors();
     Overrides();
+    HudMaps();
     Texts();
     return lss::test::Report();
 }

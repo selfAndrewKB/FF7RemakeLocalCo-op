@@ -66,7 +66,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.154.0-pad-recheck";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.155.0-hud-map-on-player-one";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
@@ -332,13 +332,12 @@ private:
         const lss::modules::Columns columns = lss::modules::TickColumns({.playersIn = 1 + session_.Count(),
                                                                          .seatIds   = session_.SeatIds(),
                                                                          .listSeats = ListSeatsOf(MapOfList())});
-        // The engine's list as columns, after every join, leave and mirror change of this tick (views/columns.h): the one
-        // map every module that runs per column reads (the HUD passes, the listeners, this frame's passes).
+        // The engine's list as columns, after every join, leave and mirror change of this tick (views/columns.h): the
+        // map the column decision reads; the HUD passes and the listeners read its HUD form, set below.
         columns_ = MapOfList();
-        lss::hud::overlay_pass::SetMap(columns_);
         // Where each column's view comes from this tick (views/column_source.h decides; this is the one place that
         // applies it): the engine's single view through the viewport's switch (players/single_view.h), a seat on
-        // player 1's picture gets the every-slot camera copy and no HUD pass of its own.
+        // player 1's picture gets the every-slot camera copy and player 1's HUD, as a mirror's column.
         lss::views::column_source::Moment moment;
         moment.columnsHeld = columns.columnsHeld;
         moment.choice      = singleViewChoice_;
@@ -361,6 +360,9 @@ private:
         // The other way round (the split decided while the switch stays set: a clear that failed, or someone else's
         // switch) the screen stays single; the policy's log says so, and the HUD follows the engine's view sizes.
         FollowShown(shown);
+        // The maps every module that runs per column reads: the HUD passes the HUD's (a seat's column on player 1's
+        // picture listed as a mirror's: column_source::HudMap), the listeners the list's (a seat's own local player).
+        lss::hud::overlay_pass::SetMap(columns_, lss::views::column_source::HudMap(columns_, shown));
         // The player windows (players/player_window.h) over this tick's views, each in its player's own view.
         lss::players::player_window::Tick({.screens   = columns_.count,
                                            .listSeats = ListSeatsOf(columns_),

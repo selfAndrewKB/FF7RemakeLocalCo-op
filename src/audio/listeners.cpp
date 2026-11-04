@@ -842,7 +842,7 @@ void TickSeats(const std::array<Vec3, kColumns>& entries, int count) noexcept
     {
         const auto  i          = static_cast<std::size_t>(seat);
         void* const controller = g_controllers[i];
-        const int   column     = controller != nullptr ? hud::overlay_pass::ColumnOf(seat) : -1;
+        const int   column     = controller != nullptr ? hud::overlay_pass::ListedColumnOf(seat) : -1;
         SeatState   state      = kSeatOn;
         if (controller == nullptr)
         {
@@ -930,7 +930,7 @@ std::wstring Summary()
     for (int seat = 1; seat <= kSeats; ++seat)
     {
         const auto i      = static_cast<std::size_t>(seat);
-        const int  column = hud::overlay_pass::ColumnOf(seat);
+        const int  column = hud::overlay_pass::ListedColumnOf(seat);
         if (g_controllers[i] == nullptr)
         {
             continue;

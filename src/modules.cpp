@@ -658,10 +658,11 @@ bool ReadView(const void* localPlayer, hud::overlay_layout::ViewShare& out) noex
 }
 
 /// Whether the mirrors' columns, `from` up to `read`, get HUD passes of their own: each column there is a mirror's (no
-/// seat in the map) and one of them has another shape than player 1's view (overlay_pass::OtherShape: a monitor of
-/// another width in a span), or `always` (player 1's window shows: a copy must not show it, so each copy draws its
-/// own HUD). Then every mirror's column gets a pass (the columns with an image of their own stay the first ones, as the
-/// target and slot rules expect), showing player 1's HUD laid out for its own monitor.
+/// seat in the HUD's map, which lists a seat's column on player 1's picture as a mirror's: column_source::HudMap) and
+/// one of them has another shape than player 1's view (overlay_pass::OtherShape: a monitor of another width in a span),
+/// or `always` (player 1's window shows: a copy must not show it, so each copy draws its own HUD). Then every mirror's
+/// column gets a pass (the columns with an image of their own stay the first ones, as the target and slot rules
+/// expect), showing player 1's HUD laid out for its own monitor.
 bool MirrorsOwnImage(const hud::overlay_layout::ViewShares& shares, int from, int read, bool always) noexcept
 {
     namespace op = hud::overlay_pass;
@@ -670,7 +671,7 @@ bool MirrorsOwnImage(const hud::overlay_layout::ViewShares& shares, int from, in
     {
         if (op::SeatOf(column) != op::kNoSeat)
         {
-            return false;  // a seat's column on player 1's picture: it samples player 1's image, as before
+            return false;  // a seat's own view among them: the seats' passes come first (`from` counts them)
         }
         other = other || op::OtherShape(shares[column].sizeX, shares[column].sizeY, shares[0].sizeX, shares[0].sizeY);
     }
@@ -683,10 +684,10 @@ bool MirrorsOwnImage(const hud::overlay_layout::ViewShares& shares, int from, in
 /// for player 1's column and every view samples that one image: the further passes and the per-view targets stay
 /// off, since only a further pass would draw into a second target, leaving those views empty. A mirror on a monitor of
 /// another shape than player 1's (MirrorsOwnImage) gets a pass of its own instead, beside the seats' or alone with
-/// player 1, so the game's cover fit does not enlarge or inset player 1's image there (v0.148.0). Known gap [dev
-/// override only]: under `single-view on` with three players, a seat in its own shop keeps the split while the
-/// other seat shows player 1's picture, and that seat still gets a HUD pass of its own (the passes cannot skip a
-/// middle column today): its own HUD over player 1's camera.
+/// player 1, so the game's cover fit does not enlarge or inset player 1's image there. A seat's column on player 1's
+/// picture (a whole-screen moment on a monitor row) counts as a mirror's in the HUD's map (column_source::HudMap), so it
+/// is handled the same: a menu or a subtitle shows whole on a wider monitor, and a pass that runs for it (the passes
+/// cannot skip a middle column) shows player 1's HUD, never the seat's own over player 1's camera.
 void TickHud(const Frame& frame) noexcept
 {
     namespace op = hud::overlay_pass;
