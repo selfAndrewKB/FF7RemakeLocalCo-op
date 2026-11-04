@@ -2,6 +2,8 @@
 
 #include "battle/menu_grey_rules.h"
 
+#include <array>
+#include <cstdint>
 #include <cstdio>
 
 namespace lss::test {
@@ -70,11 +72,34 @@ void Settle()
 
 }  // namespace
 
+/// The muffle: a close is held back while another menu waits; of several closing in one frame the last plays it; a flip
+/// follows the waits, a closing one included when switched off.
+void Sound()
+{
+    using Waits = std::array<std::int32_t, 3>;
+    constexpr Waits none{0, 0, 0}, oneOpen{5, 4, 0}, oneOpening{1, 4, 0}, bothClosing{4, 4, 0}, alone{4, 0, 0};
+    static_assert(HoldSoundOff(1, oneOpen));       // player 2 closes, player 1's still open: stays up
+    static_assert(HoldSoundOff(1, oneOpening));    // player 1's only opening: it has raised it too
+    static_assert(!HoldSoundOff(0, alone));        // the only menu closes
+    static_assert(HoldSoundOff(0, bothClosing));   // player 1 ticks first: player 2's close, later this frame, plays it
+    static_assert(!HoldSoundOff(1, bothClosing));  // the last to tick plays it
+    static_assert(!HoldSoundOff(2, Waits{4, 4, 4}));
+    static_assert(HoldSoundOff(2, Waits{0, 5, 4}));
+
+    static_assert(AtSoundSwitch(false, none) == SoundFlip::Nothing);
+    static_assert(AtSoundSwitch(true, none) == SoundFlip::Nothing);
+    static_assert(AtSoundSwitch(false, Waits{0, 5, 0}) == SoundFlip::Lift);
+    static_assert(AtSoundSwitch(false, alone) == SoundFlip::Lift);   // closing: its own lift is about to be skipped
+    static_assert(AtSoundSwitch(true, alone) == SoundFlip::Nothing);  // closing: no raise, and its lift is harmless
+    static_assert(AtSoundSwitch(true, Waits{0, 0, 1}) == SoundFlip::Raise);
+}
+
 int main()
 {
     Open();
     Restore();
     Switch();
     Settle();
+    Sound();
     return lss::test::Report();  // every check above is a static_assert
 }

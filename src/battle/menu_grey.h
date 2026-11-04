@@ -1,7 +1,7 @@
 #pragma once
 
-// The open battle menu's grey follows the menu slow-down switch (the user, 2026-10-26: the switch "revealed the need to
-// also disable the greying of the screen"; research/RE-menu-grey.md).
+// The open battle menu's grey and sound muffle follow the menu slow-down switch (the user, 2026-10-26: the switch "revealed
+// the need to also disable the greying of the screen"; research/RE-menu-grey.md).
 //
 // The grey is the game's wait tint, UI filter type 0: a particle effect the UI filter manager (EndUISystem[37]) spawns
 // when a command controller's wait state opens and the filter's shared count goes from 0 to 1, and stops when the
@@ -25,6 +25,17 @@
 // Debug per skipped spawn, skipped restore, switch-time stop or start and settled debt; the reading `menu-grey`.
 // Known edge: with `command-menu` switched off mid-menu a further player's controller stops ticking at an open wait, so
 // restores stay skipped and a debt waits until that player leaves (the leave ends the wait the game's way).
+//
+// The muffle follows the same switch (the user, 2026-11-04; research/RE-menu-sound-muffle.md). It is the game's WaitMode
+// sound event, raised and lifted by the wait's own two calls for the one mix, whichever player's menu it is. It is not tied to
+// the slow-down in the game, so the switch has to reach it here. Switched off: both calls are skipped (the game's other sites,
+// a summon's own muffle among them, stay as they are; an unmatched lift from them is harmless, the values being absolute).
+// Switched on: the game's, except that a close leaves the muffle up while another player's menu still waits, or the first of
+// two to close would lift it for the other (Rebirth's rule). A flip with a menu waiting runs the game's own call once. The
+// reading `menu-sound` shows what the mix holds. Logged at Info at install, Debug per skip, hold and flip.
+// Known edge, switched on only: a further player's controller that stops ticking at an open wait (`command-menu` off mid-menu)
+// still counts as waiting, so the muffle stays until that player leaves or its menu ticks again.
+//
 // Game thread.
 
 namespace lss::platform {

@@ -985,6 +985,25 @@ inline constexpr platform::FunctionFact kUiFilterDeactivate{L"EndUIFilter__Deact
 inline constexpr std::uintptr_t                kUiFilterWaitOpenCall = 0x14141A074;
 inline constexpr std::array<std::uintptr_t, 4> kUiFilterRestoreCalls{0x1411A6F17, 0x1412C0643, 0x1412AA469, 0x1414C0395};
 
+// --- The open battle menu's sound muffle: the "WaitMode" sound state (research/RE-menu-sound-muffle.md) ---------------
+// The native of UEndSoundAPI::CallEvent. 12 WaitMode_ON (world sound quieter and lower, footsteps off, a wet reverb), 13
+// WaitMode_OFF: absolute values for the one mix, no count. The wait's own two calls; the summon, a minigame's wait and an
+// event's end have sites of their own. The open call shares its 16-byte block with kUiFilterWaitOpenCall, so it goes in
+// after that one and comes out before it.
+inline constexpr std::array<std::uint8_t, 16> kSoundEventEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x74, 0x24, 0x10, 0x48, 0x89, 0x7C, 0x24, 0x18, 0x41};
+inline constexpr platform::FunctionFact kSoundEvent{L"EndAudio_ApplyUIModeById", 0x1416AF370, kSoundEventEntry};
+inline constexpr std::uintptr_t kWaitSoundOnCall  = 0x14141A07B;
+inline constexpr std::uintptr_t kWaitSoundOffCall = 0x141419E36;
+inline constexpr std::uint8_t   kSoundEventWaitOn = 12, kSoundEventWaitOff = 13;
+// The mix's state, for the reading: the categories (pointers; id at +0x60; volume faders at +0x38, 48 bytes each, the game's
+// layer third; the pitch fader at +0x40; a fader's target at +0x0C) and the mixer's current effect preset. se3d is world
+// sound, masts the footsteps; preset 101 is WaitMode. Written on SEAD's thread: a read is a sample.
+inline constexpr std::uintptr_t kSeadCategoryCount = 0x1457E8260, kSeadCategories = 0x1457E8268, kSeadMixer = 0x1457E8730;
+inline constexpr std::uint32_t  kSeadCategoryId = 0x60, kSeadCategoryVolumes = 0x38, kSeadCategoryPitch = 0x40;
+inline constexpr std::uint32_t  kSeadFaderBytes = 48, kSeadVolumeLayerGame = 2, kSeadFaderTarget = 0x0C, kSeadMixerPreset = 0x14;
+inline constexpr std::int32_t   kSeadCategorySe3d = 28, kSeadCategoryMasts = 27, kSeadPresetWaitMode = 101;
+
 // --- The battle system and the leader's input buffer (RE-battle.md, RE-battle-member-two.md §2.6) -------------------
 inline constexpr std::uintptr_t kBattleSystemGlobal       = 0x1457E9720;  // the battle system (`sys`), null outside battle
 inline constexpr std::uint32_t  kGameStatePauseCounter    = 0x4F0;        // AEndGameState: the pause-like counter (dt 0 while set)

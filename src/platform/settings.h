@@ -104,11 +104,12 @@ inline constexpr Option kSplitFov{  // views/split_fov
     L"Off: the single-player width, zoomed in."};
 inline constexpr Option kMenuSlow{  // battle/command_menu_tick
     L"Battle", L"menu-slow", kOnOffWords, L"off",
-    L"off (the default): no grey, and the world and the ATB gauges run on at full speed while a battle command menu is "
-    L"open; on: an open menu slows the world and greys the screen, as the game does (Ctrl+F9 switches it too)",
+    L"off (the default): no grey and no muffled sound, and the world and the ATB gauges run on at full speed while a battle "
+    L"command menu is open; on: an open menu slows the world, greys the screen and muffles the sound, as the game does "
+    L"(Ctrl+F9 switches it too)",
     false, L"Command menu slow-down", kOnOffLabels,
-    L"On: an open battle command menu slows the battle and greys the screen, as in single player. Off: the battle runs "
-    L"on at full speed while a player picks a command."};
+    L"On: an open battle command menu slows the battle, greys the screen and muffles the sound, as in single player. Off: "
+    L"the battle runs on at full speed and full sound while a player picks a command."};
 inline constexpr Option kBattleWarps{  // battle/battle_warps
     L"Battle", L"battle-warps", kBattleWarpsWords, L"players-stay",
     L"who the game warps at a battle's start and end: players-stay (every player's own character stays where it is), "

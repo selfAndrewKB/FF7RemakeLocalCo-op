@@ -6,7 +6,9 @@
 // Blueprint's show) with no effect up; it is settled the game's unsuppress way once no battle menu waits (research/
 // RE-menu-grey.md). Host-tested (tests/menu_grey_rules_test.cpp). Cleanup step 4, plan/code-alignment.md C3.
 
+#include <cstddef>
 #include <cstdint>
+#include <span>
 
 namespace lss::battle::menu_grey_rules {
 
@@ -71,6 +73,52 @@ constexpr bool Owes(Act act) noexcept
 constexpr bool Pays(Act act) noexcept
 {
     return act == Act::Start;
+}
+
+// The wait's sound, the game's one muffle for the whole mix (research/RE-menu-sound-muffle.md): raised at a wait's open,
+// lifted at its close, with no count. `waits` holds every player's wait state by place (0 player 1, then the seats), 0 for
+// a player with no menu: 0 none, 1 opening, 5 open, 4 closing.
+
+/// A wait state that has raised the sound and has not begun to close.
+constexpr bool Waiting(std::int32_t wait) noexcept
+{
+    return wait == 1 || wait == 5;
+}
+
+/// The close's sound is held back while another menu still waits, so the first of two menus to close does not lift the
+/// other's. The menus tick in order (player 1's first, then each seat's): one ticking later still counts while closing, so
+/// of several closing in one frame the last plays it. `me`: the ticking menu's place. Rebirth's rule (battle/menu_rules.h).
+constexpr bool HoldSoundOff(int me, std::span<const std::int32_t> waits) noexcept
+{
+    for (int other = 0; other < static_cast<int>(waits.size()); ++other)
+    {
+        const std::int32_t wait = waits[static_cast<std::size_t>(other)];
+        if (other != me && (Waiting(wait) || (other > me && wait == 4)))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+/// What the switch's flip owes the sound while menus wait. Switched off: lifted if any wait raised it, a closing one too,
+/// since its own close will now be skipped. Switched on: raised if any menu still waits, and its close then lifts it.
+enum class SoundFlip : std::uint8_t
+{
+    Nothing,
+    Raise,
+    Lift,
+};
+constexpr SoundFlip AtSoundSwitch(bool slows, std::span<const std::int32_t> waits) noexcept
+{
+    for (const std::int32_t wait : waits)
+    {
+        if (slows ? Waiting(wait) : wait != 0)
+        {
+            return slows ? SoundFlip::Raise : SoundFlip::Lift;
+        }
+    }
+    return SoundFlip::Nothing;
 }
 
 }  // namespace lss::battle::menu_grey_rules

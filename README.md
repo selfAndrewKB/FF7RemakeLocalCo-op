@@ -484,7 +484,7 @@ src/
     lock_camera_rules.h     The lock camera readings' arithmetic, without the game (battle/lock_camera.h applies it)
     member_rates            Each further player's member at the player's rates (RE-battle-member-two.md §2, L1;
                             Rebirth's player_two/player_hits)
-    menu_grey               The open battle menu's grey follows the menu slow-down switch
+    menu_grey               The open battle menu's grey and sound muffle follow the menu slow-down switch
     menu_grey_rules.h       The open battle menu's grey under the slow-down switch (battle/menu_grey.h applies it), as
                             pure rules over what the game's UI filter 0 shows: at the wait's spawn, at a menu-close
                             restore, at a flip of the switch and at the tick …

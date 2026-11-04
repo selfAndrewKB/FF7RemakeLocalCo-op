@@ -28,18 +28,24 @@ using platform::Read;
 
 using ActivateFn   = void (*)(void* filters, std::uint8_t type, std::uint8_t instant);
 using DeactivateFn = void (*)(void* filters, std::uint8_t type);
+using SoundEventFn = void (*)(std::uint8_t id);
 
 // Set at install, then only read.
 std::uintptr_t g_filtersGlobal = 0;  // EndUISystem[37]: the UI filter manager
 std::uintptr_t g_commandGlobal = 0;  // EndUISystem[19]: player 1's command controller
+std::uintptr_t g_seadCount = 0, g_seadArray = 0, g_seadMixer = 0;  // the mix's state, for the reading
 ActivateFn     g_activate      = nullptr;
 DeactivateFn   g_deactivate    = nullptr;
+SoundEventFn   g_soundEvent    = nullptr;
 
 platform::CallRedirect                                            g_open;      // the wait's spawn
 std::array<platform::CallRedirect, facts::kUiFilterRestoreCalls.size()> g_restores;  // after another menu closes
+platform::CallRedirect                                            g_soundOn;   // the wait's muffle, at its open
+platform::CallRedirect                                            g_soundOff;  // and at its close
 
 // Game thread.
 std::uint32_t g_opensSkipped = 0, g_restoresSkipped = 0, g_flipStops = 0, g_flipStarts = 0, g_settled = 0;
+std::uint32_t g_soundOnsSkipped = 0, g_soundOffsSkipped = 0, g_soundOffsHeld = 0, g_soundLifts = 0, g_soundRaises = 0;
 void*         g_playerOne = nullptr;  // player 1's command controller, noted at the engine tick (outside every scope)
 bool          g_debt      = false;    // a skip or a stop may have left another owner's count with no effect
 bool          g_slows     = true;     // the slow-down switch as last seen at the tick
@@ -102,6 +108,141 @@ bool BattleMenuWaits() noexcept
         }
     }
     return false;
+}
+
+/// Every player's wait state by place (0 player 1, then the seats), 0 for a player with no menu ready. An i32, its low byte
+/// read. Inside a seat's UI slot scope player 1's controller is the one noted at the engine tick.
+std::array<std::int32_t, players::kSeatsBuilt + 1> WaitStates() noexcept
+{
+    std::array<std::int32_t, players::kSeatsBuilt + 1> waits{};
+    const auto read = [](const void* controller) -> std::int32_t {
+        std::uint8_t state = 0;
+        return controller != nullptr && Read(static_cast<const std::uint8_t*>(controller) + facts::kCommandCtrlWaitState, state)
+                   ? state
+                   : 0;
+    };
+    void* playerOne = nullptr;
+    if (players::scopes::OpenPlayer(players::scopes::UiSlot) != 0)
+    {
+        playerOne = g_playerOne;
+    }
+    else
+    {
+        Read(reinterpret_cast<const void*>(g_commandGlobal), playerOne);
+    }
+    waits[0] = read(playerOne);
+    for (int seat = 1; seat <= players::kSeatsBuilt; ++seat)
+    {
+        waits[static_cast<std::size_t>(seat)] = command_menu::Ready(seat) ? read(command_menu::Controller(seat)) : 0;
+    }
+    return waits;
+}
+
+/// The wait's muffle raised at its open: the game's call while the slow-down is on, else skipped.
+void WaitSoundOn(std::uint8_t id)
+{
+    if (command_menu_tick::MenuSlow())
+    {
+        g_soundEvent(id);
+        return;
+    }
+    ++g_soundOnsSkipped;
+    platform::LogDebug(L"menu sound: a battle menu opened; the muffle is skipped (the slow-down is switched off)");
+}
+
+/// The wait's muffle lifted at its close: skipped with the slow-down off (nothing was raised), held back while another menu
+/// still waits, else the game's call.
+void WaitSoundOff(std::uint8_t id)
+{
+    if (!command_menu_tick::MenuSlow())
+    {
+        ++g_soundOffsSkipped;
+        return;
+    }
+    const auto waits = WaitStates();
+    const int  me    = command_menu_tick::Ticking() ? command_menu_tick::TickingSeat() : 0;
+    if (menu_grey_rules::HoldSoundOff(me, waits))
+    {
+        ++g_soundOffsHeld;
+        platform::LogDebug(L"menu sound: {}'s battle menu closed; the muffle stays for another player's open menu", players::SeatName(me));
+        return;
+    }
+    g_soundEvent(id);
+}
+
+/// The slow-down was switched since the last tick (game thread, outside every scope): the sound follows any waiting menu.
+void OnSoundSwitched(bool slows) noexcept
+{
+    if (!g_soundOn.IsInstalled() || !g_soundOff.IsInstalled())
+    {
+        return;
+    }
+    const menu_grey_rules::SoundFlip flip = menu_grey_rules::AtSoundSwitch(slows, WaitStates());
+    if (flip == menu_grey_rules::SoundFlip::Nothing)
+    {
+        return;
+    }
+    const bool raise = flip == menu_grey_rules::SoundFlip::Raise;
+    if (platform::CallGuarded(g_soundEvent, raise ? facts::kSoundEventWaitOn : facts::kSoundEventWaitOff))
+    {
+        ++(raise ? g_soundRaises : g_soundLifts);
+        platform::LogDebug(L"menu sound: the muffle {} for a waiting menu (the slow-down switched {})", raise ? L"raised" : L"lifted",
+                           slows ? L"on" : L"off");
+    }
+    else
+    {
+        platform::LogWarning(L"menu sound: the game's sound event raised; the muffle may not follow the switch until the menu closes");
+    }
+}
+
+/// The mix as SEAD last wrote it: world sound's and footsteps' targets and the current effect preset.
+std::wstring SoundReading()
+{
+    std::int32_t count      = 0;
+    std::uintptr_t array    = 0;
+    std::wstring   text;
+    if (Read(reinterpret_cast<const void*>(g_seadCount), count) && Read(reinterpret_cast<const void*>(g_seadArray), array) && array != 0 &&
+        count > 0 && count < 1024)
+    {
+        const auto target = [](std::uintptr_t cat, std::uint32_t member, std::uint32_t offset, float& out) {
+            std::uintptr_t faders = 0;
+            return Read(reinterpret_cast<const void*>(cat + member), faders) && faders != 0 &&
+                   Read(reinterpret_cast<const void*>(faders + offset + facts::kSeadFaderTarget), out);
+        };
+        const std::uint32_t game = facts::kSeadVolumeLayerGame * facts::kSeadFaderBytes;
+        for (std::int32_t i = 0; i < count; ++i)
+        {
+            std::uintptr_t cat = 0;
+            std::int32_t   id  = -1;
+            if (!Read(reinterpret_cast<const void*>(array + static_cast<std::uintptr_t>(i) * sizeof(void*)), cat) || cat == 0 ||
+                !Read(reinterpret_cast<const void*>(cat + facts::kSeadCategoryId), id))
+            {
+                continue;
+            }
+            float volume = -1.0f, pitch = -1.0f;
+            if (id == facts::kSeadCategorySe3d && target(cat, facts::kSeadCategoryVolumes, game, volume) &&
+                target(cat, facts::kSeadCategoryPitch, 0, pitch))
+            {
+                text += std::format(L"world sound volume {:.3f} pitch {:.3f}; ", volume, pitch);
+            }
+            else if (id == facts::kSeadCategoryMasts && target(cat, facts::kSeadCategoryVolumes, game, volume))
+            {
+                text += std::format(L"footsteps volume {:.3f}; ", volume);
+            }
+        }
+    }
+    std::uintptr_t mixer  = 0;
+    std::int32_t   preset = -1;
+    const bool     read   = Read(reinterpret_cast<const void*>(g_seadMixer), mixer) && mixer != 0 &&
+                      Read(reinterpret_cast<const void*>(mixer + facts::kSeadMixerPreset), preset);
+    text += read ? std::format(L"effect preset {}{}", preset, preset == facts::kSeadPresetWaitMode ? L" (the muffle's)" : L"")
+                 : std::wstring(L"effect preset unread");
+    const auto waits = WaitStates();
+    return std::format(L"{}; the wait's muffle {}; {}; waits: player 1 {}, player 2 {}, player 3 {}; raises skipped {}, lifts skipped {}, lifts "
+                       L"held for another menu {}, lifted at a switch {}, raised at a switch {}",
+                       g_soundOn.IsInstalled() && g_soundOff.IsInstalled() ? L"on" : L"off",
+                       command_menu_tick::MenuSlow() ? L"follows the game" : L"skipped", text, waits[0], waits[1], waits[2], g_soundOnsSkipped,
+                       g_soundOffsSkipped, g_soundOffsHeld, g_soundLifts, g_soundRaises);
 }
 
 /// The wait's spawn of filter 0 (FieldCommandCtrl__WaitModeFilter_LatchRef, the count's 0 -> 1).
@@ -204,7 +345,8 @@ bool Install(const platform::GameImage& image) noexcept
     const auto openSite   = image.Rebase(facts::kUiFilterWaitOpenCall, 5);
     if (!filters || !command || !activate || !deactivate || !openSite)
     {
-        platform::Log(L"menu grey: an engine check failed; an open battle menu greys the screen even with the slow-down off");
+        platform::Log(L"menu grey: an engine check failed; an open battle menu greys the screen and muffles the sound even with the "
+                      L"slow-down off");
         return false;
     }
     g_filtersGlobal = *filters;
@@ -213,8 +355,8 @@ bool Install(const platform::GameImage& image) noexcept
     g_deactivate    = reinterpret_cast<DeactivateFn>(*deactivate);
     if (!g_open.Install(*openSite, *activate, reinterpret_cast<std::uintptr_t>(&Open)))
     {
-        platform::Log(L"menu grey: the wait's grey call could not be redirected; an open battle menu greys the screen even "
-                      L"with the slow-down off");
+        platform::Log(L"menu grey: the wait's grey call could not be redirected; an open battle menu greys the screen and muffles the "
+                      L"sound even with the slow-down off");
         return false;
     }
     std::uint32_t restores = 0;
@@ -223,7 +365,51 @@ bool Install(const platform::GameImage& image) noexcept
         const auto site = image.Rebase(facts::kUiFilterRestoreCalls[i], 5);
         restores += site && g_restores[i].Install(*site, *activate, reinterpret_cast<std::uintptr_t>(&RestoreAfterMenu)) ? 1 : 0;
     }
+    // The muffle: both calls or neither, so a raise never goes without its lift. After the grey: the open call shares its block.
+    const auto soundEvent = platform::FindFunction(image, facts::kSoundEvent);
+    const auto soundOn    = image.Rebase(facts::kWaitSoundOnCall, 5);
+    const auto soundOff   = image.Rebase(facts::kWaitSoundOffCall, 5);
+    const auto seadCount  = image.Rebase(facts::kSeadCategoryCount, sizeof(std::int32_t));
+    const auto seadArray  = image.Rebase(facts::kSeadCategories, sizeof(void*));
+    const auto seadMixer  = image.Rebase(facts::kSeadMixer, sizeof(void*));
+    if (soundEvent && soundOn && soundOff && seadCount && seadArray && seadMixer)
+    {
+        g_soundEvent = reinterpret_cast<SoundEventFn>(*soundEvent);
+        g_seadCount  = *seadCount;
+        g_seadArray  = *seadArray;
+        g_seadMixer  = *seadMixer;
+        if (!g_soundOn.Install(*soundOn, *soundEvent, reinterpret_cast<std::uintptr_t>(&WaitSoundOn)) ||
+            !g_soundOff.Install(*soundOff, *soundEvent, reinterpret_cast<std::uintptr_t>(&WaitSoundOff)))
+        {
+            g_soundOff.Restore();
+            g_soundOn.Restore();
+        }
+    }
+    const bool sound = g_soundOn.IsInstalled() && g_soundOff.IsInstalled();
+    if (!sound)
+    {
+        platform::LogWarning(L"menu sound: the wait's sound calls are not what the research read; an open battle menu muffles the sound "
+                             L"even with the slow-down off");
+    }
     g_slows = command_menu_tick::MenuSlow();
+    if (sound)
+    {
+        platform::Log(L"menu sound: installed; an open battle menu's muffle follows the slow-down switch");
+        control::Register({.name  = L"menu-sound",
+                           .shape = control::Shape::Text,
+                           .help  = L"an open battle menu's muffle: the mix's world sound and footsteps, its effect preset, every player's "
+                                    L"wait state, and the raises and lifts skipped, held and made at a switch",
+                           .get   = [] {
+                               try
+                               {
+                                   return control::Value{SoundReading()};
+                               }
+                               catch (...)
+                               {
+                                   return control::Value{std::wstring(L"unreadable (an exception)")};
+                               }
+                           }});
+    }
     control::Register({.name  = L"menu-grey",
                        .shape = control::Shape::Text,
                        .help  = L"an open battle menu's grey: skipped while the slow-down is off; skips, switch-time stops "
@@ -244,6 +430,9 @@ bool Install(const platform::GameImage& image) noexcept
 
 void Remove() noexcept
 {
+    // The muffle's first: the open call's block holds the grey's redirected call in its snapshot.
+    g_soundOff.Restore();
+    g_soundOn.Restore();
     for (auto& call : g_restores)
     {
         call.Restore();
@@ -262,6 +451,7 @@ void Tick() noexcept
     {
         g_slows = slows;
         OnSwitched(slows);
+        OnSoundSwitched(slows);
     }
     if (!g_debt || BattleMenuWaits())
     {
