@@ -110,9 +110,8 @@ constexpr Gated Gate(OpenHold& h, std::uint16_t raw, std::int64_t nowMs) noexcep
 
 // ---------------------------------------------------------------------------------------------------------------------
 // A button that is a tap or a long press, not held back from the game (a window's B: a tap closes it, a hold leaves
-// the game): the hold
-// fires once after `ms` down, again only after a let-go; a let-go before then is the tap, told at the let-go, so a
-// press that grows into the hold never also taps.
+// the game): the hold fires once after `ms` down, again only after a let-go; a let-go before then is the tap, told at
+// the let-go, so a press that grows into the hold never also taps.
 
 struct Held
 {

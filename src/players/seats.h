@@ -2,11 +2,12 @@
 
 // The seats: the further human players the mod adds (plan/seats.md). Seat 0 is player 1, the game's own player;
 // seat 1 is player 2, seat 2 player 3. A seat's number is at once the scopes' player (players/scopes.h), its
-// controller id and its row of the party order after the field leader's; its pad is XInput user `seat`. Its column
-// is its local player's index in the engine's list, which a join appends to: player 2 and player 3 in that order take
-// columns 1 and 2, but with player 2 out player 3 takes column 1 (the HUD asks overlay_pass::ColumnOf, never assumes
-// the seat). Where a column shows on screen is the column order's (views/column_rules.h, `column-order`): by default
-// the join order, the list's (column 2 the right-hand screen); `1 3 2` puts player 2's on the right whatever its column.
+// controller id and its row of the party order after the field leader's; its pad is whichever physical pad the pad
+// table puts on slot `seat` (players/pad_table). Its column is its local player's index in the engine's list, which a
+// join appends to: player 2 and player 3 in that order take columns 1 and 2, but with player 2 out player 3 takes
+// column 1 (the HUD asks overlay_pass::ColumnOf, never assumes the seat). Where a column shows on screen is the column
+// order's (views/column_rules.h, `column-order`), by player number whatever its column: by default players 1, 2, 3
+// left to right; `1 3 2` puts player 2's on the right.
 // The code counts columns from 0 (player 1's); the log lines count them from 1 ("column 2" is the first further one).
 // Pure constants and names, no game.
 
@@ -19,7 +20,6 @@ namespace lss::players {
 inline constexpr int kSeatsBuilt = 2;
 static_assert(kSeatsBuilt >= 1 && kSeatsBuilt < scopes::kMaxPlayers, "the seats are numbered within the scopes' players");
 
-/// "player 2" for seat 1: the name every line of a seat's uses, so three players read apart in the log.
 /// Whether a further player holds a member (co-op, as the battle levers read it). A plain pointer read per seat, so
 /// any thread may ask (the seats are bound on the game thread).
 inline bool AnyFurtherMember() noexcept
@@ -34,6 +34,7 @@ inline bool AnyFurtherMember() noexcept
     return false;
 }
 
+/// "player 2" for seat 1: the name every line of a seat's uses, so three players read apart in the log.
 constexpr const wchar_t* SeatName(int seat) noexcept
 {
     constexpr const wchar_t* kNames[scopes::kMaxPlayers] = {L"player 1", L"player 2", L"player 3", L"player 4"};

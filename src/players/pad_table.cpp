@@ -228,8 +228,7 @@ std::wstring ModuleOf(std::uintptr_t address)
     return slash == std::wstring::npos ? full : full.substr(slash + 1);
 }
 
-}  // namespace
-
+/// Logs the engine's other input devices (a PlayStation pad read through scePad is not moved by the table). At install.
 void LogDevices() noexcept
 {
     void* const   app   = platform::ReadPointer(reinterpret_cast<const void*>(g_appGlobal), 0);
@@ -252,8 +251,6 @@ void LogDevices() noexcept
                   sony > 0 ? L", one the PlayStation pad reader: a PlayStation pad it reads is not moved by the pad table"
                            : L", none the PlayStation pad reader");
 }
-
-namespace {
 
 /// "pad 1, pad 3" for the idle bits.
 std::wstring IdleText(std::uint32_t users)

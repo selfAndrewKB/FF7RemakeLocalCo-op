@@ -3420,7 +3420,7 @@ inline constexpr platform::FunctionFact kMessageWindowListAdd{L"EndUI39_MessageW
 inline constexpr std::uint32_t kMessageWindowListSlot      = 39;     // EndUISystem[39]: the game's message windows
 inline constexpr std::uint32_t kMessageWindowState         = 0x360;  // int32: 0 none, 1 opening, 2 open, 3 closing
 inline constexpr std::uint32_t kMessageWindowRemoveAfterOut = 0x369; // u8: the tick removes it when Out ends
-inline constexpr std::int32_t  kClaimWindowZOrder          = 1000;   // above the HUD (0) and the skip icon (991), below
+inline constexpr std::int32_t  kPlayerWindowZOrder         = 1000;   // above the HUD (0) and the skip icon (991), below
                                                                      // subtitles (1240) and the pause menu (1990)
 /// The game's UI sounds (§12.6): play (const args*, 0x34 bytes: +0 the UI sound source, +8 the cue's FName, +0x10 -1,
 /// +0x14 four floats {0, 1, 1, 0}, +0x28 0, +0x30 1.0f) and the source (the object named "UI"; null if none). The cues'

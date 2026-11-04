@@ -107,9 +107,12 @@ bool SetColor(UObject* widget, const float (&color)[4]) noexcept
     return players::GuardedProcessEvent(widget, g_setter, frame);
 }
 
+/// The pass of a copy of player 1's picture shows no player window.
+constexpr int kNoWindow = -1;
+
 /// Every cursor root on the overlay, shown and opaque, that the pass of `seat` (0 player 1's) does not show, made
-/// transparent. `playerOneCursors`: player 1's own cursors too (a further pass). `view`: the player windows' view the
-/// pass shows (hud/view_window.h: the seat's, or a copy's column's); every other window is hidden.
+/// transparent. `playerOneCursors`: player 1's own cursors too (a further pass). `view`: the player window the pass
+/// shows (hud/view_window.h: the seat's, or kNoWindow); every other window is hidden.
 int Begin(int seat, bool playerOneCursors, int view) noexcept
 try
 {
@@ -162,10 +165,10 @@ int BeginFurtherPass(int column) noexcept
     {
         return Begin(seat, true, seat);
     }
-    // A copy of player 1's picture: player 1's hides, but player 1's window is not drawn there.
+    // A copy of player 1's picture: player 1's hides, and no window (player 1's is not drawn there).
     g_hidden.clear();
     return world::target_icons::AnySeatIcons() || world::search_arrows::AnySeatArrows() || view_window::Any()
-               ? Begin(0, false, view_window::MirrorView(column))
+               ? Begin(0, false, kNoWindow)
                : 0;
 }
 

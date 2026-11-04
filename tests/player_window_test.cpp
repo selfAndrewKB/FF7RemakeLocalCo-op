@@ -117,7 +117,7 @@ void FurtherPlayersWindow()
     EXPECT(t.plain[2] == L"LB/RB: move my view");
     EXPECT(t.plain[3] == L"A: done");
     EXPECT(t.plain[4] == L"Hold B to leave the game");
-    EXPECT(t.plain[5].empty());
+    EXPECT(t.plain.size() == 5);  // the longest window fills the fallback's lines exactly
 }
 
 /// Player 1's: no arrows, no leave; the Start hint while a seat is free; no move line with one screen.

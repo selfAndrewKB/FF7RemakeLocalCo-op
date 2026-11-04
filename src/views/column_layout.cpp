@@ -157,14 +157,12 @@ std::wstring OrderText(const Order& order);
 void SetOrder(const Order& order, const wchar_t* why)
 {
     g_order = order;
-    platform::Log(L"column layout: the column order is {}{} ({})", OrderText(g_order),
-                  g_order == column_rules::kJoinOrder ? L", the join order" : L"", why);
+    platform::Log(L"column layout: the column order is {} ({})", OrderText(g_order), why);
 }
 
 std::wstring OrderText(const Order& order)
 {
-    return std::format(L"{} {} {}{}", order.player[0], order.player[1], order.player[2],
-                       order.byNumber && order.player == decltype(order.player){1, 2, 3} ? L" by player" : L"");
+    return std::format(L"{} {} {}", order.player[0], order.player[1], order.player[2]);
 }
 
 /// The screens left to right as the wanted entry shows them: "player 1, player 3, the mirror".
@@ -517,7 +515,7 @@ bool Install(const platform::GameImage& image) noexcept
         e.base      = e.wanted;
     }
     // The file's word is one of the table's, so it parses.
-    SetOrder(column_rules::ParseOrder(platform::settings::Of(platform::settings::kColumnOrder).word).value_or(column_rules::kJoinOrder),
+    SetOrder(column_rules::ParseOrder(platform::settings::Of(platform::settings::kColumnOrder).word).value_or(column_rules::kDefaultOrder),
              platform::settings::Why(platform::settings::kColumnOrder).c_str());
     using control::Register;
     using control::Shape;

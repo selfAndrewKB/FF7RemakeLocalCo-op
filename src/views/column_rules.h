@@ -15,9 +15,9 @@
 //
 // The engine gives the view at place i of its local-player list the entry's record i. The mod's columns are those
 // places (player 1's, then the seats in join order, then the mirrors), and every per-view module counts in them. Where
-// a column shows on screen is the column order's (the setting `column-order`, the user 2026-10-25): with `1 3 2`
-// player 2's view takes the right-hand record and player 3's the middle one whatever the join order, through the same
-// entry, the records arranged (Slots, Arrange). A view of no player (a mirror) takes a slot left over. Any player may
+// a column shows on screen is the column order's (the setting `column-order`, the user 2026-10-25): by player number
+// whatever the order the players joined in; with `1 3 2` player 2's view takes the right-hand record and player 3's the
+// middle one, through the same entry, the records arranged (Slots, Arrange). A view of no player (a mirror) takes a slot left over. Any player may
 // take any screen, player 1 too (2026-10-31: nothing in the engine ties player 1 to the first record, RE-layout-fov.md
 // §9, and the mod tells views by their place in the list, not on screen). Two views take one of the engine's two-player
 // entries (top and bottom, or side by side), arranged the same way (TwoSlots): the two players in the order's order.
@@ -108,19 +108,16 @@ constexpr bool Same(const Record (&a)[N], const Record (&b)[N]) noexcept
 
 /// The column order: the player each screen slot shows, left to right (in one window, three players: the top, then
 /// the bottom left, the bottom right; two players: the top, then the bottom, or left and right). Any of the six orders;
-/// with two players the one not in is skipped.
+/// with two players the one not in is skipped. Always by player number, never by the order the players joined in.
 struct Order
 {
     std::array<int, kThreePlayerRecords> player{1, 2, 3};
-    bool byNumber = false;  // `1 2 3` by player number, not the join order (a player window's move: players/player_window)
     constexpr bool operator==(const Order&) const noexcept = default;
 };
 
-/// The default, `1 2 3`: the join order. The entry keeps the engine's list order (EntryWanted arranges nothing), so the
-/// player who joined first shows in the middle (bottom left), the next on the right (bottom right), as before the
-/// setting existed. `1 3 2` arranges by player number, and so does `1 2 3` with byNumber (the player windows' choice,
-/// whatever order the players joined in).
-inline constexpr Order kJoinOrder{};
+/// The default, `1 2 3`: players 1, 2 and 3 left to right (in one window, three players: player 1 on top, player 2 bottom
+/// left, player 3 bottom right). With the players listed in that order the entry is the stock one, untouched.
+inline constexpr Order kDefaultOrder{};
 
 /// The order from text (the settings file, the console): its digits in order, anything else skipped ("1 3 2", "132",
 /// "1,3,2"). Empty unless the digits are 1, 2 and 3, each once.
@@ -190,7 +187,7 @@ constexpr std::array<int, kThreePlayerRecords> Slots(const Order& order, const L
 }
 
 /// The record each of two views takes (the engine's two-player entries): the two players in the order's order (the
-/// player not in skipped); the list's order under the join order or when a view is no player's (a mirror).
+/// player not in skipped); the list's order when a view is no player's (a mirror).
 constexpr std::array<int, kTwoPlayerRecords> TwoSlots(const Order& order, const ListSeats& seats) noexcept
 {
     const auto rank = [&order](int seat) {
@@ -204,7 +201,7 @@ constexpr std::array<int, kTwoPlayerRecords> TwoSlots(const Order& order, const 
         return kThreePlayerRecords;
     };
     const int first = seats[0], second = seats[1];
-    if (order == kJoinOrder || first < 0 || second < 0 || rank(first) <= rank(second))
+    if (first < 0 || second < 0 || rank(first) <= rank(second))
     {
         return {0, 1};
     }
@@ -328,13 +325,13 @@ constexpr Action Decide(const Record (&entry)[kThreePlayerRecords], const Record
     return Same(wanted, kStockFavorTop) ? Action::Restore : Action::Write;
 }
 
-/// The screen slot each place of the engine's list shows with `views` views: three arranged by an order other than the
-/// join order (Slots), two by the order's order of the two players (TwoSlots, the third place unused); one in place.
+/// The screen slot each place of the engine's list shows with `views` views: three by the order (Slots), two by the
+/// order's order of the two players (TwoSlots, the third place unused); one in place.
 constexpr std::array<int, kThreePlayerRecords> ScreenSlots(int views, const Order& order, const ListSeats& seats) noexcept
 {
     if (views >= kThreePlayerRecords)
     {
-        return order == kJoinOrder ? std::array<int, kThreePlayerRecords>{0, 1, 2} : Slots(order, seats);
+        return Slots(order, seats);
     }
     if (views == kTwoPlayerRecords)
     {
@@ -381,7 +378,7 @@ constexpr Action DecideTwo(const Record (&entry)[kTwoPlayerRecords], const Recor
 /// the player left over. Empty when a seat is on two slots or is no seat.
 constexpr std::optional<Order> OrderShowing(const std::array<int, kThreePlayerRecords>& seatOn) noexcept
 {
-    Order                                 order{.byNumber = true};
+    Order                                 order{};
     std::array<bool, kThreePlayerRecords> used{};
     for (int s = 0; s < kThreePlayerRecords; ++s)
     {

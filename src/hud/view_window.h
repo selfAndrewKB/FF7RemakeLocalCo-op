@@ -11,11 +11,10 @@
 // PopFromFocusStack), so focus never leaves what had it and no key ever reaches the window: the player windows read the pads
 // itself. Every root on the overlay is painted in every player's column; hud/pass_hide makes a window transparent in
 // every pass but its view's (ViewOf), as it does for the cursors, and the window's animations never write that
-// colour (§12.5). A closed window plays the game's Out and close sound and is taken out of the overlay by its own tick
-// (the game's remove-after-Out byte). A load or map change closes the windows through the game's list. Opens and
-// closes logged at Info, text changes at Debug. Reading `views.window`. Game thread.
-
-#include "hud/overlay_pass.h"
+// colour (§12.5). A copy of player 1's picture shows no window (its own HUD pass hides them all). A closed window plays
+// the game's Out and close sound and is taken out of the overlay by its own tick (the game's remove-after-Out byte). A
+// load or map change closes the windows through the game's list. Opens and closes logged at Info, text changes at
+// Debug. Reading `views.window`. Game thread.
 
 #include <string>
 
@@ -25,21 +24,14 @@ class GameImage;
 
 namespace lss::hud::view_window {
 
-/// A window's view: a seat's (0 player 1's, the further seats'), or a copy of player 1's picture in a column of its own
-/// (MirrorView), shown in that copy's own HUD pass (hud/second_image) only.
-inline constexpr int kSeatViews = 4;  // players::scopes::kMaxPlayers
-constexpr int MirrorView(int column) noexcept
-{
-    return kSeatViews + column;
-}
-/// Every view a window can be keyed by.
-inline constexpr int kViews = kSeatViews + overlay_pass::kMaxColumns;
+/// A window's view: a seat's (0 player 1's, the further seats').
+inline constexpr int kViews = 4;  // players::scopes::kMaxPlayers
 
 bool Install(const platform::GameImage& image) noexcept;
 /// Forgets the windows without a UI call (a window left open stays on screen until the game's next reset).
 void Remove() noexcept;
 
-/// Shows `markup` in `view` (a seat's, 0 player 1's, or MirrorView(column)): opens its window, or changes the open
+/// Shows `markup` in `view` (a seat's, 0 player 1's): opens its window, or changes the open
 /// one's text. False when no window can be shown (not installed, no world, the game made none, or called inside a
 /// player's scope, where the game's focus context is that player's copy): the caller has its own fallback.
 bool Show(int view, const std::wstring& markup) noexcept;

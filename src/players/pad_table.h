@@ -62,7 +62,4 @@ void Listen(Listener listener) noexcept;
 /// Start is held back from the game. Once per engine tick from the session's players. Game thread.
 void SetPlaying(std::uint32_t slots) noexcept;
 
-/// Logs the engine's other input devices (a PlayStation pad read through scePad is not moved by the table). Game thread.
-void LogDevices() noexcept;
-
 }  // namespace lss::players::pad_table

@@ -2,7 +2,6 @@
 
 #include "control/registry.h"
 #include "engine_facts.h"
-#include "hud/overlay_pass.h"
 #include "platform/game_array.h"
 #include "platform/guarded.h"
 #include "platform/image.h"
@@ -39,8 +38,7 @@ using PlaySoundFn  = void (*)(const void* args);
 using SourceFn     = void* (*)();
 using GetWorldFn   = void* (*)(void* object);
 
-constexpr int kPlayers = players::scopes::kMaxPlayers;
-static_assert(kPlayers == kSeatViews, "a copy's view follows the seats'");
+static_assert(kViews == players::scopes::kMaxPlayers, "a window per player");
 
 using platform::GameArray;
 
@@ -64,8 +62,7 @@ struct Game
     std::array<std::uintptr_t, 3> cues{};  // the sounds' FNames, by Sound
 };
 
-/// A window the mod opened, by the view that shows it (a seat's, or a copy's column: MirrorView). `object` is compared
-/// first; the weak pair confirms it is
+/// A window the mod opened, by the seat's view that shows it. `object` is compared first; the weak pair confirms it is
 /// still that object (a freed window's address may hold another widget).
 struct Window
 {
@@ -133,15 +130,14 @@ bool SetText(void* window, const std::wstring& text) noexcept
     return platform::CallGuarded(g.setText, window, static_cast<const void*>(&view));
 }
 
-/// The game's sequence for one window (EndUI_ShowMessageWindow's, §12.9), its focus layer popped at once. Refused inside
-/// a player's scope: Open pushes onto whichever focus context is current, and the swapped one is that player's copy.
-/// "player 2" for a seat's view, "the copy in column 2" for a copy's.
+/// "player 2" for seat 1's view.
 std::wstring ViewName(int view)
 {
-    return view >= 0 && view < kPlayers ? std::wstring(players::SeatName(view))
-                                        : std::format(L"the copy in column {}", view - kPlayers + 1);
+    return players::SeatName(view);
 }
 
+/// The game's sequence for one window (EndUI_ShowMessageWindow's, §12.9), its focus layer popped at once. Refused inside
+/// a player's scope: Open pushes onto whichever focus context is current, and the swapped one is that player's copy.
 void* OpenWindow(int view, const std::wstring& text) noexcept
 {
     if (players::scopes::OpenPlayer(players::scopes::All) != 0)
@@ -155,7 +151,7 @@ void* OpenWindow(int view, const std::wstring& text) noexcept
     {
         return nullptr;
     }
-    const std::int32_t z = facts::kClaimWindowZOrder;
+    const std::int32_t z = facts::kPlayerWindowZOrder;
     bool               added = false;
     if (!platform::WriteGuarded(At(w, facts::kEndWidgetZOrder), &z, sizeof(z)) ||
         !platform::CallGuarded(g.addToRoot, added, w, z) || !added)
@@ -303,7 +299,7 @@ try
                                return control::Value{std::wstring(L"unreadable (an exception)")};
                            }
                        }});
-    platform::Log(L"view window: the game's message window can be shown in one player's view (z {})", f::kClaimWindowZOrder);
+    platform::Log(L"view window: the game's message window can be shown in one player's view (z {})", f::kPlayerWindowZOrder);
     return true;
 }
 catch (...)

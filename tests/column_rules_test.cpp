@@ -117,8 +117,8 @@ void Decisions()
 /// The column order from the settings file or the console: the three players, each once, in any order.
 void Orders()
 {
-    EXPECT(ParseOrder(L"1 2 3") == kJoinOrder);
-    EXPECT(ParseOrder(L"123") == kJoinOrder);
+    EXPECT(ParseOrder(L"1 2 3") == kDefaultOrder);
+    EXPECT(ParseOrder(L"123") == kDefaultOrder);
     EXPECT((ParseOrder(L"1, 3, 2") == Order{{1, 3, 2}}));
     EXPECT((ParseOrder(L" 132 ") == Order{{1, 3, 2}}));
     EXPECT((ParseOrder(L"213") == Order{{2, 1, 3}}));  // player 1 may take any screen
@@ -137,25 +137,32 @@ void SlotsAndEntries()
 {
     using Slots3 = std::array<int, kThreePlayerRecords>;
     const Order swap{{1, 3, 2}};
-    EXPECT((Slots(kJoinOrder, {0, 1, 2}) == Slots3{0, 1, 2}));
+    EXPECT((Slots(kDefaultOrder, {0, 1, 2}) == Slots3{0, 1, 2}));
+    EXPECT((Slots(kDefaultOrder, {0, 2, 1}) == Slots3{0, 2, 1}));  // player 3 joined first: still on the right
     EXPECT((Slots(swap, {0, 1, 2}) == Slots3{0, 2, 1}));   // player 2 joined first: right; player 3 middle
     EXPECT((Slots(swap, {0, 2, 1}) == Slots3{0, 1, 2}));   // player 3 joined first: already in the middle
     EXPECT((Slots(swap, {0, 1, -1}) == Slots3{0, 2, 1}));  // player 2 and the mirror: the mirror in the middle
-    EXPECT((Slots(kJoinOrder, {0, 2, -1}) == Slots3{0, 2, 1}));  // Slots alone (EntryWanted does not arrange under the join order)
-    EXPECT((Slots(kJoinOrder, {0, -1, -1}) == Slots3{0, 1, 2}));  // two mirrors in list order
+    EXPECT((Slots(kDefaultOrder, {0, 2, -1}) == Slots3{0, 2, 1}));  // player 3 and the mirror: the mirror in the middle
+    EXPECT((Slots(kDefaultOrder, {0, -1, -1}) == Slots3{0, 1, 2}));  // two mirrors in list order
     EXPECT((Slots(swap, {0, -1, -1}) == Slots3{0, 1, 2}));
-    // Three views on a span: the columns arranged; the join order and the stock entry: nothing to write in one window.
+    // Three views on a span: the columns arranged; players listed in their order: the stock entry, nothing to write in
+    // one window.
     const Records span = EntryWanted(true, kThreeColumns, true, swap, {0, 1, 2});
     EXPECT(span.record[0] == kThreeColumns[0] && span.record[1] == kThreeColumns[2] && span.record[2] == kThreeColumns[1]);
-    EXPECT(Same(EntryWanted(false, kThreeColumns, true, kJoinOrder, {0, 1, 2}).record, kStockFavorTop));
+    EXPECT(Same(EntryWanted(false, kThreeColumns, true, kDefaultOrder, {0, 1, 2}).record, kStockFavorTop));
     const Records window = EntryWanted(false, kThreeColumns, true, swap, {0, 1, 2});
     EXPECT(window.record[1] == kStockFavorTop[2] && window.record[2] == kStockFavorTop[1]);
     EXPECT(Same(EntryWanted(false, kThreeColumns, false, swap, {0, 1, -1}).record, kStockFavorTop));  // two views: the entry is unused
-    EXPECT(Same(EntryWanted(true, kThreeColumns, true, kJoinOrder, {0, 1, 2}).record, kThreeColumns));
-    // The join order arranges nothing: whoever joined first keeps the middle (bottom left), as before the setting.
-    EXPECT(Same(EntryWanted(true, kThreeColumns, true, kJoinOrder, {0, 2, -1}).record, kThreeColumns));
-    EXPECT(Same(EntryWanted(true, kThreeColumns, true, kJoinOrder, {0, 2, 1}).record, kThreeColumns));
-    EXPECT(Same(EntryWanted(false, kThreeColumns, true, kJoinOrder, {0, 2, 1}).record, kStockFavorTop));
+    EXPECT(Same(EntryWanted(true, kThreeColumns, true, kDefaultOrder, {0, 1, 2}).record, kThreeColumns));
+    // 1 2 3 is by player number whatever the order they joined in: player 3 joined first still takes the right
+    // (bottom right in one window), player 2 the middle (bottom left).
+    const Records late = EntryWanted(true, kThreeColumns, true, kDefaultOrder, {0, 2, 1});
+    EXPECT(late.record[0] == kThreeColumns[0] && late.record[1] == kThreeColumns[2] && late.record[2] == kThreeColumns[1]);
+    const Records lateWindow = EntryWanted(false, kThreeColumns, true, kDefaultOrder, {0, 2, 1});
+    EXPECT(lateWindow.record[1] == kStockFavorTop[2] && lateWindow.record[2] == kStockFavorTop[1]);
+    // Player 3 alone beside a mirror: player 3 on the right, the mirror in the middle.
+    const Records alone = EntryWanted(true, kThreeColumns, true, kDefaultOrder, {0, 2, -1});
+    EXPECT(alone.record[1] == kThreeColumns[2] && alone.record[2] == kThreeColumns[1]);
     // 1 3 2 with player 3 alone beside a mirror: player 3 keeps the middle, the mirror the right.
     EXPECT(Same(EntryWanted(true, kThreeColumns, true, swap, {0, 2, -1}).record, kThreeColumns));
 }
@@ -206,7 +213,7 @@ void ColumnsOfTheirWidths()
     EXPECT(EdgeFraction(0, 100) == 0.0f && EdgeFraction(5, 0) == 0.0f && EdgeFraction(200, 100) == 0.0f);
 
     // The entry: written over the stock one, then known; the earlier row's records known while the entry still holds them.
-    const Records wanted = EntryWanted(true, columns.record, true, kJoinOrder, {0, 1, 2});
+    const Records wanted = EntryWanted(true, columns.record, true, kDefaultOrder, {0, 1, 2});
     EXPECT(Same(wanted.record, columns.record));
     EXPECT(Decide(kStockFavorTop, wanted.record, columns.record, kStockFavorTop) == Action::Write);
     EXPECT(Decide(columns.record, wanted.record, columns.record, columns.record) == Action::Nothing);
@@ -225,7 +232,7 @@ void ColumnsOfTheirWidths()
 
     // Two players on a two-monitor span: the side-by-side entry from the two widths.
     const TwoRecords side = ColumnRecords(std::array<std::int32_t, 2>{3440, 2560});
-    const TwoRecords twoWanted = TwoEntryWanted(side.record, true, kJoinOrder, {0, 1, -1});
+    const TwoRecords twoWanted = TwoEntryWanted(side.record, true, kDefaultOrder, {0, 1, -1});
     EXPECT(Same(twoWanted.record, side.record));
     EXPECT(DecideTwo(kStockSideBySide, twoWanted.record, kStockSideBySide, side.record, kStockSideBySide) == Action::Write);
     EXPECT(DecideTwo(side.record, kStockSideBySide, kStockSideBySide, side.record, side.record) == Action::Restore);
@@ -233,16 +240,14 @@ void ColumnsOfTheirWidths()
     EXPECT(DecideTwo(side.record, kStockSideBySide, kStockSideBySide, kStockSideBySide, kStockSideBySide) == Action::Foreign);
 }
 
-}  // namespace
-
-/// The player windows' orders (players/player_window): by player number whatever the join order, a slot no player has taking the
-/// player left over; player 1 on any slot.
-void ClaimOrders()
+/// A player window's move (players/player_window): the order showing the screens, by player number, a slot no player
+/// has taking the player left over; player 1 on any slot. Saved as its digits, it reads back as the same order.
+void MovedOrders()
 {
     using Seats3 = std::array<int, kThreePlayerRecords>;
     const auto both = OrderShowing(Seats3{0, 1, 2});
-    EXPECT(both && both->byNumber && (both->player == Seats3{1, 2, 3}));
-    EXPECT(!(*both == kJoinOrder));  // arranged, unlike the join order's 1 2 3
+    EXPECT(both && *both == kDefaultOrder);
+    EXPECT(ParseOrder(L"123") == both);  // the settings file's word for it, read back after a restart
     const auto swapped = OrderShowing(Seats3{0, 2, 1});
     EXPECT(swapped && (swapped->player == Seats3{1, 3, 2}));
     const auto mirror = OrderShowing(Seats3{0, 1, -1});  // player 2 and a mirror
@@ -257,7 +262,7 @@ void ClaimOrders()
     // Player 3 joined first (the list: player 1, player 3, player 2): by number 1 2 3 puts player 2 in the middle.
     using Slots3 = std::array<int, kThreePlayerRecords>;
     EXPECT((ScreenSlots(3, *both, {0, 2, 1}) == Slots3{0, 2, 1}));
-    EXPECT((ScreenSlots(3, kJoinOrder, {0, 2, 1}) == Slots3{0, 1, 2}));  // the join order arranges nothing
+    EXPECT((ScreenSlots(3, kDefaultOrder, {0, 2, 1}) == Slots3{0, 2, 1}));  // the default is the same order
     EXPECT((ScreenSlots(2, *both, {0, 2, 1}) == Slots3{0, 1, 2}));      // two views, player 1 before player 3: in place
     EXPECT((ScreenSlots(2, *twoMoved, {0, 1, -1}) == Slots3{1, 0, 2}));  // two views, player 2 first: swapped
     EXPECT((ScreenSlots(1, *twoMoved, {0, 1, -1}) == Slots3{0, 1, 2}));  // one view: nothing to arrange
@@ -269,14 +274,14 @@ void TwoViews()
     using Slots2 = std::array<int, kTwoPlayerRecords>;
     const Order p2First{{2, 1, 3}};
     const Order p3First{{3, 2, 1}};
-    EXPECT((TwoSlots(kJoinOrder, {0, 1, -1}) == Slots2{0, 1}));
+    EXPECT((TwoSlots(kDefaultOrder, {0, 1, -1}) == Slots2{0, 1}));
     EXPECT((TwoSlots(p2First, {0, 1, -1}) == Slots2{1, 0}));   // player 1 on the second screen
     EXPECT((TwoSlots(p2First, {0, 2, -1}) == Slots2{0, 1}));   // player 3 in: 2 1 3 puts player 1 first of the two
     EXPECT((TwoSlots(p3First, {0, 2, -1}) == Slots2{1, 0}));
     EXPECT((TwoSlots(p2First, {0, -1, -1}) == Slots2{0, 1}));  // a mirror: the list's order
     EXPECT((TwoSlots(Order{{1, 3, 2}}, {0, 1, -1}) == Slots2{0, 1}));
-    // The entries: stock under the join order or with three views, the records swapped for player 1 second.
-    EXPECT(Same(TwoEntryWanted(kStockTopBottom, true, kJoinOrder, {0, 1, -1}).record, kStockTopBottom));
+    // The entries: stock under the default order or with three views, the records swapped for player 1 second.
+    EXPECT(Same(TwoEntryWanted(kStockTopBottom, true, kDefaultOrder, {0, 1, -1}).record, kStockTopBottom));
     EXPECT(Same(TwoEntryWanted(kStockSideBySide, false, p2First, {0, 1, 2}).record, kStockSideBySide));
     const TwoRecords swapped = TwoEntryWanted(kStockSideBySide, true, p2First, {0, 1, -1});
     // RE-layout-fov.md §9.3's swapped values: player 1 on the right half, player 2 on the left.
@@ -291,6 +296,8 @@ void TwoViews()
     EXPECT(DecideTwo(kStockTopBottom, swapped.record, kStockSideBySide, kStockSideBySide, kStockSideBySide) == Action::Foreign);
 }
 
+}  // namespace
+
 int main()
 {
     ColumnsOfTheirWidths();
@@ -300,7 +307,7 @@ int main()
     Decisions();
     Orders();
     SlotsAndEntries();
-    ClaimOrders();
+    MovedOrders();
     TwoViews();
     std::printf(g_failures == 0 ? "column_rules: all passed\n" : "column_rules: %d failure(s)\n", g_failures);
     return g_failures == 0 ? 0 : 1;

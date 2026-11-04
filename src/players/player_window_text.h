@@ -12,7 +12,6 @@
 // player's number and character; then a line for each key the player can press, or a note for a while (a join that
 // waits, a refusal).
 
-#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -21,7 +20,7 @@
 
 namespace lss::players::player_window_text {
 
-inline constexpr int kLines = 6;  // the most a window says (the fallback's; the game window's is five)
+inline constexpr int kLines = 5;  // the most a window says: player 2's or 3's open window in the fallback's words
 
 struct ScreenText
 {

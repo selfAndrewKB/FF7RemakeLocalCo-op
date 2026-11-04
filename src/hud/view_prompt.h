@@ -8,9 +8,10 @@
 // HUD here is the plain engine class, one table). The mod's PostRender calls the game's, then, while a prompt is set
 // for the HUD's player, draws a translucent box (the HUD's own reflected DrawRect) and the lines (the engine's
 // FCanvas::DrawShadowedString, in the engine's medium font, Roboto: the game's own fonts are not UFonts and cannot be
-// drawn there). The HUD's player is its controller's seat (players/seat_objects), else player 1 (a mirror's HUD shows
-// player 1's picture). Nothing is drawn while no prompt is set. A view the engine does not draw (the single view of a scene
-// or a menu: only player 1's) shows no prompt. Reading `views.prompt`. Game thread.
+// drawn there). The HUD's player is its controller's seat (players/seat_objects), else player 1, so a mirror's HUD
+// (no seat's) draws player 1's prompt too, where the game's window never shows: a gap of this fallback only. Nothing is
+// drawn while no prompt is set. A view the engine does not draw (the single view of a scene or a menu: only player
+// 1's) shows no prompt. Reading `views.prompt`. Game thread.
 
 #include <array>
 #include <string>
@@ -21,7 +22,7 @@ class GameImage;
 
 namespace lss::hud::view_prompt {
 
-inline constexpr int kLines = 6;
+inline constexpr int kLines = 5;  // players/player_window_text's
 
 struct Prompt
 {

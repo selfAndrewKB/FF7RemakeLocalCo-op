@@ -62,11 +62,12 @@ inline constexpr Option kMultiMonitor{  // views/window_span
 inline constexpr Option kColumnOrder{  // views/column_layout
     L"Views", L"column-order", kColumnOrderWords, L"123",
     L"which screen each player takes: the players left to right (in one window, three players: the top, then the bottom "
-    L"left and right; two players: top then bottom, or left then right), the player not in skipped; 123 the join order "
-    L"(nothing arranged), 132 player 2 on the right and player 3 in the middle, 213 player 2 first and player 1 second",
+    L"left and right; two players: top then bottom, or left then right), by player number whatever the order they "
+    L"joined in, the player not in skipped: 123 players 1, 2, 3, 132 player 2 on the right and player 3 in the middle, "
+    L"213 player 2 first and player 1 second",
     false, L"Screen order", kColumnOrderLabels,
-    L"Which screen each player takes, left to right (in one window: the top first). 1 2 3: the order they joined. With "
-    L"two players the one not playing is skipped."};
+    L"Which screen each player takes, left to right (in one window: the top first). With two players the one not "
+    L"playing is skipped."};
 inline constexpr Option kMenuSlow{  // battle/command_menu_tick
     L"Battle", L"menu-slow", kMenuSlowWords, L"off",
     L"off (the default): no grey, and the world and the ATB gauges run on at full speed while a battle command menu is "

@@ -112,8 +112,8 @@ void DrawRect(void* hud, float x, float y, float w, float h) noexcept
     players::GuardedProcessEvent(static_cast<UObject*>(hud), g_drawRect, frame);
 }
 
-/// The HUD's player: a seat's by its controller (players/seat_objects), else player 1's. A mirror's HUD shows player 1's
-/// picture, so player 1's prompt there is right.
+/// The HUD's player: a seat's by its controller (players/seat_objects), else player 1's (a mirror's HUD too: see the
+/// header).
 int SeatOf(const void* controller) noexcept
 {
     return controller != nullptr ? players::seat_objects::SeatOf(controller) : -1;
