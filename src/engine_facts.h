@@ -154,6 +154,9 @@ inline constexpr std::uintptr_t kWindowsApplicationGlobal = 0x145827708;  // FWi
 inline constexpr std::uint32_t  kAppXInputInterface     = 0x1D8;          // XInputInterface*
 inline constexpr std::uint32_t  kAppInputDevices        = 0x1E8;          // TArray<IInputDevice*> (data, num at +8)
 inline constexpr std::uint32_t  kXInputNeedsStateUpdate = 0x08;           // bNeedsControllerStateUpdate (bool)
+inline constexpr std::uint32_t  kXInputControllerStates = 0x28;           // FControllerState[4], one per slot
+inline constexpr std::uint32_t  kXInputControllerStateBytes = 0x100;      // the records' stride
+inline constexpr std::uint32_t  kXInputStateConnected   = 0xE8;           // a record's bIsConnected (bool)
 inline constexpr std::uintptr_t kSonyControllerDeviceVTable = 0x144F47608;  // the PlayStation pad device (scePad): not XInput
 
 // --- Text in a player's own view (RE-view-text.md) --------------------------------------------------------------

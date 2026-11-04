@@ -55,6 +55,9 @@ std::atomic<std::uint32_t>           g_playing{1};  // the slots a player holds 
 // Game thread.
 std::array<Pad, kSlots> g_pads{};
 std::uint32_t           g_opens = 0, g_waited = 0, g_rechecks = 0, g_changes = 0, g_startsHeld = 0;
+std::uint32_t           g_unseenSlots = 0;  // the slots whose pad answered while the engine counted them empty (bit N: slot N)
+std::uint32_t           g_unseenRechecks = 0;  // the re-checks set for them
+bool                    g_recheckFailing = false;  // the last re-check write failed (its warning said)
 std::wstring            g_last   = L"none yet";
 
 std::int64_t NowMs() noexcept
@@ -82,10 +85,15 @@ bool FlagRecheck() noexcept
     const std::uint8_t on = 1;
     if (xi == nullptr || !platform::WriteGuarded(static_cast<std::uint8_t*>(xi) + facts::kXInputNeedsStateUpdate, &on, 1))
     {
-        platform::LogWarning(L"pads: the engine's pad re-check could not be set; a pad moved onto a slot it counted empty "
-                             L"is read after the next device change");
+        if (!g_recheckFailing)  // said once per run of failures (RecheckAnswering asks every second)
+        {
+            platform::LogWarning(L"pads: the engine's pad re-check could not be set; a pad moved onto a slot it counted "
+                                 L"empty is read after the next device change");
+        }
+        g_recheckFailing = true;
         return false;
     }
+    g_recheckFailing = false;
     ++g_rechecks;
     return true;
 }
@@ -269,10 +277,11 @@ std::wstring IdleText(std::uint32_t users)
 std::wstring Reading()
 {
     return std::format(L"{}{}; {}; slots with a player {:#x}; View held {}, Starts held back {}, waits for a let-go {}, "
-                       L"re-checks {}, changes {}; last: {}",
+                       L"re-checks {} ({} for a pad the engine had not seen; such slots now {:#x}), changes {}; last: {}",
                        g_installed ? L"on" : L"not installed",
                        g_idleUsers.load() != 0 ? std::format(L" (idle to the game: {})", IdleText(g_idleUsers.load())) : std::wstring(),
-                       TableText(Table()), g_playing.load(), g_opens, g_startsHeld, g_waited, g_rechecks, g_changes, g_last);
+                       TableText(Table()), g_playing.load(), g_opens, g_startsHeld, g_waited, g_rechecks, g_unseenRechecks,
+                       g_unseenSlots, g_changes, g_last);
 }
 
 }  // namespace
@@ -351,6 +360,66 @@ catch (...)
 void SetPlaying(std::uint32_t slots) noexcept
 {
     g_playing.store(slots | 1u, std::memory_order_relaxed);
+}
+
+void RecheckAnswering(std::uint32_t answeringUsers) noexcept
+try
+{
+    void* const app = g_appGlobal != 0 ? platform::ReadPointer(reinterpret_cast<const void*>(g_appGlobal), 0) : nullptr;
+    const auto* xi  = static_cast<const std::uint8_t*>(app != nullptr ? platform::ReadPointer(app, facts::kAppXInputInterface) : nullptr);
+    if (xi == nullptr)
+    {
+        return;
+    }
+    std::uint32_t unseen = 0;
+    for (int slot = 0; slot < kSlots; ++slot)
+    {
+        const int     user      = g_table[static_cast<std::size_t>(slot)].load(std::memory_order_relaxed);
+        std::uint8_t  connected = 0;
+        if ((answeringUsers >> user & 1u) == 0)
+        {
+            continue;
+        }
+        if (!platform::Read(xi + facts::kXInputControllerStates + static_cast<std::uint32_t>(slot) * facts::kXInputControllerStateBytes +
+                                facts::kXInputStateConnected,
+                            connected))
+        {
+            return;  // unreadable: nothing decided on it
+        }
+        unseen |= connected == 0 ? 1u << slot : 0u;
+    }
+    if (unseen != 0 && FlagRecheck())
+    {
+        ++g_unseenRechecks;
+    }
+    if (unseen == g_unseenSlots)
+    {
+        return;
+    }
+    const std::uint32_t before = g_unseenSlots;
+    g_unseenSlots              = unseen;
+    for (int slot = 0; slot < kSlots; ++slot)
+    {
+        const bool now = (unseen >> slot & 1u) != 0;
+        if (now == ((before >> slot & 1u) != 0))
+        {
+            continue;
+        }
+        const int user = g_table[static_cast<std::size_t>(slot)].load(std::memory_order_relaxed);
+        if (now)
+        {
+            platform::Log(L"pads: {} answers on player {}'s slot but the engine counts that slot empty (no device change it "
+                          L"heard since the pad came or moved): the engine's re-check set, so its next poll reads it",
+                          PadName(user), slot + 1);
+        }
+        else
+        {
+            platform::LogDebug(L"pads: the engine reads player {}'s slot again ({})", slot + 1, PadName(user));
+        }
+    }
+}
+catch (...)
+{
 }
 
 void Listen(Listener listener) noexcept

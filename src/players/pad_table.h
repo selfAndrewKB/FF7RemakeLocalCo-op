@@ -62,4 +62,12 @@ void Listen(Listener listener) noexcept;
 /// Start is held back from the game. Once per engine tick from the session's players. Game thread.
 void SetPlaying(std::uint32_t slots) noexcept;
 
+/// The engine polls a slot it counts empty only after a device change it heard (RE-pad-slots.md §2.1). A pad that
+/// comes back, or moves to another XInput number (Steam Input renumbers its pads when one turns off or on), can land
+/// on such a slot between those messages and stay dead to the game until the next device change. Given the XInput
+/// users that answer (bit N: user N, players/pad_presence's poll, once a second), every slot whose pad answers while
+/// the engine counts the slot empty gets the engine's own re-check, the flag its WM_DEVICECHANGE handling sets. Logged
+/// when the set of such slots changes. Game thread.
+void RecheckAnswering(std::uint32_t answeringUsers) noexcept;
+
 }  // namespace lss::players::pad_table

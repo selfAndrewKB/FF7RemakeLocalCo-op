@@ -251,9 +251,9 @@ src/
                             joining player
     pad_buttons             Each pad's buttons for its own player (RE-input.md §1, §8; RE-input-p2.md §2: the design, a
                             written exception)
-    pad_presence            Which XInput users have a pad, asked of XInput itself once a second on the game thread (the
-                            game's own input system polls the same API every frame; a disconnected slot's query is the
-                            slow one, so never per frame)
+    pad_presence            Which XInput users have a pad, asked of the game's own xinput1_3 once a second on the game
+                            thread (the game's input system polls the same API every frame; a disconnected slot's query
+                            is the slow one, so never per frame)
     pad_rules.h             The pure rules of each physical pad's input, as the pad table reads it (players/pad_table)
                             and the player windows hear it (players/player_window)
     pad_table               Which physical pad answers each of the game's pad slots (plan/topics/input.md State

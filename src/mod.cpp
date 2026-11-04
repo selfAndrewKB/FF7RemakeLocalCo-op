@@ -66,7 +66,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.153.0-join-through-lead";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.154.0-pad-recheck";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;

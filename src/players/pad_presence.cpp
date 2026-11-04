@@ -2,6 +2,7 @@
 
 #include "control/registry.h"
 #include "platform/log.h"
+#include "players/pad_table.h"
 
 #include <array>
 #include <cstdint>
@@ -42,7 +43,8 @@ GetStateFn Load() noexcept
     if (!g_loadTried)
     {
         g_loadTried = true;
-        for (const wchar_t* name : {L"xinput1_4.dll", L"xinput1_3.dll", L"xinput9_1_0.dll"})
+        // The game's own XInput first (its only import, RE-pad-slots.md §2.5): the poll sees what the game's reader sees.
+        for (const wchar_t* name : {L"xinput1_3.dll", L"xinput1_4.dll", L"xinput9_1_0.dll"})
         {
             if (HMODULE module = LoadLibraryW(name); module != nullptr)
             {
@@ -93,11 +95,14 @@ void Poll(ULONGLONG now) noexcept
             pad.changedAt = now;
         }
     }
-    bool changed = !g_polled;
-    for (unsigned user = 0; user < kUsers && !changed; ++user)
+    bool          changed   = !g_polled;
+    std::uint32_t answering = 0;
+    for (unsigned user = 0; user < kUsers; ++user)
     {
-        changed = before[user].connected != g_pads[user].connected;
+        changed = changed || before[user].connected != g_pads[user].connected;
+        answering |= g_pads[user].connected ? 1u << user : 0u;
     }
+    pad_table::RecheckAnswering(answering);  // a pad the engine counts absent is read again (pad_table.h)
     if (changed)
     {
         if (g_polled)
