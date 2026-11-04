@@ -9,10 +9,12 @@
 // and the keys call too, and control::RegisterOption builds the console command from the table, so an option is
 // described once. A word is read trimmed, lower-cased and with its spaces and commas removed (`1 3 2`, `1, 3, 2`
 // and `132` are one word).
-// A missing file or key is the default. The Co-op page saves each choice it applies (Save, platform/settings_write.h:
-// only that key's line changes, comments stay); the console and the keys change an option for the session only.
-// Judge, WordList, WhyText, InvalidText and the file write need no game and are tested on the host
-// (tests/settings_test.cpp). Game thread.
+// A missing file or key is the default. The file is the table's own: Load writes it from the table after reading it
+// (platform/settings_write.h: every option with its Co-op page name, help, words and default, the values kept, a key
+// the table no longer has dropped), so nothing in it is a hand-kept copy that can go stale; the repository ships no
+// copy. The Co-op page saves each choice it applies the same way (Save); the console and the keys change an option for
+// the session only. Judge, WordList, WhyText, InvalidText and the file text and write need no game and are tested on
+// the host (tests/settings_test.cpp). Game thread.
 
 #include <array>
 #include <cstddef>
@@ -264,7 +266,9 @@ inline std::wstring WhyText(const Option& option, const Reading& reading)
 std::wstring Path();
 
 /// Reads every option of the table from the file, once, before any module installs (game thread). A missing file
-/// leaves every option at its default. Logs one warning per invalid word and one Info line with every reading.
+/// leaves every option at its default. Logs one warning per invalid word and one Info line with every reading. Then
+/// writes the file from the table with those readings, unless it already reads exactly so (logged at Info, with any key
+/// dropped).
 void Load();
 
 /// An option's reading (its default before Load). An option that is not a row of the table (a programming error,
@@ -274,8 +278,8 @@ const Reading& Of(const Option& option) noexcept;
 /// WhyText(option, Of(option)).
 std::wstring Why(const Option& option);
 
-/// Writes `word` (one of the option's words) for `option` into the file, so the next start reads it, and makes it the
-/// option's reading (from the file). Logs the save (Info) or why it failed (Warning). False if the word is none of the
+/// Writes the file from the table with `word` (one of the option's words) for `option`, so the next start reads it,
+/// and makes it the option's reading (from the file). Logs the save (Info) or why it failed (Warning). False if the word is none of the
 /// option's, the option is not a row of the table, the file's path is unknown or the write failed.
 bool Save(const Option& option, const std::wstring& word);
 

@@ -1,11 +1,18 @@
 #pragma once
 
-// One option's word written into the settings file (platform/settings.h) with the Windows profile API, the API the
-// file is read with: the key's line is replaced as `key=word`, a key or section the file lacks is added (the section at
-// the end of the file, the key at the end of its section), and every other line, comments included, stays as written.
-// The file is created when there is none. Inline so the host test writes a real file (tests/settings_test.cpp).
+// The settings file (platform/settings.h) as the mod writes it: the whole text from the options table (FileText), so
+// every option, its words, its default and its help in the file are the code's own and never a stale copy. The values
+// are the readings (the user's words, kept; a word the mod cannot read kept as written, with a note). Every byte is
+// plain ASCII (a kept word's other characters written `?`), so the profile API, which reads the file in the system's
+// code page, reads back exactly what was written; written through a temporary file moved over the old one.
+// Inline so the host test builds and writes a real file (tests/settings_test.cpp).
 
 #include "platform/settings.h"
+
+#include <cstddef>
+#include <span>
+#include <string>
+#include <string_view>
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -14,12 +21,156 @@
 
 namespace lss::platform::settings {
 
-/// Writes `word` for `option` into the file at `path`. 0 when written, else the Windows error.
-inline unsigned long WriteWord(const wchar_t* path, const Option& option, const wchar_t* word) noexcept
+/// The longest line the file's comments are wrapped to.
+inline constexpr std::size_t kFileWidth = 118;
+
+/// `text` as comment lines ("; " and the words), wrapped at kFileWidth, each line ended by CR LF.
+inline std::wstring CommentLines(std::wstring_view text)
 {
-    if (WritePrivateProfileStringW(option.section, option.key, word, path) == 0)
+    std::wstring out, line = L";";
+    std::size_t  at = 0;
+    while (at < text.size())
+    {
+        const std::size_t end  = text.find(L' ', at);
+        const auto        word = text.substr(at, end == std::wstring_view::npos ? std::wstring_view::npos : end - at);
+        at = end == std::wstring_view::npos ? text.size() : end + 1;
+        if (word.empty())
+        {
+            continue;
+        }
+        if (line.size() > 1 && line.size() + 1 + word.size() > kFileWidth)
+        {
+            out += line + L"\r\n";
+            line = L";";
+        }
+        line += L" ";
+        line += word;
+    }
+    return line.size() > 1 ? out + line + L"\r\n" : out;
+}
+
+/// The words an option takes, as the file lists them: "auto | on | off", or "0.1 to 10.0" for a long run of values.
+inline std::wstring FileWords(const Option& option)
+{
+    constexpr std::size_t kListed = 8;  // more words than this are a range
+    const std::size_t     count   = option.words.size();
+    if (count > kListed)
+    {
+        return std::wstring(option.words[0]) + L" to " + option.words[count - 1];
+    }
+    std::wstring list;
+    for (std::size_t i = 0; i < count; ++i)
+    {
+        list += (i == 0 ? L"" : L" | ") + std::wstring(option.words[i]);
+    }
+    return list;
+}
+
+/// A value the mod cannot read, as the file keeps it: each character outside plain ASCII written `?`. The profile API
+/// reads the file in the system's code page, not UTF-8, so such a character would come back as other characters and the
+/// value would change at every start; with `?` it reads back as written (and stays a value the mod cannot read).
+inline std::wstring KeptRaw(std::wstring_view raw)
+{
+    std::wstring kept(raw);
+    for (wchar_t& c : kept)
+    {
+        c = c >= 0x20 && c < 0x7F ? c : L'?';
+    }
+    return kept;
+}
+
+/// The whole file for these readings (one per row of kOptions, in its order): a header, then each section once, each
+/// option with its Co-op page name and help, its words and default, and its value line.
+inline std::wstring FileText(std::span<const Reading, kOptions.size()> readings)
+{
+    std::wstring text = CommentLines(
+        L"LocalSplitScreen (FF7 Remake): the mod's settings, read once when the game starts. The mod writes this file "
+        L"itself at every start, from its own list of options, so every option here is current: change a value after an "
+        L"\"=\" and the next start reads it. Comments added here are not kept, and an option the mod no longer has is "
+        L"dropped. A choice made on the Co-op page is saved here at once. Every option is also a console command of the "
+        L"same name, for the session only. A value's case, spaces and commas do not matter; a value that is none of the "
+        L"option's words is kept as written, with a note, and the option takes its default.");
+    const wchar_t* section = nullptr;
+    for (std::size_t i = 0; i < kOptions.size(); ++i)
+    {
+        const Option&  option  = *kOptions[i];
+        const Reading& reading = readings[i];
+        if (section == nullptr || std::wstring_view(section) != option.section)
+        {
+            section = option.section;
+            text += std::wstring(L"\r\n[") + section + L"]\r\n";
+        }
+        text += L"\r\n";
+        text += CommentLines(std::wstring(option.label) + L": " + option.menuHelp);
+        text += CommentLines(FileWords(option) + L" (the default: " + option.fallback + L")");
+        if (reading.source == Source::Invalid)
+        {
+            text += CommentLines(L"The value below is none of these words: read as " + std::wstring(option.fallback) + L".");
+        }
+        text += std::wstring(option.key) + L" = " + (reading.source == Source::Invalid ? KeptRaw(reading.raw) : reading.word) + L"\r\n";
+    }
+    return text;
+}
+
+/// `text` as UTF-8.
+inline std::string Utf8(std::wstring_view text)
+{
+    if (text.empty())
+    {
+        return {};
+    }
+    const int   size = WideCharToMultiByte(CP_UTF8, 0, text.data(), static_cast<int>(text.size()), nullptr, 0, nullptr, nullptr);
+    std::string out(static_cast<std::size_t>(size > 0 ? size : 0), '\0');
+    if (size > 0)
+    {
+        WideCharToMultiByte(CP_UTF8, 0, text.data(), static_cast<int>(text.size()), out.data(), size, nullptr, nullptr);
+    }
+    return out;
+}
+
+/// The file's bytes now, or empty (no file, or unreadable).
+inline std::string FileBytes(const wchar_t* path)
+{
+    const HANDLE file = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING,
+                                    FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (file == INVALID_HANDLE_VALUE)
+    {
+        return {};
+    }
+    std::string   bytes;
+    char          buffer[4096];
+    DWORD         read = 0;
+    while (ReadFile(file, buffer, sizeof(buffer), &read, nullptr) && read > 0)
+    {
+        bytes.append(buffer, read);
+    }
+    CloseHandle(file);
+    return bytes;
+}
+
+/// Writes `bytes` as the file at `path` (a temporary file beside it, moved over the old one). 0 when written, else the
+/// Windows error.
+inline unsigned long WriteFileBytes(const wchar_t* path, const std::string& bytes) noexcept
+{
+    const std::wstring temp = std::wstring(path) + L".tmp";
+    const HANDLE file = CreateFileW(temp.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (file == INVALID_HANDLE_VALUE)
+    {
+        return GetLastError();
+    }
+    DWORD      written = 0;
+    const BOOL ok      = WriteFile(file, bytes.data(), static_cast<DWORD>(bytes.size()), &written, nullptr);
+    const unsigned long writeError = ok && written == bytes.size() ? 0 : (GetLastError() != 0 ? GetLastError() : ERROR_WRITE_FAULT);
+    CloseHandle(file);
+    if (writeError != 0)
+    {
+        DeleteFileW(temp.c_str());
+        return writeError;
+    }
+    if (!MoveFileExW(temp.c_str(), path, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
     {
         const unsigned long error = GetLastError();
+        DeleteFileW(temp.c_str());
         return error != 0 ? error : ERROR_WRITE_FAULT;
     }
     return 0;

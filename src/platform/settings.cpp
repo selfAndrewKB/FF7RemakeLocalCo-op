@@ -3,9 +3,11 @@
 #include "platform/log.h"
 #include "platform/settings_write.h"
 
+#include <algorithm>
 #include <filesystem>
 #include <format>
 #include <optional>
+#include <vector>
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -38,6 +40,53 @@ std::optional<std::size_t> IndexOf(const Option& option) noexcept
         }
     }
     return std::nullopt;
+}
+
+/// The keys the file holds that are no row of the table ("[Views] old-key"), comma-separated; empty for none.
+std::wstring KeysNotInTable(const std::wstring& path)
+{
+    const auto list = [](const wchar_t* section, const std::wstring& file) {
+        std::wstring buffer(16384, L'\0');
+        const DWORD  length = section != nullptr
+                                  ? GetPrivateProfileStringW(section, nullptr, L"", buffer.data(), static_cast<DWORD>(buffer.size()), file.c_str())
+                                  : GetPrivateProfileSectionNamesW(buffer.data(), static_cast<DWORD>(buffer.size()), file.c_str());
+        std::vector<std::wstring> names;
+        for (std::size_t at = 0; at < length && buffer[at] != L'\0'; at += names.back().size() + 1)
+        {
+            names.emplace_back(buffer.c_str() + at);
+        }
+        return names;
+    };
+    std::wstring stale;
+    for (const std::wstring& section : list(nullptr, path))
+    {
+        for (const std::wstring& key : list(section.c_str(), path))
+        {
+            const bool known = std::any_of(kOptions.begin(), kOptions.end(), [&](const Option* o) {
+                return _wcsicmp(o->section, section.c_str()) == 0 && _wcsicmp(o->key, key.c_str()) == 0;
+            });
+            if (!known)
+            {
+                stale += std::format(L"{}[{}] {}", stale.empty() ? L"" : L", ", section, key);
+            }
+        }
+    }
+    return stale;
+}
+
+/// Writes the file from the table with `readings` (platform/settings_write.h), unless it already reads exactly so. 0
+/// when the file is as wanted, else the Windows error.
+unsigned long WriteFromTable(const std::wstring& path, const std::array<Reading, kOptions.size()>& readings, bool* written)
+{
+    const std::string bytes = Utf8(FileText(readings));
+    *written                = false;
+    if (FileBytes(path.c_str()) == bytes)
+    {
+        return 0;
+    }
+    const unsigned long error = WriteFileBytes(path.c_str(), bytes);
+    *written                  = error == 0;
+    return error;
 }
 
 const wchar_t* SourceWord(Source source) noexcept
@@ -112,6 +161,27 @@ void Load()
     {
         Log(L"settings: no {} ({}); every option at its default: {}", kFileName, path.empty() ? L"the module's path could not be read" : path, summary);
     }
+    if (path.empty())
+    {
+        return;
+    }
+    // The file written from the table, the values kept: every option described as the code has it now.
+    const std::wstring stale   = exists ? KeysNotInTable(path) : std::wstring();
+    bool               written = false;
+    if (const unsigned long error = WriteFromTable(path, g_readings, &written); error != 0)
+    {
+        LogWarning(L"settings: {} could not be written from the mod's options (Windows error {}); it is read as it is", path,
+                   error);
+    }
+    else if (written)
+    {
+        Log(L"settings: {} written from the mod's options, the values kept{}", path,
+            stale.empty() ? std::wstring() : std::format(L"; dropped, no longer the mod's: {}", stale));
+    }
+    else
+    {
+        LogDebug(L"settings: {} already reads as the mod's options", path);
+    }
 }
 
 const Reading& Of(const Option& option) noexcept
@@ -153,13 +223,16 @@ bool Save(const Option& option, const std::wstring& word)
                    judged.word);
         return false;
     }
-    if (const unsigned long error = WriteWord(path.c_str(), option, judged.word.c_str()); error != 0)
+    auto readings    = g_readings;
+    readings[*index] = judged;
+    bool written     = false;
+    if (const unsigned long error = WriteFromTable(path, readings, &written); error != 0)
     {
         LogWarning(L"settings: [{}] {} = {} was not saved to {} (Windows error {})", option.section, option.key, judged.word,
                    path, error);
         return false;
     }
-    g_readings[*index] = judged;
+    g_readings = readings;
     Log(L"settings: [{}] {} = {} saved to {}", option.section, option.key, judged.word, path);
     return true;
 }

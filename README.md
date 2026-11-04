@@ -114,22 +114,16 @@ cmake --build build --config Game__Shipping__Win64 --target LocalSplitScreen
 UE4SS v3.0.1 (the build Rebirth uses) with the RE-UE4SS custom config `Final Fantasy 7 Remake`, and
 **`HookLoadMap = 0`** in `UE4SS-settings.ini` (with it on, every exit crashes). Copy
 `build/Game__Shipping__Win64/LocalSplitScreen.dll` to `<game>/End/Binaries/Win64/ue4ss/Mods/LocalSplitScreen/dlls/main.dll`
-and add `LocalSplitScreen : 1` to `Mods/mods.txt`. Close the game first. `LocalSplitScreen.ini` goes next to the
-`dlls` folder (`tools/game.py relaunch --deploy` copies it when none is there): `[Views] multi-monitor = off | on |
-auto`. `on` spans a row of equal monitors from the start and keeps the span whatever the player count (the title,
-loading screens, the field and the menus on every monitor; every column no player fills mirrors player 1's picture
-until a player joins); `auto` (the default) spans while a further player is in; `off` leaves it to the console and Ctrl+F2.
-`[Views] column-order = 1 2 3 | 1 3 2` picks which screen players 2 and 3 take. `[Battle] menu-slow = off | on`: off
-(the default), an open battle command menu no longer slows the world or greys the screen; on, the game's slow-down and
-grey (Ctrl+F9 switches it in play). `[Battle] battle-warps =
-players-stay | off | game`: who the game warps at a battle's start and end (players-stay, the default: every player's
-own character stays where it is). `[Battle] enemy-damage`, `enemy-hp`, `boss-hp`, `enemy-stagger`, `exp-gain`,
-`ap-gain = 0.1 ... 10.0`: the battle's rates, each a multiplier on the game's own value (1.0, the default, the game's).
-The file is read once at the game's start, and a choice made on the main menu's Co-op page is saved into it at once
-(only that key's line changes; comments stay; the console changes an option for the session only; edit it as plain text without a byte-order mark, which Windows' ini functions would read as part of the first line). The log's `settings:` line lists every
-option's word and where it came from; a word the file gets wrong is a warning and the default); a value's case and
-spaces and commas do not matter. The install never replaces an existing `LocalSplitScreen.ini`: add a new section by hand from
-the repository's copy; a key the file lacks takes its default.
+and add `LocalSplitScreen : 1` to `Mods/mods.txt`. Close the game first.
+
+**Settings.** The mod writes `LocalSplitScreen.ini` next to the `dlls` folder itself, at every start, from its own
+options table (`src/platform/settings.h`): each option with its Co-op page name, its help, its values and its default,
+and the value read from the file before (a missing key takes its default). Change a value after its `=` and the next
+start reads it; comments added by hand are not kept, and an option the mod no longer has is dropped (named in the
+log). A choice on the Co-op page is saved into it at once; the console changes an option for the session only. The
+log's `settings:` line lists every option's value and where it came from; a value the mod cannot read is a warning,
+the option takes its default, and the value stays in the file as written, with a note. The repository ships no copy
+of the file, so none can go stale.
 
 ## Layout
 
@@ -165,9 +159,9 @@ src/
     settings                The mod's own settings file: LocalSplitScreen.ini in the mod's folder
                             (Mods/LocalSplitScreen/LocalSplitScreen.ini, one level above the dlls folder this module is
                             loaded from), read with the Windows profile API, so a user sets a …
-    settings_write.h        One option's word written into the settings file (platform/settings.h) with the Windows
-                            profile API, the API the file is read with: the key's line is replaced as `key=word`, a key
-                            or section the file lacks is added (the section …
+    settings_write.h        The settings file (platform/settings.h) as the mod writes it: the whole text from the
+                            options table (FileText), so every option, its words, its default and its help in the file
+                            are the code's own and never a stale copy
     sparse_array.h          Walks the allocated elements of an Unreal TSparseArray (the element array of a TSet or TMap)
                             by reading memory only
     verified_code           Finding engine functions and vtable slots only where the research says they are
