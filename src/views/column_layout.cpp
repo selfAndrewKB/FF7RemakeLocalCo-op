@@ -39,6 +39,7 @@ static_assert(sizeof(Record) == facts::kPerPlayerSplitBytes, "a record is the en
 constexpr std::uint32_t  kCheckTicks           = 30;   // the entry re-read twice a second at 60 while held, foreign, faulted or wanted
 constexpr std::uint32_t  kStatusTicks          = 300;
 constexpr std::uint8_t   kLayoutFavorTop       = 0;    // EThreePlayerSplitScreenType::FavorTop: the entry written
+constexpr std::uint8_t   kLayoutSideBySide     = 1;    // ETwoPlayerSplitScreenType::Vertical
 constexpr const wchar_t* kGameMapsSettingsPath = L"/Script/EngineSettings.Default__GameMapsSettings";
 
 // Set at install, then only read.
@@ -55,6 +56,13 @@ Records        g_wanted{};                  // the entry the last Apply wanted
 Records        g_columnsBase{};             // the columns in screen order: the span's monitors' widths, else equal thirds
 Records        g_lastWrite{};               // the entry the mod wrote last (the stock one before any write, after a restore)
 std::array<std::int32_t, kThreePlayerRecords> g_widths{};  // the span's three monitors' widths, 0 when not three
+column_rules::ThreeSplit g_threeSplit = column_rules::ThreeSplit::Top;  // the one-window layout (the setting, the console)
+Records        g_oneWindow{};               // its records in screen order
+bool           g_twoSideBySide  = false;    // the setting `two-player-split` (the span holds side by side whatever it says)
+bool           g_sideWanted     = false;    // side by side wanted at the last tick
+std::uint8_t*  g_sideByte       = nullptr;  // the engine's two-player layout setting, while held at side by side
+std::uint8_t   g_sideWas        = 0;
+const wchar_t* g_sideFault      = nullptr;  // why it could not be held, logged once until it succeeds
 ListSeats      g_seats{0, -1, -1};          // whose view each place of the engine's list held at the last tick
 bool           g_reached        = false;    // the entry was read once (the first reconcile is done)
 bool           g_foreign        = false;    // the entry holds neither the stock records nor the mod's (logged once)
@@ -163,6 +171,91 @@ void SetOrder(const Order& order, const wchar_t* why)
 std::wstring OrderText(const Order& order)
 {
     return std::format(L"{} {} {}", order.player[0], order.player[1], order.player[2]);
+}
+
+/// The one setter of the one-window layout: the file at install, the console after (`why` names which).
+void SetThreeSplit(column_rules::ThreeSplit split, const wchar_t* why) noexcept
+{
+    g_threeSplit = split;
+    g_oneWindow  = column_rules::ThreeSplitRecords(split);
+    platform::Log(L"column layout: three players in one window: {} ({})", column_rules::ThreeSplitWord(split), why);
+}
+
+/// The layout's name as the log gives it, and its screens in the order's order.
+const wchar_t* ThreeSplitText(column_rules::ThreeSplit split) noexcept
+{
+    using column_rules::ThreeSplit;
+    switch (split)
+    {
+        case ThreeSplit::Bottom:  return L"two above, one across the bottom";
+        case ThreeSplit::Left:    return L"one down the left, two stacked on the right";
+        case ThreeSplit::Right:   return L"two stacked on the left, one down the right";
+        case ThreeSplit::Columns: return L"three equal columns";
+        case ThreeSplit::Top:
+        default:                  return L"one across the top, two below";
+    }
+}
+const wchar_t* ThreeSplitScreens(column_rules::ThreeSplit split) noexcept
+{
+    using column_rules::ThreeSplit;
+    switch (split)
+    {
+        case ThreeSplit::Bottom:  return L"bottom, top left, top right";
+        case ThreeSplit::Left:    return L"left, top right, bottom right";
+        case ThreeSplit::Right:   return L"right, top left, bottom left";
+        case ThreeSplit::Columns: return L"left to right";
+        case ThreeSplit::Top:
+        default:                  return L"top, bottom left, bottom right";
+    }
+}
+
+/// The engine's two-player layout setting held at side by side (it reads the setting every layout pass), or put back to
+/// what it was. Logged on each change; a failure once, and the tick tries again.
+void HoldSideBySide(bool hold) noexcept
+{
+    if (hold == (g_sideByte != nullptr))
+    {
+        g_sideFault = nullptr;  // nothing owed: the wish changed back while a hold or release was failing
+        return;
+    }
+    const auto fail = [](const wchar_t* why) {
+        if (g_sideFault != why)
+        {
+            g_sideFault = why;
+            platform::LogWarning(L"column layout: {}", why);
+        }
+    };
+    if (hold)
+    {
+        auto* settings = RC::Unreal::UObjectGlobals::StaticFindObject<RC::Unreal::UObject*>(nullptr, nullptr, kGameMapsSettingsPath);
+        auto* byte     = settings == nullptr ? nullptr : reinterpret_cast<std::uint8_t*>(settings) + facts::kGameMapsTwoPlayerLayout;
+        std::uint8_t was = 0;
+        if (byte == nullptr || !Read(byte, was))
+        {
+            fail(L"the game's layout settings were not found; two players stay top and bottom; tried again twice a second");
+            return;
+        }
+        if (was != kLayoutSideBySide && !platform::WriteGuarded(byte, &kLayoutSideBySide, 1))
+        {
+            fail(L"the two-player layout setting could not be written; two players stay top and bottom; tried again twice a second");
+            return;
+        }
+        g_sideByte  = byte;
+        g_sideWas   = was;
+        g_sideFault = nullptr;
+        platform::Log(L"column layout: the engine's two-player layout set to side by side (was {})", was);
+    }
+    else
+    {
+        if (!platform::WriteGuarded(g_sideByte, &g_sideWas, 1))
+        {
+            fail(L"the two-player layout setting could not be put back; two players stay side by side; tried again twice a second");
+            return;
+        }
+        g_sideByte  = nullptr;
+        g_sideFault = nullptr;
+        platform::Log(L"column layout: the engine's two-player layout put back ({})", g_sideWas);
+    }
 }
 
 /// The screens left to right as the wanted entry shows them: "player 1, player 3, the mirror".
@@ -312,9 +405,9 @@ void Apply(const Records& wanted) noexcept
                 HoldSetting(true);
                 platform::Log(L"column layout: the engine's three-player layout now shows {}, screens {}: {} (was {}); the engine "
                               L"lays three local players out from it on the next redraw (write {})",
-                              columns ? ColumnsText().c_str() : L"player 1 on top, two below",
-                              columns ? L"left to right" : L"top, bottom left, bottom right",
-                              ScreensText(wanted, columns ? g_columnsBase.record : kStockFavorTop),
+                              columns ? ColumnsText().c_str() : ThreeSplitText(g_threeSplit),
+                              columns ? L"left to right" : ThreeSplitScreens(g_threeSplit),
+                              ScreensText(wanted, columns ? g_columnsBase.record : g_oneWindow.record),
                               column_rules::Same(entry, kStockFavorTop) ? L"the stock one" : L"another of the mod's", g_writes);
             }
             else
@@ -517,6 +610,11 @@ bool Install(const platform::GameImage& image) noexcept
     // The file's word is one of the table's, so it parses.
     SetOrder(column_rules::ParseOrder(platform::settings::Of(platform::settings::kColumnOrder).word).value_or(column_rules::kDefaultOrder),
              platform::settings::Why(platform::settings::kColumnOrder).c_str());
+    SetThreeSplit(column_rules::ParseThreeSplit(platform::settings::Of(platform::settings::kThreePlayerSplit).word).value_or(column_rules::ThreeSplit::Top),
+                  platform::settings::Why(platform::settings::kThreePlayerSplit).c_str());
+    g_twoSideBySide = platform::settings::Of(platform::settings::kTwoPlayerSplit).word == L"side-by-side";
+    platform::Log(L"column layout: two players in one window: {} ({})", g_twoSideBySide ? L"side by side" : L"top and bottom",
+                  platform::settings::Why(platform::settings::kTwoPlayerSplit));
     using control::Register;
     using control::Shape;
     using control::Value;
@@ -546,9 +644,30 @@ bool Install(const platform::GameImage& image) noexcept
         },
         // The option's own words only (a wait or a save and restore compares them); "by player" shows in the state reading.
         [] { return std::format(L"{}{}{}", g_order.player[0], g_order.player[1], g_order.player[2]); });
+    control::RegisterOption(
+        platform::settings::kTwoPlayerSplit,
+        [](const std::wstring& word) {
+            g_twoSideBySide = word == L"side-by-side";
+            platform::Log(L"column layout: two players in one window: {} (the console)", g_twoSideBySide ? L"side by side" : L"top and bottom");
+            return control::Outcome{};
+        },
+        [] { return std::wstring(g_twoSideBySide ? L"side-by-side" : L"top-bottom"); });
+    control::RegisterOption(
+        platform::settings::kThreePlayerSplit,
+        [](const std::wstring& word) {
+            const auto split = column_rules::ParseThreeSplit(word);
+            if (!split)
+            {
+                return control::Outcome{false, L"not a layout"};  // unreachable: the shape checks the words
+            }
+            SetThreeSplit(*split, L"the console");
+            return control::Outcome{};
+        },
+        [] { return std::wstring(column_rules::ThreeSplitWord(g_threeSplit)); });
     Register({.name = L"column-layout.state", .shape = Shape::Text,
-              .help = L"the columns wanted, the column order, the engine's three-player layout entry (stock, the mod's three columns, "
-                      L"or the stock records arranged) and the setting, and its two two-player entries (stock or arranged)",
+              .help = L"the columns wanted, the column order, the one-window layouts, the engine's three-player layout entry (stock, "
+                      L"the mod's columns, or the one-window layout arranged) and the setting, and its two two-player entries (stock or "
+                      L"arranged) and whether its setting is held at side by side",
               .get  = [] { return Value{Reading()}; }});
     platform::Log(L"column layout: ready (three columns through the engine's own layout table while three are wanted; "
                   L"view-columns 0..3; column order {})",
@@ -610,7 +729,7 @@ void Tick(int columns, int localPlayers, int spanColumns, std::span<const std::i
     const bool    threeWanted = column_rules::ThreeColumns(columns, localPlayers, spanColumns, g_override);
     const bool    threeViews  = columns >= kThreePlayerRecords || localPlayers >= kThreePlayerRecords;
     g_views = threeViews ? kThreePlayerRecords : columns == kTwoPlayerRecords || localPlayers == kTwoPlayerRecords ? kTwoPlayerRecords : 1;
-    const Records wanted      = column_rules::EntryWanted(threeWanted, g_columnsBase.record, threeViews, g_order, seats);
+    const Records wanted      = column_rules::EntryWanted(threeWanted, g_columnsBase.record, g_oneWindow.record, threeViews, g_order, seats);
     const bool    ours        = !column_rules::Same(wanted.record, kStockFavorTop);
     const bool    change      = !column_rules::Same(wanted.record, g_wanted.record) && !g_foreign && g_fault == nullptr;
     const bool    cadence     = g_ticks % kCheckTicks == 0 &&
@@ -619,6 +738,13 @@ void Tick(int columns, int localPlayers, int spanColumns, std::span<const std::i
     {
         Apply(wanted);
     }
+    // Which two-player entry the engine reads: on a change, and twice a second while a hold or its release failed.
+    const bool side = column_rules::TwoSideBySide(spanColumns, g_twoSideBySide);
+    if (side != g_sideWanted || (side != (g_sideByte != nullptr) && g_ticks % kCheckTicks == 0))
+    {
+        HoldSideBySide(side);
+    }
+    g_sideWanted = side;
     // The two-player entries: arranged while two views show.
     for (TwoEntry& e : g_two)
     {
@@ -654,6 +780,7 @@ void Remove() noexcept
         }
     }
     HoldSetting(false);
+    HoldSideBySide(false);
 }
 
 std::wstring Reading()
@@ -667,17 +794,20 @@ std::wstring Reading()
         table = column_rules::Same(entry, kStockFavorTop)            ? std::wstring(L"stock (player 1 on top, two quadrants)")
                 : column_rules::ArrangementOf(entry, g_columnsBase.record) ? L"the mod's " + ColumnsText() + L" (screens left to right: " +
                                                                            ScreensText({{entry[0], entry[1], entry[2]}}, g_columnsBase.record) + L")"
-                : column_rules::ArrangementOf(entry, kStockFavorTop) ? L"player 1 on top, two below, arranged (top, bottom left, "
-                                                                       L"bottom right: " +
-                                                                           ScreensText({{entry[0], entry[1], entry[2]}}, kStockFavorTop) + L")"
-                                                                     : std::format(L"other: {}", RecordsText(entry));
+                : column_rules::ArrangementOf(entry, g_oneWindow.record)
+                    ? std::format(L"{}, arranged ({}: {})", ThreeSplitText(g_threeSplit), ThreeSplitScreens(g_threeSplit),
+                                  ScreensText({{entry[0], entry[1], entry[2]}}, g_oneWindow.record))
+                    : std::format(L"other: {}", RecordsText(entry));
     }
-    return std::format(L"{} column(s) wanted{}, {} local player(s), {} view(s) placed; column order {}; the engine's three-player "
-                       L"layout: {}{}; its setting held at player 1 on top: {}; writes {}, restores {}{}; the two-player layouts: {}; {}",
+    return std::format(L"{} column(s) wanted{}, {} local player(s), {} view(s) placed; column order {}; three players in one window: "
+                       L"{}; the engine's three-player layout: {}{}; its setting held at player 1 on top: {}; writes {}, restores {}{}; "
+                       L"two players: {}, the engine's setting held at side by side: {}{}; the two-player layouts: {}; {}",
                        g_columns, g_override != 0 ? std::format(L" (view-columns {})", g_override) : L"", g_localPlayers, g_views,
-                       OrderText(g_order), table,
+                       OrderText(g_order), column_rules::ThreeSplitWord(g_threeSplit), table,
                        records == nullptr && g_installed ? std::format(L" ({})", why) : L"", g_settingByte != nullptr ? L"yes" : L"no",
-                       g_writes, g_restores, g_fault != nullptr ? std::format(L"; fault: {}", g_fault) : L"", TwoReading(g_two[0]),
+                       g_writes, g_restores, g_fault != nullptr ? std::format(L"; fault: {}", g_fault) : L"",
+                       g_twoSideBySide ? L"side-by-side" : L"top-bottom", g_sideByte != nullptr ? L"yes" : L"no",
+                       g_sideFault != nullptr ? std::format(L"; fault: {}", g_sideFault) : L"", TwoReading(g_two[0]),
                        TwoReading(g_two[1]));
 }
 

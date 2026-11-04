@@ -1,10 +1,5 @@
 #include "views/window_span.h"
 
-#define RC_UNREAL_DISABLE_PROPERTY_DEPRECATION_WARNINGS
-#define RC_UNREAL_DISABLE_CLASS_DEPRECATION_WARNINGS
-#include <Unreal/UObject.hpp>
-#include <Unreal/UObjectGlobals.hpp>
-
 #include "control/registry.h"
 #include "engine_facts.h"
 #include "platform/guarded.h"
@@ -56,8 +51,6 @@ constexpr std::uint32_t kReshapeRetryTicks      = 60;
 constexpr std::uint32_t kLineUpTicks            = 120;  // the desktop read as the row after a move: live 2 ms was too soon
 constexpr std::int32_t  kColumnsBuilt           = column_rules::kMaxColumns;  // one per monitor of the row, up to three
 constexpr std::uint8_t  kStatePlay              = 6;    // the game's play state (the title is one): the preset's hold waits for it
-constexpr std::uint8_t  kLayoutSideBySide       = 1;    // ETwoPlayerSplitScreenType::Vertical
-constexpr const wchar_t* kGameMapsSettingsPath  = L"/Script/EngineSettings.Default__GameMapsSettings";
 
 /// The entry's and the leave's steps; each tick moves one on when the engine has done its part.
 enum class Step : std::uint8_t
@@ -109,8 +102,6 @@ std::vector<std::int32_t> g_widths;   // the span's monitors' widths, left to ri
 std::uint32_t g_ticks      = 0;
 std::uint32_t g_reapplies  = 0;
 std::uint32_t g_entries    = 0;
-std::uint8_t* g_layoutByte = nullptr;  // UGameMapsSettings CDO: TwoPlayerSplitscreenLayout, while the mod changed it
-std::uint8_t  g_layoutWas  = 0;
 
 template <class Fn>
 Fn Slot(std::size_t index) noexcept
@@ -332,39 +323,6 @@ bool Request(const Resolution& res) noexcept
                                  res.mode);
 }
 
-/// The engine's two-player layout byte on the settings' default object: side by side while the span is in.
-void SetLayout(bool sideBySide) noexcept
-{
-    if (sideBySide)
-    {
-        auto* settings = RC::Unreal::UObjectGlobals::StaticFindObject<RC::Unreal::UObject*>(nullptr, nullptr, kGameMapsSettingsPath);
-        auto* byte     = settings == nullptr ? nullptr
-                                             : reinterpret_cast<std::uint8_t*>(settings) + facts::kGameMapsTwoPlayerLayout;
-        std::uint8_t was = 0;
-        if (byte == nullptr || !Read(byte, was))
-        {
-            platform::LogWarning(L"window span: the game's layout settings were not found; the halves stay top and bottom");
-            return;
-        }
-        const std::uint8_t want = kLayoutSideBySide;
-        if (was != want && !platform::WriteGuarded(byte, &want, 1))
-        {
-            platform::LogWarning(L"window span: the two-player layout byte could not be written; the halves stay top and bottom");
-            return;
-        }
-        g_layoutByte = byte;
-        g_layoutWas  = was;
-        platform::Log(L"window span: the engine's two-player layout set to side by side (was {})", was);
-    }
-    else if (g_layoutByte != nullptr)
-    {
-        const std::uint8_t now = g_layoutWas;
-        platform::WriteGuarded(g_layoutByte, &now, 1);
-        platform::Log(L"window span: the engine's two-player layout put back ({})", g_layoutWas);
-        g_layoutByte = nullptr;
-    }
-}
-
 void Forget() noexcept
 {
     g_step      = Step::Out;
@@ -399,17 +357,15 @@ void ReshapeAgain(const wchar_t* why) noexcept
     g_stepTicks = 0;
 }
 
-/// The entry proper, with the row's monitors level: the layout byte, the resolution request, the globals, the log.
+/// The entry proper, with the row's monitors level: the resolution request, the globals, the log.
 bool Proceed(const NativeWindow& window, const monitor_row::Choice& choice) noexcept
 {
     const Resolution before = g_savedRes;
     const Rect       client = g_before;
     g_targetRes             = {choice.span.Width(), choice.span.Height(), kModeWindowedFullscreen};
-    SetLayout(true);
     if (!Request(g_targetRes))
     {
         platform::LogWarning(L"window span: the resolution request faulted; nothing changed");
-        SetLayout(false);
         display_align::Restore();
         Forget();
         return false;
@@ -646,7 +602,6 @@ void Leave(const wchar_t* why) noexcept
     const auto     window = FindNativeWindow(&reason);
     const bool     back   = window && Reshape(window->object, g_before);
     const bool     sent   = Request(g_savedRes);
-    SetLayout(false);
     platform::Log(L"window span: {}: the window {} {}{}; the saved resolution {} requested{}; re-applied {} time(s) while in",
                   why, back ? L"put back to" : L"could NOT be put back to", RectText(g_before),
                   window ? L"" : std::format(L" ({})", reason).c_str(), ResolutionText(g_savedRes),

@@ -5,6 +5,7 @@
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
+#include "platform/settings.h"
 #include "platform/verified_code.h"
 #include "platform/vtable_entry.h"
 #include "players/seat_camera.h"
@@ -218,33 +219,31 @@ bool Install(const platform::GameImage& image) noexcept
         platform::Log(L"split FOV: the view point's slot could not be replaced; views keep the engine's FOV");
         return false;
     }
-    control::Register({.name  = L"split-fov",
-                       .shape = control::Shape::OnOff,
-                       .help  = L"a view wider than the game's 16:9 image (two players in one window, the top view of three) shows "
-                                L"more height, and a span's monitor wider than 16:9 more to the sides (views/split_fov.h; on)",
-                       .set   = [](const control::Value& value) {
-                           g_on.store(std::get<bool>(value), std::memory_order_relaxed);
-                           platform::Log(L"split FOV {}", std::get<bool>(value) ? L"on" : L"off");
-                           return control::Outcome{};
-                       },
-                       .get = [] { return control::Value{g_on.load(std::memory_order_relaxed)}; }});
-    control::Register({.name     = L"split-fov.weight",
-                       .shape    = control::Shape::Float,
-                       .minFloat = 0.0,
-                       .maxFloat = 1.0,
-                       .help     = L"0 keeps the single-player height (the whole picture's height shown: everything smaller, more "
-                                   L"to the sides), 1 keeps the single-player size (the engine's: as wide as in single player, cut "
-                                   L"at the knees); 0.5 the middle (Rebirth's, by eye)",
-                       .set      = [](const control::Value& value) {
-                           g_weight.store(static_cast<float>(std::get<double>(value)), std::memory_order_relaxed);
-                           platform::Log(L"split FOV weight {:.2f}", std::get<double>(value));
-                           for (Seen& seen : g_seen)
-                           {
-                               seen.applies = false;  // the next call logs the new FOV
-                           }
-                           return control::Outcome{};
-                       },
-                       .get = [] { return control::Value{static_cast<double>(g_weight.load(std::memory_order_relaxed))}; }});
+    namespace settings = platform::settings;
+    g_on.store(settings::Of(settings::kSplitFov).word == L"on", std::memory_order_relaxed);
+    g_weight.store(rules::WeightOf(settings::Of(settings::kSplitFovWeight).word), std::memory_order_relaxed);
+    platform::Log(L"split FOV {} ({}), weight {:.2f} ({})", g_on.load(std::memory_order_relaxed) ? L"on" : L"off",
+                  settings::Why(settings::kSplitFov), g_weight.load(std::memory_order_relaxed), settings::Why(settings::kSplitFovWeight));
+    control::RegisterOption(
+        settings::kSplitFov,
+        [](const std::wstring& word) {
+            g_on.store(word == L"on", std::memory_order_relaxed);
+            platform::Log(L"split FOV {}", word);
+            return control::Outcome{};
+        },
+        [] { return std::wstring(g_on.load(std::memory_order_relaxed) ? L"on" : L"off"); });
+    control::RegisterOption(
+        settings::kSplitFovWeight,
+        [](const std::wstring& word) {
+            g_weight.store(rules::WeightOf(word), std::memory_order_relaxed);
+            platform::Log(L"split FOV weight {}", word);
+            for (Seen& seen : g_seen)
+            {
+                seen.applies = false;  // the next call logs the new FOV
+            }
+            return control::Outcome{};
+        },
+        [] { return std::format(L"{:.2f}", g_weight.load(std::memory_order_relaxed)); });
     control::Register({.name  = L"split-fov.state",
                        .shape = control::Shape::Text,
                        .help  = L"each view's last shape and whether it takes the split FOV",

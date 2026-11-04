@@ -147,24 +147,24 @@ void SlotsAndEntries()
     EXPECT((Slots(swap, {0, -1, -1}) == Slots3{0, 1, 2}));
     // Three views on a span: the columns arranged; players listed in their order: the stock entry, nothing to write in
     // one window.
-    const Records span = EntryWanted(true, kThreeColumns, true, swap, {0, 1, 2});
+    const Records span = EntryWanted(true, kThreeColumns, kStockFavorTop, true, swap, {0, 1, 2});
     EXPECT(span.record[0] == kThreeColumns[0] && span.record[1] == kThreeColumns[2] && span.record[2] == kThreeColumns[1]);
-    EXPECT(Same(EntryWanted(false, kThreeColumns, true, kDefaultOrder, {0, 1, 2}).record, kStockFavorTop));
-    const Records window = EntryWanted(false, kThreeColumns, true, swap, {0, 1, 2});
+    EXPECT(Same(EntryWanted(false, kThreeColumns, kStockFavorTop, true, kDefaultOrder, {0, 1, 2}).record, kStockFavorTop));
+    const Records window = EntryWanted(false, kThreeColumns, kStockFavorTop, true, swap, {0, 1, 2});
     EXPECT(window.record[1] == kStockFavorTop[2] && window.record[2] == kStockFavorTop[1]);
-    EXPECT(Same(EntryWanted(false, kThreeColumns, false, swap, {0, 1, -1}).record, kStockFavorTop));  // two views: the entry is unused
-    EXPECT(Same(EntryWanted(true, kThreeColumns, true, kDefaultOrder, {0, 1, 2}).record, kThreeColumns));
+    EXPECT(Same(EntryWanted(false, kThreeColumns, kStockFavorTop, false, swap, {0, 1, -1}).record, kStockFavorTop));  // two views: the entry is unused
+    EXPECT(Same(EntryWanted(true, kThreeColumns, kStockFavorTop, true, kDefaultOrder, {0, 1, 2}).record, kThreeColumns));
     // 1 2 3 is by player number whatever the order they joined in: player 3 joined first still takes the right
     // (bottom right in one window), player 2 the middle (bottom left).
-    const Records late = EntryWanted(true, kThreeColumns, true, kDefaultOrder, {0, 2, 1});
+    const Records late = EntryWanted(true, kThreeColumns, kStockFavorTop, true, kDefaultOrder, {0, 2, 1});
     EXPECT(late.record[0] == kThreeColumns[0] && late.record[1] == kThreeColumns[2] && late.record[2] == kThreeColumns[1]);
-    const Records lateWindow = EntryWanted(false, kThreeColumns, true, kDefaultOrder, {0, 2, 1});
+    const Records lateWindow = EntryWanted(false, kThreeColumns, kStockFavorTop, true, kDefaultOrder, {0, 2, 1});
     EXPECT(lateWindow.record[1] == kStockFavorTop[2] && lateWindow.record[2] == kStockFavorTop[1]);
     // Player 3 alone beside a mirror: player 3 on the right, the mirror in the middle.
-    const Records alone = EntryWanted(true, kThreeColumns, true, kDefaultOrder, {0, 2, -1});
+    const Records alone = EntryWanted(true, kThreeColumns, kStockFavorTop, true, kDefaultOrder, {0, 2, -1});
     EXPECT(alone.record[1] == kThreeColumns[2] && alone.record[2] == kThreeColumns[1]);
     // 1 3 2 with player 3 alone beside a mirror: player 3 keeps the middle, the mirror the right.
-    EXPECT(Same(EntryWanted(true, kThreeColumns, true, swap, {0, 2, -1}).record, kThreeColumns));
+    EXPECT(Same(EntryWanted(true, kThreeColumns, kStockFavorTop, true, swap, {0, 2, -1}).record, kThreeColumns));
 }
 
 /// Columns of their own widths (the span's monitors, v0.147.0): each record's fractions give back the monitor's exact
@@ -213,7 +213,7 @@ void ColumnsOfTheirWidths()
     EXPECT(EdgeFraction(0, 100) == 0.0f && EdgeFraction(5, 0) == 0.0f && EdgeFraction(200, 100) == 0.0f);
 
     // The entry: written over the stock one, then known; the earlier row's records known while the entry still holds them.
-    const Records wanted = EntryWanted(true, columns.record, true, kDefaultOrder, {0, 1, 2});
+    const Records wanted = EntryWanted(true, columns.record, kStockFavorTop, true, kDefaultOrder, {0, 1, 2});
     EXPECT(Same(wanted.record, columns.record));
     EXPECT(Decide(kStockFavorTop, wanted.record, columns.record, kStockFavorTop) == Action::Write);
     EXPECT(Decide(columns.record, wanted.record, columns.record, columns.record) == Action::Nothing);
@@ -224,7 +224,7 @@ void ColumnsOfTheirWidths()
     EXPECT(Decide(kThreeColumns, columns.record, columns.record, kStockFavorTop) == Action::Write);  // the console's thirds
     // Arranged by the column order: player 1 on the wide middle monitor with `2 1 3`.
     const Order middle{{2, 1, 3}};
-    const Records arranged = EntryWanted(true, columns.record, true, middle, {0, 1, 2});
+    const Records arranged = EntryWanted(true, columns.record, kStockFavorTop, true, middle, {0, 1, 2});
     EXPECT(arranged.record[0] == columns.record[1] && arranged.record[1] == columns.record[0] &&
            arranged.record[2] == columns.record[2]);
     EXPECT(Decide(kStockFavorTop, arranged.record, columns.record, kStockFavorTop) == Action::Write);
@@ -296,10 +296,63 @@ void TwoViews()
     EXPECT(DecideTwo(kStockTopBottom, swapped.record, kStockSideBySide, kStockSideBySide, kStockSideBySide) == Action::Foreign);
 }
 
+/// The one-window layouts: each covers the window exactly once, its large view first; the word and the layout name each
+/// other; the entry is arranged by the order and known to the decision when the setting changes.
+void ThreeSplits()
+{
+    const std::array<const wchar_t*, 5> words{L"top", L"bottom", L"left", L"right", L"columns"};
+    for (const wchar_t* word : words)
+    {
+        const auto split = ParseThreeSplit(word);
+        EXPECT(split.has_value());
+        EXPECT(std::wstring_view(ThreeSplitWord(*split)) == word);
+        const Records records = ThreeSplitRecords(*split);
+        float area = 0.0f;
+        for (int i = 0; i < kThreePlayerRecords; ++i)
+        {
+            const Record& a = records.record[i];
+            EXPECT(a.originX >= 0.0f && a.originY >= 0.0f && a.originX + a.sizeX <= 1.0001f && a.originY + a.sizeY <= 1.0001f);
+            area += a.sizeX * a.sizeY;
+            for (int j = i + 1; j < kThreePlayerRecords; ++j)
+            {
+                const Record& b = records.record[j];
+                const bool apart = a.originX + a.sizeX <= b.originX + 0.0001f || b.originX + b.sizeX <= a.originX + 0.0001f ||
+                                   a.originY + a.sizeY <= b.originY + 0.0001f || b.originY + b.sizeY <= a.originY + 0.0001f;
+                EXPECT(apart);
+            }
+        }
+        EXPECT(area > 0.999f && area < 1.001f);
+        EXPECT(records.record[0].sizeX * records.record[0].sizeY >= records.record[1].sizeX * records.record[1].sizeY);
+    }
+    EXPECT(!ParseThreeSplit(L"middle").has_value());
+    EXPECT(Same(ThreeSplitRecords(ThreeSplit::Top).record, kStockFavorTop));  // the default is the engine's own, untouched
+    EXPECT(Same(ThreeSplitRecords(ThreeSplit::Columns).record, kThreeColumns));
+
+    // One window takes the setting's layout, arranged; a span takes its columns whatever the setting; two views the stock.
+    const Records left = ThreeSplitRecords(ThreeSplit::Left);
+    const Order   p2Large{{2, 1, 3}};
+    const Records leftArranged = EntryWanted(false, kThreeColumns, left.record, true, p2Large, {0, 1, 2});
+    EXPECT(leftArranged.record[0] == left.record[1] && leftArranged.record[1] == left.record[0] && leftArranged.record[2] == left.record[2]);
+    EXPECT(Same(EntryWanted(true, kThreeColumns, left.record, true, kDefaultOrder, {0, 1, 2}).record, kThreeColumns));
+    EXPECT(Same(EntryWanted(false, kThreeColumns, left.record, false, kDefaultOrder, {0, 1, -1}).record, kStockFavorTop));
+
+    // Changing the layout: the last write is known, so the entry moves on; leaving three views restores the stock one.
+    const Records right = ThreeSplitRecords(ThreeSplit::Right);
+    EXPECT(Decide(kStockFavorTop, left.record, kThreeColumns, kStockFavorTop) == Action::Write);
+    EXPECT(Decide(left.record, right.record, kThreeColumns, left.record) == Action::Write);
+    EXPECT(Decide(left.record, kStockFavorTop, kThreeColumns, left.record) == Action::Restore);
+    EXPECT(Decide(right.record, right.record, kThreeColumns, right.record) == Action::Nothing);
+    EXPECT(Decide(left.record, right.record, kThreeColumns, kStockFavorTop) == Action::Foreign);  // never the mod's write
+
+    // Two views: the span is always side by side; one window as the setting says.
+    EXPECT(TwoSideBySide(2, false) && TwoSideBySide(3, true) && TwoSideBySide(0, true) && !TwoSideBySide(0, false));
+}
+
 }  // namespace
 
 int main()
 {
+    ThreeSplits();
     ColumnsOfTheirWidths();
     WantedColumns();
     ColumnsOrStock();

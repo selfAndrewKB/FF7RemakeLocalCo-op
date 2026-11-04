@@ -66,7 +66,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.155.0-hud-map-on-player-one";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.156.0-coop-page-views";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;

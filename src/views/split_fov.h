@@ -25,7 +25,8 @@
 // What reaches the new FOV: everything that projects through GetProjectionData (the drawn view, its culling, the stock
 // world-to-screen projections). Code that projects from the camera manager's cached view FOV does not see it (the
 // animation judge's snapshot; any marker placement off that path): live check in research/RE-view-size-fov.md §8 L6.
-// `split-fov on|off` (on), `split-fov.weight` 0..1 (0.5), reading `split-fov.state`. Logged: Info when a view starts or
+// `split-fov on|off` (on), `split-fov.weight` 0.00 to 1.00 in steps of 0.05 (0.50), both from the settings table, reading
+// `split-fov.state`. Logged: Info when a view starts or
 // stops taking the rule (its rect and the factor), once per refused axis rule; Trace per call with the FOV before and
 // after.
 

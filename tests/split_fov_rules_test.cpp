@@ -1,5 +1,6 @@
 // Host-side tests for the split FOV rule (views/split_fov_rules.h). Run without the game.
 
+#include "platform/settings.h"
 #include "views/split_fov_rules.h"
 
 #include <cmath>
@@ -90,10 +91,34 @@ void Values()
 
 }  // namespace
 
+/// The settings' words read as the weights they say, in order; the option's default is the rule's.
+void Weights()
+{
+    namespace settings = lss::platform::settings;
+    EXPECT(WeightOf(settings::kSplitFovWeight.fallback) == kDefaultWeight);
+    EXPECT(settings::kSplitFovWeight.words.size() == 21);
+    float last = -1.0f;
+    for (const wchar_t* word : settings::kSplitFovWeight.words)
+    {
+        const float weight = WeightOf(word);
+        EXPECT(weight > last);
+        last = weight;
+    }
+    EXPECT(WeightOf(L"0.00") == 0.0f);
+    EXPECT(WeightOf(L"1.00") == 1.0f);
+    EXPECT(Near(WeightOf(L"0.35"), 0.35f, 0.0001f));
+    EXPECT(WeightOf(L"") == kDefaultWeight);
+    EXPECT(WeightOf(L"1.05") == kDefaultWeight);
+    EXPECT(WeightOf(L"-0.5") == kDefaultWeight);
+    EXPECT(WeightOf(L"0.5x") == kDefaultWeight);
+    EXPECT(WeightOf(L"0,35") == kDefaultWeight);
+}
+
 int main()
 {
     WhoTakesIt();
     Values();
+    Weights();
     if (g_failures != 0)
     {
         std::printf("split_fov_rules: %d failure(s)\n", g_failures);

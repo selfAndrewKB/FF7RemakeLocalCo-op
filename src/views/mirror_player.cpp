@@ -5,6 +5,7 @@
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
+#include "platform/settings.h"
 #include "platform/verified_code.h"
 #include "players/game_state.h"
 #include "players/local_player_list.h"
@@ -374,25 +375,22 @@ bool Install(const platform::GameImage& image) noexcept
     using control::Register;
     using control::Shape;
     using control::Value;
-    Register({.name  = L"mirror-player",
-              .shape = Shape::OnOff,
-              .help  = L"an extra local player in every column no player fills (the span's columns, or view-columns) shows "
-                       L"player 1's picture (the title, loading screens, the field, menus); off: the columns go to the players in",
-              .set   = [](const Value& v) {
-                  g_enabled = std::get<bool>(v);
-                  if (!g_enabled)
-                  {
-                      Clear(L"switched off");
-                  }
-                  platform::Log(L"mirror player: {}", g_enabled ? L"on (fills an empty column once the field is steady)" : L"off");
-                  return control::Outcome{};
-              },
-              .get = [] { return Value{g_enabled}; }});
+    namespace settings = platform::settings;
+    g_enabled = settings::Of(settings::kMirrorPlayer).word == L"on";
+    control::RegisterOption(
+        settings::kMirrorPlayer,
+        [](const std::wstring& word) {
+            // Only the wish: the Co-op page sets this after the frame's views were read, so the next Tick removes the copies.
+            g_enabled = word == L"on";
+            platform::Log(L"mirror player: {}", g_enabled ? L"on (fills an empty column once the field is steady)" : L"off");
+            return control::Outcome{};
+        },
+        [] { return std::wstring(g_enabled ? L"on" : L"off"); });
     Register({.name = L"mirror-player.state", .shape = Shape::Text,
               .help = L"the mirror players: wanted, in which columns with which controller ids, their camera copies, why one waits",
               .get  = [] { return Value{Reading()}; }});
-    platform::Log(L"mirror player: ready (on: a mirror fills every column no player has, up to {} columns; mirror-player on|off)",
-                  kMaxColumns);
+    platform::Log(L"mirror player: ready, {} ({}) (on: a mirror fills every column no player has, up to {} columns; mirror-player on|off)",
+                  g_enabled ? L"on" : L"off", settings::Why(settings::kMirrorPlayer), kMaxColumns);
     return true;
 }
 

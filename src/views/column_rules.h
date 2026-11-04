@@ -43,12 +43,11 @@ constexpr int Wanted(int playersIn, int spanColumns, int override) noexcept
     return std::clamp(std::max(wanted, playersIn), 1, kMaxColumns);
 }
 
-/// Whether three views are laid out as three columns (the mod's records) rather than the engine's own three-player
-/// entry (player 1 across the top, two below: the user's pick for one window, 2026-10-24). Columns while the window
-/// spans monitors (`spanColumns` the span's columns, 0 when out: on a row of three a column per monitor; a row of two
-/// has no layout without a view across its seam and keeps the columns too) or the console asks for three
-/// (`override`); in one window the engine's entry stays. Only when three views exist: `columns` wanted or
-/// `localPlayers` the engine lists (a mirror kept a tick longer stays in a column).
+/// Whether three views are laid out as the span's or the console's columns rather than the one-window layout (the setting
+/// `three-player-split`). Columns while the window spans monitors (`spanColumns` the span's columns, 0 when out: on a
+/// row of three a column per monitor; a row of two has no layout without a view across its seam and keeps the columns too)
+/// or the console asks for three (`override`). Only when three views exist: `columns` wanted or `localPlayers` the engine
+/// lists (a mirror kept a tick longer stays in a column).
 constexpr bool ThreeColumns(int columns, int localPlayers, int spanColumns, int override) noexcept
 {
     return (columns >= 3 || localPlayers >= 3) && (spanColumns > 0 || override >= 3);
@@ -106,8 +105,8 @@ constexpr bool Same(const Record (&a)[N], const Record (&b)[N]) noexcept
     return true;
 }
 
-/// The column order: the player each screen slot shows, left to right (in one window, three players: the top, then
-/// the bottom left, the bottom right; two players: the top, then the bottom, or left and right). Any of the six orders;
+/// The column order: the player each screen slot shows, left to right (in one window, three players: the large view, then
+/// the other two, top or left first; two players: the top, then the bottom, or left and right). Any of the six orders;
 /// with two players the one not in is skipped. Always by player number, never by the order the players joined in.
 struct Order
 {
@@ -217,6 +216,66 @@ struct RecordSet
 using Records    = RecordSet<kThreePlayerRecords>;
 using TwoRecords = RecordSet<kTwoPlayerRecords>;
 
+/// How three players share one window (the setting `three-player-split`). A span of monitors is always columns.
+enum class ThreeSplit : std::uint8_t
+{
+    Top,      // the large view across the top, two below: the engine's own entry
+    Bottom,   // two above, the large view across the bottom
+    Left,     // the large view down the left, two stacked on the right
+    Right,    // two stacked on the left, the large view down the right
+    Columns,  // three equal full-height columns
+};
+
+constexpr std::optional<ThreeSplit> ParseThreeSplit(std::wstring_view word) noexcept
+{
+    return word == L"top"       ? std::optional<ThreeSplit>{ThreeSplit::Top}
+           : word == L"bottom"  ? std::optional<ThreeSplit>{ThreeSplit::Bottom}
+           : word == L"left"    ? std::optional<ThreeSplit>{ThreeSplit::Left}
+           : word == L"right"   ? std::optional<ThreeSplit>{ThreeSplit::Right}
+           : word == L"columns" ? std::optional<ThreeSplit>{ThreeSplit::Columns}
+                                : std::nullopt;
+}
+
+constexpr const wchar_t* ThreeSplitWord(ThreeSplit split) noexcept
+{
+    switch (split)
+    {
+        case ThreeSplit::Bottom:  return L"bottom";
+        case ThreeSplit::Left:    return L"left";
+        case ThreeSplit::Right:   return L"right";
+        case ThreeSplit::Columns: return L"columns";
+        case ThreeSplit::Top:
+        default:                  return L"top";
+    }
+}
+
+/// The records in screen order, the large view first and the other two top or left first, so the screen order means the
+/// same in each. Written into the one entry the engine reads (the three-player setting held at FavorTop).
+constexpr Records ThreeSplitRecords(ThreeSplit split) noexcept
+{
+    switch (split)
+    {
+        case ThreeSplit::Bottom:
+            return {{{1.0f, 0.5f, 0.0f, 0.5f}, {0.5f, 0.5f, 0.0f, 0.0f}, {0.5f, 0.5f, 0.5f, 0.0f}}};
+        case ThreeSplit::Left:
+            return {{{0.5f, 1.0f, 0.0f, 0.0f}, {0.5f, 0.5f, 0.5f, 0.0f}, {0.5f, 0.5f, 0.5f, 0.5f}}};
+        case ThreeSplit::Right:
+            return {{{0.5f, 1.0f, 0.5f, 0.0f}, {0.5f, 0.5f, 0.0f, 0.0f}, {0.5f, 0.5f, 0.0f, 0.5f}}};
+        case ThreeSplit::Columns:
+            return {{kThreeColumns[0], kThreeColumns[1], kThreeColumns[2]}};
+        case ThreeSplit::Top:
+        default:
+            return {{kStockFavorTop[0], kStockFavorTop[1], kStockFavorTop[2]}};
+    }
+}
+
+/// Whether two views sit side by side: always on a span of monitors (`spanColumns` above 0, one view per monitor), else the
+/// setting `two-player-split`.
+constexpr bool TwoSideBySide(int spanColumns, bool settingSideBySide) noexcept
+{
+    return spanColumns > 0 || settingSideBySide;
+}
+
 /// `pixels` of `total` as the fraction the engine turns back into exactly `pixels`. The engine places a view at
 /// TruncToInt(fraction * viewport size), the product in float (ULocalPlayer::GetProjectionData, stock 4.18 [CONFIRMED
 /// src]), and the nearest float to 2560/8560 lands a hair below 2560: the view would start a pixel short of its monitor's
@@ -298,7 +357,7 @@ constexpr bool ArrangementOf(const Record (&entry)[N], const Record (&base)[N]) 
 }
 
 /// What the module does with the entry it read, given the entry wanted (the stock one, or the mod's: the columns or
-/// the stock records, arranged by the column order).
+/// the one-window layout, arranged by the column order).
 enum class Action
 {
     Nothing,  // the entry is the one wanted
@@ -342,11 +401,17 @@ constexpr std::array<int, kThreePlayerRecords> ScreenSlots(int views, const Orde
 }
 
 /// The three-player entry wanted: the mod's columns (`columns`: the span's widths, or equal thirds) while three columns
-/// are wanted, else the stock records, arranged while three views exist.
-constexpr Records EntryWanted(bool threeColumns, const Record (&columns)[kThreePlayerRecords], bool threeViews,
-                              const Order& order, const ListSeats& seats) noexcept
+/// are wanted, else the one-window layout (`oneWindow`: ThreeSplitRecords), arranged while three views exist; the stock
+/// records while they do not (nothing reads the entry then).
+constexpr Records EntryWanted(bool threeColumns, const Record (&columns)[kThreePlayerRecords],
+                              const Record (&oneWindow)[kThreePlayerRecords], bool threeViews, const Order& order,
+                              const ListSeats& seats) noexcept
 {
-    return Arrange(threeColumns ? columns : kStockFavorTop, ScreenSlots(threeViews ? kThreePlayerRecords : 1, order, seats));
+    if (!threeViews)
+    {
+        return Arrange(kStockFavorTop, ScreenSlots(1, order, seats));
+    }
+    return Arrange(threeColumns ? columns : oneWindow, ScreenSlots(kThreePlayerRecords, order, seats));
 }
 
 /// A two-player entry wanted (`base` its records in screen order: the constructor's, or for side by side on a span the

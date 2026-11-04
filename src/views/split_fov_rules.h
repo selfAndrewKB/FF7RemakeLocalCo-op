@@ -19,11 +19,26 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
+#include <string_view>
 
 namespace lss::views::split_fov_rules {
 
 /// The weight between keeping the single-player framing (0) and the single-player scale (1); Rebirth's by-eye middle.
 inline constexpr float kDefaultWeight = 0.5f;
+
+/// The weight a settings word stands for ("0.35", platform/settings.h kFovWeightWords); the default for any other text.
+/// Read by its digits, so no locale's decimal mark can change it.
+inline float WeightOf(std::wstring_view word) noexcept
+{
+    const auto digit = [word](std::size_t at) { return word[at] >= L'0' && word[at] <= L'9'; };
+    if (word.size() != 4 || word[1] != L'.' || !digit(0) || !digit(2) || !digit(3))
+    {
+        return kDefaultWeight;
+    }
+    const int hundredths = (word[0] - L'0') * 100 + (word[2] - L'0') * 10 + (word[3] - L'0');
+    return hundredths <= 100 ? static_cast<float>(hundredths) / 100.0f : kDefaultWeight;
+}
 
 /// A view shape the rule leaves alone: its width over height is within this fraction of the camera's aspect.
 inline constexpr float kAspectSlack = 0.01f;

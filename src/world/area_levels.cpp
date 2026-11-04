@@ -6,6 +6,7 @@
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
+#include "platform/settings.h"
 #include "platform/verified_code.h"
 #include "players/game_state.h"
 #include "players/seats.h"
@@ -290,23 +291,26 @@ bool Install(const platform::GameImage& image) noexcept
     g_listTarget = *target;
     g_listSite   = *site;
     g_manager    = reinterpret_cast<std::uint8_t**>(*manager);
-    control::Register({.name  = L"area-levels",
-                       .shape = control::Shape::OnOff,
-                       .help  = L"every player's area stays loaded and solid, not only player 1's (world/area_levels.h; on)",
-                       .set   = [](const control::Value& value) {
-                           g_on.store(std::get<bool>(value), std::memory_order_relaxed);
-                           g_dirty = true;  // the next read asks for the list with or without the further players' areas
-                           platform::Log(L"area levels {}", std::get<bool>(value)
-                                                                ? L"on: the further players' areas join the next request"
-                                                                : L"off: the next request is player 1's area alone");
-                           return control::Outcome{};
-                       },
-                       .get = [] { return control::Value{g_on.load(std::memory_order_relaxed)}; }});
+    namespace settings = platform::settings;
+    g_on.store(settings::Of(settings::kAreaLevels).word == L"on", std::memory_order_relaxed);
+    control::RegisterOption(
+        settings::kAreaLevels,
+        [](const std::wstring& word) {
+            const bool on = word == L"on";
+            g_on.store(on, std::memory_order_relaxed);
+            g_dirty = true;  // the next read asks for the list with or without the further players' areas
+            platform::Log(L"area levels {}", on ? L"on: the further players' areas join the next request"
+                                                : L"off: the next request is player 1's area alone");
+            return control::Outcome{};
+        },
+        [] { return std::wstring(g_on.load(std::memory_order_relaxed) ? L"on" : L"off"); });
     control::Register({.name  = L"world.area-levels",
                        .shape = control::Shape::Text,
                        .help  = L"the last level request (player 1's area with the further players'), and the requests made",
                        .get   = [] { return control::Value{Reading()}; }});
-    platform::Log(L"area levels: ready (every player's area joins the game's level request; the redirect is placed on the first tick)");
+    platform::Log(L"area levels: ready, {} ({}) (every player's area joins the game's level request; the redirect is placed on the "
+                  L"first tick)",
+                  g_on.load(std::memory_order_relaxed) ? L"on" : L"off", settings::Why(settings::kAreaLevels));
     return true;
 }
 

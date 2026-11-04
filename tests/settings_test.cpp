@@ -60,7 +60,7 @@ void TableConsistent()
         EXPECT(std::wcslen(option->label) > 0);     // the file names each option by its Co-op page row
         EXPECT(std::wcslen(option->menuHelp) > 0);  // and describes it with the page's help
         EXPECT(keys.insert(option->key).second);
-        // An experimental option's default leaves the game as it plays without it (its word is the first: off or guide).
+        // An experimental option's default leaves the game as it has played (its word is the first: guide, or a switch on).
         EXPECT(!option->experimental || std::wcscmp(option->fallback, option->words[0]) == 0);
     }
     // Each section's options are together in the table, so the file lists each section once.
@@ -74,7 +74,7 @@ void TableConsistent()
             open = option->section;
         }
     }
-    EXPECT(kOptions.size() == 11);
+    EXPECT(kOptions.size() == 17);
     EXPECT(kLeadHolder.experimental && std::wcscmp(kLeadHolder.fallback, L"guide") == 0);
     EXPECT(std::wcscmp(kLeadHolder.section, L"Experimental") == 0);
 }
@@ -139,13 +139,26 @@ std::size_t Count(const std::wstring& text, const std::wstring& part)
     return count;
 }
 
+/// An option's place in the table, which the readings follow.
+std::size_t PlaceOf(const Option& option)
+{
+    for (std::size_t i = 0; i < kOptions.size(); ++i)
+    {
+        if (kOptions[i] == &option)
+        {
+            return i;
+        }
+    }
+    return kOptions.size();
+}
+
 /// The file's text from the table: every option once with its value line, each section once, plain ASCII, no line
 /// past the width, a long run of values as a range, a word the mod cannot read kept as written with a note.
 void FileTextFromTable()
 {
     auto readings = Defaults();
-    readings[1]   = Judge(kColumnOrder, L"2 1 3");
-    readings[3]   = Judge(kBattleWarps, L"sometimes");
+    readings[PlaceOf(kColumnOrder)]   = Judge(kColumnOrder, L"2 1 3");
+    readings[PlaceOf(kBattleWarps)]   = Judge(kBattleWarps, L"sometimes");
     const std::wstring text = FileText(readings);
     for (std::size_t i = 0; i < kOptions.size(); ++i)
     {
@@ -196,10 +209,10 @@ void FileWrittenAndReadBack()
         file << "; an old copy\r\n[Views]\r\nmulti-monitor = auto\r\nold-option = yes\r\n";
     }
     auto readings = Defaults();
-    readings[0]   = Judge(kMultiMonitor, L"on");
-    readings[1]   = Judge(kColumnOrder, L"213");
-    readings[4]   = Judge(kEnemyDamage, L"1.5");
-    readings[3]   = Judge(kBattleWarps, L"sometimes");
+    readings[PlaceOf(kMultiMonitor)] = Judge(kMultiMonitor, L"on");
+    readings[PlaceOf(kColumnOrder)]  = Judge(kColumnOrder, L"213");
+    readings[PlaceOf(kEnemyDamage)]  = Judge(kEnemyDamage, L"1.5");
+    readings[PlaceOf(kBattleWarps)]   = Judge(kBattleWarps, L"sometimes");
     const std::string bytes = Utf8(FileText(readings));
     EXPECT(WriteFileBytes(path.c_str(), bytes) == 0);
     EXPECT(FileBytes(path.c_str()) == bytes);
@@ -212,13 +225,13 @@ void FileWrittenAndReadBack()
     EXPECT(ReadBack(path, kBattleWarps).raw == L"sometimes");
     // A value with characters outside ASCII: kept with `?`, and a second start writes the same bytes (no drift).
     const std::wstring typed = std::wstring(L"1,5") + wchar_t{0x00D7} + L' ' + wchar_t{0x2713};  // "1,5x" and a tick
-    readings[5] = Judge(kEnemyHp, typed);
-    EXPECT(readings[5].source == Source::Invalid);
+    readings[PlaceOf(kEnemyHp)] = Judge(kEnemyHp, typed);
+    EXPECT(readings[PlaceOf(kEnemyHp)].source == Source::Invalid);
     const std::string first = Utf8(FileText(readings));
     EXPECT(WriteFileBytes(path.c_str(), first) == 0);
     auto again  = readings;
-    again[5]    = ReadBack(path, kEnemyHp);
-    EXPECT(again[5].source == Source::Invalid && again[5].raw == L"1,5? ?");    EXPECT(Utf8(FileText(again)) == first);
+    again[PlaceOf(kEnemyHp)] = ReadBack(path, kEnemyHp);
+    EXPECT(again[PlaceOf(kEnemyHp)].source == Source::Invalid && again[PlaceOf(kEnemyHp)].raw == L"1,5? ?");    EXPECT(Utf8(FileText(again)) == first);
     const std::string text = FileBytes(path.c_str());
     EXPECT(text.find("an old copy") == std::string::npos);
     EXPECT(text.find("old-option") == std::string::npos);
