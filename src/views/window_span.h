@@ -19,20 +19,26 @@
 // area exactly back). Nothing is written to disk: the player's own resolution lives in the device save, which a
 // request never touches (§8). Exclusive fullscreen is refused. The Borderless letterbox patch (views/letterbox_patch)
 // is a precondition: without it each column is fitted into the middle of the target (§6.3).
-// Taken from Rebirth's views/window_span: the chain walk and its checks, the hold, the saved-rect leave. Changed:
-// the resolution request in the entry and the leave (the Square Enix image), the fixed order, the layout byte.
 //
 // Entered on a further player's join when a row of equal monitors qualifies (`window-span on`, the default), or by the
 // command / Ctrl+F2; left by the command, with the last further player, and at the mod's end. The number of columns is the number
-// of monitors in the row, up to three (plan/seats.md step 5; a three-monitor row is unplayed: none on this PC); the
-// mirror player fills the columns no player has. The hold (`window-span.hold on`, v0.41.0) spans the row with any player count and
+// of monitors in the row, up to three (plan/seats.md step 5); the
+// mirror player fills the columns no player has. The hold (`window-span.hold on`) spans the row with any player count and
 // keeps it when the last further player leaves (a loading screen, the main menu, a movie): the multi-monitor presentation modes
-// (plan/topics/views.md); the mirror player (views/mirror_player, v0.42.0) fills the empty column under it. The
+// (plan/topics/views.md); the mirror player (views/mirror_player) fills the empty column under it. The
 // preset `[Views] multi-monitor = off | on` in LocalSplitScreen.ini (platform/settings) sets the start: `on` holds from the
-// first steady frame of the game (the title), `off` (the default) leaves the span to the command. A row monitor a few pixels off the row's top is lined up first, for the Windows
-// session, and put back at the leave (views/display_align; v0.38.0); no display mode or scaling is ever changed: a
-// row that does not qualify is logged with the reason and what to change. Game thread only. Logged at Info on each
-// step and change, at Debug for the status.
+// first steady frame of the game (the title), `off` (the default) leaves the span to the command.
+//
+// The player's monitors (the setup app, `monitors` in the settings file) need not be a row in Windows: they are moved into one,
+// in the order picked, for as long as the span lasts, and put back at the leave (views/display_align); with none picked, a row
+// the desktop has serves, its monitors a few pixels off lined up the same way. No display mode or scaling is ever changed: a
+// choice that cannot be a row is logged with the reason.
+//
+// The desktop can change under the game: a monitor is unplugged, a streaming host makes or removes a virtual monitor, Windows
+// goes back to its saved arrangement. Twice a second the desktop's shape is compared (every monitor's rect, a read too cheap to
+// feel); only on a change, or while monitors are being moved, is the display configuration read. A row that no longer stands is left; a span wanted but refused or left this
+// way is tried again at each later change, so a picked monitor that is missing is waited for, not replaced by another.
+// Game thread only. Logged at Info on each step and change, at Debug for the status.
 
 #include <cstdint>
 #include <span>

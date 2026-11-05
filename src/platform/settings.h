@@ -66,11 +66,11 @@ inline constexpr Option kMultiMonitor{  // views/window_span
     false, L"Multiple Monitors", kOnOffLabels,
     L"One full view per player across a row of monitors of the same height, each as wide as its monitor. On: always. Off: "
     L"every view in one window."};
-inline constexpr Option kMonitors{  // views/window_span, views/monitor_row MarkNamed
+inline constexpr Option kMonitors{  // views/window_span, views/monitor_row FindPicks
     L"Views", L"monitors", {}, L"",
-    L"(read only) the monitors the row may take, as the setup app wrote them; empty: any row of monitors of one height",
+    L"(read only) the monitors of the row, left to right, as the setup app wrote them; empty: any row the desktop has",
     false, L"Monitors in the Row", {},
-    L"The monitors a row may take, chosen in LocalSplitScreenSetup.exe. Empty: the longest row of monitors of one height.",
+    L"The monitors of the row, left to right, chosen in LocalSplitScreenSetup.exe; they are moved into a row while the game holds it and back afterwards. Empty: the longest row the desktop has.",
     true};
 inline constexpr Option kColumnOrder{  // views/column_layout
     L"Views", L"column-order", kColumnOrderWords, L"123",

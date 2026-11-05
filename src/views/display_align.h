@@ -1,18 +1,16 @@
 #pragma once
 
-// A monitor of the row lined up with the row's top through Windows' display-configuration API (the one Display
-// settings itself uses), for this Windows session only, and put back at the leave.
+// The monitors placed to make the row, for as long as the game holds it, and put back at the leave. Windows' saved arrangement
+// is never written, so a restart of the PC returns the player's own layout whatever happens here (views/display_move).
 //
-// Windows snaps a dragged monitor to the edges of its neighbours, so a pair placed beside a monitor of another size
-// lands a few pixels off (the user's pair: 2 px, then 15 px, 2026-10-21), and the span needs the tops level or one
-// column loses rows. The entry moves such a monitor itself (at most monitor_row::kAlignTolerance px): the active
-// paths are queried, the source's position changed, the configuration applied with SetDisplayConfig without
-// SDC_SAVE_TO_DATABASE, so the desktop changes for the session and Windows' saved arrangement does not. The leave
-// puts every moved monitor back; so does the mod's unload. No display mode, resolution or scaling is changed, only
-// a source's position. Game thread only; each move and each restore logged at Info, a refusal at Warning.
+// Before anything moves, the record of the old places goes to disk and a guard process is running that waits on the game: the
+// setup app in its guard mode, started once per game. Whichever way the game ends, a clean quit, a crash or a kill from outside,
+// the guard reads the record and puts the monitors back. If the guard died too, the next start of the game or the app does.
+// With no guard to be had, nothing moves: the row is refused, said in the log. Game thread only; each move and each return
+// logged at Info, a refusal at Warning.
 //
-// Positions are in the desktop coordinates a DPI-aware process sees (the game's exe is per-monitor DPI aware), the
-// same ones EnumDisplayMonitors gives the span [CONFIRMED live 2026-10-21: the TV read 3840x2160 in the mod's log].
+// Positions are in the desktop coordinates a DPI-aware process sees (the game's exe is per-monitor DPI aware), the same ones
+// EnumDisplayMonitors gives the span.
 
 #include <cstdint>
 #include <span>
@@ -20,18 +18,22 @@
 
 namespace lss::views::display_align {
 
-/// One monitor to move: its GDI device name as GetMonitorInfo gives it (`\\.\DISPLAY2`) and the top edge to take.
+/// One monitor to place: its GDI device name as GetMonitorInfo gives it (`\\.\DISPLAY2`) and its new top-left corner.
 struct Move
 {
     std::wstring device;
-    std::int32_t toTop = 0;
+    std::int32_t toX = 0;
+    std::int32_t toY = 0;
 };
 
-/// Moves each monitor for this Windows session and remembers where it was. False (logged) if any device is not an
-/// active source or Windows refused the configuration; nothing is changed then.
+/// A record left by an earlier run, undone before this one starts anything. Logged.
+void HealEarlierRun() noexcept;
+
+/// Places the monitors for as long as the row lasts and remembers where they were. False (logged) if the guard or the record
+/// could not be had, a device is not an active source, or Windows refused; nothing is changed then.
 bool Apply(std::span<const Move> moves) noexcept;
 
-/// Puts every moved monitor back (logged). Nothing happens when none is moved.
+/// Puts the monitors back, if the desktop still reads as this module left it (logged). Nothing happens when none is moved.
 void Restore() noexcept;
 
 /// A monitor is moved now.

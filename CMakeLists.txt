@@ -135,6 +135,7 @@ add_library(LocalSplitScreen SHARED
     src/views/narrow_camera.cpp
     src/views/split_fov.cpp
     src/views/display_align.cpp
+    src/views/display_move.cpp
     src/views/mirror_player.cpp
     src/views/scene_camera.cpp
     src/views/whole_screen.cpp
@@ -175,6 +176,7 @@ target_link_libraries(LocalSplitScreen PUBLIC UE4SS)
 # ------------------------------------------------------------------------------------------------
 add_executable(LocalSplitScreenSetup WIN32
     setup/main.cpp
+    src/views/display_move.cpp
     src/views/monitor_list.cpp
     src/views/monitor_row.cpp
 )
@@ -434,6 +436,13 @@ add_executable(MonitorRowTests
 target_include_directories(MonitorRowTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_compile_features(MonitorRowTests PRIVATE cxx_std_20)
 add_test(NAME monitor_row COMMAND MonitorRowTests)
+
+add_executable(RowJournalTests
+    tests/row_journal_test.cpp
+)
+target_include_directories(RowJournalTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(RowJournalTests PRIVATE cxx_std_20)
+add_test(NAME row_journal COMMAND RowJournalTests)
 
 add_executable(TitleRowRulesTests
     tests/title_row_rules_test.cpp

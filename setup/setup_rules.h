@@ -77,7 +77,7 @@ inline std::vector<std::size_t> ScreensOf(std::span<const row::Monitor> monitors
         const row::Rect& rect = monitors[i].rect;
         const bool       inX  = rect.left >= choice.span.left && rect.right <= choice.span.right;
         const auto       off  = rect.top - choice.span.top;
-        if (monitors[i].joins && inX && off >= -row::kAlignTolerance && off <= row::kAlignTolerance)
+        if (inX && off >= -row::kAlignTolerance && off <= row::kAlignTolerance)
         {
             screens.push_back(i);
         }
@@ -101,68 +101,51 @@ inline row::Choice FindRow(std::span<const row::Monitor> monitors, std::size_t g
     return choice;
 }
 
-/// What the choice gives: `ticked` is one flag per monitor, `gameMonitor` the monitor the game opens on (the primary).
-inline Look LookAt(std::span<const row::Monitor> monitors, std::span<const char> ticked, std::size_t gameMonitor)
+/// What the choice gives: `picks` are the monitors clicked, in order, left to right in the row; `gameMonitor` the monitor the
+/// game opens on (the primary).
+inline Look LookAt(std::span<const row::Monitor> monitors, std::span<const std::size_t> picks, std::size_t gameMonitor)
 {
-    Look                      look;
-    std::vector<row::Monitor> list(monitors.begin(), monitors.end());
-    std::size_t               count = 0, first = list.size();
-    for (std::size_t i = 0; i < list.size() && i < ticked.size(); ++i)
+    Look look;
+    if (picks.empty())
     {
-        list[i].joins = ticked[i] != 0;
-        if (ticked[i] != 0)
-        {
-            first = std::min(first, i);
-            ++count;
-        }
-    }
-    if (count == 0)
-    {
-        for (row::Monitor& m : list)
-        {
-            m.joins = true;
-        }
-        const row::Choice choice = FindRow(list, gameMonitor);
+        const row::Choice choice = FindRow(monitors, gameMonitor);
         look.ok                  = choice.ok;
         if (!choice.ok)
         {
-            look.text = L"No monitors make a row: " + choice.why + L".";
+            look.text = L"None picked, and no monitors make a row as Windows has them. Click two or three monitors, in the order you want them.";
             return look;
         }
-        look.screens = ScreensOf(list, choice);
-        look.text    = std::format(L"None picked: the game takes the longest row it finds, these {} monitors ({} x {}). Click monitors to "
-                                   L"choose your own.",
+        look.screens = ScreensOf(monitors, choice);
+        look.text    = std::format(L"None picked: the game takes the longest row it finds, these {} monitors ({} x {}). Click monitors, in "
+                                   L"order, to choose your own.",
                                    look.screens.size(), choice.span.Width(), choice.span.Height());
         return look;
     }
     look.picked = true;
-    if (count == 1)
+    if (picks.size() == 1)
     {
-        look.text = L"Pick at least two monitors, side by side, or none to let the game choose.";
+        look.text = L"Click one or two more, in the order you want them, left to right. Click a monitor again to take it out.";
         return look;
     }
-    if (count > kMostInRow)
+    if (picks.size() > kMostInRow)
     {
         look.text = std::format(L"A row takes up to {} monitors, one per player.", kMostInRow);
         return look;
     }
-    const row::Choice choice = row::Choose(list, first, static_cast<std::int32_t>(count));
+    const row::Choice choice = row::Arrange(monitors, picks);
     look.ok                  = choice.ok;
     if (!choice.ok)
     {
-        look.text = L"These monitors do not make a row: they must touch side by side, with no other monitor between them.";
-        if (!choice.stopped.empty())
-        {
-            look.text += L" In Windows: " + choice.stopped + L".";
-        }
+        look.text = L"These monitors cannot make a row: " + choice.why + L".";
         return look;
     }
-    look.screens = ScreensOf(list, choice);
-    look.text    = std::format(L"A row of {} monitors, {} x {}: one view on each, as wide as its monitor.", count, choice.span.Width(),
-                               choice.span.Height());
+    look.screens.assign(picks.begin(), picks.end());
+    look.text = std::format(L"A row of {} monitors, {} x {}: one view on each, as wide as its monitor.", picks.size(), choice.span.Width(),
+                            choice.span.Height());
     if (!choice.moves.empty())
     {
-        look.text += L" The mod lines up their tops while the game runs.";
+        look.text += L" While the game holds the row your monitors move into this order; they go back afterwards, even after a crash. Windows' own "
+                     L"arrangement is never changed.";
     }
     return look;
 }

@@ -21,6 +21,8 @@
 #endif
 #include <Windows.h>
 
+#include <algorithm>
+#include <span>
 #include <cstdint>
 #include <format>
 #include <optional>
@@ -49,7 +51,8 @@ constexpr std::uint32_t kStatusTicks            = 300;
 constexpr std::uint32_t kRequestTicks           = 180;  // the engine applies a request on its next frame; 3 s is a failure
 constexpr std::uint32_t kReshapeSettleTicks     = 2;    // the window's rect is read after the engine's own follow
 constexpr std::uint32_t kReshapeRetryTicks      = 60;
-constexpr std::uint32_t kLineUpTicks            = 120;  // the desktop read as the row after a move: live 2 ms was too soon
+constexpr std::uint32_t kLineUpTicks            = 120;  // the desktop read as the row after a move; Windows may apply one after the call returns
+constexpr std::uint32_t kLineUpCheckTicks       = 6;    // that read is the display configuration: not every tick
 constexpr std::int32_t  kColumnsBuilt           = column_rules::kMaxColumns;  // one per monitor of the row, up to three
 constexpr std::uint8_t  kStatePlay              = 6;    // the game's play state (the title is one): the preset's hold waits for it
 
@@ -81,6 +84,11 @@ bool                g_held         = false;    // the hold: the span with any pl
 bool                g_holdTried    = false;    // one try per switch-on (the preset's waits for the game's first steady frame)
 bool                g_holdPreset   = false;    // the hold came from the preset: its try waits for the window and the play state
 bool                g_furtherPlayerIn = false;
+bool                g_retry        = false;    // a span wanted but refused or lost to the desktop: tried again when the desktop changes
+std::uint64_t       g_triedShape   = 0;        // the desktop's shape at the last try
+std::uint64_t       g_rowShape     = 0;        // the desktop's shape the row stands on
+std::uint32_t       g_outTicks     = 0;
+bool                g_rowLost      = false;    // the last leave was the desktop's doing: the next entry keeps the window's place from before
 
 /// The preset's word as the live state reads: `off` while neither the hold nor the join rule (Ctrl+F2, `window-span on`) is,
 /// else `on`.
@@ -232,36 +240,56 @@ std::wstring ViewportText() noexcept
     return L"unread";
 }
 
-/// Every monitor with its effective DPI, its GDI device name (for a move), the index of the game's, and whether the
-/// settings file's monitors narrowed who joins.
+/// Every monitor with its effective DPI, its GDI device name (for a move), the index of the game's, and the player's picks
+/// found among them.
 struct Monitors
 {
     std::vector<monitor_row::Monitor> list;
     std::vector<std::wstring>         devices;
     std::size_t                       gameAt = 0;  // the game window's monitor; list.size() when it is not listed
-    monitor_row::Named                named;
+    monitor_row::Picks                picks;
 };
 
-/// The desktop now, with the game window's monitor marked and the monitors the settings file leaves out marked too.
+/// The desktop's shape: every monitor's rect, hashed, so a monitor coming, going or moving changes it, even one that leaves the
+/// desktop's outer bounds as they were. Cheap enough for the twice-a-second check (no device names, no display configuration).
+std::uint64_t DesktopShape() noexcept
+{
+    std::uint64_t hash = 14695981039346656037ull;
+    EnumDisplayMonitors(
+        nullptr, nullptr,
+        [](HMONITOR, HDC, LPRECT rect, LPARAM param) noexcept -> BOOL {
+            auto& h = *reinterpret_cast<std::uint64_t*>(param);
+            for (const LONG value : {rect->left, rect->top, rect->right, rect->bottom})
+            {
+                h = (h ^ static_cast<std::uint32_t>(value)) * 1099511628211ull;
+            }
+            return TRUE;
+        },
+        reinterpret_cast<LPARAM>(&hash));
+    return hash;
+}
+
+/// The desktop now, with the game window's monitor marked and the player's picks found.
 Monitors Collect(HWND game) noexcept
 try
 {
     Monitors           monitors;
     const auto         listed = monitor_list::List();
     const HMONITOR     own    = MonitorFromWindow(game, MONITOR_DEFAULTTONEAREST);
-    std::vector<std::wstring> ids;
+    std::vector<std::wstring> ids, keys;
     monitors.gameAt = listed.size();
     for (std::size_t i = 0; i < listed.size(); ++i)
     {
         monitors.list.push_back(listed[i].monitor);
         monitors.devices.push_back(listed[i].device);
         ids.push_back(listed[i].id);
+        keys.push_back(listed[i].key);
         if (listed[i].handle == own)
         {
             monitors.gameAt = i;
         }
     }
-    monitors.named = monitor_row::MarkNamed(monitors.list, ids, platform::settings::Of(platform::settings::kMonitors).word);
+    monitors.picks = monitor_row::FindPicks(ids, keys, platform::settings::Of(platform::settings::kMonitors).word);
     return monitors;
 }
 catch (...)
@@ -269,30 +297,37 @@ catch (...)
     return {};  // no monitors: the span is refused, with the row's reason in the log
 }
 
-/// The row for `columns`: the player's named monitors when they make a row of two or more, else any row, said in the log.
-monitor_row::Choice ChooseRow(Monitors& monitors, std::int32_t columns)
+/// The player picked monitors in the settings file, whether they are connected or not.
+bool HasPicks(const Monitors& monitors) noexcept
 {
-    auto choice = monitor_row::Choose(monitors.list, monitors.gameAt, columns);
-    if (monitors.named.named == 0)
+    return monitors.picks.named > 0;
+}
+
+/// The columns the player's connected picks give, up to what is built; 0 when fewer than two are connected.
+std::int32_t PickedColumns(const Monitors& monitors) noexcept
+{
+    const auto found = static_cast<std::int32_t>(monitors.picks.found.size());
+    return found < 2 ? 0 : std::min(found, kColumnsBuilt);
+}
+
+/// The row for `columns`: the player's picks, moved into a row, whatever they are or wherever they sit; with none picked, a row
+/// the desktop has. Picks that are not connected are waited for, never replaced by other monitors.
+monitor_row::Choice ChooseRow(const Monitors& monitors, std::int32_t columns)
+{
+    if (!HasPicks(monitors))
     {
-        return choice;
+        return monitor_row::Choose(monitors.list, monitors.gameAt, columns);
     }
-    if (monitors.named.present < 2)
+    const auto& found = monitors.picks.found;
+    if (found.size() < 2)
     {
-        platform::Log(L"window span: only {} of the {} monitors the settings file names are connected; any row serves",
-                      monitors.named.present, monitors.named.named);
+        monitor_row::Choice waiting;
+        waiting.why = std::format(L"{} of the {} monitors picked in the setup app are connected; the row waits for at least two",
+                                  found.size(), monitors.picks.named);
+        return waiting;
     }
-    else if (!choice.ok && choice.rowMonitors < 2)
-    {
-        platform::Log(L"window span: the monitors the settings file names do not make a row ({}); any row serves", choice.why);
-        for (auto& monitor : monitors.list)
-        {
-            monitor.joins = true;
-        }
-        choice = monitor_row::Choose(monitors.list, monitors.gameAt, columns);
-    }
-    monitors.named = {};  // said once for this desktop reading
-    return choice;
+    const auto count = std::min(found.size(), static_cast<std::size_t>(columns));
+    return monitor_row::Arrange(monitors.list, std::span(found).first(count));
 }
 
 /// Every monitor as read: device, rect, DPI, the game's marked.
@@ -318,7 +353,7 @@ std::vector<display_align::Move> MovesFor(const monitor_row::Choice& choice, con
         {
             if (monitors.list[i].rect == move.from)
             {
-                moves.push_back({monitors.devices[i], move.toTop});
+                moves.push_back({monitors.devices[i], move.toLeft, move.toTop});
             }
         }
     }
@@ -387,6 +422,7 @@ bool Proceed(const NativeWindow& window, const monitor_row::Choice& choice) noex
     }
     g_step      = Step::Requested;
     g_stepTicks = 0;
+    g_rowShape  = DesktopShape();
     g_target    = choice.span;
     g_widths    = choice.widths;
     ++g_entries;
@@ -399,7 +435,7 @@ bool Proceed(const NativeWindow& window, const monitor_row::Choice& choice) noex
                   L"resolution request sent for {} (was {}; the window's client area {} in {} mode, the viewport {}); the reshape "
                   L"to {} follows once the engine applies it",
                   g_columns, choice.rowMonitors, widths, choice.gamesRow ? L"" : L" (not the game's own monitor's row)",
-                  display_align::Moved() ? std::format(L" (lined up: {})", display_align::Reading()).c_str() : L"",
+                  display_align::Moved() ? std::format(L" (moved: {})", display_align::Reading()).c_str() : L"",
                   ResolutionText(g_targetRes), ResolutionText(before), RectText(client), ModeName(window.mode), ViewportText(),
                   RectText(choice.span));
     return true;
@@ -507,6 +543,7 @@ bool Install(const platform::GameImage& image) noexcept
                        .help = platform::settings::kMonitors.help,
                        .get  = [] { return control::Value{platform::settings::Of(platform::settings::kMonitors).word}; }});
     SetPreset(platform::settings::Of(platform::settings::kMultiMonitor).word, platform::settings::Why(platform::settings::kMultiMonitor).c_str());
+    display_align::HealEarlierRun();
     const auto res = ReadResolution();
     platform::Log(L"window span: ready (the window spans a row of monitors of one height through the game's resolution request and the "
                   L"engine's window reshape; Ctrl+F2 toggles; window-span.hold on spans with any player count); the game's resolution is {} now",
@@ -525,6 +562,7 @@ bool In() noexcept
 }
 
 bool Enter(std::int32_t columns) noexcept
+try
 {
     if (!g_installed)
     {
@@ -560,10 +598,14 @@ bool Enter(std::int32_t columns) noexcept
     }
 
     Monitors monitors = Collect(window->hwnd);
-    auto     choice   = ChooseRow(monitors, columns);
+    if (const std::int32_t picked = PickedColumns(monitors); picked > 0)
+    {
+        columns = std::min(columns, picked);
+    }
+    auto choice = ChooseRow(monitors, columns);
     // As many columns as the row has monitors, up to the number asked for: a two-monitor row spans two columns
     // when three are asked (the hold asks for every column built).
-    while (!choice.ok && columns > 2 && choice.rowMonitors >= 2)
+    while (!choice.ok && !HasPicks(monitors) && columns > 2 && choice.rowMonitors >= 2)
     {
         const std::int32_t fewer = std::min(columns - 1, choice.rowMonitors);
         platform::Log(L"window span: the longest row has {} monitor(s); {} columns instead of {}", choice.rowMonitors, fewer,
@@ -573,14 +615,16 @@ bool Enter(std::int32_t columns) noexcept
     }
     if (!choice.ok)
     {
-        platform::Log(L"window span: refused: {} ({} monitor(s) listed; the mod lines up a row's tops itself within {} px "
-                      L"and changes no display mode or scaling: arrange monitors of one height in a row at 100 % scaling)",
-                      choice.why, monitors.list.size(), monitor_row::kAlignTolerance);
+        platform::Log(L"window span: refused: {} ({} monitor(s) listed; the mod changes no display mode or scaling); tried again when the "
+                      L"desktop changes",
+                      choice.why, monitors.list.size());
         return false;
     }
     g_native     = window->object;
     g_hwnd       = window->hwnd;
-    g_before     = ClientRect(window->hwnd);
+    // A row lost and regained is one stretch of play: Windows may have shifted the window in between, and the place to return
+    // to is still the one from before the first entry.
+    g_before     = g_rowLost ? g_before : ClientRect(window->hwnd);
     g_beforeMode = window->mode;
     g_savedRes   = ReadResolution();
     g_columns    = columns;
@@ -588,25 +632,28 @@ bool Enter(std::int32_t columns) noexcept
     g_reapplies  = 0;
     if (!choice.moves.empty())
     {
-        // The row's monitors a few pixels off its top are lined up first. Windows applies the move after the call
-        // returns (live, the desktop still read the old layout 2 ms later), so the request waits for a tick on
-        // which the desktop reads as the row with nothing left to move.
+        // The row's monitors are moved first. Windows may apply a move after the call returns and says nothing when it
+        // ignores one, so the request waits for a tick on which the desktop reads as the row with nothing left to move.
         const auto moves = MovesFor(choice, monitors);
         if (moves.size() != choice.moves.size() || !display_align::Apply(moves))
         {
-            platform::Log(L"window span: refused: {} monitor(s) of the row could not be lined up with its top (see above)",
-                          choice.moves.size());
+            platform::Log(L"window span: refused: {} monitor(s) could not be moved to make the row (see above)", choice.moves.size());
             Forget();
             return false;
         }
         g_step      = Step::LiningUp;
         g_stepTicks = 0;
-        platform::Log(L"window span: lining up the row ({}); the entry follows once the desktop reads as the row; the "
+        platform::Log(L"window span: moving monitors to make the row ({}); the entry follows once the desktop reads as the row; the "
                       L"desktop before: {}",
                       display_align::Reading(), DesktopText(monitors));
         return true;
     }
     return Proceed(*window, choice);
+}
+catch (...)
+{
+    platform::LogWarning(L"window span: the entry failed for lack of memory");
+    return false;
 }
 
 void Leave(const wchar_t* why) noexcept
@@ -615,6 +662,7 @@ void Leave(const wchar_t* why) noexcept
     {
         return;
     }
+    g_rowLost = false;  // the one leave that is the desktop's doing says so after this
     const wchar_t* reason = L"";
     const auto     window = FindNativeWindow(&reason);
     const bool     back   = window && Reshape(window->object, g_before);
@@ -631,7 +679,9 @@ void Toggle() noexcept
 {
     if (In())
     {
-        g_auto = false;
+        g_auto    = false;
+        g_retry   = false;
+        g_rowLost = false;
         Leave(L"Ctrl+F2");
     }
     else
@@ -676,6 +726,8 @@ void SetPreset(const std::wstring& preset, const wchar_t* why) noexcept
         g_auto       = false;
         g_held       = false;
         g_holdPreset = false;
+        g_retry      = false;
+        g_rowLost    = false;
         platform::Log(L"window span: multi-monitor = off ({}): no span until window-span on, window-span.hold on or Ctrl+F2", why);
         if (In())
         {
@@ -687,6 +739,103 @@ void SetPreset(const std::wstring& preset, const wchar_t* why) noexcept
         platform::LogWarning(L"window span: multi-monitor = '{}' ({}) is not a word of the table; nothing changes", preset, why);
     }
 }
+
+namespace {
+
+/// With the monitors back: a window whose monitor has gone goes to the primary, not off the desktop.
+void KeepWindowOnDesktop() noexcept
+{
+    const RECT before{g_before.left, g_before.top, g_before.right, g_before.bottom};
+    if (MonitorFromRect(&before, MONITOR_DEFAULTTONULL) != nullptr)
+    {
+        return;
+    }
+    const POINT corner{0, 0};
+    MONITORINFO info{};
+    info.cbSize = sizeof(info);
+    if (GetMonitorInfoW(MonitorFromPoint(corner, MONITOR_DEFAULTTOPRIMARY), &info))
+    {
+        platform::Log(L"window span: the window's old place {} is on no monitor now; it goes to the primary", RectText(g_before));
+        g_before = {info.rcMonitor.left, info.rcMonitor.top, info.rcMonitor.right, info.rcMonitor.bottom};
+    }
+}
+
+/// The monitors were moved: the row is entered once the desktop reads as the row, and given up after a while.
+void StepLiningUp() noexcept
+try
+{
+    if (g_stepTicks % kLineUpCheckTicks != 0 && g_stepTicks <= kLineUpTicks)
+    {
+        return;
+    }
+    const wchar_t* reason = L"";
+    const auto     window = FindNativeWindow(&reason);
+    if (!window)
+    {
+        platform::LogWarning(L"window span: the game window could not be reached during the move ({}); the monitors are put back", reason);
+        display_align::Restore();
+        Forget();
+        return;
+    }
+    Monitors   monitors = Collect(window->hwnd);
+    const auto choice   = ChooseRow(monitors, g_columns);
+    if (choice.ok && choice.moves.empty())
+    {
+        platform::Log(L"window span: the desktop reads as the row after {} tick(s)", g_stepTicks);
+        g_retry = !Proceed(*window, choice);
+    }
+    else if (g_stepTicks > kLineUpTicks)
+    {
+        platform::LogWarning(L"window span: after the move the desktop still does not read as the row ({}) after {} ticks; the monitors are put "
+                             L"back; the desktop now: {}",
+                             choice.ok ? std::format(L"{} move(s) still listed", choice.moves.size()) : choice.why, g_stepTicks, DesktopText(monitors));
+        display_align::Restore();
+        Forget();
+        g_retry      = true;
+        g_triedShape = DesktopShape();
+    }
+}
+catch (...)
+{
+    platform::LogWarning(L"window span: the desktop could not be read during the move; the monitors are put back");
+    display_align::Restore();
+    Forget();
+}
+
+/// An entry that, refused, is tried again when the desktop changes.
+void TryEnter() noexcept
+{
+    g_triedShape = DesktopShape();
+    g_retry      = !Enter(kColumnsBuilt);
+}
+
+/// The desktop's shape changed while the row stands: leaves unless the row still stands as it did, and comes back on its own.
+void CheckTheDesktop() noexcept
+try
+{
+    g_rowShape = DesktopShape();
+    Monitors         monitors = Collect(g_hwnd);
+    const auto       wanted   = PickedColumns(monitors);
+    const auto       choice   = ChooseRow(monitors, wanted > 0 ? wanted : g_columns);
+    const bool       same     = choice.ok && choice.moves.empty() && choice.span == g_target && (wanted == 0 || wanted == g_columns);
+    if (same)
+    {
+        platform::Log(L"window span: the desktop changed and the row still stands: {}", DesktopText(monitors));
+        return;
+    }
+    platform::Log(L"window span: the desktop changed and the row no longer stands ({}): {}", choice.ok ? L"another row is wanted" : choice.why,
+                  DesktopText(monitors));
+    g_retry      = true;
+    g_triedShape = 0;  // the first try right after the leave
+    Leave(L"the desktop changed");
+    g_rowLost    = true;
+}
+catch (...)
+{
+    platform::LogWarning(L"window span: the changed desktop could not be read");
+}
+
+}  // namespace
 
 void Tick(bool furtherPlayerIn) noexcept
 {
@@ -709,13 +858,17 @@ void Tick(bool furtherPlayerIn) noexcept
             if (!g_holdPreset || (FindNativeWindow(&why) && players::game_state::Current().state == kStatePlay))
             {
                 g_holdTried = true;
-                Enter(kColumnsBuilt);
+                TryEnter();
             }
         }
         else if (furtherPlayerIn && g_auto && !g_autoTried)
         {
             g_autoTried = true;
-            Enter(kColumnsBuilt);
+            TryEnter();
+        }
+        else if (g_retry && (g_held || (g_auto && furtherPlayerIn)) && ++g_outTicks % kHoldTicks == 0 && DesktopShape() != g_triedShape)
+        {
+            TryEnter();
         }
         return;
     }
@@ -728,36 +881,8 @@ void Tick(bool furtherPlayerIn) noexcept
     switch (g_step)
     {
         case Step::LiningUp:
-        {
-            const wchar_t* reason = L"";
-            const auto     window = FindNativeWindow(&reason);
-            if (!window)
-            {
-                platform::LogWarning(L"window span: the game window could not be reached during the line-up ({}); the "
-                                     L"monitors are put back",
-                                     reason);
-                display_align::Restore();
-                Forget();
-                break;
-            }
-            Monitors       monitors = Collect(window->hwnd);
-            const auto     choice   = ChooseRow(monitors, g_columns);
-            if (choice.ok && choice.moves.empty())
-            {
-                platform::Log(L"window span: the desktop reads as the row after {} tick(s)", g_stepTicks);
-                Proceed(*window, choice);
-            }
-            else if (g_stepTicks > kLineUpTicks)
-            {
-                platform::LogWarning(L"window span: after the line-up the desktop still does not read as the row ({}) after "
-                                     L"{} ticks; the monitors are put back; the desktop now: {}",
-                                     choice.ok ? std::format(L"{} move(s) still listed", choice.moves.size()) : choice.why,
-                                     g_stepTicks, DesktopText(monitors));
-                display_align::Restore();
-                Forget();
-            }
+            StepLiningUp();
             break;
-        }
         case Step::Requested:
         {
             const Resolution res = ReadResolution();
@@ -796,6 +921,7 @@ void Tick(bool furtherPlayerIn) noexcept
                               g_columns, RectText(seen), ViewportText(), ResolutionText(ReadResolution()));
                 g_step      = Step::In;
                 g_stepTicks = 0;
+                g_rowLost   = false;
             }
             else if (g_stepTicks > kReshapeRetryTicks)
             {
@@ -805,6 +931,11 @@ void Tick(bool furtherPlayerIn) noexcept
         }
         case Step::In:
         {
+            if (g_ticks % kHoldTicks == 0 && DesktopShape() != g_rowShape)
+            {
+                CheckTheDesktop();
+                break;
+            }
             if (g_ticks % kHoldTicks == 0)
             {
                 const Resolution res  = ReadResolution();
@@ -834,6 +965,12 @@ void Tick(bool furtherPlayerIn) noexcept
             const Resolution res = ReadResolution();
             if (res == g_savedRes || g_stepTicks > kRequestTicks)
             {
+                if (display_align::Moved())
+                {
+                    display_align::Restore();  // the window's rect is read on the desktop it came from
+                    break;
+                }
+                KeepWindowOnDesktop();
                 const wchar_t* reason = L"";
                 const auto     window = FindNativeWindow(&reason);
                 Rect           seen   = window ? ClientRect(window->hwnd) : Rect{};
@@ -847,7 +984,6 @@ void Tick(bool furtherPlayerIn) noexcept
                               L"in {} mode), the viewport {}",
                               g_stepTicks, ResolutionText(res), res == g_savedRes ? L"" : L" (NOT the saved one)", RectText(seen),
                               moved ? L" after a last reshape" : L"", RectText(g_before), ModeName(g_beforeMode), ViewportText());
-                display_align::Restore();  // after the window is back: the engine sees one desktop change, not two at once
                 Forget();
             }
             break;
@@ -872,7 +1008,7 @@ std::wstring Reading() noexcept
                        L"the viewport {}; re-applies {}{}",
                        StepName(g_step), g_columns, RectText(g_target), g_held ? L"on" : L"off", g_furtherPlayerIn ? L"in" : L"out",
                        RectText(IsWindow(g_hwnd) ? ClientRect(g_hwnd) : Rect{}), ResolutionText(ReadResolution()), ViewportText(),
-                       g_reapplies, display_align::Moved() ? std::format(L"; monitors lined up: {}", display_align::Reading()) : L"");
+                       g_reapplies, display_align::Moved() ? std::format(L"; monitors moved: {}", display_align::Reading()) : L"");
 }
 
 bool Held() noexcept

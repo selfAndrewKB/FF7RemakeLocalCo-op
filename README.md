@@ -126,9 +126,19 @@ the option takes its default, and the value stays in the file as written, with a
 of the file, so none can go stale.
 
 **Choosing the monitors.** Copy `build/Game__Shipping__Win64/LocalSplitScreenSetup.exe` next to `LocalSplitScreen.ini` and
-run it with the game closed: it shows the desktop as Windows arranges it, you click the monitors of the row, and it saves
-them with Multiple Monitors and Screen Order. With none picked the game takes the longest row it finds. The game is then
-started from Steam as always.
+run it with the game closed: it shows the desktop as Windows arranges it, you click two or three monitors in the order you want
+them, left to right, and it saves them with Multiple Monitors and Screen Order. With none picked the game takes the longest row
+it finds. The game is then started from Steam as always.
+
+The monitors need not be next to each other in Windows. While the game holds the row they are moved into it, and afterwards they
+go back: Windows' own saved arrangement is never changed, so a restart returns your layout whatever happens. If the game crashes
+or is killed, the same exe, which the mod keeps running in the background as a guard, puts them back; if that fails too, the next
+start of the game or the app does, and the app has a **Put my monitors back** button.
+
+A picked monitor that is not connected is waited for, not replaced: the row forms when it arrives, drops back to one window if it
+leaves, and forms again when it returns. A streaming host's virtual monitor (Apollo, Vibepollo, SudoVDA) works like any other and
+is recognised by its name, so give each client a name of its own. A row still needs monitors of one height at 100 % Windows
+scaling.
 
 ## Layout
 
@@ -429,9 +439,10 @@ src/
     column_source           Where each column's view comes from, decided in one place each tick
     columns.h               The view columns: how many views the screen shows and whose each one is, read once per tick
                             from the engine's local-player list
-    display_align           A monitor of the row lined up with the row's top through Windows' display-configuration API
-                            (the one Display settings itself uses), for this Windows session only, and put back at the
+    display_align           The monitors placed to make the row, for as long as the game holds it, and put back at the
                             leave
+    display_move            The desktop's monitor positions through Windows' display-configuration API, the one Display
+                            settings itself uses, and the record kept while they are moved (views/row_journal)
     letterbox_patch         Two views in the game's Borderless mode: Square Enix's single-view letterbox switched off
                             while they exist
     mirror_player           The mirror players: an extra local player of the mod's in every column no player fills,
@@ -439,9 +450,13 @@ src/
     monitor_list            The desktop's monitors as Windows has them now, for the mod's span (views/window_span) and
                             the setup app (setup/): each monitor's rect and effective DPI, its GDI device name, and an
                             id and a name from the display configuration
-    monitor_row             Which monitors a spanned game window may cover: a row of monitors of one height
+    monitor_row             Which monitors a spanned game window covers: a row of monitors of one height, one view per
+                            monitor
     narrow_camera           The camera in a view narrower than the game's image and spread across a window: two small
                             corrections beside the narrow view's FOV
+    row_journal.h           The record of a desktop the mod has moved, on disk from just before the move until the
+                            monitors are back, so whoever finds it can undo the move: the guard process when the game
+                            dies (setup/main.cpp), the next start of the game or …
     scene_camera            The scene camera on every further player's view: a cutscene, a talk scene or an event camera
                             plays on each further player's view as it does on player 1's
     split_fov               A view wider than the game's 16:9 image (two players top and bottom, the top view of three)
@@ -528,5 +543,5 @@ src/
                             game
     title_row_rules.h       Where the title menu's Co-op row goes among its rows' kinds: directly below Options, so the
                             rows through Options keep their places
-tests/                      63 host-side test programs (ctest), one per pure header or code stub; run without the game
+tests/                      64 host-side test programs (ctest), one per pure header or code stub; run without the game
 ```

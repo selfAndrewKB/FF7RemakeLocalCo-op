@@ -1,36 +1,29 @@
 #pragma once
 
-// Which monitors a spanned game window may cover: a row of monitors of one height.
+// Which monitors a spanned game window covers: a row of monitors of one height, one view per monitor.
 //
-// A window that spans several monitors shows one view per monitor only if every monitor it covers has the same
-// height, the same top edge and no gap to its neighbour, and if none of them is scaled by Windows (the game's
-// exe is per-monitor DPI aware and the engine resizes the window itself on a DPI change; research
-// RE-multi-monitor-views.md §1, §4). Widths may differ (v0.147.0, the user 2026-11-02: "the game automatically fits the
-// width of the monitor it is on"): each column is then its monitor's own width (views/column_rules ColumnRecords), so
-// the choice lists the widths. Until v0.146 a row needed equal monitors, and the user's 2560 | 3440 | 2560 row was
-// refused. This module decides from a list of monitors and the index of the game's one; it touches no OS and no
-// engine, so it is unit-tested on the host (tests/monitor_row_test.cpp).
+// A window that spans several monitors shows one view per monitor only if every monitor it covers has the same height,
+// the same top edge and no gap to its neighbour, and if none of them is scaled by Windows (the game's exe is per-monitor
+// DPI aware and the engine resizes the window itself on a DPI change; research RE-multi-monitor-views.md §1, §4). Widths
+// may differ: each column is its monitor's own width (views/column_rules ColumnRecords), so the choice lists the widths.
+// This module decides from a list of monitors; it touches no OS and no engine, so it is unit-tested on the host
+// (tests/monitor_row_test.cpp).
 //
-// Taken from Rebirth's views/monitor_row. Changed: the row need not contain the game's monitor. Remake's entry
-// moves the window through the game's own resolution request and the engine's reshape, so a row of equal monitors
-// anywhere on the desktop qualifies (the user plays on an ultrawide above a pair of equal monitors). The game's own
-// row is preferred when it qualifies; otherwise the longest qualifying row. Within the row the span takes `columns`
-// monitors starting at the game's own when it is in the row (shifted left as far as needed when the row ends
-// before that), else from the row's left. Seat-indexed by design: each column is one seated player's view, so a
-// two-player span covers two monitors and leaves a third idle.
-// Changed again (v0.38.0): a monitor whose top is within kAlignTolerance of the row's is in the row, read as if it
-// sat at the row's top; the choice lists the moves that make that true, and the span makes them in Windows before
-// placing the window (views/display_align). Windows snaps a dragged monitor to its neighbours' edges, so a pair
-// beside a monitor of another size lands a few pixels off every time (the user's pair: 2 px, then 15 px); asking
-// the user to fix that by hand failed twice in one evening.
-// The row's top (v0.42.1): the top of a row monitor attached to the rest of the desktop (its bottom on another
-// monitor's top, or its top on another's bottom, with a horizontal overlap), the leftmost's otherwise. Seen live
-// 2026-10-22: with the leftmost's top (the floating monitor's) as the reference, the mod moved the attached
-// monitor 15 px up off the primary, and Windows dropped the other one 15 px to keep the pair on the primary, so
-// the two swapped and the desktop never read as the row [CONFIRMED by the span's desktop log].
-// The player's pick: the settings file can name the monitors that may join (the setup app writes it, MarkNamed reads it);
-// the others stay on the desktop, count for the row's top, and stop a row at their edge.
+// Two ways to a row:
+//   - Choose, nothing picked: a row the desktop already has. Every row on the desktop counts, the game's own monitor's
+//     first, else the longest. A monitor a few pixels off the row's top is listed as a move, since Windows snaps a dragged
+//     monitor to its neighbours and a pair beside a monitor of another size lands a few pixels off every time. The row's top
+//     is that of a member attached to the rest of the desktop: moved off an attached monitor's top, Windows drags the
+//     others along to keep them on it and the desktop never reads as the row.
+//   - Arrange, the player's picks: any monitors, in the order picked, left to right, wherever they sit. The moves make the
+//     row for as long as the game holds it (views/display_align); Windows' own arrangement is never changed. Monitors not
+//     picked stay where they are unless the row needs the place or their only link to the desktop went with it.
+//
+// Picks are saved by identity, since a DISPLAYn number changes when Windows renumbers its outputs. A monitor's device path
+// names its port, and a streaming host's virtual monitor gets a new path each time it is made (a SudoVDA monitor: ...UID256, then
+// ...UID257 for the same monitor made again), so a pick also keeps the monitor's model and name to find it by.
 
+#include <cstddef>
 #include <cstdint>
 #include <span>
 #include <string>
@@ -39,7 +32,8 @@
 
 namespace lss::views::monitor_row {
 
-/// A monitor this many pixels (or fewer) off the row's top is lined up by the span; further off, it is refused.
+/// A monitor this many pixels (or fewer) off the row's top is lined up by the span when nothing is picked; further off, it
+/// is no row. Picked monitors move any distance.
 constexpr std::int32_t kAlignTolerance = 32;
 
 struct Rect
@@ -58,14 +52,14 @@ struct Monitor
 {
     Rect          rect;
     std::uint32_t dpi = 96;  // 96 = 100 % scaling
-    bool          joins = true;  // false: the player left it out of the row (MarkNamed); a row never reaches past it
 };
 
-/// A monitor of the span to shift vertically before the window is placed: `from` as Windows has it, to `toTop`.
+/// A monitor to place before the window is: `from` as Windows has it, to the given top-left corner.
 struct Move
 {
     Rect         from;
-    std::int32_t toTop = 0;
+    std::int32_t toLeft = 0;
+    std::int32_t toTop  = 0;
     bool         operator==(const Move&) const noexcept = default;
 };
 
@@ -75,28 +69,41 @@ struct Choice
     Rect              span;             // the window rect to take, when ok (with the moves made)
     std::int32_t      rowMonitors = 0;  // monitors in the chosen row (one height, within the tolerance, touching, unscaled)
     bool              gamesRow    = false;  // the chosen row holds the game's monitor
-    std::vector<Move> moves;            // when ok: the monitors of the span to line up first (usually none)
+    std::vector<Move> moves;            // when ok: the monitors to place first (usually none)
     std::vector<std::int32_t> widths;   // when ok: the span's monitors' widths, left to right (one per column)
     std::wstring      why;              // when not ok: what is missing or wrong, and what to change in Windows
     std::wstring      stopped;          // when not ok: only what to change in Windows; empty if no monitor stopped a row
 };
 
-/// `columns` >= 1 monitors of a row of monitors of one height; the row around `monitors[gameMonitor]` when it qualifies.
+/// `columns` >= 1 monitors of a row the desktop has; the row around `monitors[gameMonitor]` when it qualifies.
 Choice Choose(std::span<const Monitor> monitors, std::size_t gameMonitor, std::int32_t columns);
 
-/// How many monitors the settings file's word names, and how many of those are connected.
-struct Named
+/// A row of exactly `picks`, indices into `monitors` in order left to right, wherever they sit now: the moves make it. The
+/// primary monitor (the one at 0,0) never moves, since Windows ties it to that corner; the desktop stays one connected
+/// piece with no overlap, because Windows ignores any other layout without a word; among the layouts that do, the one that
+/// moves the fewest monitors wins, so a row that is already there has no moves at all.
+Choice Arrange(std::span<const Monitor> monitors, std::span<const std::size_t> picks);
+
+/// What finds a monitor again after its path changed: its model (from the device path) and its own name, in characters a
+/// settings word can hold. Empty when the path has no model in it. `path` is lower-case, as monitor_list gives it.
+std::wstring IdentityKey(std::wstring_view path, std::wstring_view name);
+
+/// One monitor as the settings word keeps it.
+std::wstring PickWord(std::wstring_view id, std::wstring_view key);
+
+/// The settings word: pick words in the row's order, joined.
+std::wstring NamesWord(std::span<const std::wstring> pickWords);
+
+/// The picks a settings word finds on the desktop now, in the word's order. An exact path wins; then a connected monitor
+/// of the same identity that no other pick took, in list order, as two monitors of one identity are interchangeable.
+struct Picks
 {
-    std::int32_t named   = 0;
-    std::int32_t present = 0;
+    std::int32_t             named = 0;  // the monitors the word names, connected or not
+    std::vector<std::size_t> found;      // indices into `ids` of those connected
 };
 
-/// Monitor ids joined as the settings file keeps them ('|' between ids). The monitors' ids come from views/monitor_list.
-std::wstring NamesWord(std::span<const std::wstring> ids);
-
-/// Leaves out of the row (`joins` false) every monitor the word does not name, when at least two named monitors are
-/// connected. A word naming fewer than that changes nothing: the player's choice cannot be met, so any row serves. `ids`
-/// is one lower-case id per monitor; the word is compared as the settings file reads it, lower-cased.
-Named MarkNamed(std::span<Monitor> monitors, std::span<const std::wstring> ids, std::wstring_view word);
+/// `ids` and `keys` hold one lower-case path and one IdentityKey per monitor; the word is compared as the settings file
+/// reads it, lower-cased.
+Picks FindPicks(std::span<const std::wstring> ids, std::span<const std::wstring> keys, std::wstring_view word);
 
 }  // namespace lss::views::monitor_row

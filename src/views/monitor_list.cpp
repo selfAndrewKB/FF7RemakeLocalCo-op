@@ -13,6 +13,7 @@ namespace lss::views::monitor_list {
 namespace {
 
 BOOL CALLBACK Add(HMONITOR handle, HDC, LPRECT, LPARAM param) noexcept
+try
 {
     MONITORINFOEXW info{};
     info.cbSize = sizeof(info);
@@ -34,6 +35,10 @@ BOOL CALLBACK Add(HMONITOR handle, HDC, LPRECT, LPARAM param) noexcept
     listed.handle  = handle;
     reinterpret_cast<std::vector<Listed>*>(param)->push_back(std::move(listed));
     return TRUE;
+}
+catch (...)
+{
+    return FALSE;
 }
 
 std::wstring Lower(std::wstring text)
@@ -109,6 +114,7 @@ std::vector<Listed> List()
         const bool known = found != identities.end();
         listed.id        = Lower(known && !found->second.path.empty() ? found->second.path : listed.device);
         listed.name      = known && !found->second.name.empty() ? found->second.name : listed.device;
+        listed.key       = known ? monitor_row::IdentityKey(listed.id, found->second.name) : std::wstring();
     }
     return list;
 }
