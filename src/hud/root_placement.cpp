@@ -40,6 +40,7 @@ struct Placement
 };
 constexpr Placement kPlacements[] = {
     {L"NaviMap_C", 1.0f, 0.0f},  // top right: the minimap and the objective distance
+    {L"Compass_C", 0.5f, 0.0f},  // top centre: the compass the minimap toggle swaps in for the minimap
     {L"Command_C", 0.0f, 1.0f},  // bottom left: the command menu and its prompt row
     {L"Status_C", 1.0f, 1.0f},   // bottom right: the party panel
 };
