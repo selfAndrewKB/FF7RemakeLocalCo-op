@@ -94,6 +94,7 @@ add_library(LocalSplitScreen SHARED
     src/menu/coop_page_open.cpp
     src/menu/coop_slider.cpp
     src/menu/game_ui.cpp
+    src/menu/title_row.cpp
     src/players/party_events.cpp
     src/players/party_member.cpp
     src/players/party_seat.cpp
@@ -433,6 +434,13 @@ add_executable(MonitorRowTests
 target_include_directories(MonitorRowTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_compile_features(MonitorRowTests PRIVATE cxx_std_20)
 add_test(NAME monitor_row COMMAND MonitorRowTests)
+
+add_executable(TitleRowRulesTests
+    tests/title_row_rules_test.cpp
+)
+target_include_directories(TitleRowRulesTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(TitleRowRulesTests PRIVATE cxx_std_20)
+add_test(NAME title_row_rules COMMAND TitleRowRulesTests)
 
 add_executable(SetupRulesTests
     tests/setup_rules_test.cpp

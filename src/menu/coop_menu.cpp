@@ -7,6 +7,7 @@
 #include "menu/coop_page_open.h"
 #include "menu/coop_slider.h"
 #include "menu/game_ui.h"
+#include "menu/title_row.h"
 #include "platform/entry_redirect.h"
 #include "platform/game_array.h"
 #include "platform/guarded.h"
@@ -46,6 +47,7 @@ bool                    g_installed = false;
 bool                    g_pending   = false;  // the first tick places everything
 bool                    g_placed    = false;  // the row shows and opens the page
 bool                    g_sliderFound = false;  // the long rows can be sliders
+bool                    g_titleFound  = false;  // the title menu can have its row
 
 /// The game's window opener: the Co-op row's kind opens the page; every other kind is the game's.
 void OpenWindow(void* mgr, std::uint8_t kind)
@@ -75,6 +77,11 @@ bool Place(const platform::GameImage& image) noexcept
     {
         coop_slider::Place(image);
     }
+    // The title's row is its own too: without it the title stays as it was (logged by title_row).
+    if (g_titleFound)
+    {
+        title_row::Place(image);
+    }
     std::uintptr_t unlockWas = 0;
     if (!platform::Read(reinterpret_cast<const void*>(g.unlockSlot), unlockWas))
     {
@@ -88,7 +95,9 @@ bool Place(const platform::GameImage& image) noexcept
 
 void Unplace() noexcept
 {
-    // The headings and the page's key handler, then the row (its tables back), then the values and the row's opener.
+    // The title's row, the headings and the page's key handler, then the row (its tables back), then the values and the
+    // row's opener.
+    title_row::Unplace();
     coop_page_open::Unplace();
     g_order.Restore();
     g_unlock.Restore();
@@ -104,6 +113,7 @@ std::wstring Reading()
     std::wstring text = std::format(L"row {}; page {}{}; opened {}, values set {}", g_placed ? L"placed" : L"not placed",
                                     coop_page::IsOpen() ? L"open" : L"closed", coop_page::Failed() ? L" (failed: opens nothing)" : L"",
                                     coop_page_open::Opens(), coop_page::Commits());
+    text += title_row::Reading();
     text += coop_page_open::FrameReading();
     void* const         mgr = game_ui::Manager(facts::kUiMainMenuSlot);
     void* const         top = mgr != nullptr ? game_ui::WeakAt(mgr, facts::kMainMenuMgrCurrent) : nullptr;
@@ -153,6 +163,7 @@ try
     g.unlockSlot   = *unlockSlot;
     g.orderWord    = *orderWord;
     g_sliderFound  = coop_slider::Install(image);
+    g_titleFound   = title_row::Install(image);
     g_installed    = true;
     g_pending      = true;  // placed by the first tick, on the game thread the redirected functions run on
     control::Register({.name  = L"menu.coop",

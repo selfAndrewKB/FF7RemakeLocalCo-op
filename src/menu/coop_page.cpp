@@ -435,9 +435,19 @@ const std::vector<coop_menu_rules::Category>& Categories() noexcept
     return g_page;
 }
 
-void* Ready(void* top) noexcept
+void* Ready(void* host, std::int32_t z, std::uint8_t inGame) noexcept
 {
-    void* page = weak::Resolve(g_pageWeak);
+    void*        page     = weak::Resolve(g_pageWeak);
+    std::uint8_t madeFor  = inGame;
+    if (page != nullptr && platform::Read(At(page, facts::kOptionsInGame), madeFor) && madeFor != inGame)
+    {
+        // Closed, so out of the overlay and held by nothing: the collector takes it.
+        platform::LogDebug(L"Co-op page: the page made for the {} is left; a new one for the {}", madeFor != 0 ? L"main menu" : L"title",
+                           inGame != 0 ? L"main menu" : L"title");
+        g_pageWeak = {};
+        g_filled   = false;
+        page       = nullptr;
+    }
     if (page == nullptr)
     {
         if (g_class == nullptr)
@@ -446,9 +456,9 @@ void* Ready(void* top) noexcept
         }
         void* world = nullptr;
         const auto getWorld =
-            reinterpret_cast<GetWorldFn>(platform::ReadPointer(platform::ReadPointer(top, 0), facts::kObjectGetWorldSlot));
-        if (g_class == nullptr || getWorld == nullptr || !platform::CallGuarded(getWorld, world, top) || world == nullptr ||
-            !platform::CallGuarded(g.create, page, world, g_class, std::uint8_t{1}) || page == nullptr)
+            reinterpret_cast<GetWorldFn>(platform::ReadPointer(platform::ReadPointer(host, 0), facts::kObjectGetWorldSlot));
+        if (g_class == nullptr || getWorld == nullptr || !platform::CallGuarded(getWorld, world, host) || world == nullptr ||
+            !platform::CallGuarded(g.create, page, world, g_class, inGame) || page == nullptr)
         {
             platform::LogWarning(L"Co-op page: the game's Options screen could not be made ({}); the row opens nothing",
                                  g_class == nullptr ? L"its class is not loaded" : L"its creation failed");
@@ -465,8 +475,6 @@ void* Ready(void* top) noexcept
     }
     if (!inRoot)
     {
-        std::int32_t z = 0;
-        platform::Read(At(top, facts::kWindowZOrder), z);
         platform::WriteGuarded(At(page, facts::kWindowZOrder), &z, sizeof(z));
         g_filled   = false;  // its construct runs now, over the game's data
         bool added = false;

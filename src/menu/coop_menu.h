@@ -10,6 +10,7 @@
 // redirect opens the page instead of the trial's action. The page is the game's Options screen with the settings
 // table's options, driven by the game's list, value popup, help line, sounds, animations and focus layer, so every pad
 // does under the menu-time rule; a change applies at once (for this session; the file is not written).
+// The title menu has a row of its own to the same page (menu/title_row), placed with these or left out by its own checks.
 // Install checks every part's functions (menu/game_ui, menu/coop_page, menu/coop_page_open) or places nothing. The
 // redirects and the table words are placed on the first tick (game thread), the row's tables last, so the row never
 // shows without its opener. Each tick runs the page's queued changes, then watches the open page's close. Reading

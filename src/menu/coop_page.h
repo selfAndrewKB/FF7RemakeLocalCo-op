@@ -35,9 +35,10 @@ void Unplace() noexcept;
 /// The page's categories and rows, in order.
 const std::vector<coop_menu_rules::Category>& Categories() noexcept;
 
-/// The mod's page, made if needed, in the root overlay (at `top`'s ZOrder) and holding the mod's data; null (logged)
-/// if it could not be made, added or written.
-void* Ready(void* top) noexcept;
+/// The mod's page, made if needed (from `host`'s world, with the game's `inGame`: 1 from the main menu, 0 from the title), in
+/// the root overlay at `z` and holding the mod's data; null (logged) if it could not be made, added or written. A page made
+/// for the other kind of host is forgotten and a new one made: the title's page carries the title's close function.
+void* Ready(void* host, std::int32_t z, std::uint8_t inGame) noexcept;
 /// The mod's page while alive, else null.
 void* Page() noexcept;
 /// `object` is the mod's page (by its weak pointer: a dead page's address may hold another object).
@@ -46,7 +47,8 @@ bool IsPage(const void* object) noexcept;
 /// slider row's text is made right after its value read, menu/coop_slider).
 std::optional<int> TakeAnswered(std::int32_t value) noexcept;
 
-/// The page is open over the main menu's hidden first page (set by menu/coop_page_open): commits are taken only then.
+/// The page is open, over the main menu's hidden first page or the title menu (set by menu/coop_page_open): commits are
+/// taken only then.
 bool IsOpen() noexcept;
 void SetOpen(bool open) noexcept;
 

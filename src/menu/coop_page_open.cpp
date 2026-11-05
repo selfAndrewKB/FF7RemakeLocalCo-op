@@ -14,13 +14,18 @@
 #include "platform/settings.h"
 #include "platform/verified_code.h"
 #include "platform/vtable_entry.h"
-#include "players/seat_camera.h"
 #include "players/weak_object.h"
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <format>
 #include <string>
+
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <Windows.h>
 
 namespace lss::menu::coop_page_open {
 
@@ -57,15 +62,42 @@ struct Game
     std::array<std::uintptr_t, facts::kOptionsHeadingsWere.size()> headingsWere{};
 };
 
+using TitleCallFn   = void (*)(void* start);       // the start menu's Options open, its frame's
+using ClosedFn      = void (*)(const void* capture);
+using SetStickFn    = void (*)(void* input, std::uint8_t on);
+using SetTextFn     = void (*)(void* block, const wchar_t* text);
+
+/// The title's functions, found at install (menu/title_row).
+struct TitleGame
+{
+    TitleCallFn openOptions = nullptr;
+    TitleCallFn ensureFrame = nullptr;
+    ClosedFn    closed      = nullptr;
+    SetStickFn  setStick    = nullptr;
+    SetTextFn   setText     = nullptr;
+};
+
+/// What the game's close function for the title holds: the start menu and a weak pointer to it.
+struct TitleCapture
+{
+    void*      start = nullptr;
+    weak::Weak weak;
+};
+static_assert(sizeof(TitleCapture) == 16 && offsetof(TitleCapture, weak) == 8, "read raw by the game's close function");
+
 // Set at install and on the first tick, then only read.
 Game                  g;
+TitleGame             g_title;
 platform::VTableEntry g_keyDown;
 /// The page's categories' entries of the game's heading table, swapped for their labels while the page is open (the
 /// game's own Options page reads the same table).
 std::array<platform::VTableEntry, rules::kCategoryKeys.size()> g_headings;
 
 // Game thread.
+unsigned long g_gameThread = 0;  // the tick's thread: only there may the hold be let go (with or without a further player)
 void*         g_mgr = nullptr;  // the main menu manager while open
+bool          g_atTitle = false;  // the page is open over the title menu, not the main menu
+weak::Weak    g_titleHost;        // the start menu it opened over
 weak::Weak    g_topWeak;
 void*         g_heldTop = nullptr;  // the Top window the mod put on the engine's root set while the page is open (alive
                                     // while held: the collector never frees a root)
@@ -167,7 +199,7 @@ void ReleaseTop() noexcept
     {
         return;
     }
-    if (!players::seat_camera::IsGameThread())
+    if (GetCurrentThreadId() != g_gameThread)
     {
         g_heldTop = nullptr;
         platform::LogDebug(L"Co-op page: the main menu's first page left held: the unload runs off the game thread");
@@ -213,9 +245,59 @@ void ShowPageAgain(void* page) noexcept
     g_pageVisibility = -1;
 }
 
+/// The mod's state at a close over the title menu; the game's close function has run with the page's Back.
+void ClosedAtTitle(const wchar_t* how) noexcept
+{
+    coop_page::SetOpen(false);
+    ShowPageAgain(coop_page::Page());
+    SwapHeadings(false);
+    g_atTitle   = false;
+    g_titleHost = {};
+    platform::Log(L"Co-op page: closed over the title menu ({})", how);
+}
+
+/// The page gone or taken down over the title menu, so its Back never ran: what that Back's close function undoes, undone.
+/// With the start menu gone too, only the stick's mode is left to put back.
+void LeftAtTitle(void* page, const wchar_t* why) noexcept
+{
+    coop_page::SetOpen(false);
+    ShowPageAgain(page);
+    SwapHeadings(false);
+    if (page != nullptr)
+    {
+        alignas(16) std::uint8_t taken[16]{};
+        void* ref = nullptr;
+        if (platform::CallGuarded(g.takeWidget, ref, page, static_cast<void*>(taken)) && ref != nullptr)
+        {
+            platform::CallGuarded(g.popLayer, game_ui::System(), ref);
+        }
+        void* removed = nullptr;
+        platform::CallGuarded(g.remove, removed, page);
+        const std::uint8_t none = 0;
+        platform::WriteGuarded(At(page, facts::kOptionsState), &none, sizeof(none));
+    }
+    if (void* const start = weak::Resolve(g_titleHost))
+    {
+        const TitleCapture capture{start, g_titleHost};
+        platform::CallGuarded(g_title.closed, static_cast<const void*>(&capture));
+    }
+    else
+    {
+        platform::CallGuarded(g_title.setStick, game_ui::Manager(facts::kUiInputSlot), std::uint8_t{0});
+    }
+    g_atTitle   = false;
+    g_titleHost = {};
+    platform::LogWarning(L"Co-op page: left over the title menu ({})", why);
+}
+
 /// The page closed (by its own Back, or gone): the Top window back, as after any of the game's windows.
 void Closed(const wchar_t* how) noexcept
 {
+    if (g_atTitle)
+    {
+        ClosedAtTitle(how);
+        return;
+    }
     coop_page::SetOpen(false);
     ShowPageAgain(coop_page::Page());
     SwapHeadings(false);
@@ -380,8 +462,97 @@ void Remove() noexcept
         coop_page::SetOpen(false);
         platform::Log(L"Co-op page: the mod unloads with the page open; the page is left to the game");
     }
+    g_atTitle        = false;
     g_pageVisibility = -1;
     ReleaseTop();  // a flag in the object array: no UI call
+}
+
+bool InstallTitle(const platform::GameImage& image) noexcept
+try
+{
+    namespace f = facts;
+    const auto openOptions = platform::FindFunction(image, f::kStartMenuOpenOptions);
+    const auto ensureFrame = platform::FindFunction(image, f::kStartMenuEnsureFrame);
+    const auto closed      = platform::FindFunction(image, f::kStartMenuOptionsClosed);
+    const auto setStick    = platform::FindFunction(image, f::kSetStickDPadMode);
+    const auto setText     = platform::FindFunction(image, f::kTextBlockSetWide);
+    if (!openOptions || !ensureFrame || !closed || !setStick || !setText)
+    {
+        return false;
+    }
+    g_title.openOptions = reinterpret_cast<TitleCallFn>(*openOptions);
+    g_title.ensureFrame = reinterpret_cast<TitleCallFn>(*ensureFrame);
+    g_title.closed      = reinterpret_cast<ClosedFn>(*closed);
+    g_title.setStick    = reinterpret_cast<SetStickFn>(*setStick);
+    g_title.setText     = reinterpret_cast<SetTextFn>(*setText);
+    return true;
+}
+catch (...)
+{
+    return false;
+}
+
+void OpenAtTitle(void* start) noexcept
+try
+{
+    if (coop_page::IsOpen() || coop_page::Failed() || g_title.openOptions == nullptr)
+    {
+        return;
+    }
+    const weak::Weak host = weak::MakeWeak(start);
+    if (!host.Set())
+    {
+        platform::LogWarning(L"Co-op page: the title menu could not be read in the object array; not opened");
+        return;
+    }
+    // The frame first: the overlay draws the page and the frame at one order in the order they were added.
+    if (!platform::CallGuarded(g_title.ensureFrame, start))
+    {
+        platform::LogWarning(L"Co-op page: the title menu's frame could not be made; not opened");
+        return;
+    }
+    void* const page = coop_page::Ready(start, facts::kTitleOptionsZ, std::uint8_t{0});
+    if (page == nullptr)
+    {
+        // The frame is up and holds the UI filters: only the game's close function lets them go.
+        const TitleCapture capture{start, host};
+        platform::CallGuarded(g_title.closed, static_cast<const void*>(&capture));
+        return;
+    }
+    g_atTitle   = true;
+    g_titleHost = host;
+    SwapHeadings(true);
+    coop_page::SetOpen(true);
+    // The game's open reads its page from one field and has no parameter for it. The page is in the overlay, so the open
+    // does not add it again and its own data stays. The field is the game's again before any other code can read it.
+    void* const gamesPage = platform::ReadPointer(start, facts::kStartMenuPage);
+    bool        opened    = platform::WriteGuarded(At(start, facts::kStartMenuPage), &page, sizeof(page));
+    opened                = opened && platform::CallGuarded(g_title.openOptions, start);
+    if (!platform::WriteGuarded(At(start, facts::kStartMenuPage), &gamesPage, sizeof(gamesPage)))
+    {
+        platform::LogError(L"Co-op page: the title menu's Options page could not be put back");
+    }
+    if (!opened)
+    {
+        LeftAtTitle(page, L"its opening faulted");
+        return;
+    }
+    // Written once by the frame's open, and rewritten by the next one: the game's own Options still reads Options.
+    void* const frame = platform::ReadPointer(start, facts::kStartMenuFrame);
+    void* const title = frame != nullptr ? platform::ReadPointer(frame, facts::kMainMenuTitleText) : nullptr;
+    if (title == nullptr || !platform::CallGuarded(g_title.setText, title, rules::kTitle))
+    {
+        platform::LogWarning(L"Co-op page: the title menu's frame could not be titled; it reads Options");
+    }
+    ++g_opens;
+    platform::Log(L"Co-op page: opened over the title menu ({} categories, {} options)", coop_page::Categories().size(), settings::kOptions.size());
+}
+catch (...)
+{
+    if (g_atTitle)
+    {
+        LeftAtTitle(coop_page::Page(), L"an exception while opening");
+    }
 }
 
 void Open(void* mgr, OpenWindowFn openWindow) noexcept
@@ -407,7 +578,9 @@ try
         platform::LogWarning(L"Co-op page: the main menu's current window is not its first page; not opened");
         return;
     }
-    void* const page = coop_page::Ready(top);
+    std::int32_t z = 0;
+    platform::Read(At(top, facts::kWindowZOrder), z);
+    void* const page = coop_page::Ready(top, z, std::uint8_t{1});
     if (page == nullptr)
     {
         return;
@@ -450,8 +623,26 @@ catch (...)
 
 void Tick() noexcept
 {
+    g_gameThread = GetCurrentThreadId();
     if (!coop_page::IsOpen())
     {
+        return;
+    }
+    if (g_atTitle)
+    {
+        void* const titlePage = coop_page::Page();
+        if (titlePage == nullptr)
+        {
+            LeftAtTitle(nullptr, L"the page is gone");
+        }
+        else if (weak::Resolve(g_titleHost) == nullptr)
+        {
+            LeftAtTitle(titlePage, L"the title menu is gone");
+        }
+        else if (PageClosing(titlePage))
+        {
+            ClosedAtTitle(L"seen by the tick");
+        }
         return;
     }
     // A main menu closed under the page (no game path is known to while the page has focus): take it down.

@@ -3247,6 +3247,77 @@ inline constexpr std::uint32_t kFontPages          = 0x480;  // UEndFont: its pa
 inline constexpr std::uint32_t kFontPagesData      = 0x18;
 inline constexpr std::uint32_t kFontPagesCount     = 0x20;
 inline constexpr std::uint8_t kVisibilityHidden = 2;  // ESlateVisibility::Hidden
+// --- The Co-op row of the title menu (research/RE-title-menu.md; menu/title_row) --------------------------------------
+// UEndStartMenu (Blueprints Startmenu_00_C, Startmenu_01_C, one native vtable) keeps its rows' kinds in a TArray<i32> its
+// construct fills in code order; text and press go by kind, never by place. Kind 6 ("Download Save Data") is built by
+// nothing, always enabled, and its handler has one caller, the press's switch.
+inline constexpr std::array<std::uint8_t, 16> kStartMenuConstructEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x20, 0x48, 0x89, 0x4C, 0x24, 0x08, 0x55, 0x56, 0x57, 0x41, 0x54, 0x41};
+inline constexpr platform::SlotFact kStartMenuConstruct{L"vtbl_UEndStartMenu +0x2C0 (construct)", 0x144BDFE30 + 0x2C0,
+                                                        {L"UEndStartMenu_NativeConstruct_BuildList", 0x14131C930, kStartMenuConstructEntry}};
+inline constexpr std::int32_t   kStartMenuKindOptions = 3;
+inline constexpr std::int32_t   kStartMenuKindCoop    = 6;
+inline constexpr std::uintptr_t kStartMenuRowTextSlot = 0x144BE0290 + kStartMenuKindCoop * 8;  // g_StartMenu_RowTextIds[6]
+inline constexpr std::uintptr_t kStartMenuRowTextWas  = 0x1443D7340;                           // $menu_cross_save_download
+/// void(start). The redirect replaces the handler for good, so its first two instructions are never replayed.
+inline constexpr std::array<std::uint8_t, 16> kStartMenuKindCoopEntry{
+    0x40, 0x56, 0x48, 0x83, 0xEC, 0x30, 0x83, 0xB9, 0xA0, 0x03, 0x00, 0x00, 0x00, 0x48, 0x8B, 0xF1};
+inline constexpr platform::FunctionFact kStartMenuKindCoopPress{L"UEndStartMenu_CrossSaveDownload_Kind6_cand", 0x141320C20,
+                                                                kStartMenuKindCoopEntry};
+inline constexpr std::size_t kStartMenuKindCoopFirstBytes = 6;  // push rsi; sub rsp, 30h
+/// void(start): the frame, the page in +0x460 (made if none), its close function, its Open, the stick as a d-pad.
+inline constexpr std::array<std::uint8_t, 16> kStartMenuOpenOptionsEntry{
+    0x40, 0x53, 0x56, 0x57, 0x41, 0x54, 0x48, 0x81, 0xEC, 0xD8, 0x00, 0x00, 0x00, 0x48, 0x8B, 0x05};
+inline constexpr platform::FunctionFact kStartMenuOpenOptions{L"UEndStartMenu_OpenOptionsMenu_cand", 0x141320DE0, kStartMenuOpenOptionsEntry};
+/// void(start): the frame made once and added to the overlay, its title written, Menu_In played, the filters taken once.
+inline constexpr std::array<std::uint8_t, 16> kStartMenuEnsureFrameEntry{
+    0x48, 0x8B, 0xC4, 0x53, 0x55, 0x56, 0x57, 0x48, 0x81, 0xEC, 0xB8, 0x00, 0x00, 0x00, 0x33, 0xED};
+inline constexpr platform::FunctionFact kStartMenuEnsureFrame{L"UEndStartMenu_EnsureMainMenuFrame_cand", 0x14131B120, kStartMenuEnsureFrameEntry};
+/// void(capture {start, weak to start}): what the page's Back runs when Options opened from the title.
+inline constexpr std::array<std::uint8_t, 16> kStartMenuOptionsClosedEntry{
+    0x40, 0x53, 0x48, 0x83, 0xEC, 0x40, 0x44, 0x8B, 0x41, 0x0C, 0x48, 0x8B, 0xD9, 0x45, 0x85, 0xC0};
+inline constexpr platform::FunctionFact kStartMenuOptionsClosed{L"UEndStartMenu_OnOptionsClosed_Lambda_cand", 0x141321320, kStartMenuOptionsClosedEntry};
+/// void(TArray<i32>*), with Num already raised: grows the array to hold it.
+inline constexpr std::array<std::uint8_t, 16> kIntArrayGrowEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x74, 0x24, 0x10, 0x57, 0x48, 0x83, 0xEC, 0x20, 0x48};
+inline constexpr platform::FunctionFact kIntArrayGrow{L"TArrayInt32_ResizeGrow_cand", 0x14063D7E0, kIntArrayGrowEntry};
+/// UWidget*(UWidgetTree*, const FName*).
+inline constexpr std::array<std::uint8_t, 16> kWidgetTreeFindEntry{
+    0x4C, 0x8B, 0xDC, 0x53, 0x48, 0x83, 0xEC, 0x40, 0x49, 0x8D, 0x43, 0x08, 0x49, 0xC7, 0x43, 0x08};
+inline constexpr platform::FunctionFact kWidgetTreeFind{L"UWidgetTree__FindWidget", 0x1428FD470, kWidgetTreeFindEntry};
+/// void(UEndCanvasPanelSlot*, FVector2D by value).
+inline constexpr std::array<std::uint8_t, 16> kCanvasSlotSetSizeEntry{
+    0x48, 0x81, 0xEC, 0xA8, 0x00, 0x00, 0x00, 0x48, 0x8B, 0x05, 0x3A, 0xA5, 0x04, 0x04, 0x48, 0x33};
+inline constexpr platform::FunctionFact kCanvasSlotSetSize{L"UEndCanvasPanelSlot_SetSize_cand", 0x141356580, kCanvasSlotSetSizeEntry};
+/// bool(UObject*): it is a UEndCanvasPanelSlot.
+inline constexpr std::array<std::uint8_t, 16> kCastCanvasSlotEntry{
+    0x4C, 0x8B, 0xDC, 0x48, 0x81, 0xEC, 0x88, 0x00, 0x00, 0x00, 0x48, 0x8B, 0x05, 0xA7, 0xC8, 0xB0};
+inline constexpr platform::FunctionFact kCastCanvasSlot{L"Cast_UEndCanvasPanelSlot_cand", 0x140E94250, kCastCanvasSlotEntry};
+/// bool(UObject*): it is a UEndVirtualScrollBox, the construct's test of its list.
+inline constexpr std::array<std::uint8_t, 16> kCastScrollBoxEntry{
+    0x4C, 0x8B, 0xDC, 0x48, 0x81, 0xEC, 0x88, 0x00, 0x00, 0x00, 0x48, 0x8B, 0x05, 0xE7, 0xC0, 0xAD};
+inline constexpr platform::FunctionFact kCastScrollBox{L"Cast_UEndVirtualScrollBox_cand", 0x140ECC1E0, kCastScrollBoxEntry};
+/// void(EndUISystem[2], u8 on): the stick moving the lists, as Options sets and clears it.
+inline constexpr std::array<std::uint8_t, 16> kSetStickDPadModeEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x18, 0x56, 0x48, 0x83, 0xEC, 0x30, 0x0F, 0xB6, 0xF2, 0x48, 0x8B, 0xD9};
+inline constexpr platform::FunctionFact kSetStickDPadMode{L"SquareInput_SetStickDPadMode", 0x14143E270, kSetStickDPadModeEntry};
+/// void(UEndTextBlock*, const wchar_t*): keeps no pointer to the text.
+inline constexpr std::array<std::uint8_t, 16> kTextBlockSetWideEntry{
+    0x40, 0x55, 0x56, 0x57, 0x48, 0x81, 0xEC, 0xA0, 0x00, 0x00, 0x00, 0x48, 0x8B, 0x05, 0xB6, 0x84};
+inline constexpr platform::FunctionFact kTextBlockSetWide{L"UEndTextBlock_SetTextIfChanged_WStr_cand", 0x141378600, kTextBlockSetWideEntry};
+inline constexpr std::uintptr_t kNameListMenu       = 0x145853768;  // the static FName List_Menu, set at the game's start
+inline constexpr std::uint32_t  kUiInputSlot        = 2;      // EndUISystem[2]: the focus stack and the stick's mode
+inline constexpr std::uint32_t  kUserWidgetTree     = 0x198;  // UUserWidget::WidgetTree
+inline constexpr std::uint32_t  kStartMenuAction    = 0x3A0;  // i32: 0 idle, else a save, load or online flow of its own
+inline constexpr std::uint32_t  kStartMenuKinds     = 0x3D8;  // TArray<i32>: the rows' kinds, in order
+inline constexpr std::uint32_t  kStartMenuFrame     = 0x458;  // UEndMainMenu*: the frame around Options, a reflected hold
+inline constexpr std::uint32_t  kStartMenuPage      = 0x460;  // UEndNewOptionsMenu*: the game's own Options page
+inline constexpr std::uint32_t  kStartMenuListWidth = 0x5A4;  // float: the list slot's width
+inline constexpr std::uint32_t  kStartMenuListBase  = 0x5A8;  // float: its height at kStartMenuBaseRows rows
+inline constexpr std::int32_t   kStartMenuBaseRows  = 5;
+inline constexpr float          kStartMenuRowHeight = 62.0f;
+inline constexpr std::int32_t   kTitleOptionsZ      = 1990;   // the overlay's order of the frame and page at the title
+
 // The game's Options screen (UEndNewOptionsMenu, Blueprint MainMenu_OptionsTop2_C, resident): the mod's own instance,
 // never the one System keeps (g_OptionsMenu_CachedWeak_cand has System's two xrefs only, §10.4).
 inline constexpr const wchar_t* kOptionsClassPath =
@@ -3302,6 +3373,7 @@ inline constexpr std::array<std::uint8_t, 16> kOptionsSetValueEntry{
 inline constexpr platform::FunctionFact kOptionsSetValue{L"OptionsMenu_SetOptionValue_CopyApplyCommit", 0x1412D6880,
                                                          kOptionsSetValueEntry};
 inline constexpr std::size_t kRedirectFirstBytes = 5;  // the five bytes both value redirects copy
+inline constexpr std::uint32_t kOptionsInGame      = 0x3C0;  // u8: Create's inGame (1 from the main menu, 0 from the title)
 inline constexpr std::uint32_t kOptionsState       = 0x360;  // u8: 1 categories, 2 rows, 4 value list, 5 editing, 8 closing
 inline constexpr std::uint8_t  kOptionsStateClosing = 8;     // then its own tick takes it out of the overlay, state 0
 /// The rows' heading: a category's press sets the page's Txt_Title from g_OptionsMenu_CategoryHeadingIds[key] (.rdata,

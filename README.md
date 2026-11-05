@@ -524,5 +524,9 @@ src/
     game_ui                 The game's UI pieces the Co-op menu's modules share: the UI system's managers, the main
                             menu's first page, weak pointers held in the game's widgets, and FStrings read and copied
                             the game's way
-tests/                      62 host-side test programs (ctest), one per pure header or code stub; run without the game
+    title_row               The Co-op row of the title menu, directly below Options, so a player sees it on starting the
+                            game
+    title_row_rules.h       Where the title menu's Co-op row goes among its rows' kinds: directly below Options, so the
+                            rows through Options keep their places
+tests/                      63 host-side test programs (ctest), one per pure header or code stub; run without the game
 ```

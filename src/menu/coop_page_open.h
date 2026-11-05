@@ -39,8 +39,16 @@ void Remove() noexcept;
 /// window opener, for its prelude.
 void Open(void* mgr, OpenWindowFn openWindow) noexcept;
 
+/// The title menu's functions (menu/title_row). False if one is not where the facts say; the title then opens nothing.
+bool InstallTitle(const platform::GameImage& image) noexcept;
+
+/// The title row's press: the page opened over the start menu through the game's own Options open, its frame, close
+/// function and stick mode with it, the mod's page standing in the start menu's page field for that one call. No first
+/// page to hide or hold there: the start menu stays underneath and focus returns to it when the page's layer pops.
+void OpenAtTitle(void* start) noexcept;
+
 /// Once per engine tick on the game thread, after menu/coop_page's: a close the key handler did not see, a page gone,
-/// or a main menu closed under it.
+/// or the menu it opened over closed under it.
 void Tick() noexcept;
 
 /// Pages opened since the start.
