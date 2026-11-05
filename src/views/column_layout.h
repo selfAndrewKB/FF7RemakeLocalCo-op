@@ -10,8 +10,8 @@
 // selects by the setting; read 2026-10-22, cleanup-2026-10 views/third_view). So while three columns are wanted on a
 // span of monitors, or asked for on the console, this module writes that entry's three records to full-height columns;
 // in one window it writes the layout the setting `three-player-split` names (column_rules::ThreeSplitRecords: one
-// across the top and two below, the engine's own entry and the default, one across the bottom, one down either side, or three
-// columns). Either is arranged by the column order (below), in place, and the stock
+// across the top and two below, the engine's own entry and the default, one across the bottom, or one down either side).
+// Either is arranged by the column order (below), in place, and the stock
 // records go back otherwise and at the mod's end. The layout
 // code itself stays the engine's: it reads the table on every redraw (nothing is cached), so the write takes effect on
 // the next frame and the restore likewise. The entry
@@ -19,7 +19,7 @@
 // alone, the hold released), and restored only while it still holds one of the mod's; a failed read or write is logged once and retried
 // twice a second. The three-player layout setting is held at FavorTop (the entry written) while the mod's records are in.
 // The two-player one is held at side by side while the window spans monitors or the setting `two-player-split` asks for
-// it, and put back otherwise (the setting's `top-bottom` and `top` are the game's own values, not forced); the engine
+// it, and put back otherwise (the setting's `horizontal` and `top` are the game's own values, not forced); the engine
 // re-reads both every layout pass. [A data write into
 // the engine's layout table, not a recreation of the layout: the research's one documented lever for three columns.]
 //

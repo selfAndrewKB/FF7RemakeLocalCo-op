@@ -95,10 +95,10 @@ void Values()
 void Weights()
 {
     namespace settings = lss::platform::settings;
-    EXPECT(WeightOf(settings::kSplitFovWeight.fallback) == kDefaultWeight);
-    EXPECT(settings::kSplitFovWeight.words.size() == 21);
+    EXPECT(WeightOf(settings::kHorizontalFov.fallback) == kDefaultWeight);
+    EXPECT(settings::kHorizontalFov.words.size() == 21);
     float last = -1.0f;
-    for (const wchar_t* word : settings::kSplitFovWeight.words)
+    for (const wchar_t* word : settings::kHorizontalFov.words)
     {
         const float weight = WeightOf(word);
         EXPECT(weight > last);

@@ -42,9 +42,9 @@ readings are `<switch>.<what>`, and an area's readings `<area>.<what>`. Today:
   `game.menu-owns-input`, `game.location`, `field.step` (13 = steady field), `field.running`, `field.targets`,
   `scene.playing`, `scene.skip`, `scene.state`, `camera-slots.one|two|three|mirror|mirror-2`.
 - **Views:** `window-span`, `window-span.hold` (off at start: the span with any player count, kept through loading screens),
-  `mirror-player` (an extra local player in every column no player fills shows player 1's picture), `view-columns 0..3`
-  (the columns the window shows; 0 = as the span and the players decide), `single-view auto|on|off`, `scene-camera`,
-  `split-scale`, `split-fov`, `split-fov.weight`, `letterbox-patch`; readings `whole-screen`, `split-switch`, `column-layout.state`, `window-span.state`,
+  `view-columns 0..3` (the columns the window shows; 0 = as the span and the players decide; an extra local player in
+  every column no player fills shows player 1's picture), `single-view auto|on|off`, `scene-camera`,
+  `split-scale`, `split-fov.horizontal`, `letterbox-patch`; readings `whole-screen`, `split-switch`, `column-layout.state`, `window-span.state`,
   `mirror-player.state`, `scene-camera.state`, `split-scale.state`, `split-fov.state`, `letterbox-patch.sites`.
 - **The field:** `npc-crowd`, `npc-detail`, `npc-senses`, `env-sets`, `area-levels` (every player's area kept loaded,
   not only player 1's), `forced-walk`, `overlap-fade`, `search-arrows`, `anim`, each with its reading `world.<switch>`;

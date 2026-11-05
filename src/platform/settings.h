@@ -46,13 +46,14 @@ inline constexpr std::array<const wchar_t*, 3> kMultiMonitorWords{L"auto", L"on"
 inline constexpr std::array<const wchar_t*, 3> kMultiMonitorLabels{L"Auto", L"On", L"Off"};
 inline constexpr std::array<const wchar_t*, 6> kColumnOrderWords{L"123", L"132", L"213", L"231", L"312", L"321"};
 inline constexpr std::array<const wchar_t*, 6> kColumnOrderLabels{L"1 2 3", L"1 3 2", L"2 1 3", L"2 3 1", L"3 1 2", L"3 2 1"};
-inline constexpr std::array<const wchar_t*, 2> kTwoPlayerSplitWords{L"top-bottom", L"side-by-side"};
-inline constexpr std::array<const wchar_t*, 2> kTwoPlayerSplitLabels{L"Top and bottom", L"Side by side"};
-inline constexpr std::array<const wchar_t*, 5> kThreePlayerSplitWords{L"top", L"bottom", L"left", L"right", L"columns"};
-inline constexpr std::array<const wchar_t*, 5> kThreePlayerSplitLabels{L"One on top", L"One on the bottom", L"One on the left",
-                                                                       L"One on the right", L"Three columns"};
+inline constexpr std::array<const wchar_t*, 2> kTwoPlayerSplitWords{L"vertical", L"horizontal"};
+inline constexpr std::array<const wchar_t*, 2> kTwoPlayerSplitLabels{L"Vertical", L"Horizontal"};
+inline constexpr std::array<const wchar_t*, 4> kThreePlayerSplitWords{L"top", L"bottom", L"left", L"right"};
+inline constexpr std::array<const wchar_t*, 4> kThreePlayerSplitLabels{L"One on Top, Two on Bottom", L"One on Bottom, Two on Top",
+                                                                       L"One on Left, Two on Right", L"One on Right, Two on Left"};
 inline constexpr std::array<const wchar_t*, 2> kOnOffWords{L"on", L"off"};
 inline constexpr std::array<const wchar_t*, 2> kOnOffLabels{L"On", L"Off"};
+inline constexpr std::array<const wchar_t*, 2> kAreaLevelsLabels{L"All Players", L"Only Player 1"};
 inline constexpr std::array<const wchar_t*, 3> kBattleWarpsWords{L"players-stay", L"off", L"game"};
 inline constexpr std::array<const wchar_t*, 3> kBattleWarpsLabels{L"Players stay", L"Nobody", L"Whole party"};
 
@@ -76,32 +77,19 @@ inline constexpr Option kColumnOrder{  // views/column_layout
     L"Which screen each player takes, left to right. In one window with three players the first takes the large view. "
     L"With two players the one not playing is skipped."};
 inline constexpr Option kTwoPlayerSplit{  // views/column_layout
-    L"Views", L"two-player-split", kTwoPlayerSplitWords, L"top-bottom",
-    L"two players in one window: top-bottom or side-by-side; a span of monitors is always side by side",
-    false, L"Two players on one screen", kTwoPlayerSplitLabels,
-    L"How two players share one screen. Across several monitors each player has their own."};
+    L"Views", L"two-player-split", kTwoPlayerSplitWords, L"horizontal",
+    L"two players in one window: vertical (side by side) or horizontal (top and bottom); a span of monitors is always side "
+    L"by side",
+    false, L"2-Player Split-Screen Layout", kTwoPlayerSplitLabels,
+    L"Vertical: side by side. Horizontal: one above the other. Across several monitors each player has their own."};
 inline constexpr Option kThreePlayerSplit{  // views/column_layout
     L"Views", L"three-player-split", kThreePlayerSplitWords, L"top",
     L"three players in one window: top (one across the top, two below), bottom (two above, one across the bottom), left "
-    L"(one down the left, two stacked on the right), right (two stacked on the left, one down the right) or columns (three "
-    L"full-height columns); the screen order's first player takes the large view; a span of monitors is always columns",
-    false, L"Three players on one screen", kThreePlayerSplitLabels,
+    L"(one down the left, two stacked on the right) or right (two stacked on the left, one down the right); the screen "
+    L"order's first player takes the large view; a span of monitors is always columns",
+    false, L"3-Player Split-Screen Layout", kThreePlayerSplitLabels,
     L"How three players share one screen. The first player in the screen order takes the large view. Across several "
     L"monitors each player has their own."};
-inline constexpr Option kMirrorPlayer{  // views/mirror_player
-    L"Views", L"mirror-player", kOnOffWords, L"on",
-    L"on: every column no player fills (a monitor of the span with nobody on it, or view-columns) shows player 1's picture "
-    L"(the title, loading screens, the field, menus); off: the columns go to the players in",
-    false, L"Fill empty monitors", kOnOffLabels,
-    L"On: a monitor with no player on it shows player 1's picture. Off: the players' views share the whole row, across the "
-    L"monitors' edges."};
-inline constexpr Option kSplitFov{  // views/split_fov
-    L"Views", L"split-fov", kOnOffWords, L"on",
-    L"on: a view wider than the game's 16:9 image (two players top and bottom, the wide view of three) shows more height, "
-    L"and a span's monitor wider than 16:9 more to the sides; off: the engine's FOV, the single-player width",
-    false, L"Wider view for wide screens", kOnOffLabels,
-    L"On: a screen wider than the game's picture shows more of the scene, so characters are not cut off at the knees. "
-    L"Off: the single-player width, zoomed in."};
 inline constexpr Option kMenuSlow{  // battle/command_menu_tick
     L"Battle", L"menu-slow", kOnOffWords, L"off",
     L"off (the default): no grey and no muffled sound, and the world and the ATB gauges run on at full speed while a battle "
@@ -178,14 +166,15 @@ consteval std::array<const wchar_t*, kFovWeightSteps> MakeFovWeightWords()
 /// "0.00" ... "1.00": the words and the page's values alike.
 inline constexpr std::array<const wchar_t*, kFovWeightSteps> kFovWeightWords = MakeFovWeightWords();
 
-inline constexpr Option kSplitFovWeight{  // views/split_fov
-    L"Views", L"split-fov.weight", kFovWeightWords, L"0.50",
-    L"how a view wider than the game's image shares the difference: 0.00 keeps the single-player height (the whole picture's "
-    L"height shown: everything smaller, more to the sides), 1.00 the single-player size (as wide as in single player, cut at "
-    L"the knees), 0.50 the middle; steps of 0.05",
-    false, L"Wider view: size or height", kFovWeightWords,
-    L"Low: more of the scene, everything smaller. High: characters at their usual size, cut off lower down. 0.50: the "
-    L"middle. In steps of 0.05."};
+inline constexpr Option kHorizontalFov{  // views/split_fov
+    L"Views", L"split-fov.horizontal", kFovWeightWords, L"0.50",
+    L"how a view wider than the game's image shares the difference (two players top and bottom, the large view of three "
+    L"with one on top or on the bottom): 0.00 keeps the single-player height (the whole picture's height shown: everything "
+    L"smaller, more to the sides), 1.00 the single-player size (as wide as in single player, cut at the knees), 0.50 the "
+    L"middle; steps of 0.05",
+    false, L"Horizontal Split-Screen FOV", kFovWeightWords,
+    L"For views wider than the game's picture. Low: more of the scene, everything smaller. High: characters at their usual size, cut off "
+    L"lower down. 0.50: the middle."};
 
 inline constexpr Option kEnemyDamage{  // battle/battle_rates
     L"Battle", L"enemy-damage", kTenthsWords, L"1.0",
@@ -236,14 +225,13 @@ inline constexpr Option kAreaLevels{  // world/area_levels
     L"Experimental", L"area-levels", kOnOffWords, L"on",
     L"on: every player's area stays loaded and solid, not only player 1's, at the cost of more memory (each further "
     L"player's area stays loaded beside player 1's); off: the world follows player 1's area alone; from the next request",
-    true, L"Every player's area stays loaded", kOnOffLabels,
-    L"On: the world around every player stays loaded, so nobody falls through it far from player 1. Uses more memory. Off: "
-    L"only the area around player 1 is sure to be loaded."};
+    true, L"World Loading", kAreaLevelsLabels,
+    L"All Players: the world loads around every player's position, preventing the world from unloading when no longer around "
+    L"player 1. Uses more memory. Only Player 1: the world loads only around player 1's immediate area."};
 
-inline constexpr std::array<const Option*, 17> kOptions{&kMultiMonitor, &kColumnOrder, &kTwoPlayerSplit, &kThreePlayerSplit,
-                                                       &kMirrorPlayer, &kSplitFov, &kSplitFovWeight, &kMenuSlow, &kBattleWarps,
-                                                       &kEnemyDamage, &kEnemyHp, &kBossHp, &kEnemyStagger, &kExpGain,
-                                                       &kApGain, &kLeadHolder, &kAreaLevels};
+inline constexpr std::array<const Option*, 15> kOptions{&kMultiMonitor, &kColumnOrder, &kTwoPlayerSplit, &kThreePlayerSplit,
+                                                       &kHorizontalFov, &kMenuSlow, &kBattleWarps, &kEnemyDamage, &kEnemyHp,
+                                                       &kBossHp, &kEnemyStagger, &kExpGain, &kApGain, &kLeadHolder, &kAreaLevels};
 
 /// The option is a row of the table (Of and Why answer by the row).
 consteval bool Listed(const Option& option)
@@ -255,8 +243,7 @@ consteval bool Listed(const Option& option)
     return false;
 }
 static_assert(Listed(kMultiMonitor) && Listed(kColumnOrder) && Listed(kTwoPlayerSplit) && Listed(kThreePlayerSplit) &&
-                  Listed(kMirrorPlayer) && Listed(kSplitFov) && Listed(kSplitFovWeight) && Listed(kMenuSlow) &&
-                  Listed(kBattleWarps) && Listed(kEnemyDamage) && Listed(kEnemyHp) && Listed(kBossHp) &&
+                  Listed(kHorizontalFov) && Listed(kMenuSlow) && Listed(kBattleWarps) && Listed(kEnemyDamage) && Listed(kEnemyHp) && Listed(kBossHp) &&
                   Listed(kEnemyStagger) && Listed(kExpGain) && Listed(kApGain) && Listed(kLeadHolder) && Listed(kAreaLevels),
               "every option is a row of kOptions");
 

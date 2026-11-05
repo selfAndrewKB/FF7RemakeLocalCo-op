@@ -28,7 +28,7 @@
 // columns no player has instead of needing a further player in; they stay through world changes; two of them.
 //
 // Wanted while more columns are shown than players are in (views/column_rules.h: the span's columns while held, or
-// the console's `view-columns`). `mirror-player on|off` (on), reading `mirror-player.state`. Game thread only.
+// the console's `view-columns`). Always on: nothing else fills such a column. Reading `mirror-player.state`. Game thread only.
 // Logged at Info on each add and remove, at Debug for the status.
 
 #include <cstdint>
@@ -44,7 +44,7 @@ namespace lss::views::mirror_player {
 bool Install(const platform::GameImage& image) noexcept;
 
 /// Each engine tick after the session's and the span's: adds a mirror for an empty column once the field is steady
-/// (one per tick), removes the mirrors beyond the columns, all of them when the switch is off. `playersIn` counts
+/// (one per tick), removes the mirrors beyond the columns. `playersIn` counts
 /// the real players (player 1 and the seats in); `columns` the columns the frame shows (at least the players);
 /// `seatIds` the controller ids the players hold (bit i: id i; bit 0 player 1), so a mirror never takes a seat's;
 /// `columnsAlone` the columns with player 1 alone (the span's, or the console's: what a leave for a world change
@@ -56,7 +56,7 @@ void Tick(std::int32_t playersIn, std::uint32_t seatIds, std::int32_t columns, s
 /// `playersIn` and `seatIds` as the list stands after the leave.
 void FillAtLeave(const wchar_t* why, std::int32_t playersIn, std::uint32_t seatIds) noexcept;
 
-/// Removes every mirror now (the session's join, the switch, the mod's end). `why` is logged.
+/// Removes every mirror now (the session's join, the mod's end). `why` is logged.
 void Clear(const wchar_t* why) noexcept;
 
 /// How many mirrors are in the engine's list.

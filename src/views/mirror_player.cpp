@@ -5,7 +5,6 @@
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
-#include "platform/settings.h"
 #include "platform/verified_code.h"
 #include "players/game_state.h"
 #include "players/local_player_list.h"
@@ -48,8 +47,7 @@ struct Mirror
 };
 
 // Game thread.
-bool                              g_enabled      = true;
-std::array<Mirror, kMirrorsBuilt> g_mirrors;         // in the order added; the first `g_count` are in
+std::array<Mirror, kMirrorsBuilt> g_mirrors;        // in the order added; the first `g_count` are in
 std::int32_t                      g_count        = 0;
 UObject*                          g_instance     = nullptr;  // the game instance, found once (it lives as long as the game)
 UObject*                          g_managerOne   = nullptr;  // player 1's camera manager, every mirror's source
@@ -375,22 +373,10 @@ bool Install(const platform::GameImage& image) noexcept
     using control::Register;
     using control::Shape;
     using control::Value;
-    namespace settings = platform::settings;
-    g_enabled = settings::Of(settings::kMirrorPlayer).word == L"on";
-    control::RegisterOption(
-        settings::kMirrorPlayer,
-        [](const std::wstring& word) {
-            // Only the wish: the Co-op page sets this after the frame's views were read, so the next Tick removes the copies.
-            g_enabled = word == L"on";
-            platform::Log(L"mirror player: {}", g_enabled ? L"on (fills an empty column once the field is steady)" : L"off");
-            return control::Outcome{};
-        },
-        [] { return std::wstring(g_enabled ? L"on" : L"off"); });
     Register({.name = L"mirror-player.state", .shape = Shape::Text,
               .help = L"the mirror players: wanted, in which columns with which controller ids, their camera copies, why one waits",
               .get  = [] { return Value{Reading()}; }});
-    platform::Log(L"mirror player: ready, {} ({}) (on: a mirror fills every column no player has, up to {} columns; mirror-player on|off)",
-                  g_enabled ? L"on" : L"off", settings::Why(settings::kMirrorPlayer), kMaxColumns);
+    platform::Log(L"mirror player: ready (a mirror fills every column no player has, up to {} columns)", kMaxColumns);
     return true;
 }
 
@@ -405,11 +391,11 @@ void Tick(std::int32_t playersIn, std::uint32_t seatIds, std::int32_t columns, s
     g_columns      = columns;
     g_columnsAlone = columnsAlone;
     FollowList();
-    g_wanted = g_enabled ? std::clamp(columns - playersIn, 0, kMirrorsBuilt) : 0;
+    g_wanted = std::clamp(columns - playersIn, 0, kMirrorsBuilt);
     while (g_count > g_wanted && g_ticks >= g_retryAt)
     {
         const std::int32_t before = g_count;
-        RemoveSlot(g_count - 1, !g_enabled ? L"switched off" : L"its column is a player's, or no longer shown");
+        RemoveSlot(g_count - 1, L"its column is a player's, or no longer shown");
         if (g_count == before)
         {
             break;  // the engine kept it; tried again after the retry wait
@@ -431,7 +417,7 @@ void Tick(std::int32_t playersIn, std::uint32_t seatIds, std::int32_t columns, s
 
 void FillAtLeave(const wchar_t* why, std::int32_t playersIn, std::uint32_t seatIds) noexcept
 {
-    if (g_removeLocalPlayer == 0 || !g_enabled)
+    if (g_removeLocalPlayer == 0)
     {
         return;
     }
@@ -495,9 +481,9 @@ std::wstring Reading()
     {
         in += std::format(L"{}column {} (controller id {})", i ? L", " : L"", g_mirrors[i].column + 1, g_mirrors[i].controllerId);
     }
-    return std::format(L"{}; wanted {} of {} column(s); {}; adds {} ({} at a further player's leave for a world change), removes {}, dropped by "
+    return std::format(L"wanted {} of {} column(s); {}; adds {} ({} at a further player's leave for a world change), removes {}, dropped by "
                        L"the engine {}{}{}; camera copy: {}",
-                       g_enabled ? L"on" : L"off", g_wanted, g_columns, g_count != 0 ? std::format(L"in {}", in) : L"out", g_adds,
+                       g_wanted, g_columns, g_count != 0 ? std::format(L"in {}", in) : L"out", g_adds,
                        g_leaveFills, g_removes, g_dropped, g_waiting != nullptr ? std::format(L"; waiting: {}", g_waiting) : L"",
                        g_fault != nullptr ? std::format(L"; refused: {}", g_fault) : L"", scene_camera::MirrorPlayerText());
 }

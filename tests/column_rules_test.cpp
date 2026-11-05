@@ -300,7 +300,7 @@ void TwoViews()
 /// other; the entry is arranged by the order and known to the decision when the setting changes.
 void ThreeSplits()
 {
-    const std::array<const wchar_t*, 5> words{L"top", L"bottom", L"left", L"right", L"columns"};
+    const std::array<const wchar_t*, 4> words{L"top", L"bottom", L"left", L"right"};
     for (const wchar_t* word : words)
     {
         const auto split = ParseThreeSplit(word);
@@ -325,8 +325,8 @@ void ThreeSplits()
         EXPECT(records.record[0].sizeX * records.record[0].sizeY >= records.record[1].sizeX * records.record[1].sizeY);
     }
     EXPECT(!ParseThreeSplit(L"middle").has_value());
+    EXPECT(!ParseThreeSplit(L"columns").has_value());  // three columns are the span's and the console's only
     EXPECT(Same(ThreeSplitRecords(ThreeSplit::Top).record, kStockFavorTop));  // the default is the engine's own, untouched
-    EXPECT(Same(ThreeSplitRecords(ThreeSplit::Columns).record, kThreeColumns));
 
     // One window takes the setting's layout, arranged; a span takes its columns whatever the setting; two views the stock.
     const Records left = ThreeSplitRecords(ThreeSplit::Left);

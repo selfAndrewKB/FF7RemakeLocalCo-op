@@ -190,7 +190,6 @@ const wchar_t* ThreeSplitText(column_rules::ThreeSplit split) noexcept
         case ThreeSplit::Bottom:  return L"two above, one across the bottom";
         case ThreeSplit::Left:    return L"one down the left, two stacked on the right";
         case ThreeSplit::Right:   return L"two stacked on the left, one down the right";
-        case ThreeSplit::Columns: return L"three equal columns";
         case ThreeSplit::Top:
         default:                  return L"one across the top, two below";
     }
@@ -203,7 +202,6 @@ const wchar_t* ThreeSplitScreens(column_rules::ThreeSplit split) noexcept
         case ThreeSplit::Bottom:  return L"bottom, top left, top right";
         case ThreeSplit::Left:    return L"left, top right, bottom right";
         case ThreeSplit::Right:   return L"right, top left, bottom left";
-        case ThreeSplit::Columns: return L"left to right";
         case ThreeSplit::Top:
         default:                  return L"top, bottom left, bottom right";
     }
@@ -612,7 +610,7 @@ bool Install(const platform::GameImage& image) noexcept
              platform::settings::Why(platform::settings::kColumnOrder).c_str());
     SetThreeSplit(column_rules::ParseThreeSplit(platform::settings::Of(platform::settings::kThreePlayerSplit).word).value_or(column_rules::ThreeSplit::Top),
                   platform::settings::Why(platform::settings::kThreePlayerSplit).c_str());
-    g_twoSideBySide = platform::settings::Of(platform::settings::kTwoPlayerSplit).word == L"side-by-side";
+    g_twoSideBySide = platform::settings::Of(platform::settings::kTwoPlayerSplit).word == L"vertical";
     platform::Log(L"column layout: two players in one window: {} ({})", g_twoSideBySide ? L"side by side" : L"top and bottom",
                   platform::settings::Why(platform::settings::kTwoPlayerSplit));
     using control::Register;
@@ -647,11 +645,11 @@ bool Install(const platform::GameImage& image) noexcept
     control::RegisterOption(
         platform::settings::kTwoPlayerSplit,
         [](const std::wstring& word) {
-            g_twoSideBySide = word == L"side-by-side";
+            g_twoSideBySide = word == L"vertical";
             platform::Log(L"column layout: two players in one window: {} (the console)", g_twoSideBySide ? L"side by side" : L"top and bottom");
             return control::Outcome{};
         },
-        [] { return std::wstring(g_twoSideBySide ? L"side-by-side" : L"top-bottom"); });
+        [] { return std::wstring(g_twoSideBySide ? L"vertical" : L"horizontal"); });
     control::RegisterOption(
         platform::settings::kThreePlayerSplit,
         [](const std::wstring& word) {
@@ -806,7 +804,7 @@ std::wstring Reading()
                        OrderText(g_order), column_rules::ThreeSplitWord(g_threeSplit), table,
                        records == nullptr && g_installed ? std::format(L" ({})", why) : L"", g_settingByte != nullptr ? L"yes" : L"no",
                        g_writes, g_restores, g_fault != nullptr ? std::format(L"; fault: {}", g_fault) : L"",
-                       g_twoSideBySide ? L"side-by-side" : L"top-bottom", g_sideByte != nullptr ? L"yes" : L"no",
+                       g_twoSideBySide ? L"vertical (side by side)" : L"horizontal (top and bottom)", g_sideByte != nullptr ? L"yes" : L"no",
                        g_sideFault != nullptr ? std::format(L"; fault: {}", g_sideFault) : L"", TwoReading(g_two[0]),
                        TwoReading(g_two[1]));
 }

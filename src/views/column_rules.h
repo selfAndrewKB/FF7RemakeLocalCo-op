@@ -223,29 +223,26 @@ enum class ThreeSplit : std::uint8_t
     Bottom,   // two above, the large view across the bottom
     Left,     // the large view down the left, two stacked on the right
     Right,    // two stacked on the left, the large view down the right
-    Columns,  // three equal full-height columns
 };
 
 constexpr std::optional<ThreeSplit> ParseThreeSplit(std::wstring_view word) noexcept
 {
-    return word == L"top"       ? std::optional<ThreeSplit>{ThreeSplit::Top}
-           : word == L"bottom"  ? std::optional<ThreeSplit>{ThreeSplit::Bottom}
-           : word == L"left"    ? std::optional<ThreeSplit>{ThreeSplit::Left}
-           : word == L"right"   ? std::optional<ThreeSplit>{ThreeSplit::Right}
-           : word == L"columns" ? std::optional<ThreeSplit>{ThreeSplit::Columns}
-                                : std::nullopt;
+    return word == L"top"      ? std::optional<ThreeSplit>{ThreeSplit::Top}
+           : word == L"bottom" ? std::optional<ThreeSplit>{ThreeSplit::Bottom}
+           : word == L"left"   ? std::optional<ThreeSplit>{ThreeSplit::Left}
+           : word == L"right"  ? std::optional<ThreeSplit>{ThreeSplit::Right}
+                               : std::nullopt;
 }
 
 constexpr const wchar_t* ThreeSplitWord(ThreeSplit split) noexcept
 {
     switch (split)
     {
-        case ThreeSplit::Bottom:  return L"bottom";
-        case ThreeSplit::Left:    return L"left";
-        case ThreeSplit::Right:   return L"right";
-        case ThreeSplit::Columns: return L"columns";
+        case ThreeSplit::Bottom: return L"bottom";
+        case ThreeSplit::Left:   return L"left";
+        case ThreeSplit::Right:  return L"right";
         case ThreeSplit::Top:
-        default:                  return L"top";
+        default:                 return L"top";
     }
 }
 
@@ -261,8 +258,6 @@ constexpr Records ThreeSplitRecords(ThreeSplit split) noexcept
             return {{{0.5f, 1.0f, 0.0f, 0.0f}, {0.5f, 0.5f, 0.5f, 0.0f}, {0.5f, 0.5f, 0.5f, 0.5f}}};
         case ThreeSplit::Right:
             return {{{0.5f, 1.0f, 0.5f, 0.0f}, {0.5f, 0.5f, 0.0f, 0.0f}, {0.5f, 0.5f, 0.0f, 0.5f}}};
-        case ThreeSplit::Columns:
-            return {{kThreeColumns[0], kThreeColumns[1], kThreeColumns[2]}};
         case ThreeSplit::Top:
         default:
             return {{kStockFavorTop[0], kStockFavorTop[1], kStockFavorTop[2]}};

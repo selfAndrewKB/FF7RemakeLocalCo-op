@@ -35,7 +35,6 @@ GetViewPointFn        g_engine = nullptr;
 
 // Set from the console on the game thread, read by the replacement (the engine calls it from Draw on the game thread;
 // atomics keep that true if it ever changes).
-std::atomic<bool>  g_on{true};
 std::atomic<float> g_weight{rules::kDefaultWeight};
 
 /// What a view's last call decided, for the Info line on each change. Game thread only (the replacement skips the
@@ -165,7 +164,7 @@ void NoteAxis(const void* localPlayer, std::uint8_t axis) noexcept
 void GetViewPoint(void* localPlayer, std::byte* viewInfo, std::int32_t pass)
 {
     g_engine(localPlayer, viewInfo, pass);
-    if (!g_on.load(std::memory_order_relaxed) || viewInfo == nullptr)
+    if (viewInfo == nullptr)
     {
         return;
     }
@@ -220,23 +219,13 @@ bool Install(const platform::GameImage& image) noexcept
         return false;
     }
     namespace settings = platform::settings;
-    g_on.store(settings::Of(settings::kSplitFov).word == L"on", std::memory_order_relaxed);
-    g_weight.store(rules::WeightOf(settings::Of(settings::kSplitFovWeight).word), std::memory_order_relaxed);
-    platform::Log(L"split FOV {} ({}), weight {:.2f} ({})", g_on.load(std::memory_order_relaxed) ? L"on" : L"off",
-                  settings::Why(settings::kSplitFov), g_weight.load(std::memory_order_relaxed), settings::Why(settings::kSplitFovWeight));
+    g_weight.store(rules::WeightOf(settings::Of(settings::kHorizontalFov).word), std::memory_order_relaxed);
+    platform::Log(L"split FOV: horizontal split weight {:.2f} ({})", g_weight.load(std::memory_order_relaxed), settings::Why(settings::kHorizontalFov));
     control::RegisterOption(
-        settings::kSplitFov,
-        [](const std::wstring& word) {
-            g_on.store(word == L"on", std::memory_order_relaxed);
-            platform::Log(L"split FOV {}", word);
-            return control::Outcome{};
-        },
-        [] { return std::wstring(g_on.load(std::memory_order_relaxed) ? L"on" : L"off"); });
-    control::RegisterOption(
-        settings::kSplitFovWeight,
+        settings::kHorizontalFov,
         [](const std::wstring& word) {
             g_weight.store(rules::WeightOf(word), std::memory_order_relaxed);
-            platform::Log(L"split FOV weight {}", word);
+            platform::Log(L"split FOV: horizontal split weight {}", word);
             for (Seen& seen : g_seen)
             {
                 seen.applies = false;  // the next call logs the new FOV
@@ -248,17 +237,17 @@ bool Install(const platform::GameImage& image) noexcept
                        .shape = control::Shape::Text,
                        .help  = L"each view's last shape and whether it takes the split FOV",
                        .get   = [] {
-                           std::wstring text = g_on.load(std::memory_order_relaxed) ? L"on" : L"off (the views' last state before)";
+                           std::wstring text;
                            for (const Seen& seen : g_seen)
                            {
                                if (seen.player != nullptr)
                                {
-                                   text += std::format(L"; {}x{} of {}x{}: {}{}", seen.width, seen.height, seen.windowW, seen.windowH,
+                                   text += std::format(L"{}{}x{} of {}x{}: {}{}", text.empty() ? L"" : L"; ", seen.width, seen.height, seen.windowW, seen.windowH,
                                                        seen.applies ? L"split FOV" : L"engine's FOV",
                                                        seen.axisRefused ? std::format(L" (axis rule {})", seen.axis) : L"");
                                }
                            }
-                           return control::Value{text};
+                           return control::Value{text.empty() ? std::wstring(L"no view has taken the split FOV") : text};
                        }});
     platform::Log(L"split FOV: ready (a view wider than the game's image shows more height)");
     return true;
