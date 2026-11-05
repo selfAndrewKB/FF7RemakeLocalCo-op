@@ -125,6 +125,11 @@ log's `settings:` line lists every option's value and where it came from; a valu
 the option takes its default, and the value stays in the file as written, with a note. The repository ships no copy
 of the file, so none can go stale.
 
+**Choosing the monitors.** Copy `build/Game__Shipping__Win64/LocalSplitScreenSetup.exe` next to `LocalSplitScreen.ini` and
+run it with the game closed: it shows the desktop as Windows arranges it, you click the monitors of the row, and it saves
+them with Multiple Monitors and Screen Order. With none picked the game takes the longest row it finds. The game is then
+started from Steam as always.
+
 ## Layout
 
 ```
@@ -431,6 +436,9 @@ src/
                             while they exist
     mirror_player           The mirror players: an extra local player of the mod's in every column no player fills,
                             showing player 1's picture, so a spanned window never shows one view across the whole row
+    monitor_list            The desktop's monitors as Windows has them now, for the mod's span (views/window_span) and
+                            the setup app (setup/): each monitor's rect and effective DPI, its GDI device name, and an
+                            id and a name from the display configuration
     monitor_row             Which monitors a spanned game window may cover: a row of monitors of one height
     narrow_camera           The camera in a view narrower than the game's image and spread across a window: two small
                             corrections beside the narrow view's FOV
@@ -516,5 +524,5 @@ src/
     game_ui                 The game's UI pieces the Co-op menu's modules share: the UI system's managers, the main
                             menu's first page, weak pointers held in the game's widgets, and FStrings read and copied
                             the game's way
-tests/                      61 host-side test programs (ctest), one per pure header or code stub; run without the game
+tests/                      62 host-side test programs (ctest), one per pure header or code stub; run without the game
 ```

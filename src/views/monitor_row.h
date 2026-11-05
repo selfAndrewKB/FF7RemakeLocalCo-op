@@ -28,10 +28,13 @@
 // 2026-10-22: with the leftmost's top (the floating monitor's) as the reference, the mod moved the attached
 // monitor 15 px up off the primary, and Windows dropped the other one 15 px to keep the pair on the primary, so
 // the two swapped and the desktop never read as the row [CONFIRMED by the span's desktop log].
+// The player's pick: the settings file can name the monitors that may join (the setup app writes it, MarkNamed reads it);
+// the others stay on the desktop, count for the row's top, and stop a row at their edge.
 
 #include <cstdint>
 #include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace lss::views::monitor_row {
@@ -55,6 +58,7 @@ struct Monitor
 {
     Rect          rect;
     std::uint32_t dpi = 96;  // 96 = 100 % scaling
+    bool          joins = true;  // false: the player left it out of the row (MarkNamed); a row never reaches past it
 };
 
 /// A monitor of the span to shift vertically before the window is placed: `from` as Windows has it, to `toTop`.
@@ -74,9 +78,25 @@ struct Choice
     std::vector<Move> moves;            // when ok: the monitors of the span to line up first (usually none)
     std::vector<std::int32_t> widths;   // when ok: the span's monitors' widths, left to right (one per column)
     std::wstring      why;              // when not ok: what is missing or wrong, and what to change in Windows
+    std::wstring      stopped;          // when not ok: only what to change in Windows; empty if no monitor stopped a row
 };
 
 /// `columns` >= 1 monitors of a row of monitors of one height; the row around `monitors[gameMonitor]` when it qualifies.
 Choice Choose(std::span<const Monitor> monitors, std::size_t gameMonitor, std::int32_t columns);
+
+/// How many monitors the settings file's word names, and how many of those are connected.
+struct Named
+{
+    std::int32_t named   = 0;
+    std::int32_t present = 0;
+};
+
+/// Monitor ids joined as the settings file keeps them ('|' between ids). The monitors' ids come from views/monitor_list.
+std::wstring NamesWord(std::span<const std::wstring> ids);
+
+/// Leaves out of the row (`joins` false) every monitor the word does not name, when at least two named monitors are
+/// connected. A word naming fewer than that changes nothing: the player's choice cannot be met, so any row serves. `ids`
+/// is one lower-case id per monitor; the word is compared as the settings file reads it, lower-cased.
+Named MarkNamed(std::span<Monitor> monitors, std::span<const std::wstring> ids, std::wstring_view word);
 
 }  // namespace lss::views::monitor_row

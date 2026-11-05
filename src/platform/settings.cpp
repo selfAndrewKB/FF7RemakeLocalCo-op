@@ -74,21 +74,6 @@ std::wstring KeysNotInTable(const std::wstring& path)
     return stale;
 }
 
-/// Writes the file from the table with `readings` (platform/settings_write.h), unless it already reads exactly so. 0
-/// when the file is as wanted, else the Windows error.
-unsigned long WriteFromTable(const std::wstring& path, const std::array<Reading, kOptions.size()>& readings, bool* written)
-{
-    const std::string bytes = Utf8(FileText(readings));
-    *written                = false;
-    if (FileBytes(path.c_str()) == bytes)
-    {
-        return 0;
-    }
-    const unsigned long error = WriteFileBytes(path.c_str(), bytes);
-    *written                  = error == 0;
-    return error;
-}
-
 const wchar_t* SourceWord(Source source) noexcept
 {
     switch (source)
@@ -135,18 +120,10 @@ void Load()
     const std::wstring path   = Path();
     const bool         exists = !path.empty() && GetFileAttributesW(path.c_str()) != INVALID_FILE_ATTRIBUTES;
     std::wstring       summary;
+    g_readings = ReadFile(path);
     for (std::size_t i = 0; i < kOptions.size(); ++i)
     {
         const Option& option = *kOptions[i];
-        std::wstring  text;
-        if (exists)
-        {
-            wchar_t    buffer[256]{};
-            const auto length = GetPrivateProfileStringW(option.section, option.key, L"", buffer,
-                                                         static_cast<DWORD>(std::size(buffer)), path.c_str());
-            text.assign(buffer, length);
-        }
-        g_readings[i] = Judge(option, text);
         if (g_readings[i].source == Source::Invalid)
         {
             LogWarning(L"settings: {}", InvalidText(option, g_readings[i]));

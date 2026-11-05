@@ -46,8 +46,9 @@ void TableConsistent()
     std::set<std::wstring> keys;
     for (const Option* option : kOptions)
     {
-        EXPECT(option->words.size() >= 2);
-        bool fallbackAllowed = false;
+        EXPECT(option->words.size() >= 2 || option->appOnly);
+        EXPECT(option->words.empty() == option->appOnly);
+        bool fallbackAllowed = option->appOnly;  // any word, the empty one its default
         for (const wchar_t* word : option->words)
         {
             fallbackAllowed = fallbackAllowed || std::wcscmp(word, option->fallback) == 0;
@@ -76,7 +77,7 @@ void TableConsistent()
             open = option->section;
         }
     }
-    EXPECT(kOptions.size() == 16);
+    EXPECT(kOptions.size() == 17);
     EXPECT(kLeadHolder.experimental && std::wcscmp(kLeadHolder.fallback, L"guide") == 0);
     EXPECT(std::wcscmp(kLeadHolder.section, L"Experimental") == 0);
 }
@@ -221,10 +222,19 @@ void FileWrittenAndReadBack()
     for (std::size_t i = 0; i < kOptions.size(); ++i)
     {
         const Reading back = ReadBack(path, *kOptions[i]);
-        EXPECT(back.word == readings[i].word && back.source == (readings[i].source == Source::Default ? Source::File
-                                                                                                       : readings[i].source));
+        // A default is written out and reads back as the file's, except an empty one, which is no word in the file.
+        const bool emptyDefault = readings[i].source == Source::Default && readings[i].word.empty();
+        EXPECT(back.word == readings[i].word &&
+               back.source == (emptyDefault ? Source::Default : readings[i].source == Source::Default ? Source::File : readings[i].source));
     }
     EXPECT(ReadBack(path, kBattleWarps).raw == L"sometimes");
+    // An option of any word: lower-cased as the file reads it, written and read back whole.
+    readings[PlaceOf(kMonitors)] = Judge(kMonitors, L"\\\\?\\DISPLAY#ONE#{a-b}|\\\\?\\DISPLAY#TWO#{a-b}");
+    EXPECT(readings[PlaceOf(kMonitors)].source == Source::File);
+    EXPECT(readings[PlaceOf(kMonitors)].word == L"\\\\?\\display#one#{a-b}|\\\\?\\display#two#{a-b}");
+    EXPECT(WriteFileBytes(path.c_str(), Utf8(FileText(readings))) == 0);
+    EXPECT(ReadBack(path, kMonitors).word == readings[PlaceOf(kMonitors)].word);
+    readings[PlaceOf(kMonitors)] = Judge(kMonitors, L"");
     // A value with characters outside ASCII: kept with `?`, and a second start writes the same bytes (no drift).
     const std::wstring typed = std::wstring(L"1,5") + wchar_t{0x00D7} + L' ' + wchar_t{0x2713};  // "1,5x" and a tick
     readings[PlaceOf(kEnemyHp)] = Judge(kEnemyHp, typed);

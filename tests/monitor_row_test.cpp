@@ -12,6 +12,8 @@
 
 #include <cstdint>
 #include <cstdio>
+#include <string>
+#include <string_view>
 #include <vector>
 
 namespace {
@@ -38,6 +40,47 @@ Monitor At(std::int32_t left, std::int32_t top, std::int32_t width = 2560, std::
            std::uint32_t dpi = 96)
 {
     return {{left, top, left + width, top + height}, dpi};
+}
+
+/// The player's pick: only the named monitors join, a row stops at one left out, and a word that cannot be met changes
+/// nothing. The user's row of 2560 | 3440 | 2560 with a fourth monitor above it.
+void NamedMonitors()
+{
+    using lss::views::monitor_row::MarkNamed;
+    using lss::views::monitor_row::NamesWord;
+    const std::vector<Monitor> desktop{At(0, 0, 3440), At(3440, 0), At(-2560, 0), At(2585, -1440)};
+    const std::vector<std::wstring> ids{L"middle", L"right", L"left", L"above"};
+
+    auto list = desktop;
+    auto named = MarkNamed(list, ids, std::wstring(L"middle|right"));
+    EXPECT(named.named == 2 && named.present == 2);
+    EXPECT(list[0].joins && list[1].joins && !list[2].joins && !list[3].joins);
+    Choice c = Choose(list, 0, 2);
+    EXPECT((c.ok && c.span == Rect{0, 0, 6000, 1440} && c.rowMonitors == 2));
+    // Three columns asked of two named monitors: the count the mod shrinks by.
+    c = Choose(list, 0, 3);
+    EXPECT(!c.ok && c.rowMonitors == 2);
+    // The game on a monitor left out: the row is still the named one, starting at its left.
+    c = Choose(list, 2, 2);
+    EXPECT((c.ok && !c.gamesRow && c.span == Rect{0, 0, 6000, 1440}));
+
+    // Named monitors with one left out between them are no row.
+    list  = desktop;
+    named = MarkNamed(list, ids, std::wstring(L"left|right"));
+    EXPECT(named.present == 2 && !list[0].joins);
+    c = Choose(list, 2, 2);
+    EXPECT(!c.ok && c.rowMonitors == 1);
+
+    // One named monitor connected, or none named: every monitor still joins.
+    list  = desktop;
+    named = MarkNamed(list, ids, std::wstring(L"middle|gone"));
+    EXPECT(named.named == 2 && named.present == 1 && list[1].joins && list[2].joins);
+    list  = desktop;
+    named = MarkNamed(list, ids, std::wstring_view{});
+    EXPECT(named.named == 0 && named.present == 0 && list[3].joins);
+
+    EXPECT(NamesWord(std::vector<std::wstring>{L"a", L"b"}) == L"a|b");
+    EXPECT(NamesWord(std::vector<std::wstring>{}).empty());
 }
 
 /// The user's monitors on 2026-10-21 with the pair aligned: the ultrawide primary above (the game on it), the two
@@ -257,6 +300,7 @@ void TestBadInputs()
 
 int main()
 {
+    NamedMonitors();
     TestRowBelowTheGame();
     TestUsersPairTwoPixelsOff();
     TestUsersPairAboveTheUltrawide();

@@ -10,6 +10,7 @@
 #include "players/game_state.h"
 #include "views/column_rules.h"
 #include "views/display_align.h"
+#include "views/monitor_list.h"
 #include "views/monitor_row.h"
 
 #ifndef WIN32_LEAN_AND_MEAN
@@ -231,53 +232,67 @@ std::wstring ViewportText() noexcept
     return L"unread";
 }
 
-/// Every monitor with its effective DPI, its GDI device name (for a move) and the index of the game's.
+/// Every monitor with its effective DPI, its GDI device name (for a move), the index of the game's, and whether the
+/// settings file's monitors narrowed who joins.
 struct Monitors
 {
     std::vector<monitor_row::Monitor> list;
     std::vector<std::wstring>         devices;
-    HMONITOR                          own    = nullptr;  // the game window's monitor, to find
-    std::size_t                       gameAt = 0;        // its index; list.size() when it is not listed
+    std::size_t                       gameAt = 0;  // the game window's monitor; list.size() when it is not listed
+    monitor_row::Named                named;
 };
 
-BOOL CALLBACK CollectMonitor(HMONITOR handle, HDC, LPRECT, LPARAM param) noexcept
+/// The desktop now, with the game window's monitor marked and the monitors the settings file leaves out marked too.
+Monitors Collect(HWND game) noexcept
+try
 {
-    auto*         out = reinterpret_cast<Monitors*>(param);
-    MONITORINFOEXW info{};
-    info.cbSize = sizeof(info);
-    if (!GetMonitorInfoW(handle, &info))
+    Monitors           monitors;
+    const auto         listed = monitor_list::List();
+    const HMONITOR     own    = MonitorFromWindow(game, MONITOR_DEFAULTTONEAREST);
+    std::vector<std::wstring> ids;
+    monitors.gameAt = listed.size();
+    for (std::size_t i = 0; i < listed.size(); ++i)
     {
-        return TRUE;
+        monitors.list.push_back(listed[i].monitor);
+        monitors.devices.push_back(listed[i].device);
+        ids.push_back(listed[i].id);
+        if (listed[i].handle == own)
+        {
+            monitors.gameAt = i;
+        }
     }
-    UINT dpiX = 96, dpiY = 96;
-    using GetDpiForMonitorFn = HRESULT(WINAPI*)(HMONITOR, int, UINT*, UINT*);
-    static const auto getDpi = reinterpret_cast<GetDpiForMonitorFn>(
-        reinterpret_cast<void*>(GetProcAddress(LoadLibraryW(L"shcore.dll"), "GetDpiForMonitor")));
-    if (getDpi != nullptr)
-    {
-        getDpi(handle, 0 /* MDT_EFFECTIVE_DPI */, &dpiX, &dpiY);
-    }
-    if (handle == out->own)
-    {
-        out->gameAt = out->list.size();
-    }
-    out->list.push_back({{info.rcMonitor.left, info.rcMonitor.top, info.rcMonitor.right, info.rcMonitor.bottom}, dpiX});
-    out->devices.emplace_back(info.szDevice);
-    return TRUE;
+    monitors.named = monitor_row::MarkNamed(monitors.list, ids, platform::settings::Of(platform::settings::kMonitors).word);
+    return monitors;
+}
+catch (...)
+{
+    return {};  // no monitors: the span is refused, with the row's reason in the log
 }
 
-/// The desktop now, with the game window's monitor marked.
-Monitors Collect(HWND game) noexcept
+/// The row for `columns`: the player's named monitors when they make a row of two or more, else any row, said in the log.
+monitor_row::Choice ChooseRow(Monitors& monitors, std::int32_t columns)
 {
-    Monitors monitors;
-    monitors.own    = MonitorFromWindow(game, MONITOR_DEFAULTTONEAREST);
-    monitors.gameAt = SIZE_MAX;
-    EnumDisplayMonitors(nullptr, nullptr, CollectMonitor, reinterpret_cast<LPARAM>(&monitors));
-    if (monitors.gameAt == SIZE_MAX)
+    auto choice = monitor_row::Choose(monitors.list, monitors.gameAt, columns);
+    if (monitors.named.named == 0)
     {
-        monitors.gameAt = monitors.list.size();
+        return choice;
     }
-    return monitors;
+    if (monitors.named.present < 2)
+    {
+        platform::Log(L"window span: only {} of the {} monitors the settings file names are connected; any row serves",
+                      monitors.named.present, monitors.named.named);
+    }
+    else if (!choice.ok && choice.rowMonitors < 2)
+    {
+        platform::Log(L"window span: the monitors the settings file names do not make a row ({}); any row serves", choice.why);
+        for (auto& monitor : monitors.list)
+        {
+            monitor.joins = true;
+        }
+        choice = monitor_row::Choose(monitors.list, monitors.gameAt, columns);
+    }
+    monitors.named = {};  // said once for this desktop reading
+    return choice;
 }
 
 /// Every monitor as read: device, rect, DPI, the game's marked.
@@ -488,6 +503,9 @@ bool Install(const platform::GameImage& image) noexcept
             return control::Outcome{};
         },
         [] { return Preset(); });
+    control::Register({.name = platform::settings::kMonitors.key, .shape = control::Shape::Text,
+                       .help = platform::settings::kMonitors.help,
+                       .get  = [] { return control::Value{platform::settings::Of(platform::settings::kMonitors).word}; }});
     SetPreset(platform::settings::Of(platform::settings::kMultiMonitor).word, platform::settings::Why(platform::settings::kMultiMonitor).c_str());
     const auto res = ReadResolution();
     platform::Log(L"window span: ready (the window spans a row of monitors of one height through the game's resolution request and the "
@@ -542,7 +560,7 @@ bool Enter(std::int32_t columns) noexcept
     }
 
     Monitors monitors = Collect(window->hwnd);
-    auto     choice   = monitor_row::Choose(monitors.list, monitors.gameAt, columns);
+    auto     choice   = ChooseRow(monitors, columns);
     // As many columns as the row has monitors, up to the number asked for: a two-monitor row spans two columns
     // when three are asked (the hold asks for every column built).
     while (!choice.ok && columns > 2 && choice.rowMonitors >= 2)
@@ -722,8 +740,8 @@ void Tick(bool furtherPlayerIn) noexcept
                 Forget();
                 break;
             }
-            const Monitors monitors = Collect(window->hwnd);
-            const auto     choice   = monitor_row::Choose(monitors.list, monitors.gameAt, g_columns);
+            Monitors       monitors = Collect(window->hwnd);
+            const auto     choice   = ChooseRow(monitors, g_columns);
             if (choice.ok && choice.moves.empty())
             {
                 platform::Log(L"window span: the desktop reads as the row after {} tick(s)", g_stepTicks);

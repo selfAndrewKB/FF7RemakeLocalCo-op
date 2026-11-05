@@ -77,6 +77,10 @@ inline std::vector<Category> BuildPage()
     std::vector<Category> page;
     for (std::size_t i = 0; i < settings::kOptions.size(); ++i)
     {
+        if (settings::kOptions[i]->appOnly)
+        {
+            continue;
+        }
         const wchar_t* section = settings::kOptions[i]->section;
         Category*      into    = nullptr;
         for (Category& category : page)

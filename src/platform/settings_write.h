@@ -102,12 +102,19 @@ inline std::wstring FileText(std::span<const Reading, kOptions.size()> readings)
         }
         text += L"\r\n";
         text += CommentLines(std::wstring(option.label) + L": " + option.menuHelp);
-        text += CommentLines(FileWords(option) + L" (the default: " + option.fallback + L")");
+        if (!option.words.empty())
+        {
+            text += CommentLines(FileWords(option) + L" (the default: " + option.fallback + L")");
+        }
         if (reading.source == Source::Invalid)
         {
             text += CommentLines(L"The value below is none of these words: read as " + std::wstring(option.fallback) + L".");
         }
-        text += std::wstring(option.key) + L" = " + (reading.source == Source::Invalid ? KeptRaw(reading.raw) : reading.word) + L"\r\n";
+        // An option of any word goes through KeptRaw too: its word is the file's own text, not one of the table's.
+        const std::wstring value = reading.source == Source::Invalid ? KeptRaw(reading.raw)
+                                   : option.words.empty()            ? KeptRaw(reading.word)
+                                                                     : reading.word;
+        text += std::wstring(option.key) + L" = " + value + L"\r\n";
     }
     return text;
 }
@@ -174,6 +181,42 @@ inline unsigned long WriteFileBytes(const wchar_t* path, const std::string& byte
         return error != 0 ? error : ERROR_WRITE_FAULT;
     }
     return 0;
+}
+
+/// Every option's reading from the file at `path`; a missing file reads as every default. The mod's Load and the setup
+/// app read through this, so they judge the file alike.
+inline std::array<Reading, kOptions.size()> ReadFile(const std::wstring& path)
+{
+    const bool                           exists = !path.empty() && GetFileAttributesW(path.c_str()) != INVALID_FILE_ATTRIBUTES;
+    std::array<Reading, kOptions.size()> readings;
+    for (std::size_t i = 0; i < kOptions.size(); ++i)
+    {
+        std::wstring text;
+        if (exists)
+        {
+            wchar_t    buffer[1024]{};  // room for every monitor's device path
+            const auto length = GetPrivateProfileStringW(kOptions[i]->section, kOptions[i]->key, L"", buffer,
+                                                         static_cast<DWORD>(std::size(buffer)), path.c_str());
+            text.assign(buffer, length);
+        }
+        readings[i] = Judge(*kOptions[i], text);
+    }
+    return readings;
+}
+
+/// Writes the file from the table with `readings`, unless it already reads exactly so. 0 when the file is as wanted, else
+/// the Windows error.
+inline unsigned long WriteFromTable(const std::wstring& path, std::span<const Reading, kOptions.size()> readings, bool* written)
+{
+    const std::string bytes = Utf8(FileText(readings));
+    *written                = false;
+    if (FileBytes(path.c_str()) == bytes)
+    {
+        return 0;
+    }
+    const unsigned long error = WriteFileBytes(path.c_str(), bytes);
+    *written                  = error == 0;
+    return error;
 }
 
 }  // namespace lss::platform::settings

@@ -69,10 +69,15 @@ void PageFromTheTable()
             EXPECT(std::wcscmp(settings::kOptions[static_cast<std::size_t>(option)]->section, page[i].text.section) == 0);
         }
     }
-    EXPECT(rows.size() == settings::kOptions.size());
+    std::size_t onPage = 0;
+    for (const settings::Option* option : settings::kOptions)
+    {
+        onPage += option->appOnly ? 0 : 1;
+    }
+    EXPECT(rows.size() == onPage);
     EXPECT(std::wcscmp(page[0].text.label, L"Screens") == 0);
     EXPECT(std::wcscmp(page[2].text.label, L"Experimental") == 0);
-    EXPECT(page[0].options == (std::vector<int>{0, 1, 2, 3, 4, 5}));
+    EXPECT(page[0].options == (std::vector<int>{0, 2, 3, 4, 5, 6}));  // 1 is the monitors, set by the setup app
 }
 
 /// A row's byte is above every game setting (0..0x34) and names its option back; game bytes name none.

@@ -109,7 +109,7 @@ Row RowAround(std::span<const Monitor> monitors, const Monitor& base)
         for (;;)
         {
             const Monitor* next = Neighbour(monitors, edge, leftOf);
-            if (next == nullptr)
+            if (next == nullptr || !next->joins)
             {
                 break;
             }
@@ -160,9 +160,9 @@ Choice Choose(std::span<const Monitor> monitors, std::size_t gameMonitor, std::i
     // Every row on the desktop, the game's first; the longest qualifying one wins, the game's own on a tie.
     std::vector<Row>  rows;
     std::vector<Rect> seen;  // each row by its leftmost rect (the anchor: placed and aligned are the same)
-    const Row gameRow = game.dpi == 96 ? RowAround(monitors, game) : Row{};
+    const Row gameRow = game.dpi == 96 && game.joins ? RowAround(monitors, game) : Row{};
     const auto consider = [&](const Monitor& base) {
-        if (base.dpi != 96)
+        if (base.dpi != 96 || !base.joins)
         {
             return;
         }
@@ -224,6 +224,7 @@ Choice Choose(std::span<const Monitor> monitors, std::size_t gameMonitor, std::i
             stopped += (stopped.empty() ? L"" : L"; ") + stop.text;
         }
         choice.rowMonitors = longest;
+        choice.stopped     = stopped;
         if (game.dpi != 96 && rows.empty())
         {
             choice.why = std::format(L"the game's monitor is scaled to {} % in Windows (needs 100 %) and no other row of "
@@ -258,6 +259,46 @@ Choice Choose(std::span<const Monitor> monitors, std::size_t gameMonitor, std::i
         }
     }
     return choice;
+}
+
+std::wstring NamesWord(std::span<const std::wstring> ids)
+{
+    std::wstring word;
+    for (const std::wstring& id : ids)
+    {
+        word += (word.empty() ? L"" : L"|") + id;
+    }
+    return word;
+}
+
+Named MarkNamed(std::span<Monitor> monitors, std::span<const std::wstring> ids, std::wstring_view word)
+{
+    std::vector<std::wstring_view> names;
+    for (std::size_t at = 0; at < word.size();)
+    {
+        const std::size_t end = std::min(word.find(L'|', at), word.size());
+        if (end > at)
+        {
+            names.push_back(word.substr(at, end - at));
+        }
+        at = end + 1;
+    }
+    const auto isNamed = [&](std::size_t i) {
+        return i < ids.size() && std::find(names.begin(), names.end(), std::wstring_view(ids[i])) != names.end();
+    };
+    Named named{static_cast<std::int32_t>(names.size()), 0};
+    for (std::size_t i = 0; i < monitors.size(); ++i)
+    {
+        named.present += isNamed(i) ? 1 : 0;
+    }
+    if (named.present >= 2)
+    {
+        for (std::size_t i = 0; i < monitors.size(); ++i)
+        {
+            monitors[i].joins = isNamed(i);
+        }
+    }
+    return named;
 }
 
 }  // namespace lss::views::monitor_row

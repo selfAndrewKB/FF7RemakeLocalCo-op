@@ -66,7 +66,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.161.0-compass-top";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.162.0-monitor-setup";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;

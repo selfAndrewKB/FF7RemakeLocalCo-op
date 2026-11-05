@@ -137,6 +137,7 @@ add_library(LocalSplitScreen SHARED
     src/views/mirror_player.cpp
     src/views/scene_camera.cpp
     src/views/whole_screen.cpp
+    src/views/monitor_list.cpp
     src/views/monitor_row.cpp
     src/views/window_span.cpp
     src/world/actor_place.cpp
@@ -167,6 +168,20 @@ add_library(LocalSplitScreen SHARED
 target_include_directories(LocalSplitScreen PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_compile_features(LocalSplitScreen PRIVATE cxx_std_20)
 target_link_libraries(LocalSplitScreen PUBLIC UE4SS)
+
+# ------------------------------------------------------------------------------------------------
+# The setup app: picks the monitors and writes LocalSplitScreen.ini; shares the mod's row rules and settings table
+# ------------------------------------------------------------------------------------------------
+add_executable(LocalSplitScreenSetup WIN32
+    setup/main.cpp
+    src/views/monitor_list.cpp
+    src/views/monitor_row.cpp
+)
+target_include_directories(LocalSplitScreenSetup PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src" "${CMAKE_CURRENT_SOURCE_DIR}")
+target_compile_features(LocalSplitScreenSetup PRIVATE cxx_std_20)
+target_compile_definitions(LocalSplitScreenSetup PRIVATE NOMINMAX)
+target_link_libraries(LocalSplitScreenSetup PRIVATE user32 gdi32 comctl32 shell32)
+set_property(TARGET LocalSplitScreenSetup PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")  # one file: no runtime to install
 
 # ------------------------------------------------------------------------------------------------
 # Host-side tests: the logic that needs neither the game nor UE4SS (run with --target <name>, then the exe)
@@ -418,6 +433,14 @@ add_executable(MonitorRowTests
 target_include_directories(MonitorRowTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_compile_features(MonitorRowTests PRIVATE cxx_std_20)
 add_test(NAME monitor_row COMMAND MonitorRowTests)
+
+add_executable(SetupRulesTests
+    tests/setup_rules_test.cpp
+    src/views/monitor_row.cpp
+)
+target_include_directories(SetupRulesTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src" "${CMAKE_CURRENT_SOURCE_DIR}")
+target_compile_features(SetupRulesTests PRIVATE cxx_std_20)
+add_test(NAME setup_rules COMMAND SetupRulesTests)
 
 add_executable(TypeAnswerCodeTests
     tests/type_answer_code_test.cpp

@@ -39,6 +39,8 @@ struct Option
     const wchar_t*                  label = L"";
     std::span<const wchar_t* const> wordLabels{};
     const wchar_t*                  menuHelp = L"";
+    // Set by the setup app, no row on the Co-op page: `words` is empty and the option takes any word, an empty one its default.
+    bool                            appOnly = false;
 };
 
 // The table. An option's owner (the module named beside it) applies the reading at its install.
@@ -64,6 +66,12 @@ inline constexpr Option kMultiMonitor{  // views/window_span
     false, L"Multiple Monitors", kOnOffLabels,
     L"One full view per player across a row of monitors of the same height, each as wide as its monitor. On: always. Off: "
     L"every view in one window."};
+inline constexpr Option kMonitors{  // views/window_span, views/monitor_row MarkNamed
+    L"Views", L"monitors", {}, L"",
+    L"(read only) the monitors the row may take, as the setup app wrote them; empty: any row of monitors of one height",
+    false, L"Monitors in the Row", {},
+    L"The monitors a row may take, chosen in LocalSplitScreenSetup.exe. Empty: the longest row of monitors of one height.",
+    true};
 inline constexpr Option kColumnOrder{  // views/column_layout
     L"Views", L"column-order", kColumnOrderWords, L"123",
     L"which screen each player takes: the players left to right (in one window, three players: the large view, then the "
@@ -234,7 +242,7 @@ inline constexpr Option kAreaLevels{  // world/area_levels
     L"Only Player 1: the world loads only around player 1's immediate area. All Players: the world loads around every player's "
     L"position, preventing the world from unloading when no longer around player 1. Uses more memory."};
 
-inline constexpr std::array<const Option*, 16> kOptions{&kMultiMonitor, &kColumnOrder, &kTwoPlayerSplit, &kThreePlayerSplit,
+inline constexpr std::array<const Option*, 17> kOptions{&kMultiMonitor, &kMonitors, &kColumnOrder, &kTwoPlayerSplit, &kThreePlayerSplit,
                                                        &kHorizontalFov, &kVerticalFov, &kMenuSlow, &kBattleWarps, &kEnemyDamage,
                                                        &kEnemyHp, &kBossHp, &kEnemyStagger, &kExpGain, &kApGain, &kLeadHolder,
                                                        &kAreaLevels};
@@ -248,7 +256,7 @@ consteval bool Listed(const Option& option)
     }
     return false;
 }
-static_assert(Listed(kMultiMonitor) && Listed(kColumnOrder) && Listed(kTwoPlayerSplit) && Listed(kThreePlayerSplit) &&
+static_assert(Listed(kMultiMonitor) && Listed(kMonitors) && Listed(kColumnOrder) && Listed(kTwoPlayerSplit) && Listed(kThreePlayerSplit) &&
                   Listed(kHorizontalFov) && Listed(kVerticalFov) && Listed(kMenuSlow) && Listed(kBattleWarps) && Listed(kEnemyDamage) && Listed(kEnemyHp) && Listed(kBossHp) &&
                   Listed(kEnemyStagger) && Listed(kExpGain) && Listed(kApGain) && Listed(kLeadHolder) && Listed(kAreaLevels),
               "every option is a row of kOptions");
@@ -283,6 +291,10 @@ inline Reading Judge(const Option& option, std::wstring_view fileText)
     if (word.empty())
     {
         return {option.fallback, Source::Default, {}};
+    }
+    if (option.words.empty())
+    {
+        return {word, Source::File, {}};
     }
     for (const wchar_t* allowed : option.words)
     {
