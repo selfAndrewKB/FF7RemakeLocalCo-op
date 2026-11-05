@@ -2,9 +2,10 @@
 
 // The machine code for the 16:9 assumptions in Square's HUD placement that misplace things in a split half's band
 // (RE-hud-overlay-pass.md §6.2, §6.3; Rebirth's hud/centered_frame_code.h and hud/arrow_edge_code.h, re-found here).
-// Each is installed with platform::CodeRedirect over ONE game instruction inside one aligned 16-byte block, reads a
-// flag byte the HUD layout sets while the band applies (hud/overlay_layout.h), and with the flag clear does exactly
-// what the game does. No calls, no stack writes, rsp unchanged. Host-tested by executing them (tests/layout_code_test.cpp).
+// Each is installed with platform::CodeRedirect inside one aligned 16-byte block. Pieces 1 to 3 replace ONE game instruction,
+// read a flag byte the HUD layout sets while the band applies (hud/overlay_layout.h), and with the flag clear do exactly what
+// the game does; piece 4 replaces two and needs no flag (below). No calls, no stack writes, rsp unchanged. Host-tested by
+// executing them (tests/layout_code_test.cpp).
 //
 // 1. The centred 1920x1080 frame. EndUI__GetCentered1920x1080Frame(FBox2D* out) (0x1413488A0, 14 callers: the
 //    off-screen search arrow, battle text, the item-get log...) returns a 1920x1080 box centred in the layout
@@ -32,6 +33,19 @@
 //    by the atan2f call before, next written at 0x1413E39E1, read by neither branch). Flag set: the side branch
 //    (0x1413E3989) or the top/bottom branch (0x1413E39B9), each of which sets its own flags. Flag clear: the add, the
 //    60° compare again (the flag test destroyed its flags), and back to the game's own jbe and 120° compare.
+//
+// 4. The overlay's layout scale (RE-hud-overlay-pass.md §6.1; Rebirth's hud/layout/layout_scale_code.h). The render lays the
+//    overlay out at height/1080 of its rect, while every conversion from UI pixels to layout units uses the contain scale of
+//    the same rect, height/1080 for 16:9 and wider and width/1920 for narrower. The game only makes 16:9 images, where the two
+//    are equal. A view narrower than 16:9 lays out in a band narrower than 16:9 and the two part: world markers land off
+//    their objects, by the ratio of the two scales, and what the game keeps in its centred frame falls off the view. The
+//    scale becomes the contain rule, min(height/1080, width/1920), with the game's own constants; a rect of 16:9 or wider
+//    gets exactly the game's value (the stored 1/1920 rounds up and the stored 1/1080 down, so the width's term is never the
+//    smaller there), so there is no flag. The `mulss` (0x141509F0F) crosses a block, so the two instructions before it
+//    are replaced by themselves and the rule, resuming after it, its bytes left in place unrun. There edx = the rect's width,
+//    xmm2 = float(height), and xmm5 is free (next written at 0x14150A169, not read before). A thread stopped between the two
+//    replaced instructions would resume inside the jump, so this is installed from the game thread outside the render, the
+//    only thread that runs it.
 
 #include <array>
 #include <cstddef>
@@ -221,5 +235,37 @@ inline std::array<std::uint8_t, kBattleArrowCodeSize> BattleArrowCode(const std:
     put(88, &sixty, sizeof(float));
     return code;
 }
+
+// --- 4. The layout scale -----------------------------------------------------------------------------------------
+inline constexpr std::uintptr_t kScaleCheckStart = 0x141509F00;
+inline constexpr std::uintptr_t kScaleSite       = 0x141509F08;
+inline constexpr std::uintptr_t kScaleResume     = 0x141509F17;
+
+/// The render from the block's start through the instruction after the multiply, as the research read it.
+inline constexpr std::uint8_t kScaleBytes[] = {
+    0x66, 0x41, 0x0F, 0x6E, 0xC1,                    // movd xmm0, r9d
+    0x0F, 0x5B, 0xC0,                                // cvtdq2ps xmm0, xmm0
+    0x0F, 0x28, 0xE2,                                // movaps xmm4, xmm2           <- replaced
+    0x66, 0x0F, 0x6E, 0xDA,                          // movd xmm3, edx              <- replaced
+    0xF3, 0x0F, 0x59, 0x25, 0xED, 0x79, 0xA8, 0x03,  // mulss xmm4, [1/1080]        left in place, unrun
+    0x0F, 0x5B, 0xDB};                               // cvtdq2ps xmm3, xmm3         resumed at
+static_assert(sizeof(kScaleBytes) == kScaleResume + 3 - kScaleCheckStart);
+
+/// The instructions replaced.
+inline constexpr std::uint8_t kScaleReplaced[] = {0x0F, 0x28, 0xE2, 0x66, 0x0F, 0x6E, 0xDA};
+
+/// The replaced instructions, then min(height/1080, width/1920). Its constants sit after a short jump and are read
+/// rip-relative, so the bytes are the same wherever they are placed.
+inline constexpr std::uint8_t kScaleCode[] = {
+    0x0F, 0x28, 0xE2,                                //  0: movaps   xmm4, xmm2
+    0x66, 0x0F, 0x6E, 0xDA,                          //  3: movd     xmm3, edx
+    0xF3, 0x0F, 0x59, 0x25, 0x12, 0x00, 0x00, 0x00,  //  7: mulss    xmm4, [rip+18]  (next 15, constant at 33)
+    0xF3, 0x0F, 0x2A, 0xEA,                          // 15: cvtsi2ss xmm5, edx
+    0xF3, 0x0F, 0x59, 0x2D, 0x0A, 0x00, 0x00, 0x00,  // 19: mulss    xmm5, [rip+10]  (next 27, constant at 37)
+    0xF3, 0x0F, 0x5D, 0xE5,                          // 27: minss    xmm4, xmm5
+    0xEB, 0x08,                                      // 31: jmp short over the constants, to the appended jump back
+    0xD6, 0xB9, 0x72, 0x3A,                          // 33: 1/1080, as the game stores it
+    0x89, 0x88, 0x08, 0x3A};                         // 37: 1/1920, as the game stores it
+static_assert(sizeof(kScaleCode) == 41);
 
 }  // namespace lss::hud::layout_code

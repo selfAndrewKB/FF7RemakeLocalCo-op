@@ -42,7 +42,7 @@ struct IntRect
 /// empty rect for unusable sizes.
 IntRect VisibleBand(std::int32_t imageWidth, std::int32_t imageHeight, float viewWidth, float viewHeight) noexcept;
 
-/// The overlay's layout scale with the mod's layout-scale change (hud/layout_scale.h): the contain
+/// The overlay's layout scale with the mod's layout-scale change (hud/layout_code.h): the contain
 /// rule min(height/1080, width/1920), computed as the redirected instructions compute it. For the
 /// 16:9 images the game makes this is exactly its own height/1080.
 float OverlayLayoutScale(std::int32_t width, std::int32_t height) noexcept;

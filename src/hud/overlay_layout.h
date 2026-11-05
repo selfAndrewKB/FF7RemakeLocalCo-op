@@ -16,6 +16,8 @@
 //     their objects. Square's own OnPaint fallback sets the host rect to the first player's view rect; the delegate
 //     path uses the whole window only because single player's view is the window (RE-hud-split.md §1.4). The HUD
 //     ticks, which run before the next render, read these values.
+// A few of the render's and the placements' own 16:9 assumptions change with it (hud/layout_code.h: the centred frame, the
+// off-screen arrows' edges, the layout scale), so a band narrower than 16:9 lays out at its width.
 // Each pass lays out for its own column's view (hud/overlay_pass.h): column 0's, player 1's, in the game's own render,
 // or a further column's in that column's pass (hud/second_image.h), whose entry gets the column's name, and whose submit
 // is left to player 1's pass.

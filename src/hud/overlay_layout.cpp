@@ -63,6 +63,9 @@ bool                   g_installed    = false;
 platform::CodeRedirect  g_frameCode;
 platform::CodeRedirect  g_arrowCode;
 platform::CodeRedirect  g_battleArrowCode;
+platform::CodeRedirect  g_scaleCode;           // the layout scale's contain rule (hud/layout_code.h): placed by Tick
+std::uintptr_t          g_scaleSite   = 0;     // set at install when the render's code is what the research read
+std::uintptr_t          g_scaleResume = 0;
 alignas(8) std::uint8_t g_bandApplies = 0;
 
 // Game thread only.
@@ -423,6 +426,21 @@ bool Install(const platform::GameImage& image) noexcept
     InstallFrameCode(image);
     InstallArrowCode(image);
     InstallBattleArrowCode(image);
+    {
+        namespace c       = layout_code;
+        const auto site   = image.Rebase(c::kScaleSite, sizeof(c::kScaleReplaced));
+        const auto resume = image.Rebase(c::kScaleResume);
+        if (site && resume && image.BytesMatch(c::kScaleCheckStart, c::kScaleBytes))
+        {
+            g_scaleSite   = *site;
+            g_scaleResume = *resume;
+        }
+        else
+        {
+            platform::LogWarning(L"HUD layout: the overlay's layout scale differs from the research; a view narrower than 16:9 keeps the "
+                                 L"game's scale, its markers off their objects");
+        }
+    }
     return true;
 }
 
@@ -437,6 +455,10 @@ void Remove() noexcept
     g_pending.active = false;
     g_rectPending    = false;
     g_bandApplies    = 0;  // whatever code stays in place does the game's own thing
+    if (g_scaleCode.IsInstalled() && !g_scaleCode.Restore())
+    {
+        platform::Log(L"HUD layout: the layout scale's code was changed after us; left in place (it acts only in a band narrower than 16:9)");
+    }
     if (g_frameCode.IsInstalled() && !g_frameCode.Restore())
     {
         platform::Log(L"HUD layout: the centred frame's code was changed after us; left in place (it acts only in a band)");
@@ -487,6 +509,11 @@ void Tick(bool splitShown, const ViewShares& shares, int count) noexcept
             platform::Log(L"HUD layout: the overlay's submit call could not be redirected: widgets painted in 3D (the "
                           L"command menu) stay outside the band");
         }
+        // Two instructions are replaced, so this too needs the only thread that runs them outside the render.
+        const bool scaled = ok && g_scaleSite != 0 &&
+                            g_scaleCode.Install(g_scaleSite, layout_code::kScaleReplaced, layout_code::kScaleCode, g_scaleResume);
+        platform::Log(L"HUD layout: the overlay's layout scale {}",
+                      scaled ? L"is the contain rule (a view narrower than 16:9 lays out at its width)" : L"stays the game's");
     }
     g_splitShown = splitShown && g_rectCall.IsInstalled();
     if (!g_splitShown)

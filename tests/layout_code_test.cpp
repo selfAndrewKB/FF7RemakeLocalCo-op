@@ -360,11 +360,99 @@ void TestBattleArrow()
 
 }  // namespace
 
+// --- 4. The layout scale -------------------------------------------------------------------------------------------
+// void Scale(float* io): xmm2 = io[0] height, edx = io[1] (an int) width; the two replaced instructions at the game's block
+// offset, the game's multiply by 1/1080 of its own, the game's conversion of the width; writes the scale and the width back.
+struct ScaleStandIn
+{
+    using Fn = void (*)(void* io);
+    Fn            fn     = nullptr;
+    std::size_t   site   = 0;
+    std::size_t   resume = 0;
+    std::uint8_t* page   = nullptr;
+
+    ScaleStandIn()
+    {
+        Builder b;
+        b.Put({0xF3, 0x0F, 0x10, 0x11});  // movss xmm2, [rcx]
+        b.Put({0x8B, 0x51, 0x04});        // mov edx, [rcx+4]
+        b.PadTo(code::kScaleSite & 0xF);
+        site = b.At();
+        b.Put(code::kScaleReplaced, sizeof(code::kScaleReplaced));
+        const std::size_t multiply = b.At();
+        b.Put({0xF3, 0x0F, 0x59, 0x25, 0, 0, 0, 0});  // mulss xmm4, [rip+constant], patched below
+        resume = b.At();
+        b.Put({0x0F, 0x5B, 0xDB});              // cvtdq2ps xmm3, xmm3
+        b.Put({0xF3, 0x0F, 0x11, 0x61, 0x08});  // movss [rcx+8], xmm4
+        b.Put({0xF3, 0x0F, 0x11, 0x59, 0x0C});  // movss [rcx+0Ch], xmm3
+        b.Put({0xC3});                          // ret
+        const std::size_t constant = b.At();
+        const float       k1080    = 1.0f / 1080.0f;
+        b.Put(reinterpret_cast<const std::uint8_t*>(&k1080), sizeof(k1080));
+        const auto rel = static_cast<std::int32_t>(constant - resume);
+        std::memcpy(&b.bytes[multiply + 4], &rel, sizeof(rel));
+        page = Load(b.bytes);
+        fn   = reinterpret_cast<Fn>(page);
+    }
+};
+
+struct ScaleIo
+{
+    float        height;
+    std::int32_t width;
+    float        scale;
+    float        widthOut;
+};
+
+ScaleIo RunScale(const ScaleStandIn& standIn, int width, int height)
+{
+    ScaleIo io{static_cast<float>(height), width, 0.0f, 0.0f};
+    standIn.fn(&io);
+    return io;
+}
+
+void TestScale()
+{
+    std::puts("layout scale: the contain rule, the game's value for 16:9 and wider");
+    ScaleStandIn standIn;
+    const auto   close = [](float a, float b) { return std::fabs(a - b) < 0.0001f; };
+    // Without the code: height/1080 whatever the width, the part that misplaces markers in a tall band.
+    EXPECT(close(RunScale(standIn, 1720, 1440).scale, 1440.0f / 1080.0f));
+    // A rect of 16:9 or wider keeps the game's value to the last bit, which is why the code needs no flag: single player runs it.
+    struct Size
+    {
+        int width, height;
+        float game;
+    };
+    Size sizes[] = {{1920, 1080, 0.0f}, {2560, 1440, 0.0f}, {3840, 2160, 0.0f}, {3840, 1080, 0.0f}, {1280, 720, 0.0f}, {5120, 1440, 0.0f}};
+    for (Size& size : sizes)
+    {
+        size.game = RunScale(standIn, size.width, size.height).scale;
+    }
+    lss::platform::CodeRedirect redirect;
+    EXPECT(redirect.Install(reinterpret_cast<std::uintptr_t>(standIn.page + standIn.site), code::kScaleReplaced, code::kScaleCode,
+                            reinterpret_cast<std::uintptr_t>(standIn.page + standIn.resume)));
+    for (const Size& size : sizes)
+    {
+        EXPECT(RunScale(standIn, size.width, size.height).scale == size.game);
+    }
+    EXPECT(close(RunScale(standIn, 1920, 1080).scale, 1.0f));              // 16:9: the game's
+    EXPECT(close(RunScale(standIn, 2560, 1440).scale, 1440.0f / 1080.0f));  // 16:9: the game's
+    EXPECT(close(RunScale(standIn, 3840, 1080).scale, 1.0f));              // a top and bottom band: the game's
+    EXPECT(close(RunScale(standIn, 960, 1080).scale, 0.5f));               // side by side: width/1920
+    EXPECT(close(RunScale(standIn, 1720, 1440).scale, 1720.0f / 1920.0f));  // side by side on an ultrawide's band
+    // The width still reaches the game's own conversion.
+    EXPECT(RunScale(standIn, 1720, 1440).widthOut == 1720.0f);
+    EXPECT(redirect.Restore());
+    EXPECT(close(RunScale(standIn, 1720, 1440).scale, 1440.0f / 1080.0f));
+}
+
 int main()
 {
     TestFrame();
     TestArrow();
     TestBattleArrow();
+    TestScale();
     if (g_failures == 0)
     {
         std::puts("all tests passed");
