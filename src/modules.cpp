@@ -73,6 +73,7 @@
 #include "views/mirror_player.h"
 #include "views/scene_camera.h"
 #include "views/whole_screen.h"
+#include "views/narrow_camera.h"
 #include "views/split_fov.h"
 #include "views/split_scale.h"
 #include "views/window_span.h"
@@ -251,6 +252,7 @@ constexpr std::array kModules{
     Module{.name = L"split scale", .install = &InstallSplitScale, .remove = &views::split_scale::Remove},
     // without it a view wider than the game's image keeps the single-player width and half its height
     Module{.name = L"split FOV", .install = Call<&views::split_fov::Install>, .remove = &views::split_fov::Remove},
+    Module{.name = L"narrow camera", .install = Call<&views::narrow_camera::Install>, .remove = &views::narrow_camera::Remove},
     // readings only; fine without
     Module{.name = L"scene camera", .install = Call<&views::scene_camera::Install>, .remove = &views::scene_camera::Remove},
     // without it a held span shows one view across the row while no further player is in (the entry point clears the mirrors
@@ -786,6 +788,12 @@ void TickAfterSession(const Frame& frame) noexcept
         seatManagers[static_cast<std::size_t>(seat)] = frame.seats[static_cast<std::size_t>(seat)].manager;
     }
     views::scene_camera::Tick(frame.managerOne, seatManagers);
+    views::narrow_camera::SeatPlayers viewPlayers{frame.localPlayer[0]};
+    for (int seat = 1; seat <= players::kSeatsBuilt; ++seat)
+    {
+        viewPlayers[static_cast<std::size_t>(seat)] = frame.seats[static_cast<std::size_t>(seat)].localPlayer;
+    }
+    views::narrow_camera::Tick(viewPlayers);
     TickBattle(frame);
     TickWorld(frame);
     TickHud(frame);

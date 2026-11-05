@@ -72,7 +72,7 @@ void PageFromTheTable()
     EXPECT(rows.size() == settings::kOptions.size());
     EXPECT(std::wcscmp(page[0].text.label, L"Screens") == 0);
     EXPECT(std::wcscmp(page[2].text.label, L"Experimental") == 0);
-    EXPECT(page[0].options == (std::vector<int>{0, 1, 2, 3, 4}));
+    EXPECT(page[0].options == (std::vector<int>{0, 1, 2, 3, 4, 5}));
 }
 
 /// A row's byte is above every game setting (0..0x34) and names its option back; game bytes name none.
@@ -133,7 +133,7 @@ void SlidersAreTheLongRows()
         EXPECT(IsSlider(*option) == (option->wordLabels.size() > kListLongest));
         sliders += IsSlider(*option) ? 1 : 0;
     }
-    EXPECT(sliders == 7);  // the weight, enemy damage, enemy HP, boss HP, stagger, EXP, AP
+    EXPECT(sliders == 8);  // the two weights, enemy damage, enemy HP, boss HP, stagger, EXP, AP
 }
 
 /// The window follows the marker with a cell of context, stays inside the gauge, and is 0 when everything fits.

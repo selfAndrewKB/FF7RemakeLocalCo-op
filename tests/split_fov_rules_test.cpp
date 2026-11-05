@@ -89,6 +89,60 @@ void Values()
     EXPECT(Near(HeightRatio({1920, 540, 1920, 1200}, kSolo), 0.5f, 0.0001f));  // 16:10: the picture is 1080 tall
 }
 
+/// Which views take the narrow rule, and its values: Rebirth's measured table at 8:9 from a 60 degree camera.
+void Narrow()
+{
+    EXPECT(AppliesNarrow({960, 1080, 1920, 1080}, kSolo));    // side by side
+    EXPECT(AppliesNarrow({1280, 1440, 2560, 1440}, kSolo));   // the same at 1440p
+    EXPECT(AppliesNarrow({1720, 1440, 3440, 1440}, kSolo));   // side by side on an ultrawide
+    EXPECT(AppliesNarrow({640, 1080, 1920, 1080}, kSolo));    // a column of view-columns 3
+    EXPECT(AppliesNarrow({800, 1200, 1600, 1200}, kSolo));    // side by side in a 4:3 window: taller than the picture
+    EXPECT(!AppliesNarrow({800, 600, 1600, 1200}, kSolo));    // a quarter of that window: shorter than the picture
+    EXPECT(!AppliesNarrow({1600, 1200, 1600, 1200}, kSolo));  // a 4:3 single view: as wide as the picture
+    EXPECT(!AppliesNarrow({1920, 1200, 1920, 1200}, kSolo));  // a 16:10 single view
+    EXPECT(!AppliesNarrow({1920, 1080, 1920, 1080}, kSolo));  // the single view
+    EXPECT(!AppliesNarrow({1920, 1080, 5760, 1080}, kSolo));  // one monitor of a row
+    EXPECT(!AppliesNarrow({960, 540, 1920, 1080}, kSolo));    // a 16:9 quarter
+    EXPECT(!AppliesNarrow({1920, 540, 1920, 1080}, kSolo));   // top and bottom
+    EXPECT(!AppliesNarrow({3440, 1440, 8560, 1440}, kSolo));  // a span's ultrawide
+    EXPECT(!AppliesNarrow({0, 1080, 1920, 1080}, kSolo));     // unread sizes
+    EXPECT(!AppliesNarrow({960, 1080, 1920, 1080}, 0.0f));
+    // No view takes both rules.
+    EXPECT(!Applies({960, 1080, 1920, 1080}, kSolo));
+
+    const Shape half{1280, 1440, 2560, 1440};
+    EXPECT(Near(NarrowFov(60.0f, kSolo, half, 0.0f), 60.0f));
+    EXPECT(Near(NarrowFov(60.0f, kSolo, half, 0.35f), 48.7f));
+    EXPECT(Near(NarrowFov(60.0f, kSolo, half, 0.5f), 44.4f));
+    EXPECT(Near(NarrowFov(60.0f, kSolo, half, 0.65f), 40.4f));
+    EXPECT(Near(NarrowFov(60.0f, kSolo, half, 1.0f), 32.2f));
+    // Weight 1 keeps the single-player vertical FOV: the vertical tangent is the camera's.
+    EXPECT(Near(TanHalf(NarrowFov(60.0f, kSolo, half, 1.0f)) / (8.0f / 9.0f), TanHalf(60.0f) / kSolo, 0.001f));
+    // An ultrawide's half is measured against the 16:9 picture, not the window: the same scale as single player.
+    const Shape ultrawide{1720, 1440, 3440, 1440};
+    EXPECT(Near(TanHalf(NarrowFov(60.0f, kSolo, ultrawide, 1.0f)) / TanHalf(60.0f), 1720.0f / 2560.0f, 0.001f));
+    // Views the rule leaves alone, and unusable inputs, come back unchanged.
+    EXPECT(NarrowFov(60.0f, kSolo, {1920, 540, 1920, 1080}, 1.0f) == 60.0f);
+    EXPECT(NarrowFov(60.0f, kSolo, half, 1.5f) == 60.0f);
+    EXPECT(NarrowFov(60.0f, kSolo, half, -0.1f) == 60.0f);
+    EXPECT(NarrowFov(0.5f, kSolo, half, 1.0f) == 0.5f);
+    EXPECT(std::isnan(NarrowFov(NAN, kSolo, half, 1.0f)));
+}
+
+/// The sideways offset follows the view's width, only ever softened, no further than the minimum.
+void Shoulder()
+{
+    const Shape half{1280, 1440, 2560, 1440};
+    EXPECT(Near(ShoulderFactor(half, 1.0f), kShoulderMinimum, 0.0001f));   // 0.5 kept at the minimum
+    EXPECT(Near(ShoulderFactor(half, 0.5f), std::sqrt(0.5f), 0.0001f));    // 0.71, above it
+    EXPECT(ShoulderFactor(half, 0.0f) == 1.0f);                            // the whole width: the game's own offset
+    EXPECT(Near(ShoulderFactor({1720, 1440, 3440, 1440}, 1.0f), 1720.0f / 2560.0f < kShoulderMinimum ? kShoulderMinimum : 1720.0f / 2560.0f, 0.0001f));
+    EXPECT(ShoulderFactor({1920, 540, 1920, 1080}, 1.0f) == 1.0f);         // top and bottom: the game's own
+    EXPECT(ShoulderFactor({1920, 1080, 1920, 1080}, 1.0f) == 1.0f);        // the single view
+    EXPECT(ShoulderFactor({960, 540, 1920, 1080}, 1.0f) == 1.0f);          // a quarter
+    EXPECT(ShoulderFactor(half, 1.5f) == 1.0f);                            // an unusable weight
+}
+
 }  // namespace
 
 /// The settings' words read as the weights they say, in order; the option's default is the rule's.
@@ -112,12 +166,17 @@ void Weights()
     EXPECT(WeightOf(L"-0.5") == kDefaultWeight);
     EXPECT(WeightOf(L"0.5x") == kDefaultWeight);
     EXPECT(WeightOf(L"0,35") == kDefaultWeight);
+    EXPECT(WeightOf(settings::kVerticalFov.fallback, kDefaultNarrowWeight) == kDefaultNarrowWeight);
+    EXPECT(WeightOf(L"nonsense", kDefaultNarrowWeight) == kDefaultNarrowWeight);
+    EXPECT(WeightOf(L"0.35", kDefaultNarrowWeight) != kDefaultNarrowWeight);
 }
 
 int main()
 {
     WhoTakesIt();
     Values();
+    Narrow();
+    Shoulder();
     Weights();
     if (g_failures != 0)
     {

@@ -12,10 +12,19 @@
 // (research/RE-view-size-fov.md §4.4, §7 item 3): the single-player picture is the camera's image fitted into the
 // window (min(window height, window width / camera aspect)), so a window of another shape keeps the single-player
 // framing; and the rule applies only where it is needed: a view wider than the camera's image and shorter than the
-// single-player picture. A 16:9 quarter, a 16:9 monitor of a row, a narrow full-height column and the single view all
-// keep the engine's FOV unchanged (the user, 2026-10-27: "3 player FOV only for the player with the widest view").
-// v0.147.0 adds a span's monitor wider than 16:9 (a full-height column of a wider window): its height ratio is 1, so
-// the same formula keeps the camera's vertical FOV there (Hor+), whatever the weight.
+// single-player picture. A 16:9 quarter, a 16:9 monitor of a row and the single view all keep the engine's FOV unchanged.
+// A span's monitor wider than 16:9 (a full-height column of a wider window) has a height ratio of 1, so the same formula
+// keeps the camera's vertical FOV there (Hor+), whatever the weight.
+//
+// A full-height view narrower than the game's image (two players side by side, the large view of three down one side) has
+// the opposite trade. Its height ratio is 1, so the formula above has nothing to weigh; the width does:
+//     tan(horizontal / 2) = tan(single-player horizontal / 2) * widthRatio^weight
+// with widthRatio the view's width over the single-player picture's. Weight 1 is Rebirth's rule: the single-player scale and
+// vertical FOV, the sides cropped (32.2 deg wide of a 60 deg camera at 8:9). Weight 0 is the whole single-player width in
+// those pixels, everything half size. Between them are Rebirth's own measured blends (48.7 deg at 0.35, 44.4 at 0.5, 40.4 at
+// 0.65; plan/topics/views.md in Rebirth), which its later rule dropped because the user picked 1 by eye; here they are the
+// slider. A narrower view leaves any sideways camera offset a larger share of the screen, so ShoulderFactor softens that
+// offset by the view's width, no further than Rebirth's by-eye minimum (views/narrow_camera.h).
 
 #include <algorithm>
 #include <cmath>
@@ -27,17 +36,20 @@ namespace lss::views::split_fov_rules {
 /// The weight between keeping the single-player framing (0) and the single-player scale (1); Rebirth's by-eye middle.
 inline constexpr float kDefaultWeight = 0.5f;
 
-/// The weight a settings word stands for ("0.35", platform/settings.h kFovWeightWords); the default for any other text.
+/// A narrow view's weight between the whole single-player width (0) and the single-player scale (1): Rebirth's by-eye 1.
+inline constexpr float kDefaultNarrowWeight = 1.0f;
+
+/// The weight a settings word stands for ("0.35", platform/settings.h kFovWeightWords); `fallback` for any other text.
 /// Read by its digits, so no locale's decimal mark can change it.
-inline float WeightOf(std::wstring_view word) noexcept
+inline float WeightOf(std::wstring_view word, float fallback = kDefaultWeight) noexcept
 {
     const auto digit = [word](std::size_t at) { return word[at] >= L'0' && word[at] <= L'9'; };
     if (word.size() != 4 || word[1] != L'.' || !digit(0) || !digit(2) || !digit(3))
     {
-        return kDefaultWeight;
+        return fallback;
     }
     const int hundredths = (word[0] - L'0') * 100 + (word[2] - L'0') * 10 + (word[3] - L'0');
-    return hundredths <= 100 ? static_cast<float>(hundredths) / 100.0f : kDefaultWeight;
+    return hundredths <= 100 ? static_cast<float>(hundredths) / 100.0f : fallback;
 }
 
 /// A view shape the rule leaves alone: its width over height is within this fraction of the camera's aspect.
@@ -94,6 +106,61 @@ inline float SplitFov(float fovDegrees, float cameraAspect, const Shape& shape, 
     const float tanVertical = std::tan(fovDegrees * kHalfRadians) / cameraAspect * std::pow(HeightRatio(shape, cameraAspect), weight);
     const float result      = std::atan(tanVertical * shape.viewWidth / shape.viewHeight) / kHalfRadians;
     return std::isfinite(result) && result > 1.0f && result < 179.0f ? result : fovDegrees;
+}
+
+/// The view's width over the single-player picture's (the camera's image fitted into the window); 0 if unusable.
+inline float WidthRatio(const Shape& shape, float cameraAspect) noexcept
+{
+    if (!(cameraAspect > 0.0f) || !(shape.windowWidth > 0.0f) || !(shape.windowHeight > 0.0f) || !(shape.viewWidth > 0.0f))
+    {
+        return 0.0f;
+    }
+    const float picture = std::min(shape.windowWidth, shape.windowHeight * cameraAspect);
+    return picture > 0.0f ? shape.viewWidth / picture : 0.0f;
+}
+
+/// Whether the narrow rule applies: narrower than the camera's image, as tall as the single-player picture and narrower than
+/// it. A quarter of a 4:3 window (shorter) and a single view of any shape (as wide as the picture) are left alone.
+inline bool AppliesNarrow(const Shape& shape, float cameraAspect) noexcept
+{
+    if (!(shape.viewWidth > 0.0f) || !(shape.viewHeight > 0.0f) || !(cameraAspect > 0.0f))
+    {
+        return false;
+    }
+    const float width = WidthRatio(shape, cameraAspect);
+    return shape.viewWidth / shape.viewHeight < cameraAspect * (1.0f - kAspectSlack) &&
+           HeightRatio(shape, cameraAspect) >= 1.0f - kAspectSlack && width > 0.0f && width < 1.0f - kAspectSlack;
+}
+
+/// A narrow view's horizontal FOV (degrees) from the camera's; `fovDegrees` unchanged where the rule does not apply or an
+/// input is unusable.
+inline float NarrowFov(float fovDegrees, float cameraAspect, const Shape& shape, float weight) noexcept
+{
+    constexpr float kHalfRadians = 3.14159265358979f / 360.0f;  // degrees to half-angle radians
+    if (!std::isfinite(fovDegrees) || fovDegrees <= 1.0f || fovDegrees >= 179.0f || !std::isfinite(weight) || weight < 0.0f ||
+        weight > 1.0f || !AppliesNarrow(shape, cameraAspect))
+    {
+        return fovDegrees;
+    }
+    const float result = std::atan(std::tan(fovDegrees * kHalfRadians) * std::pow(WidthRatio(shape, cameraAspect), weight)) / kHalfRadians;
+    return std::isfinite(result) && result > 1.0f && result < 179.0f ? result : fovDegrees;
+}
+
+/// The game's cameras ask for this image; the camera's sideways offset is only ever asked of them.
+inline constexpr float kImageAspect = 16.0f / 9.0f;
+
+/// How far a narrow view softens the camera's sideways offset: Rebirth's by-eye choice between 0.5, 0.7 and 0.8 at 8:9.
+inline constexpr float kShoulderMinimum = 0.7f;
+
+/// The factor on the camera's sideways offset in this view: the view's width against the camera's (the ratio of the two
+/// tangents, widthRatio^weight), kept within the minimum and 1. So 1 wherever the view is not narrow, and at weight 0.
+inline float ShoulderFactor(const Shape& shape, float weight) noexcept
+{
+    if (!std::isfinite(weight) || weight < 0.0f || weight > 1.0f || !AppliesNarrow(shape, kImageAspect))
+    {
+        return 1.0f;
+    }
+    return std::clamp(std::pow(WidthRatio(shape, kImageAspect), weight), kShoulderMinimum, 1.0f);
 }
 
 }  // namespace lss::views::split_fov_rules

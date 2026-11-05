@@ -153,8 +153,10 @@ const Entry* Registry::Find(std::wstring_view name) const noexcept
 void RegisterOption(const platform::settings::Option& option, std::function<Outcome(const std::wstring& word)> set,
                     std::function<std::wstring()> get)
 {
-    const bool onOff = option.words.size() == 2 && std::wstring_view(option.words[0]) == L"on" &&
-                       std::wstring_view(option.words[1]) == L"off";
+    // In either order: the page lists an option's words as the table does.
+    const bool onOff = option.words.size() == 2 &&
+                       ((std::wstring_view(option.words[0]) == L"on" && std::wstring_view(option.words[1]) == L"off") ||
+                        (std::wstring_view(option.words[0]) == L"off" && std::wstring_view(option.words[1]) == L"on"));
     Entry entry{.name  = option.key,
                 .shape = onOff ? Shape::OnOff : Shape::Word,
                 .help  = std::wstring(option.help) + L" (default: " + option.fallback + L")"};

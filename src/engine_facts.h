@@ -841,6 +841,21 @@ inline constexpr std::array<std::uint8_t, 16> kGetViewPointEntry{
 inline constexpr platform::SlotFact kGetViewPoint{L"ULocalPlayer::GetViewPoint (slot 72)", kLocalPlayerVTable + 72 * 8,
                                                   {L"ULocalPlayer::GetViewPoint", 0x1430185F0, kGetViewPointEntry}};
 
+// The camera in a narrow view (research/RE-narrow-view-camera.md). The operator's Tick turns the pose's aim offset into a
+// world point at one call, inside one aligned block; the battle's TargetOffset flavor projects with window pixels at a call
+// that crosses into the next block.
+inline constexpr std::array<std::uint8_t, 16> kRotateVectorEntry{
+    0x48, 0x8B, 0xC4, 0x48, 0x81, 0xEC, 0x98, 0x00, 0x00, 0x00, 0xF3, 0x41, 0x0F, 0x10, 0x08, 0x4C};
+inline constexpr platform::FunctionFact kRotateVector{L"FRotator::RotateVector", 0x141C8E110, kRotateVectorEntry};
+inline constexpr std::uintptr_t kOperatorAimRotateCall = 0x140FDEA58;
+inline constexpr std::uint32_t  kOperatorAimOffset     = 0x4E4;  // AEndFieldCameraOperator: this frame's pose +0x44, lagged; sideways +4
+inline constexpr std::array<std::uint8_t, 16> kProjectWorldToScreenEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x6C, 0x24, 0x10, 0x48, 0x89, 0x74, 0x24, 0x18, 0x57};
+inline constexpr platform::FunctionFact kProjectWorldToScreen{L"UGameplayStatics::ProjectWorldToScreen", 0x142F5A3F0,
+                                                              kProjectWorldToScreenEntry};
+inline constexpr std::uintptr_t kTargetLeanProjectCall = 0x1410C0ABC;
+inline constexpr std::uint32_t  kControllerPlayer      = 0x3E0;  // APlayerController::Player (Engine.hpp)
+
 // UMG, stock 4.18 (UMG.hpp) and UEndUserWidget's own fields (EndGame.hpp, UEndUserWidget__AddToRootOverlay).
 inline constexpr std::uint32_t kWidgetVisibility       = 0xB7;   // UWidget::Visibility (ESlateVisibility)
 inline constexpr std::uint32_t kWidgetGcWidget         = 0xD8;   // UWidget::MyGCWidget (TWeakPtr: object, then controller)

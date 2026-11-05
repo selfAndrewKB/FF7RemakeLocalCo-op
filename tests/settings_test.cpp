@@ -60,9 +60,11 @@ void TableConsistent()
         EXPECT(std::wcslen(option->label) > 0);     // the file names each option by its Co-op page row
         EXPECT(std::wcslen(option->menuHelp) > 0);  // and describes it with the page's help
         EXPECT(keys.insert(option->key).second);
-        // An experimental option's default leaves the game as it has played (its word is the first: guide, or a switch on).
-        EXPECT(!option->experimental || std::wcscmp(option->fallback, option->words[0]) == 0);
     }
+    // World Loading lists Only Player 1 first, and its default stays All Players: each label says what its word does.
+    EXPECT(std::wcscmp(kAreaLevels.words[0], L"off") == 0 && std::wcscmp(kAreaLevels.wordLabels[0], L"Only Player 1") == 0);
+    EXPECT(std::wcscmp(kAreaLevels.words[1], L"on") == 0 && std::wcscmp(kAreaLevels.wordLabels[1], L"All Players") == 0);
+    EXPECT(std::wcscmp(kAreaLevels.fallback, L"on") == 0);
     // Each section's options are together in the table, so the file lists each section once.
     std::set<std::wstring> closed;
     std::wstring           open;
@@ -74,7 +76,7 @@ void TableConsistent()
             open = option->section;
         }
     }
-    EXPECT(kOptions.size() == 15);
+    EXPECT(kOptions.size() == 16);
     EXPECT(kLeadHolder.experimental && std::wcscmp(kLeadHolder.fallback, L"guide") == 0);
     EXPECT(std::wcscmp(kLeadHolder.section, L"Experimental") == 0);
 }
@@ -107,7 +109,7 @@ void JudgeFile()
 
 void Texts()
 {
-    EXPECT(WordList(kMultiMonitor) == L"auto, on or off");
+    EXPECT(WordList(kMultiMonitor) == L"on or off");
     EXPECT(WordList(kMenuSlow) == L"on or off");
     EXPECT(WordList(kBattleWarps) == L"players-stay, off or game");
     EXPECT(WhyText(kMenuSlow, Judge(kMenuSlow, L"off")) == L"the settings file");
@@ -115,7 +117,7 @@ void Texts()
     EXPECT(WhyText(kMenuSlow, Judge(kMenuSlow, L"maybe")) ==
            L"the default; LocalSplitScreen.ini [Battle] menu-slow = 'maybe' is not on or off");
     EXPECT(InvalidText(kMultiMonitor, Judge(kMultiMonitor, L"yes")) ==
-           L"LocalSplitScreen.ini [Views] multi-monitor = 'yes' is not auto, on or off; read as auto");
+           L"LocalSplitScreen.ini [Views] multi-monitor = 'yes' is not on or off; read as off");
 }
 
 /// Every option at its default, as Load reads a missing file.
@@ -167,12 +169,12 @@ void FileTextFromTable()
         EXPECT(Count(text, std::wstring(L"; ") + option.label + L": ") == 1);
         EXPECT(Count(text, std::wstring(L"[") + option.section + L"]\r\n") == 1);
     }
-    EXPECT(text.find(L"\r\nmulti-monitor = auto\r\n") != std::wstring::npos);
+    EXPECT(text.find(L"\r\nmulti-monitor = off\r\n") != std::wstring::npos);
     EXPECT(text.find(L"\r\ncolumn-order = 213\r\n") != std::wstring::npos);
     EXPECT(text.find(L"\r\nbattle-warps = sometimes\r\n") != std::wstring::npos);
     EXPECT(Count(text, L"none of these words: read as players-stay") == 1);
     EXPECT(text.find(L"; 0.1 to 10.0 (the default: 1.0)") != std::wstring::npos);
-    EXPECT(text.find(L"; auto | on | off (the default: auto)") != std::wstring::npos);
+    EXPECT(text.find(L"; on | off (the default: off)") != std::wstring::npos);
     std::size_t lineStart = 0;
     bool        ascii     = true, narrow = true;
     for (std::size_t at = 0; at < text.size(); ++at)

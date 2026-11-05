@@ -33,7 +33,7 @@ readings are `<switch>.<what>`, and an area's readings `<area>.<what>`. Today:
   (out|awaiting|rejoining|in|playing|handed), `.member`, `.in`, `.rejoin`; `party.ai`, `party-events`, `pads` (the
   XInput users with a pad), `report`, `quit`, `console <command>`, `showflags <hex>`, `version`, `tick`,
   `log-level error|warning|info|debug|trace` (debug at start; trace holds the per-frame lines).
-- **The settings file's options**, switched in play: `multi-monitor auto|on|off`, `column-order 123|132`,
+- **The settings file's options**, switched in play: `multi-monitor on|off`, `column-order 123|132`,
   `menu-slow on|off` (off: an open battle command menu no longer slows the world or greys the screen),
   `battle-warps players-stay|off|game` (who the game warps at a battle's start and end), the battle's rates
   `enemy-damage`, `enemy-hp`, `boss-hp`, `enemy-stagger`, `exp-gain`, `ap-gain` (each `0.1` to `10.0`). Every option of
@@ -44,7 +44,7 @@ readings are `<switch>.<what>`, and an area's readings `<area>.<what>`. Today:
 - **Views:** `window-span`, `window-span.hold` (off at start: the span with any player count, kept through loading screens),
   `view-columns 0..3` (the columns the window shows; 0 = as the span and the players decide; an extra local player in
   every column no player fills shows player 1's picture), `single-view auto|on|off`, `scene-camera`,
-  `split-scale`, `split-fov.horizontal`, `letterbox-patch`; readings `whole-screen`, `split-switch`, `column-layout.state`, `window-span.state`,
+  `split-scale`, `split-fov.horizontal`, `split-fov.vertical`, `shoulder-scale`, `target-lean-fix`, `letterbox-patch`; readings `narrow-camera.state`, `whole-screen`, `split-switch`, `column-layout.state`, `window-span.state`,
   `mirror-player.state`, `scene-camera.state`, `split-scale.state`, `split-fov.state`, `letterbox-patch.sites`.
 - **The field:** `npc-crowd`, `npc-detail`, `npc-senses`, `env-sets`, `area-levels` (every player's area kept loaded,
   not only player 1's), `forced-walk`, `overlap-fade`, `search-arrows`, `anim`, each with its reading `world.<switch>`;
@@ -432,11 +432,13 @@ src/
     mirror_player           The mirror players: an extra local player of the mod's in every column no player fills,
                             showing player 1's picture, so a spanned window never shows one view across the whole row
     monitor_row             Which monitors a spanned game window may cover: a row of monitors of one height
+    narrow_camera           The camera in a view narrower than the game's image and spread across a window: two small
+                            corrections beside the narrow view's FOV
     scene_camera            The scene camera on every further player's view: a cutscene, a talk scene or an event camera
                             plays on each further player's view as it does on player 1's
-    split_fov               A view wider than the game's 16:9 image (two players in one window, the top view of three)
-                            keeps a fuller picture: the split FOV rule (views/split_fov_rules.h) written into the view
-                            point each time the engine asks for it
+    split_fov               A view wider than the game's 16:9 image (two players top and bottom, the top view of three)
+                            keeps a fuller picture, and a full-height narrower one (two players side by side, the large
+                            view of three down one side) the characters' …
     split_fov_rules.h       The split FOV rule as arithmetic, apart from the engine so it is tested on the host
                             (views/split_fov.h applies it)
     split_scale             Split views fill their part of the window whatever the game's resolution option

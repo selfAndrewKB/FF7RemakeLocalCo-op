@@ -28,9 +28,8 @@
 // mirror player fills the columns no player has. The hold (`window-span.hold on`, v0.41.0) spans the row with any player count and
 // keeps it when the last further player leaves (a loading screen, the main menu, a movie): the multi-monitor presentation modes
 // (plan/topics/views.md); the mirror player (views/mirror_player, v0.42.0) fills the empty column under it. The
-// preset `[Views] multi-monitor = off | on | auto` in LocalSplitScreen.ini (v0.43.0; platform/settings) sets the
-// start: `on` holds from the first steady frame of the game (the title), `off` leaves the span to the command,
-// `auto` (the default) is the join rule. A row monitor a few pixels off the row's top is lined up first, for the Windows
+// preset `[Views] multi-monitor = off | on` in LocalSplitScreen.ini (platform/settings) sets the start: `on` holds from the
+// first steady frame of the game (the title), `off` (the default) leaves the span to the command. A row monitor a few pixels off the row's top is lined up first, for the Windows
 // session, and put back at the leave (views/display_align; v0.38.0); no display mode or scaling is ever changed: a
 // row that does not qualify is logged with the reason and what to change. Game thread only. Logged at Info on each
 // step and change, at Debug for the status.
@@ -79,12 +78,11 @@ std::int32_t Columns() noexcept;
 std::span<const std::int32_t> ColumnWidths() noexcept;
 
 /// The preset (`[Views] multi-monitor`, platform/settings.h; the console's `multi-monitor`), one of its words:
-/// `auto` the span while a further player is in, `on` the span held with any player count (from the game's next
-/// steady frame when out), `off` neither until `window-span on`, `window-span.hold on` or Ctrl+F2. Applied at
-/// install from the file, and at any time from the console: `off` leaves now, `auto` leaves when no further player
-/// is in, `on` keeps a span that is in. `why` names the source in the log line. The reading answers the live state
-/// (`on` while held, `off` while neither held nor on the join rule, else `auto`), so Ctrl+F2 and the window-span
-/// switches show in it.
+/// `on` the span held with any player count (from the game's next steady frame when out), `off` no span until
+/// `window-span on`, `window-span.hold on` or Ctrl+F2. Applied at install from the file, and at any time from the
+/// console: `off` leaves now, `on` keeps a span that is in. `why` names the source in the log line. The reading answers
+/// the live state (`off` while neither held nor on the join rule, else `on`), so Ctrl+F2 and the window-span switches
+/// show in it.
 void SetPreset(const std::wstring& preset, const wchar_t* why) noexcept;
 
 /// The `window-span.state` reading.

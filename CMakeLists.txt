@@ -131,6 +131,7 @@ add_library(LocalSplitScreen SHARED
     src/views/column_layout.cpp
     src/views/column_source.cpp
     src/views/split_scale.cpp
+    src/views/narrow_camera.cpp
     src/views/split_fov.cpp
     src/views/display_align.cpp
     src/views/mirror_player.cpp

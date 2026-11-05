@@ -36,6 +36,7 @@ GetViewPointFn        g_engine = nullptr;
 // Set from the console on the game thread, read by the replacement (the engine calls it from Draw on the game thread;
 // atomics keep that true if it ever changes).
 std::atomic<float> g_weight{rules::kDefaultWeight};
+std::atomic<float> g_narrowWeight{rules::kDefaultNarrowWeight};
 
 /// What a view's last call decided, for the Info line on each change. Game thread only (the replacement skips the
 /// record off it). One record per local player the engine allows.
@@ -124,7 +125,14 @@ void NoteShape(const void* localPlayer, const rules::Shape& shape, bool applies,
     {
         return;
     }
-    if (applies)
+    if (applies && rules::AppliesNarrow(shape, aspect))
+    {
+        platform::Log(L"split FOV: a {}x{} view of a {}x{} window takes the narrow view's FOV (width {:.2f} of the single-player picture, "
+                      L"weight {:.2f}): the camera's {:.1f} deg at {:.3f} becomes {:.1f} deg wide",
+                      width, height, windowW, windowH, rules::WidthRatio(shape, aspect), g_narrowWeight.load(std::memory_order_relaxed),
+                      fov, aspect, split);
+    }
+    else if (applies)
     {
         platform::Log(L"split FOV: a {}x{} view of a {}x{} window takes the split FOV (height {:.2f} of the single-player picture, "
                       L"weight {:.2f}): the camera's {:.1f} deg at {:.3f} becomes {:.1f} deg wide",
@@ -133,8 +141,8 @@ void NoteShape(const void* localPlayer, const rules::Shape& shape, bool applies,
     }
     else
     {
-        platform::Log(L"split FOV: the {}x{} view of a {}x{} window keeps the engine's FOV (not wider than the camera's image, or "
-                      L"the whole window at the single-player picture's height)",
+        platform::Log(L"split FOV: the {}x{} view of a {}x{} window keeps the engine's FOV (the shape of the camera's image, or the "
+                      L"whole window at the single-player picture's size)",
                       width, height, windowW, windowH);
     }
     seen->applies = applies;
@@ -183,13 +191,17 @@ void GetViewPoint(void* localPlayer, std::byte* viewInfo, std::int32_t pass)
     {
         return;
     }
-    const bool applies = rules::Applies(shape, aspect);
+    const bool wide    = rules::Applies(shape, aspect);
+    const bool narrow  = rules::AppliesNarrow(shape, aspect);
+    const bool applies = wide || narrow;
     if (applies && axis != facts::kAxisRuleMaintainXFov)
     {
         NoteAxis(localPlayer, axis);
         return;
     }
-    const float split = applies ? rules::SplitFov(fov, aspect, shape, g_weight.load(std::memory_order_relaxed)) : fov;
+    const float split = wide     ? rules::SplitFov(fov, aspect, shape, g_weight.load(std::memory_order_relaxed))
+                        : narrow ? rules::NarrowFov(fov, aspect, shape, g_narrowWeight.load(std::memory_order_relaxed))
+                                 : fov;
     NoteShape(localPlayer, shape, applies, aspect, fov, split);
     if (split != fov)
     {
@@ -233,6 +245,20 @@ bool Install(const platform::GameImage& image) noexcept
             return control::Outcome{};
         },
         [] { return std::format(L"{:.2f}", g_weight.load(std::memory_order_relaxed)); });
+    g_narrowWeight.store(rules::WeightOf(settings::Of(settings::kVerticalFov).word, rules::kDefaultNarrowWeight), std::memory_order_relaxed);
+    platform::Log(L"split FOV: vertical split weight {:.2f} ({})", g_narrowWeight.load(std::memory_order_relaxed), settings::Why(settings::kVerticalFov));
+    control::RegisterOption(
+        settings::kVerticalFov,
+        [](const std::wstring& word) {
+            g_narrowWeight.store(rules::WeightOf(word, rules::kDefaultNarrowWeight), std::memory_order_relaxed);
+            platform::Log(L"split FOV: vertical split weight {}", word);
+            for (Seen& seen : g_seen)
+            {
+                seen.applies = false;  // the next call logs the new FOV
+            }
+            return control::Outcome{};
+        },
+        [] { return std::format(L"{:.2f}", g_narrowWeight.load(std::memory_order_relaxed)); });
     control::Register({.name  = L"split-fov.state",
                        .shape = control::Shape::Text,
                        .help  = L"each view's last shape and whether it takes the split FOV",
@@ -249,8 +275,16 @@ bool Install(const platform::GameImage& image) noexcept
                            }
                            return control::Value{text.empty() ? std::wstring(L"no view has taken the split FOV") : text};
                        }});
-    platform::Log(L"split FOV: ready (a view wider than the game's image shows more height)");
+    platform::Log(L"split FOV: ready (a view wider than the game's image shows more height, a full-height narrower one less width)");
     return true;
+}
+
+float ShoulderFactor(const void* localPlayer) noexcept
+{
+    rules::Shape shape;
+    return g_slot.Active() && localPlayer != nullptr && ReadShape(localPlayer, shape)
+               ? rules::ShoulderFactor(shape, g_narrowWeight.load(std::memory_order_relaxed))
+               : 1.0f;
 }
 
 void Remove() noexcept

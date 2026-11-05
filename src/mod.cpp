@@ -66,7 +66,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.158.0-coop-page-names";  // the one version string (the log and UE4SS)
+constexpr const wchar_t* kVersion = L"0.159.0-vertical-split-fov";  // the one version string (the log and UE4SS)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;

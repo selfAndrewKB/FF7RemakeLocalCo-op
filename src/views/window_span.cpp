@@ -74,18 +74,18 @@ std::uintptr_t      g_engineGlobal = 0;        // GEngine, live
 std::uintptr_t      g_vtable       = 0;        // FWindowsWindow's vtable, live
 RequestResolutionFn g_request      = nullptr;  // live
 const std::int32_t* g_systemRes    = nullptr;  // GSystemResolution, live (read only)
-bool                g_auto         = true;     // enter on a further player's join
+bool                g_auto         = false;    // enter on a further player's join (Ctrl+F2, window-span on, the preset's on)
 bool                g_autoTried    = false;    // one try per join
 bool                g_held         = false;    // the hold: the span with any player count, kept when the last further player leaves
 bool                g_holdTried    = false;    // one try per switch-on (the preset's waits for the game's first steady frame)
 bool                g_holdPreset   = false;    // the hold came from the preset: its try waits for the window and the play state
 bool                g_furtherPlayerIn = false;
 
-/// The preset's word as the live state reads: `on` while the hold is on, `off` while neither the hold nor the join
-/// rule is, else `auto`.
+/// The preset's word as the live state reads: `off` while neither the hold nor the join rule (Ctrl+F2, `window-span on`) is,
+/// else `on`.
 std::wstring Preset() noexcept
 {
-    return g_held ? L"on" : !g_auto ? L"off" : L"auto";
+    return g_held || g_auto ? L"on" : L"off";
 }
 
 Step          g_step = Step::Out;
@@ -490,9 +490,8 @@ bool Install(const platform::GameImage& image) noexcept
         [] { return Preset(); });
     SetPreset(platform::settings::Of(platform::settings::kMultiMonitor).word, platform::settings::Why(platform::settings::kMultiMonitor).c_str());
     const auto res = ReadResolution();
-    platform::Log(L"window span: ready (on by default: with a further player in, the window spans a row of monitors of one height through "
-                  L"the game's resolution request and the engine's window reshape; Ctrl+F2 toggles; window-span.hold on "
-                  L"spans with any player count); the game's resolution is {} now",
+    platform::Log(L"window span: ready (the window spans a row of monitors of one height through the game's resolution request and the "
+                  L"engine's window reshape; Ctrl+F2 toggles; window-span.hold on spans with any player count); the game's resolution is {} now",
                   ResolutionText(res));
     return true;
 }
@@ -663,17 +662,6 @@ void SetPreset(const std::wstring& preset, const wchar_t* why) noexcept
         if (In())
         {
             Leave(L"multi-monitor off");
-        }
-    }
-    else if (preset == L"auto")
-    {
-        g_auto       = true;
-        g_held       = false;
-        g_holdPreset = false;
-        platform::Log(L"window span: multi-monitor = auto ({}): the span while a further player is in", why);
-        if (In() && !g_furtherPlayerIn)
-        {
-            Leave(L"multi-monitor auto with no further player in");
         }
     }
     else
