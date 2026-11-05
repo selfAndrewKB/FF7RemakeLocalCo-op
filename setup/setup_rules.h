@@ -53,12 +53,6 @@ inline std::vector<row::Rect> Fit(std::span<const row::Monitor> monitors, std::i
     return placed;
 }
 
-/// Why this monitor can never join whatever else is picked; nothing if it could.
-inline std::wstring NeverJoins(const row::Monitor& monitor)
-{
-    return monitor.dpi == 96 ? std::wstring() : std::format(L"Scaled to {} %: needs 100 % in Windows", monitor.dpi * 100 / 96);
-}
-
 /// What the current choice gives.
 struct Look
 {
@@ -140,8 +134,11 @@ inline Look LookAt(std::span<const row::Monitor> monitors, std::span<const std::
         return look;
     }
     look.screens.assign(picks.begin(), picks.end());
-    look.text = std::format(L"A row of {} monitors, {} x {}: one view on each, as wide as its monitor.", picks.size(), choice.span.Width(),
-                            choice.span.Height());
+    look.text = std::format(L"A row of {} monitors: one view on each, fitted to its monitor.", picks.size());
+    if (std::any_of(choice.widths.begin(), choice.widths.end(), [](std::int32_t width) { return width > row::kWidestCleanView; }))
+    {
+        look.text += std::format(L" A view wider than {} px shows a band of wrong colours at its right side.", row::kWidestCleanView);
+    }
     if (!choice.moves.empty())
     {
         look.text += L" While the game holds the row your monitors move into this order; they go back afterwards, even after a crash. Windows' own "

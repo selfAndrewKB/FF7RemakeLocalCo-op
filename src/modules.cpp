@@ -590,7 +590,7 @@ Columns TickColumns(const ColumnsIn& in) noexcept
     columns.columnsHeld = columns.held > 0 || views::column_layout::Override() > 0;  // beyond the players
     // The layout asks whether the window spans monitors at all (held or entered at a join), not only while held.
     views::column_layout::Tick(columns.wanted, in.playersIn + views::mirror_player::Count(), views::window_span::Columns(),
-                               views::window_span::ColumnWidths(), in.listSeats);
+                               views::window_span::ColumnWidths(), views::window_span::ColumnHeights(), in.listSeats);
     views::mirror_player::Tick(in.playersIn, in.seatIds, columns.wanted, columns.alone);
     // Whenever the letterbox patch is on the views are in window pixels, one view included (the span's hold keeps it on
     // with a further player awaiting a member: seen 2026-10-24 on the ultrawide, player 1's view streaked past the resolution).

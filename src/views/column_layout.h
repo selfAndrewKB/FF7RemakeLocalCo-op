@@ -8,7 +8,7 @@
 // by default, whose records put player 1 on top and the other two in the quadrants below (research/RE-layout-fov.md
 // §2, RE-multi-monitor-views.md §7). UE 4.18 has no three-column entry (Rebirth's 4.26 has one, which its third view
 // selects by the setting; read 2026-10-22, cleanup-2026-10 views/third_view). So while three columns are wanted on a
-// span of monitors, or asked for on the console, this module writes that entry's three records to full-height columns;
+// span of monitors, or asked for on the console, this module writes that entry's three records to columns;
 // in one window it writes the layout the setting `three-player-split` names (column_rules::ThreeSplitRecords: one
 // across the top and two below, the engine's own entry and the default, one across the bottom, or one down either side).
 // Either is arranged by the column order (below), in place, and the stock
@@ -57,12 +57,12 @@ bool Install(const platform::GameImage& image) noexcept;
 
 /// Each engine tick, after the span's: `columns` the columns wanted this frame (views/column_rules::Wanted);
 /// `localPlayers` the local players the engine lists (player 1, the seats in, the mirrors); `spanColumns` the span's
-/// columns (0 when out) and `spanWidths` its monitors' widths, left to right; `seats` whose view each place of the
+/// columns (0 when out) and `spanWidths` and `spanHeights` its monitors' sizes, left to right; `seats` whose view each place of the
 /// engine's list holds now. Three columns while three views exist (wanted, or three local players still listed) and the
 /// window spans monitors or the console asks for them (column_rules::ThreeColumns); in one window three players take the
 /// setting's layout. Either is arranged by the column order while three views exist. On a span each column is its own monitor's width (column_rules::ColumnRecords; two players on a two-monitor
 /// span likewise, through the side-by-side entry); the console's three columns in one window are equal.
-void Tick(int columns, int localPlayers, int spanColumns, std::span<const std::int32_t> spanWidths,
+void Tick(int columns, int localPlayers, int spanColumns, std::span<const std::int32_t> spanWidths, std::span<const std::int32_t> spanHeights,
           const column_rules::ListSeats& seats) noexcept;
 
 /// The console's override (`view-columns`): 0 for none.

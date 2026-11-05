@@ -2,7 +2,7 @@
 
 // The pure rules of the view columns (plan/seats.md step 5: three columns). Host-tested (tests/column_rules_test.cpp).
 //
-// A column is a full-height view slot across the window: column 0 is player 1's, the seats' follow in order, and the
+// A column is a view slot across the window, as tall as its monitor on a span: column 0 is player 1's, the seats' follow in order, and the
 // mirror player fills the rest (views/mirror_player.h). How many columns the frame shows is one number for the whole
 // mod: the players in, or the span's columns while it is held (one per monitor), or the console's override
 // (`view-columns`, for the checks on one monitor).
@@ -311,6 +311,28 @@ RecordSet<N> ColumnRecords(const std::array<std::int32_t, N>& widths) noexcept
     {
         out.record[i] = {EdgeFraction(widths[i], total), 1.0f, left == 0 ? 0.0f : EdgeFraction(left, total), 0.0f};
         left += widths[i];
+    }
+    return out;
+}
+
+/// The same with each view as tall as its monitor, its top at the window's top: a monitor shorter than the row's tallest shows
+/// the top part of the window, where its view is.
+template <std::size_t N>
+RecordSet<N> ColumnRecords(const std::array<std::int32_t, N>& widths, const std::array<std::int32_t, N>& heights) noexcept
+{
+    RecordSet<N> out   = ColumnRecords(widths);
+    std::int32_t tallest = 0;
+    for (const std::int32_t height : heights)
+    {
+        tallest = std::max(tallest, height);
+    }
+    for (std::size_t i = 0; i < N; ++i)
+    {
+        if (heights[i] <= 0)
+        {
+            return ColumnRecords(widths);
+        }
+        out.record[i].sizeY = heights[i] == tallest ? 1.0f : EdgeFraction(heights[i], tallest);
     }
     return out;
 }

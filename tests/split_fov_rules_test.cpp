@@ -50,6 +50,16 @@ void WhoTakesIt()
     EXPECT(Applies({3440, 1440, 8560, 1440}, kSolo));   // the ultrawide of a 2560 | 3440 | 2560 span (v0.147.0)
     EXPECT(!Applies({2560, 1440, 8560, 1440}, kSolo));  // a 16:9 monitor of that span
     EXPECT(Applies({3440, 1440, 6000, 1440}, kSolo));   // the ultrawide of a two-monitor span
+    // A monitor shorter than the row's tallest is judged on its own height: the wide one keeps the camera's vertical FOV like any
+    // other wide column, and a 16:9 one stays with the engine, though each is shorter than the window.
+    using lss::views::split_fov_rules::HeightRatio;
+    using lss::views::split_fov_rules::OnItsMonitor;
+    using lss::views::split_fov_rules::SplitFov;
+    const auto shortWide = OnItsMonitor({2560, 1080, 5120, 1440});
+    EXPECT(Applies(shortWide, kSolo) && HeightRatio(shortWide, kSolo) == 1.0f);
+    EXPECT(SplitFov(90.0f, kSolo, shortWide, 0.5f) == SplitFov(90.0f, kSolo, shortWide, 1.0f));  // no zoom: the weight has nothing to act on
+    EXPECT(!Applies(OnItsMonitor({1280, 720, 3840, 1440}), kSolo));
+    EXPECT(!Applies(OnItsMonitor({2560, 1440, 5120, 1440}), kSolo));
     EXPECT(!Applies({0, 540, 1920, 1080}, kSolo));      // unread sizes
     EXPECT(!Applies({1920, 540, 1920, 1080}, 0.0f));
 }

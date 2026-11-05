@@ -255,6 +255,7 @@ Choice Choose(std::span<const Monitor> monitors, std::size_t gameMonitor, std::i
     for (std::size_t i = first; i <= last; ++i)
     {
         choice.widths.push_back(members[i].aligned.Width());
+        choice.heights.push_back(members[i].aligned.Height());
         if (members[i].placed.top != members[i].aligned.top)
         {
             choice.moves.push_back({members[i].placed, members[i].aligned.left, members[i].aligned.top});
@@ -283,15 +284,16 @@ Rect MovedTo(const Rect& rect, std::int32_t left, std::int32_t top) noexcept
     return {left, top, left + rect.Width(), top + rect.Height()};
 }
 
-/// The free place touching a placed monitor that is nearest to where `rect` is now. One always exists: right of whichever
-/// placed monitor reaches furthest right, nothing can be in the way.
-Rect NearestFree(const Rect& rect, const std::vector<Rect>& placed)
+/// The free place touching a placed monitor, clear of the window's `box`, that is nearest to where `rect` is now. One always
+/// exists: right of whichever placed monitor reaches furthest right, and the row's right end is the box's, nothing can be in the
+/// way.
+Rect NearestFree(const Rect& rect, const std::vector<Rect>& placed, const Rect& box)
 {
     Rect          best     = rect;
     std::int64_t  bestDist = -1;
     const auto    consider = [&](std::int32_t left, std::int32_t top) {
         const Rect here = MovedTo(rect, left, top);
-        if (std::any_of(placed.begin(), placed.end(), [&](const Rect& other) { return Overlaps(here, other); }))
+        if (Overlaps(here, box) || std::any_of(placed.begin(), placed.end(), [&](const Rect& other) { return Overlaps(here, other); }))
         {
             return;
         }
@@ -312,22 +314,24 @@ Rect NearestFree(const Rect& rect, const std::vector<Rect>& placed)
     return best;
 }
 
-/// Every monitor's place with the row's left end at `left`, `top`, or nothing if the row cannot stand there: it may not
-/// cover the primary monitor, and it must reach the primary through touching monitors.
+/// Every monitor's place with the row's left end at `left`, `top`, or nothing if the row cannot stand there: the window's box
+/// may not cover the primary monitor, and the row must reach the primary through touching monitors.
 std::optional<std::vector<Rect>> Layout(std::span<const Monitor> monitors, std::span<const std::size_t> picks, std::size_t primary,
                                         std::int32_t left, std::int32_t top)
 {
     std::vector<Rect>        places(monitors.size());
     std::vector<std::size_t> settled;  // placed and known to stay
     std::vector<char>        inRow(monitors.size(), 0);
-    std::int32_t             x = left;
+    std::int32_t             x = left, tallest = 0;
     for (const std::size_t pick : picks)
     {
         places[pick] = MovedTo(monitors[pick].rect, x, top);
         inRow[pick]  = 1;
         x += monitors[pick].rect.Width();
+        tallest = std::max(tallest, monitors[pick].rect.Height());
         settled.push_back(pick);
     }
+    const Rect box{left, top, x, top + tallest};  // the window
     if (inRow[primary] != 0 && !(places[primary] == monitors[primary].rect))
     {
         return std::nullopt;
@@ -335,12 +339,9 @@ std::optional<std::vector<Rect>> Layout(std::span<const Monitor> monitors, std::
     if (inRow[primary] == 0)
     {
         places[primary] = monitors[primary].rect;
-        for (const std::size_t pick : picks)
+        if (Overlaps(box, places[primary]))
         {
-            if (Overlaps(places[pick], places[primary]))
-            {
-                return std::nullopt;
-            }
+            return std::nullopt;
         }
         settled.push_back(primary);
     }
@@ -353,7 +354,7 @@ std::optional<std::vector<Rect>> Layout(std::span<const Monitor> monitors, std::
             continue;
         }
         const Rect& here = monitors[i].rect;
-        if (std::none_of(settled.begin(), settled.end(), [&](std::size_t other) { return Overlaps(here, places[other]); }))
+        if (!Overlaps(here, box) && std::none_of(settled.begin(), settled.end(), [&](std::size_t other) { return Overlaps(here, places[other]); }))
         {
             places[i] = here;
             settled.push_back(i);
@@ -390,31 +391,11 @@ std::optional<std::vector<Rect>> Layout(std::span<const Monitor> monitors, std::
     {
         if (std::find(reached.begin(), reached.end(), i) == reached.end())
         {
-            places[i] = NearestFree(monitors[i].rect, connected);
+            places[i] = NearestFree(monitors[i].rect, connected, box);
             connected.push_back(places[i]);
         }
     }
     return places;
-}
-
-/// A sentence for the first monitor keeping `picks` from a row by Windows' scaling or by height; empty if none does.
-std::wstring WhyNoRow(std::span<const Monitor> monitors, std::span<const std::size_t> picks)
-{
-    const Monitor& first = monitors[picks.front()];
-    for (const std::size_t pick : picks)
-    {
-        const Monitor& m = monitors[pick];
-        if (m.dpi != 96)
-        {
-            return std::format(L"the monitor at {} is scaled to {} % in Windows (needs 100 %)", At(m.rect), m.dpi * 100 / 96);
-        }
-        if (m.rect.Height() != first.rect.Height())
-        {
-            return std::format(L"the monitor at {} is {} px tall where the first picked is {} (a row needs one height)", At(m.rect),
-                               m.rect.Height(), first.rect.Height());
-        }
-    }
-    return {};
 }
 
 }  // namespace
@@ -437,12 +418,6 @@ Choice Arrange(std::span<const Monitor> monitors, std::span<const std::size_t> p
             return choice;
         }
     }
-    if (std::wstring why = WhyNoRow(monitors, picks); !why.empty())
-    {
-        choice.why     = why;
-        choice.stopped = std::move(why);
-        return choice;
-    }
     const auto found = std::find_if(monitors.begin(), monitors.end(), [](const Monitor& m) { return m.rect.left == 0 && m.rect.top == 0; });
     if (found == monitors.end())
     {
@@ -451,11 +426,12 @@ Choice Arrange(std::span<const Monitor> monitors, std::span<const std::size_t> p
     }
     const auto    primary = static_cast<std::size_t>(found - monitors.begin());
     const Rect&   anchor  = monitors[primary].rect;
-    const auto    height  = monitors[picks.front()].rect.Height();
+    std::int32_t  height  = 0;
     std::int32_t  width   = 0;
     for (const std::size_t pick : picks)
     {
         width += monitors[pick].rect.Width();
+        height = std::max(height, monitors[pick].rect.Height());
     }
 
     // Where the row's left end may go: with the primary in it, only where the primary keeps its corner; else with one
@@ -521,11 +497,12 @@ Choice Arrange(std::span<const Monitor> monitors, std::span<const std::size_t> p
         return choice;
     }
     choice.ok   = true;
-    choice.span = {(*best)[picks.front()].left, (*best)[picks.front()].top, (*best)[picks.back()].right, (*best)[picks.back()].bottom};
+    choice.span = {(*best)[picks.front()].left, (*best)[picks.front()].top, (*best)[picks.back()].right, (*best)[picks.front()].top + height};
     choice.gamesRow = true;
     for (const std::size_t pick : picks)
     {
         choice.widths.push_back(monitors[pick].rect.Width());
+        choice.heights.push_back(monitors[pick].rect.Height());
     }
     for (std::size_t i = 0; i < monitors.size(); ++i)
     {

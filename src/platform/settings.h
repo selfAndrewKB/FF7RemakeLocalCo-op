@@ -60,11 +60,11 @@ inline constexpr std::array<const wchar_t*, 3> kBattleWarpsLabels{L"Players Stay
 
 inline constexpr Option kMultiMonitor{  // views/window_span
     L"Views", L"multi-monitor", kOnOffWords, L"off",
-    L"the game window across a row of monitors of one height, one full view per player, each its monitor's width: "
+    L"the game window across a row of monitors, one full view per player, each fitted to its monitor: "
     L"on (held with any player count, from the game's next steady frame; a column no player fills mirrors player 1's "
     L"picture), off (no span until window-span on, window-span.hold on or Ctrl+F2; from the console: leaves now)",
     false, L"Multiple Monitors", kOnOffLabels,
-    L"One full view per player across a row of monitors of the same height, each as wide as its monitor. On: always. Off: "
+    L"One full view per player across a row of monitors, each fitted to its monitor. On: always. Off: "
     L"every view in one window."};
 inline constexpr Option kMonitors{  // views/window_span, views/monitor_row FindPicks
     L"Views", L"monitors", {}, L"",

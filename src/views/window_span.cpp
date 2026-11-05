@@ -108,6 +108,7 @@ Rect          g_target;               // the row
 Resolution    g_targetRes;
 std::int32_t  g_columns    = 0;
 std::vector<std::int32_t> g_widths;   // the span's monitors' widths, left to right (one per column), while in
+std::vector<std::int32_t> g_heights;  // their heights, the same way; the window is as tall as the tallest
 std::uint32_t g_ticks      = 0;
 std::uint32_t g_reapplies  = 0;
 std::uint32_t g_entries    = 0;
@@ -381,6 +382,7 @@ void Forget() noexcept
     g_hwnd      = nullptr;
     g_columns   = 0;
     g_widths.clear();
+    g_heights.clear();
     g_ticks     = 0;
 }
 
@@ -425,13 +427,18 @@ bool Proceed(const NativeWindow& window, const monitor_row::Choice& choice) noex
     g_rowShape  = DesktopShape();
     g_target    = choice.span;
     g_widths    = choice.widths;
+    g_heights   = choice.heights;
     ++g_entries;
     std::wstring widths;
-    for (const std::int32_t width : g_widths)
+    for (std::size_t i = 0; i < g_widths.size() && i < g_heights.size(); ++i)
     {
-        widths += std::format(L"{}{}", widths.empty() ? L"" : L" | ", width);
+        widths += std::format(L"{}{}x{}", widths.empty() ? L"" : L" | ", g_widths[i], g_heights[i]);
     }
-    platform::Log(L"window span: entering: {} columns over the row of {} monitor(s) (the columns {} px wide){}{}; the game's "
+    if (std::any_of(g_widths.begin(), g_widths.end(), [](std::int32_t width) { return width > monitor_row::kWidestCleanView; }))
+    {
+        platform::LogWarning(L"window span: a view wider than {} px shows a band of wrong colours at its right side", monitor_row::kWidestCleanView);
+    }
+    platform::Log(L"window span: entering: {} columns over the row of {} monitor(s) (the columns {} px){}{}; the game's "
                   L"resolution request sent for {} (was {}; the window's client area {} in {} mode, the viewport {}); the reshape "
                   L"to {} follows once the engine applies it",
                   g_columns, choice.rowMonitors, widths, choice.gamesRow ? L"" : L" (not the game's own monitor's row)",
@@ -487,7 +494,7 @@ bool Install(const platform::GameImage& image) noexcept
     g_installed    = true;
     control::Register({.name  = L"window-span",
                        .shape = control::Shape::OnOff,
-                       .help  = L"the game window across a row of monitors of one height, one full view per player on each (on: enters "
+                       .help  = L"the game window across a row of monitors, one full view per player on each (on: enters "
                                 L"now and on each join; off: leaves and stays single; Ctrl+F2 toggles)",
                        .set   = [](const control::Value& v) {
                            g_auto = std::get<bool>(v);
@@ -545,7 +552,7 @@ bool Install(const platform::GameImage& image) noexcept
     SetPreset(platform::settings::Of(platform::settings::kMultiMonitor).word, platform::settings::Why(platform::settings::kMultiMonitor).c_str());
     display_align::HealEarlierRun();
     const auto res = ReadResolution();
-    platform::Log(L"window span: ready (the window spans a row of monitors of one height through the game's resolution request and the "
+    platform::Log(L"window span: ready (the window spans a row of monitors through the game's resolution request and the "
                   L"engine's window reshape; Ctrl+F2 toggles; window-span.hold on spans with any player count); the game's resolution is {} now",
                   ResolutionText(res));
     return true;
@@ -706,6 +713,11 @@ std::int32_t Columns() noexcept
 std::span<const std::int32_t> ColumnWidths() noexcept
 {
     return In() ? std::span<const std::int32_t>(g_widths) : std::span<const std::int32_t>();
+}
+
+std::span<const std::int32_t> ColumnHeights() noexcept
+{
+    return In() ? std::span<const std::int32_t>(g_heights) : std::span<const std::int32_t>();
 }
 
 void SetPreset(const std::wstring& preset, const wchar_t* why) noexcept

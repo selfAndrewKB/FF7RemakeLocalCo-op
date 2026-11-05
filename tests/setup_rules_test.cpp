@@ -65,9 +65,6 @@ void PickedBadly()
 {
     EXPECT(!LookOf(kDesktop, {0}).ok);            // one monitor
     EXPECT(!LookOf(kDesktop, {0, 1, 2, 3}).ok);   // more than a row takes
-    const std::vector<Monitor> mixed{At(0, 0, 3440), At(3440, 0, 1920, 1080)};
-    const Look look = LookOf(mixed, {0, 1});      // two heights: says so
-    EXPECT(!look.ok && look.text.find(L"one height") != std::wstring::npos);
 }
 
 /// A pick as saved must read back through the settings file's own reader, which lower-cases and drops spaces and commas, and
@@ -91,10 +88,16 @@ void PickSurvivesTheSettingsFile()
     EXPECT(picks.named == 2 && (picks.found == std::vector<std::size_t>{1, 0}));
 }
 
-void ScaledMonitorSaysWhy()
+/// Any monitors make a row when picked: other heights, Windows scaling. Only a view too wide for a clean picture is warned about.
+void AnyMonitors()
 {
-    EXPECT(NeverJoins(At(0, 0)).empty());
-    EXPECT(NeverJoins(At(0, 0, 3840, 2160, 168)) == L"Scaled to 175 %: needs 100 % in Windows");
+    const std::vector<Monitor> mixed{At(0, 0, 3440), At(3440, 0, 1280, 720), At(-2560, 0, 2560, 1440, 144), At(4720, 0, 5120, 1440)};
+    Look look = LookOf(mixed, {0, 1});
+    EXPECT(look.ok && (look.screens == std::vector<std::size_t>{0, 1}));
+    EXPECT(look.text.find(L"wrong colours") == std::wstring::npos);
+    EXPECT(LookOf(mixed, {2, 0}).ok);
+    look = LookOf(mixed, {0, 3});
+    EXPECT(look.ok && look.text.find(L"wrong colours") != std::wstring::npos);
 }
 
 void PlayersOnScreens()
@@ -126,7 +129,7 @@ int main()
     PickedPair();
     PickedBadly();
     PickSurvivesTheSettingsFile();
-    ScaledMonitorSaysWhy();
+    AnyMonitors();
     PlayersOnScreens();
     PictureKeepsTheArrangement();
     std::printf(g_failures == 0 ? "setup rules: all passed\n" : "setup rules: %d failed\n", g_failures);

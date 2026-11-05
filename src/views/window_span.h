@@ -20,7 +20,7 @@
 // request never touches (§8). Exclusive fullscreen is refused. The Borderless letterbox patch (views/letterbox_patch)
 // is a precondition: without it each column is fitted into the middle of the target (§6.3).
 //
-// Entered on a further player's join when a row of equal monitors qualifies (`window-span on`, the default), or by the
+// Entered on a further player's join when a row qualifies, the player's picks or one the desktop has (`window-span on`, the default), or by the
 // command / Ctrl+F2; left by the command, with the last further player, and at the mod's end. The number of columns is the number
 // of monitors in the row, up to three (plan/seats.md step 5); the
 // mirror player fills the columns no player has. The hold (`window-span.hold on`) spans the row with any player count and
@@ -82,6 +82,9 @@ std::int32_t Columns() noexcept;
 /// The span's monitors' widths, left to right, one per column (empty when out): the column layout gives each view its
 /// own monitor's width (views/column_layout). Game thread.
 std::span<const std::int32_t> ColumnWidths() noexcept;
+
+/// Their heights, the same way.
+std::span<const std::int32_t> ColumnHeights() noexcept;
 
 /// The preset (`[Views] multi-monitor`, platform/settings.h; the console's `multi-monitor`), one of its words:
 /// `on` the span held with any player count (from the game's next steady frame when out), `off` no span until

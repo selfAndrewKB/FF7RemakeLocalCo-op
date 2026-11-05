@@ -64,6 +64,14 @@ struct Shape
     float windowHeight = 0.0f;
 };
 
+/// A view of a span, measured against its own monitor. A monitor shorter than the row's tallest has a view shorter than the
+/// window, which is its whole picture, not a part of one: it is judged as a column of its monitor's height.
+inline Shape OnItsMonitor(Shape shape) noexcept
+{
+    shape.windowHeight = shape.viewHeight;
+    return shape;
+}
+
 /// The view's height over the single-player picture's (the camera's image fitted into the window); 0 if unusable.
 inline float HeightRatio(const Shape& shape, float cameraAspect) noexcept
 {

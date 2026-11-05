@@ -118,7 +118,7 @@ void CheckRow(const std::vector<Monitor>& monitors, const std::vector<std::size_
     std::int32_t x = c.span.left;
     for (const std::size_t pick : picks)
     {
-        EXPECT(rects[pick].left == x && rects[pick].top == c.span.top && rects[pick].bottom == c.span.bottom);
+        EXPECT(rects[pick].left == x && rects[pick].top == c.span.top && rects[pick].bottom <= c.span.bottom);
         x = rects[pick].right;
     }
     EXPECT(x == c.span.right);
@@ -180,12 +180,34 @@ void PickedRows()
     EXPECT(!Arrange(desktop, std::vector<std::size_t>{kPrimary}).ok);
     EXPECT(!Arrange(desktop, std::vector<std::size_t>{kPrimary, kPrimary}).ok);
     EXPECT(!Arrange(desktop, std::vector<std::size_t>{kPrimary, 9}).ok);
-    const std::vector<Monitor> mixed{At(0, 0, 3440), At(3440, 0, 1920, 1080), At(-2560, 0, 2560, 1440, 120)};
-    c = Arrange(mixed, std::vector<std::size_t>{0, 1});
-    EXPECT(!c.ok && !c.stopped.empty() && c.why.find(L"one height") != std::wstring::npos);
-    c = Arrange(mixed, std::vector<std::size_t>{0, 2});
-    EXPECT(!c.ok && c.why.find(L"125 %") != std::wstring::npos);
     EXPECT(!Arrange(std::vector<Monitor>{At(10, 0), At(2570, 0)}, std::vector<std::size_t>{0, 1}).ok);  // no primary to keep
+}
+
+/// Monitors of different heights and scales: the window is as tall as the tallest, and no other monitor stands in its box, even
+/// where it falls off the desktop below a shorter monitor.
+void MixedRows()
+{
+    const std::vector<Monitor> desktop{At(0, 0, 3440), At(3440, 0), At(-2560, 0), At(6000, 0, 1280, 800), At(2585, -1440, 2560, 1440, 144)};
+    constexpr std::size_t kPrimary = 0, kRight = 1, kLeft = 2, kDeck = 3, kScaled = 4;
+    Choice c = Arrange(desktop, std::vector<std::size_t>{kRight, kDeck});
+    EXPECT((c.ok && c.moves.empty() && c.span == Rect{3440, 0, 7280, 1440}));
+    EXPECT((c.widths == std::vector<std::int32_t>{2560, 1280} && c.heights == std::vector<std::int32_t>{1440, 800}));
+
+    CheckRow(desktop, {kDeck, kPrimary}, 3);
+    CheckRow(desktop, {kDeck, kLeft, kRight}, 4);
+    CheckRow(desktop, {kScaled, kDeck}, 3);
+    c = Arrange(desktop, std::vector<std::size_t>{kPrimary, kScaled});
+    EXPECT(c.ok);
+
+    // A monitor under the shorter one, where the window's box falls off the desktop, has to leave.
+    const std::vector<Monitor> under{At(0, 0, 1920, 1080), At(1920, 0, 1280, 800), At(1920, 800, 1280, 800)};
+    c = Arrange(under, std::vector<std::size_t>{0, 1});
+    EXPECT(c.ok && c.moves.size() == 1 && c.moves[0].from == under[2].rect);
+    const auto rects = After(under, c);
+    EXPECT(ValidDesktop(rects));
+    EXPECT(rects[2].left >= c.span.right || rects[2].top >= c.span.bottom || rects[2].bottom <= c.span.top || rects[2].right <= c.span.left);
+    // The primary under a short one's box: the row goes elsewhere.
+    CheckRow({At(0, 0, 1920, 1080), At(0, -1080, 1920, 1080), At(1920, -1080, 1280, 800)}, {2, 1}, 2);
 }
 
 /// A pick found again: the exact path first, then a monitor of the same identity, as a virtual monitor returns with a new path.
@@ -460,6 +482,7 @@ void TestBadInputs()
 int main()
 {
     PickedRows();
+    MixedRows();
     PicksFound();
     TestRowBelowTheGame();
     TestUsersPairTwoPixelsOff();

@@ -218,11 +218,7 @@ void PaintPicture(HDC dc)
 
         const row::Rect& real = plain[i].rect;
         std::wstring     text = std::format(L"{}\n{} x {}", g_app.monitors[i].name, real.Width(), real.Height());
-        if (const std::wstring never = rules::NeverJoins(plain[i]); !never.empty())
-        {
-            text += L"\n" + never;
-        }
-        else if (ticked)
+        if (ticked)
         {
             text += std::format(L"\nPick {}", static_cast<std::size_t>(pickAt - g_app.picks.begin()) + 1);
         }
@@ -264,9 +260,11 @@ void PaintStrip(HDC dc)
     const rules::Look look  = CurrentLook();
     const bool        spanOn = g_app.readings[IndexOf(settings::kMultiMonitor)].word == L"on";
     std::int64_t      total  = 0;
+    std::int32_t      tallest = 1;
     for (const std::size_t screen : look.screens)
     {
         total += g_app.monitors[screen].monitor.rect.Width();
+        tallest = std::max(tallest, g_app.monitors[screen].monitor.rect.Height());
     }
     const int caption = Px(92);
     RECT      label{0, 0, caption, height};
@@ -279,7 +277,8 @@ void PaintStrip(HDC dc)
         const listing::Listed& m = g_app.monitors[look.screens[at]];
         const int     w     = static_cast<int>(room * m.monitor.rect.Width() / total);
         const HBRUSH  brush = CreateSolidBrush(look.ok && spanOn ? RGB(0, 90, 170) : RGB(70, 70, 70));
-        const RECT    rect{x, 0, x + w - Px(2), height};
+        // Top-aligned, as the row stands, and never too short for its two lines: who plays on it matters more than its exact shape.
+        const RECT    rect{x, 0, x + w - Px(2), std::max(MulDiv(height, m.monitor.rect.Height(), tallest), Px(36))};
         FillRect(memory, &rect, brush);
         DeleteObject(brush);
         std::wstring text = m.name;
@@ -310,10 +309,6 @@ void ClickPicture(int x, int y)
     {
         if (localX >= placed[i].left && localX < placed[i].right && localY >= placed[i].top && localY < placed[i].bottom)
         {
-            if (!rules::NeverJoins(plain[i]).empty())
-            {
-                return;  // it can never join: the picture already says why
-            }
             if (const auto at = std::find(g_app.picks.begin(), g_app.picks.end(), i); at != g_app.picks.end())
             {
                 g_app.picks.erase(at);
@@ -439,7 +434,7 @@ void Layout()
     MoveWindow(g_app.orderLabel, margin + label + combo + margin, y + Px(3), label, line, TRUE);
     MoveWindow(g_app.order, margin + 2 * label + combo + margin, y, Px(100), Px(200), TRUE);
     y += line + margin;
-    const int statusHeight = Px(62), buttonHeight = Px(28), stripHeight = Px(46);
+    const int statusHeight = Px(80), buttonHeight = Px(28), stripHeight = Px(46);
     const int bottom       = client.bottom - margin - buttonHeight;
     const int stripTop     = bottom - statusHeight - margin - stripHeight;
     g_app.picture          = {margin, y, right, stripTop - margin / 2};
@@ -680,7 +675,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show)
     const UINT dpi = GetDpiForSystem();
     const HWND window = CreateWindowExW(0, type.lpszClassName, L"FF7 Remake Split-Screen: Monitors",
                                         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, CW_USEDEFAULT, CW_USEDEFAULT,
-                                        MulDiv(860, static_cast<int>(dpi), 96), MulDiv(620, static_cast<int>(dpi), 96), nullptr, nullptr,
+                                        MulDiv(860, static_cast<int>(dpi), 96), MulDiv(640, static_cast<int>(dpi), 96), nullptr, nullptr,
                                         instance, nullptr);
     if (window == nullptr)
     {

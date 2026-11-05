@@ -10,6 +10,7 @@
 #include "platform/vtable_entry.h"
 #include "players/seat_camera.h"
 #include "views/split_fov_rules.h"
+#include "views/window_span.h"
 
 #include <array>
 #include <atomic>
@@ -103,6 +104,10 @@ bool ReadShape(const void* localPlayer, rules::Shape& shape) noexcept
     shape.windowHeight = static_cast<float>(pixels[1]);
     shape.viewWidth    = std::trunc(size[0] * shape.windowWidth);  // as GetProjectionData sizes the view (TruncToInt)
     shape.viewHeight   = std::trunc(size[1] * shape.windowHeight);
+    if (window_span::Columns() > 0)
+    {
+        shape = rules::OnItsMonitor(shape);
+    }
     return shape.viewWidth > 0.0f && shape.viewHeight > 0.0f;
 }
 

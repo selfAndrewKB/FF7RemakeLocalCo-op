@@ -695,7 +695,8 @@ catch (...)
 {
 }
 
-void Tick(int columns, int localPlayers, int spanColumns, std::span<const std::int32_t> spanWidths, const ListSeats& seats) noexcept
+void Tick(int columns, int localPlayers, int spanColumns, std::span<const std::int32_t> spanWidths, std::span<const std::int32_t> spanHeights,
+          const ListSeats& seats) noexcept
 {
     if (!g_installed)
     {
@@ -705,20 +706,22 @@ void Tick(int columns, int localPlayers, int spanColumns, std::span<const std::i
     g_columns      = columns;
     g_localPlayers = localPlayers;
     g_seats        = seats;
-    // The columns' widths: the span's monitors' own (three for the three-player entry, two for side by side), equal
-    // otherwise. A width list that does not match the span's columns is not used.
-    const bool threeWide = spanColumns == kThreePlayerRecords && spanWidths.size() == kThreePlayerRecords;
-    const bool twoWide   = spanColumns == kTwoPlayerRecords && spanWidths.size() == kTwoPlayerRecords;
+    // The columns' sizes: the span's monitors' own (three for the three-player entry, two for side by side), equal
+    // otherwise. A list that does not match the span's columns is not used.
+    const bool threeWide = spanColumns == kThreePlayerRecords && spanWidths.size() == kThreePlayerRecords && spanHeights.size() == kThreePlayerRecords;
+    const bool twoWide   = spanColumns == kTwoPlayerRecords && spanWidths.size() == kTwoPlayerRecords && spanHeights.size() == kTwoPlayerRecords;
     g_widths             = threeWide ? std::array<std::int32_t, kThreePlayerRecords>{spanWidths[0], spanWidths[1], spanWidths[2]}
                                      : std::array<std::int32_t, kThreePlayerRecords>{};
-    const Records three  = threeWide ? column_rules::ColumnRecords(g_widths) : Records{};
+    const Records three  = threeWide ? column_rules::ColumnRecords(g_widths, std::array<std::int32_t, kThreePlayerRecords>{spanHeights[0], spanHeights[1], spanHeights[2]})
+                                     : Records{};
     g_columnsBase        = threeWide && three.record[0].sizeX > 0.0f
                                ? three
                                : Records{{kThreeColumns[0], kThreeColumns[1], kThreeColumns[2]}};
     for (TwoEntry& e : g_two)
     {
         const TwoRecords side = twoWide && e.type == facts::kSplitTypeTwoPlayerVertical
-                                    ? column_rules::ColumnRecords(std::array<std::int32_t, kTwoPlayerRecords>{spanWidths[0], spanWidths[1]})
+                                    ? column_rules::ColumnRecords(std::array<std::int32_t, kTwoPlayerRecords>{spanWidths[0], spanWidths[1]},
+                                                                  std::array<std::int32_t, kTwoPlayerRecords>{spanHeights[0], spanHeights[1]})
                                     : TwoRecords{};
         e.base = side.record[0].sizeX > 0.0f ? side : TwoRecords{{(*e.stock)[0], (*e.stock)[1]}};
     }

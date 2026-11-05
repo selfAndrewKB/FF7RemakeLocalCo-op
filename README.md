@@ -137,8 +137,11 @@ start of the game or the app does, and the app has a **Put my monitors back** bu
 
 A picked monitor that is not connected is waited for, not replaced: the row forms when it arrives, drops back to one window if it
 leaves, and forms again when it returns. A streaming host's virtual monitor (Apollo, Vibepollo, SudoVDA) works like any other and
-is recognised by its name, so give each client a name of its own. A row still needs monitors of one height at 100 % Windows
-scaling.
+is recognised by its name, so give each client a name of its own.
+
+Picked monitors may differ in size and Windows scaling: each view fits its own monitor, top-aligned, and the window's part below a
+shorter monitor is simply not seen. A view wider than about 4096 px (a 32:9 monitor) shows a band of wrong colours at its right
+side. With none picked, a row needs monitors of one height at 100 % scaling.
 
 ## Layout
 
@@ -450,8 +453,7 @@ src/
     monitor_list            The desktop's monitors as Windows has them now, for the mod's span (views/window_span) and
                             the setup app (setup/): each monitor's rect and effective DPI, its GDI device name, and an
                             id and a name from the display configuration
-    monitor_row             Which monitors a spanned game window covers: a row of monitors of one height, one view per
-                            monitor
+    monitor_row             Which monitors a spanned game window covers: a row, one view per monitor
     narrow_camera           The camera in a view narrower than the game's image and spread across a window: two small
                             corrections beside the narrow view's FOV
     row_journal.h           The record of a desktop the mod has moved, on disk from just before the move until the
