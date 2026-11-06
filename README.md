@@ -1,14 +1,18 @@
 # LocalSplitScreen (FF7 Remake)
 
-Two-player split-screen for FINAL FANTASY VII REMAKE (Intergrade, UE 4.18), as a UE4SS C++ mod. Plan and research:
+Split-screen co-op for up to three players in FINAL FANTASY VII REMAKE (Intergrade, UE 4.18), as a UE4SS C++ mod. This page is
+for working on the mod; the page for players is `PLAYERS.md`, which a release ships as its README. Plan and research:
 `../Documentation/plan/README.md` and `../Documentation/research/RE-*.md`.
 
 ## Keys
 
 | Keys | What |
 |------|------|
-| Ctrl+F7 | Player 2 joins on the member in the 2nd slot of the party order: own End player controller, camera manager and field camera, the member taken through the game's leader funnel (with its own copy of the PlayerTrigger); it follows that slot. With the member not free (a script, an animation, a guide lead, a solo party) nothing is made yet: player 2 joins once it is free, and leaves again when a party change leaves it without one, so no second camera ever floats over an empty half |
-| Ctrl+F8 | Player 2 leaves (also cancels a rejoin after a load, and a wait for a member) |
+| Start, on a pad that plays no one | A player joins on that pad (the Ctrl+F7 path below), their view on the next screen and their window open |
+| View held a second | That player's own window, in their own view: d-pad left and right the character (players 2 and 3), LB and RB the view to another screen, A, Start, a B tap or View close it, B held a second leaves the game (player 1 cannot) |
+| Ctrl+F7 | The keyboard's way in (Ctrl+Shift+F7 the same for player 3). Player 2 joins on the member in the 2nd slot of the party order: own End player controller, camera manager and field camera, the member taken through the game's leader funnel (with its own copy of the PlayerTrigger); it follows that slot. With the member not free (a script, an animation, a guide lead, a solo party) nothing is made yet: player 2 joins once it is free, and leaves again when a party change leaves it without one, so no second camera ever floats over an empty half |
+| Ctrl+F2 | The window across the row of monitors: leaves it when in, else enters, and again on each join |
+| Ctrl+F8 | Player 2 leaves; Ctrl+Shift+F8, player 3 (also cancels a rejoin after a load, and a wait for a member) |
 | Ctrl+F9 | Switch the battle menus' world slow-down: off (the default), an open command menu no longer slows the world or greys the screen, so the fight and the ATB gauges run on at full speed; on, the game's slow-down and grey (also `menu-slow on|off` and the settings file) |
 | L3 twice (a further player's pad, in battle) | Bring that player's character into the fight when it is outside the fight's area (locked out behind a crawlspace, say): the game's own recovery warp, in front of player 1's character |
 | Ctrl+F6 | Log every local player's controller, pawn, camera manager and camera actor, and each player's input, movement and camera call counts |
@@ -151,6 +155,13 @@ starts the guard by, read by CMake and by `../tools/game.py` from `src/views/dis
 Picked monitors may differ in size and Windows scaling: each view fits its own monitor, top-aligned, and the window's part below a
 shorter monitor is simply not seen. A view wider than about 4096 px (a 32:9 monitor) shows a band of wrong colours at its right
 side. With none picked, a row needs monitors of one height at 100 % scaling.
+
+## Packaging
+
+`python package.py` builds, runs the host tests and writes `dist/LocalSplitScreen-v<version>.zip`: the folder `LocalSplitScreen` to copy
+into UE4SS's `Mods` folder, with `dlls/main.dll`, the setup app, `PLAYERS.md` as its `README.md`, the licence when the repository has
+one, and an empty `enabled.txt`, which makes UE4SS start the mod without a line in `mods.txt`. `--no-build` zips what is built, and
+refuses a DLL that is not this source's version. No settings file is packed: the mod writes it.
 
 ## Layout
 
