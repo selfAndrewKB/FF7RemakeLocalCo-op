@@ -26,6 +26,9 @@
 
 namespace lss::platform::settings {
 
+/// The settings file's name, in the mod's folder.
+inline constexpr const wchar_t* kFileName = L"LocalSplitScreen.ini";
+
 /// One option of the file, as the table lists it.
 struct Option
 {
@@ -242,10 +245,10 @@ inline constexpr Option kAreaLevels{  // world/area_levels
     L"Only Player 1: the world loads only around player 1's immediate area. All Players: the world loads around every player's "
     L"position, preventing the world from unloading when no longer around player 1. Uses more memory."};
 
-inline constexpr std::array<const Option*, 17> kOptions{&kMultiMonitor, &kMonitors, &kColumnOrder, &kTwoPlayerSplit, &kThreePlayerSplit,
-                                                       &kHorizontalFov, &kVerticalFov, &kMenuSlow, &kBattleWarps, &kEnemyDamage,
-                                                       &kEnemyHp, &kBossHp, &kEnemyStagger, &kExpGain, &kApGain, &kLeadHolder,
-                                                       &kAreaLevels};
+/// Every option, in the order the settings file lists them.
+inline constexpr std::array kOptions{&kMultiMonitor, &kMonitors,    &kColumnOrder,  &kTwoPlayerSplit, &kThreePlayerSplit, &kHorizontalFov,
+                                     &kVerticalFov,  &kMenuSlow,    &kBattleWarps,  &kEnemyDamage,    &kEnemyHp,          &kBossHp,
+                                     &kEnemyStagger, &kExpGain,     &kApGain,       &kLeadHolder,     &kAreaLevels};
 
 /// The option is a row of the table (Of and Why answer by the row).
 consteval bool Listed(const Option& option)

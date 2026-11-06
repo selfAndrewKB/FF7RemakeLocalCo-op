@@ -8,6 +8,7 @@
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
+#include "platform/text.h"
 #include "platform/verified_code.h"
 #include "platform/vtable_entry.h"
 #include "players/action_key.h"
@@ -26,7 +27,6 @@
 #include <bitset>
 #include <cstdint>
 #include <cstring>
-#include <cwctype>
 #include <format>
 #include <string>
 
@@ -304,11 +304,7 @@ bool StartsWith(std::uint64_t name, const char* prefix) noexcept
     return platform::CallGuarded(g_startsWith, yes, static_cast<const std::uint64_t*>(&name), prefix) && yes;
 }
 
-std::wstring Lower(std::wstring text)
-{
-    std::transform(text.begin(), text.end(), text.begin(), [](wchar_t c) { return static_cast<wchar_t>(std::towlower(c)); });
-    return text;
-}
+using platform::Lower;
 
 /// The swing named after this member ("TarzanJump_" and its first tag).
 bool OwnSwing(std::uint64_t name, const void* member) noexcept

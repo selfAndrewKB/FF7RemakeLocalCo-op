@@ -12,26 +12,20 @@
 // Positions are in the desktop coordinates a DPI-aware process sees (the game's exe is per-monitor DPI aware), the same ones
 // EnumDisplayMonitors gives the span.
 
-#include <cstdint>
+#include "views/row_journal.h"
+
 #include <span>
 #include <string>
 
 namespace lss::views::display_align {
 
-/// One monitor to place: its GDI device name as GetMonitorInfo gives it (`\\.\DISPLAY2`) and its new top-left corner.
-struct Move
-{
-    std::wstring device;
-    std::int32_t toX = 0;
-    std::int32_t toY = 0;
-};
-
 /// A record left by an earlier run, undone before this one starts anything. Logged.
 void HealEarlierRun() noexcept;
 
-/// Places the monitors for as long as the row lasts and remembers where they were. False (logged) if the guard or the record
-/// could not be had, a device is not an active source, or Windows refused; nothing is changed then.
-bool Apply(std::span<const Move> moves) noexcept;
+/// Places the monitors for as long as the row lasts and remembers where they were: each by its GDI device name as
+/// GetMonitorInfo gives it (`\\.\DISPLAY2`), at its new top-left corner. False (logged) if the guard or the record could not
+/// be had, a device is not an active source, or Windows refused; nothing is changed then.
+bool Apply(std::span<const row_journal::Seen> places) noexcept;
 
 /// Puts the monitors back, if the desktop still reads as this module left it (logged). Nothing happens when none is moved.
 void Restore() noexcept;

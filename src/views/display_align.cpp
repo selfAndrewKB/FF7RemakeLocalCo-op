@@ -3,6 +3,7 @@
 #include "platform/log.h"
 #include "platform/settings.h"
 #include "views/display_move.h"
+#include "views/record_file.h"
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -12,8 +13,11 @@
 #endif
 #include <Windows.h>
 
+#include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <format>
+#include <utility>
 #include <vector>
 
 namespace lss::views::display_align {
@@ -23,7 +27,7 @@ namespace {
 using row_journal::Entry;
 using row_journal::Seen;
 
-using display_move::kRecordName;
+using display_move::kGuardSwitch;
 using display_move::kSetupExe;
 
 std::vector<Entry> g_entries;       // the record while the monitors are moved; only those that moved say where to
@@ -36,7 +40,7 @@ std::filesystem::path ModFolder()
 
 std::wstring RecordPath()
 {
-    return (ModFolder() / kRecordName).wstring();
+    return (ModFolder() / record_file::kName).wstring();
 }
 
 /// One guard per game: it lives until the game ends and acts only if a record is there. It inherits a handle to this process
@@ -79,7 +83,7 @@ bool GuardRunning()
         // Without the list the guard would inherit every inheritable handle of the game, so a failure here is no guard.
         if (UpdateProcThreadAttribute(start.lpAttributeList, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST, &self, sizeof(self), nullptr, nullptr))
         {
-            std::wstring line = std::format(L"\"{}\" --guard {:x} \"{}\"", exe, reinterpret_cast<std::uintptr_t>(self), RecordPath());
+            std::wstring line = std::format(L"\"{}\" {} {:x} \"{}\"", exe, kGuardSwitch, reinterpret_cast<std::uintptr_t>(self), RecordPath());
             // Out of the game's job where Windows allows it: whoever closes the job should not take the guard with it.
             started = CreateProcessW(exe.c_str(), line.data(), nullptr, nullptr, TRUE,
                                      EXTENDED_STARTUPINFO_PRESENT | CREATE_NO_WINDOW | CREATE_BREAKAWAY_FROM_JOB, nullptr, nullptr, &start.StartupInfo, &process);
@@ -122,10 +126,10 @@ catch (...)
     platform::LogWarning(L"window span: an earlier run's record could not be read");
 }
 
-bool Apply(std::span<const Move> moves) noexcept
+bool Apply(std::span<const row_journal::Seen> places) noexcept
 try
 {
-    if (moves.empty())
+    if (places.empty())
     {
         return true;
     }
@@ -133,7 +137,7 @@ try
     const std::wstring path = RecordPath();
     display_move::Heal(path, 0);                       // a game that has ended
     display_move::Heal(path, GetCurrentProcessId());  // this game's own, from a return that got no answer
-    if (display_move::RecordExists(path))
+    if (record_file::Exists(path))
     {
         platform::LogWarning(L"window span: a record of moved monitors stands and cannot be settled now; nothing moves");
         return false;
@@ -145,24 +149,24 @@ try
         return false;
     }
     std::vector<Entry> entries;
-    std::vector<Seen>  places;
+    std::size_t        active = 0;  // the monitors to move that are active display sources
     for (const Seen& seen : now)
     {
         Entry entry{seen.device, seen.x, seen.y, seen.x, seen.y};
-        for (const Move& move : moves)
+        for (const Seen& place : places)
         {
-            if (move.device == seen.device)
+            if (place.device == seen.device)
             {
-                entry.toX = move.toX;
-                entry.toY = move.toY;
-                places.push_back({move.device, move.toX, move.toY});
+                entry.toX = place.x;
+                entry.toY = place.y;
+                ++active;
             }
         }
         entries.push_back(std::move(entry));
     }
-    if (places.size() != moves.size())
+    if (active != places.size())
     {
-        platform::LogWarning(L"window span: {} of the {} monitors to move are not active display sources; nothing moves", moves.size() - places.size(), moves.size());
+        platform::LogWarning(L"window span: {} of the {} monitors to move are not active display sources; nothing moves", places.size() - active, places.size());
         return false;
     }
     if (!GuardRunning())
@@ -170,15 +174,15 @@ try
         platform::LogWarning(L"window span: with no guard nothing moves, as a crash would leave the desktop moved");
         return false;
     }
-    const row_journal::Record record{GetCurrentProcessId(), display_move::ThisProcessStart(), entries};
-    if (const unsigned long error = display_move::WriteRecord(path, record); error != 0)
+    const row_journal::Record record{GetCurrentProcessId(), record_file::ThisProcessStart(), entries};
+    if (const unsigned long error = record_file::Write(path, record); error != 0)
     {
         platform::LogWarning(L"window span: the record {} could not be written (error {}); nothing moves", path, error);
         return false;
     }
     if (const long result = display_move::Place(places); result != ERROR_SUCCESS)
     {
-        display_move::DeleteRecord(path);
+        record_file::Delete(path);
         platform::LogWarning(L"window span: Windows refused the move (SetDisplayConfig error {}); nothing changed", result);
         return false;
     }

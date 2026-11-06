@@ -12,7 +12,6 @@ namespace lss::platform {
 namespace {
 
 constexpr std::uintptr_t kIdaImageBase = 0x140000000;
-constexpr wchar_t        kGameModule[] = L"ff7remake_.exe";
 
 std::uintptr_t g_locatedBase = 0;  // set once by Locate at the start (game thread), then only read: the free IdaAddress
 
@@ -41,7 +40,7 @@ bool IsReadable(std::uintptr_t address, std::size_t length) noexcept
 
 std::optional<GameImage> GameImage::Locate() noexcept
 {
-    const HMODULE module = GetModuleHandleW(kGameModule);
+    const HMODULE module = GetModuleHandleW(kGameExe);
     if (module == nullptr)
     {
         return std::nullopt;

@@ -135,13 +135,17 @@ add_library(LocalSplitScreen SHARED
     src/views/narrow_camera.cpp
     src/views/split_fov.cpp
     src/views/display_align.cpp
+    src/views/display_config.cpp
     src/views/display_move.cpp
+    src/views/game_window.cpp
     src/views/mirror_player.cpp
     src/views/scene_camera.cpp
     src/views/whole_screen.cpp
     src/views/monitor_list.cpp
     src/views/monitor_picks.cpp
     src/views/monitor_row.cpp
+    src/views/record_file.cpp
+    src/views/span_desktop.cpp
     src/views/window_span.cpp
     src/world/actor_place.cpp
     src/world/anim_views.cpp
@@ -200,14 +204,18 @@ configure_file(setup/setup_version.h.in "${CMAKE_CURRENT_BINARY_DIR}/generated/s
 
 add_executable(SetupApp WIN32
     setup/main.cpp
+    setup/app.cpp
     setup/guard.cpp
+    setup/tips.cpp
     setup/view.cpp
     setup/app.rc
     setup/app.manifest
+    src/views/display_config.cpp
     src/views/display_move.cpp
     src/views/monitor_list.cpp
     src/views/monitor_picks.cpp
     src/views/monitor_row.cpp
+    src/views/record_file.cpp
 )
 set_property(TARGET SetupApp PROPERTY OUTPUT_NAME "${LSS_SETUP_NAME}")
 target_include_directories(SetupApp PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src" "${CMAKE_CURRENT_SOURCE_DIR}"

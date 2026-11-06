@@ -14,6 +14,9 @@
 
 namespace lss::platform {
 
+/// The game's executable, as its process and its module are named.
+inline constexpr const wchar_t* kGameExe = L"ff7remake_.exe";
+
 class GameImage
 {
 public:

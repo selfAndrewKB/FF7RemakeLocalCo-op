@@ -18,8 +18,6 @@ namespace lss::platform::settings {
 
 namespace {
 
-constexpr const wchar_t* kFileName = L"LocalSplitScreen.ini";
-
 // Written by Load on the game thread at start, and by Save (the Co-op page's choices, game thread).
 std::array<Reading, kOptions.size()> g_readings = [] {
     std::array<Reading, kOptions.size()> defaults;

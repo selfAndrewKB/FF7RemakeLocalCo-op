@@ -191,6 +191,7 @@ src/
                             are the code's own and never a stale copy
     sparse_array.h          Walks the allocated elements of an Unreal TSparseArray (the element array of a TSet or TMap)
                             by reading memory only
+    text.h                  Small text helpers with no home of their own
     verified_code           Finding engine functions and vtable slots only where the research says they are
     vtable_entry            Replaces one entry of an engine vtable with a function of our own, and puts it back
     x64_jump.h              Encoding of the one x64 instruction the mod writes into game code: `jmp rel32` (E9 + a
@@ -453,8 +454,13 @@ src/
                             from the engine's local-player list
     display_align           The monitors placed to make the row, for as long as the game holds it, and put back at the
                             leave
+    display_config          Windows' display configuration as QueryDisplayConfig gives it: the outputs (paths) and their
+                            modes, with the names that go with a path
     display_move            The desktop's monitor positions through Windows' display-configuration API, the one Display
-                            settings itself uses, and the record kept while they are moved (views/row_journal)
+                            settings itself uses, and the way back from a move by the record kept while they are moved
+                            (views/row_journal for what it means, …
+    game_window             The game's own window and resolution, reached through the engine: the levers the span
+                            (views/window_span) pulls
     letterbox_patch         Two views in the game's Borderless mode: Square Enix's single-view letterbox switched off
                             while they exist
     mirror_player           The mirror players: an extra local player of the mod's in every column no player fills,
@@ -467,11 +473,16 @@ src/
     monitor_row             Which monitors a spanned game window covers: a row, one view per monitor
     narrow_camera           The camera in a view narrower than the game's image and spread across a window: two small
                             corrections beside the narrow view's FOV
+    record_file             The record of moved monitors as a file beside the settings file, and the process that owns
+                            it
     row_journal.h           The record of a desktop the mod has moved, on disk from just before the move until the
                             monitors are back, so whoever finds it can undo the move: the guard process when the game
                             dies (setup/guard.cpp), the next start of the game …
     scene_camera            The scene camera on every further player's view: a cutscene, a talk scene or an event camera
                             plays on each further player's view as it does on player 1's
+    span_desktop            The desktop as the span (views/window_span) reads it: every monitor, which one holds the
+                            game window, and the monitors the settings file names found among them; with the row those
+                            give (views/monitor_picks) and the moves that …
     split_fov               A view wider than the game's 16:9 image (two players top and bottom, the top view of three)
                             keeps a fuller picture, and a full-height narrower one (two players side by side, the large
                             view of three down one side) the characters' …

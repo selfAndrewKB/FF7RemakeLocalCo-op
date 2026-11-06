@@ -634,7 +634,7 @@ bool Install(const platform::GameImage& image) noexcept
 
     // Who aims an enemy, and when it is ready: two entry redirects, each optional (the watch runs without them).
     MODULEINFO module{};
-    if (K32GetModuleInformation(GetCurrentProcess(), GetModuleHandleW(L"ff7remake_.exe"), &module, sizeof(module)) != 0)
+    if (K32GetModuleInformation(GetCurrentProcess(), GetModuleHandleW(platform::kGameExe), &module, sizeof(module)) != 0)
     {
         g_gameBase = reinterpret_cast<std::uintptr_t>(module.lpBaseOfDll);
         g_gameEnd  = g_gameBase + module.SizeOfImage;

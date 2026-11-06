@@ -1,8 +1,9 @@
 #pragma once
 
 // The desktop's monitor positions through Windows' display-configuration API, the one Display settings itself uses, and the
-// record kept while they are moved (views/row_journal). Shared by the mod, which moves them, and the setup app, whose guard
-// mode puts them back when the game dies. No logging and no state: callers say what happened.
+// way back from a move by the record kept while they are moved (views/row_journal for what it means, views/record_file for
+// the file). Shared by the mod, which moves them, and the setup app, whose guard mode puts them back when the game dies. No
+// logging and no state: callers say what happened.
 //
 // What was measured on Windows 11 with four monitors and two virtual ones [CONFIRMED live]:
 //   - SetDisplayConfig with the supplied configuration and without SDC_SAVE_TO_DATABASE moves any number of monitors at once in
@@ -21,12 +22,12 @@
 
 namespace lss::views::display_move {
 
-/// The record's file name, beside the settings file: the mod writes it there and the guard takes no other.
-inline constexpr const wchar_t* kRecordName = L"LocalSplitScreen.desktop";
-
 /// The setup app's file, beside the settings file. The same exe is the guard, so the mod starts it by this name. The build
 /// names the exe from this line (CMakeLists.txt), and so do its file properties and the install tool.
 inline constexpr const wchar_t* kSetupExe = L"MultiMonitorSetup.exe";
+
+/// The first word after the exe's name that makes it the guard: `<exe> --guard <handle to the game, in hex> "<the record's path>"`.
+inline constexpr const wchar_t* kGuardSwitch = L"--guard";
 
 /// Every active monitor's position now; empty if it could not be read.
 std::vector<row_journal::Seen> Read() noexcept;
@@ -43,14 +44,6 @@ bool IsSavedLayout() noexcept;
 
 /// Whether every named monitor reads at its position within `timeoutMs`.
 bool WaitForPlaces(std::span<const row_journal::Seen> places, unsigned long timeoutMs) noexcept;
-
-/// When this process started, as the record names its owner.
-std::uint64_t ThisProcessStart() noexcept;
-
-/// The record's file beside the settings file, written whole or not at all. 0, or the Windows error.
-unsigned long WriteRecord(const std::wstring& path, const row_journal::Record& record) noexcept;
-bool RecordExists(const std::wstring& path) noexcept;
-void DeleteRecord(const std::wstring& path) noexcept;
 
 /// What a record left behind led to.
 enum class Healed

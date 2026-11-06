@@ -8,7 +8,7 @@ namespace lss::setup::guard {
 
 /// True when the command line asked for a guard, with `exitCode` set: 0 done, 1 the monitors could not be put back, 2 the
 /// arguments were not what the mod passes (nothing was changed): a record under any name but the mod's
-/// (views/display_move kRecordName) is one of those, so a stray argument can name no other file. False for any other command
+/// (views/record_file kName) is one of those, so a stray argument can name no other file. False for any other command
 /// line: the app shows its window.
 bool Run(int& exitCode);
 

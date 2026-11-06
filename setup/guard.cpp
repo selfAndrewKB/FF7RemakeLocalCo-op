@@ -2,6 +2,7 @@
 
 #include "platform/settings_write.h"
 #include "views/display_move.h"
+#include "views/record_file.h"
 
 #include <shellapi.h>
 
@@ -43,7 +44,7 @@ bool Run(int& exitCode)
 {
     int        count = 0;
     wchar_t**  args  = CommandLineToArgvW(GetCommandLineW(), &count);
-    const bool asked = args != nullptr && count >= 2 && wcscmp(args[1], L"--guard") == 0;
+    const bool asked = args != nullptr && count >= 2 && wcscmp(args[1], views::display_move::kGuardSwitch) == 0;
     if (!asked)
     {
         if (args != nullptr)
@@ -66,7 +67,7 @@ bool Run(int& exitCode)
     const auto  game = reinterpret_cast<HANDLE>(static_cast<std::uintptr_t>(value));
     const DWORD pid  = number ? GetProcessId(game) : 0;  // zero for anything that is not a process
     namespace move = views::display_move;
-    if (pid == 0 || std::filesystem::path(record).filename() != move::kRecordName)
+    if (pid == 0 || std::filesystem::path(record).filename() != views::record_file::kName)
     {
         return true;
     }

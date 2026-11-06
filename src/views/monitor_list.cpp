@@ -1,6 +1,8 @@
 #include "views/monitor_list.h"
 
-#include <cwctype>
+#include "platform/text.h"
+#include "views/display_config.h"
+
 #include <map>
 
 #ifndef WIN32_LEAN_AND_MEAN
@@ -41,15 +43,6 @@ catch (...)
     return FALSE;
 }
 
-std::wstring Lower(std::wstring text)
-{
-    for (wchar_t& c : text)
-    {
-        c = static_cast<wchar_t>(std::towlower(c));
-    }
-    return text;
-}
-
 struct Identity
 {
     std::wstring path, name;
@@ -58,44 +51,19 @@ struct Identity
 /// Each active output by its GDI device name; the first target of a cloned output stands for it.
 std::map<std::wstring, Identity> Identities()
 {
-    std::map<std::wstring, Identity>       identities;
-    std::vector<DISPLAYCONFIG_PATH_INFO>   paths;
-    std::vector<DISPLAYCONFIG_MODE_INFO>   modes;
-    LONG                                   result = ERROR_INSUFFICIENT_BUFFER;
-    while (result == ERROR_INSUFFICIENT_BUFFER)
-    {
-        UINT32 pathCount = 0, modeCount = 0;
-        if (GetDisplayConfigBufferSizes(QDC_ONLY_ACTIVE_PATHS, &pathCount, &modeCount) != ERROR_SUCCESS)
-        {
-            return identities;
-        }
-        paths.resize(pathCount);
-        modes.resize(modeCount);
-        result = QueryDisplayConfig(QDC_ONLY_ACTIVE_PATHS, &pathCount, paths.data(), &modeCount, modes.data(), nullptr);
-        if (result == ERROR_SUCCESS)
-        {
-            paths.resize(pathCount);
-        }
-    }
-    if (result != ERROR_SUCCESS)
+    std::map<std::wstring, Identity> identities;
+    const auto                       config = display_config::Query(QDC_ONLY_ACTIVE_PATHS);
+    if (!config)
     {
         return identities;
     }
-    for (const DISPLAYCONFIG_PATH_INFO& path : paths)
+    for (const DISPLAYCONFIG_PATH_INFO& path : config->paths)
     {
-        DISPLAYCONFIG_SOURCE_DEVICE_NAME source{};
-        source.header.type      = DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME;
-        source.header.size      = sizeof(source);
-        source.header.adapterId = path.sourceInfo.adapterId;
-        source.header.id        = path.sourceInfo.id;
-        DISPLAYCONFIG_TARGET_DEVICE_NAME target{};
-        target.header.type      = DISPLAYCONFIG_DEVICE_INFO_GET_TARGET_NAME;
-        target.header.size      = sizeof(target);
-        target.header.adapterId = path.targetInfo.adapterId;
-        target.header.id        = path.targetInfo.id;
-        if (DisplayConfigGetDeviceInfo(&source.header) == ERROR_SUCCESS && DisplayConfigGetDeviceInfo(&target.header) == ERROR_SUCCESS)
+        const std::wstring source = display_config::SourceName(path);
+        const auto         target = display_config::TargetOf(path);
+        if (!source.empty() && target)
         {
-            identities.try_emplace(source.viewGdiDeviceName, Identity{target.monitorDevicePath, target.monitorFriendlyDeviceName});
+            identities.try_emplace(source, Identity{target->path, target->name});
         }
     }
     return identities;
@@ -112,7 +80,7 @@ std::vector<Listed> List()
     {
         const auto found = identities.find(listed.device);
         const bool known = found != identities.end();
-        listed.id        = Lower(known && !found->second.path.empty() ? found->second.path : listed.device);
+        listed.id        = platform::Lower(known && !found->second.path.empty() ? found->second.path : listed.device);
         listed.name      = known && !found->second.name.empty() ? found->second.name : listed.device;
         listed.key       = known ? monitor_picks::IdentityKey(listed.id, found->second.name) : std::wstring();
         // Shown to the player: a monitor may pad the name it reports with spaces.
