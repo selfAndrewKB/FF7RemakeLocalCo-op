@@ -3,6 +3,7 @@
 #include "control/registry.h"
 #include "engine_facts.h"
 #include "platform/call_redirect.h"
+#include "platform/game_thread.h"
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
@@ -63,7 +64,6 @@ struct Active
 std::uintptr_t         g_apply        = 0;
 std::atomic<bool>      g_installed{false};      // every check passed and every redirect placed (Remove may run off the
                                                 // game thread)
-std::atomic<DWORD>     g_gameThread{0};          // Tick's thread (the unload restores the crossing call only there)
 std::uintptr_t         g_eval         = 0;
 std::uintptr_t         g_cutChange    = 0;
 std::uintptr_t         g_jumpToCut    = 0;
@@ -408,7 +408,7 @@ void Remove() noexcept
 {
     g_installed.store(false, std::memory_order_relaxed);  // anything left in place passes the game's state through
     // The cut call crosses a 16-byte block: put back only from the game thread, outside the camera update (Tick's).
-    if (g_cutCall.IsInstalled() && (GetCurrentThreadId() != g_gameThread.load(std::memory_order_relaxed) || !g_cutCall.Restore()))
+    if (g_cutCall.IsInstalled() && (!platform::OnGameThread() || !g_cutCall.Restore()))
     {
         platform::Log(L"sequence camera: the cut call is left in place (not on the game thread, or changed after us); it "
                       L"passes the game's cut through");
@@ -421,7 +421,6 @@ void Remove() noexcept
 
 void Tick() noexcept
 {
-    g_gameThread.store(GetCurrentThreadId(), std::memory_order_relaxed);
     ++g_frame;
     g_firstSeat = -1;
     if (!g_cutPlaced && g_cutSite != 0)

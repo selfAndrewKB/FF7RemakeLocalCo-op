@@ -4,6 +4,7 @@
 #include "engine_facts.h"
 #include "platform/call_redirect.h"
 #include "platform/entry_redirect.h"
+#include "platform/game_thread.h"
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
@@ -103,7 +104,7 @@ platform::VTableEntry   g_fenceStart, g_fenceExit;
 platform::CallRedirect  g_fenceEndSignals, g_fenceBaseStart;
 bool                    g_poleReady = false;  // the pole's finish fix and its camera leave installed
 
-std::atomic<DWORD> g_gameThread{0};
+platform::GameThreadMark g_gameThread;
 std::atomic<int>   g_ticking{0};       // the seat whose member's component the game thread is ticking now
 std::atomic<bool>  g_onGame{false};    // the field-action tick ran on the game thread since the mod moved it
 std::atomic<std::uint32_t> g_workerTicks{0};
@@ -202,7 +203,7 @@ struct KeptByte
 
 bool OnGameThreadNow() noexcept
 {
-    return GetCurrentThreadId() == g_gameThread.load(std::memory_order_relaxed);
+    return g_gameThread.Here();
 }
 
 int SeatOfComponent(const void* component) noexcept;
@@ -1540,7 +1541,7 @@ void Tick(bool anyIn) noexcept
     {
         return;
     }
-    g_gameThread.store(GetCurrentThreadId(), std::memory_order_relaxed);
+    g_gameThread.Set();
     CountCost();
     Place(anyIn);
     PlaceLocks();

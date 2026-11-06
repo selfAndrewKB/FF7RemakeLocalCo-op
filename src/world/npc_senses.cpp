@@ -3,6 +3,7 @@
 #include "control/registry.h"
 #include "engine_facts.h"
 #include "platform/code_redirect.h"
+#include "platform/game_thread.h"
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
@@ -91,7 +92,6 @@ UpdateFn                      g_update = nullptr;
 std::atomic<bool>  g_enabled{true};
 std::atomic<void*> g_one{nullptr};  // player 1's character
 std::array<std::atomic<void*>, kMaxPlayers> g_members{};  // each seat's character while in; [0] unused
-unsigned long g_gameThread = 0;
 Grid          g_grid       = Grid::Off;
 code::Cell    g_centreNow;
 std::array<code::Fit, kMaxPlayers> g_fits{};  // each seat's fit at the last decision (game thread; the reading)
@@ -203,7 +203,7 @@ void Update(void* intention, void* context) noexcept
         g_update(intention, context);
         return;
     }
-    if (GetCurrentThreadId() != g_gameThread)
+    if (!platform::OnGameThread())
     {
         g_offThread.fetch_add(1, std::memory_order_relaxed);  // counted only: the worker threads are the look's own
     }
@@ -400,7 +400,6 @@ void TickSeat(int seat, void* seatMember) noexcept
 
 void Tick(void* memberOne) noexcept
 {
-    g_gameThread = GetCurrentThreadId();
     g_one.store(memberOne, std::memory_order_release);
     if (!g_centreCode.IsInstalled())
     {

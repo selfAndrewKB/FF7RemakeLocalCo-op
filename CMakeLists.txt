@@ -74,6 +74,7 @@ add_library(LocalSplitScreen SHARED
     src/platform/code_memory.cpp
     src/platform/code_redirect.cpp
     src/platform/entry_redirect.cpp
+    src/platform/game_thread.cpp
     src/platform/verified_code.cpp
     src/platform/vtable_entry.cpp
     src/players/field_exit.cpp

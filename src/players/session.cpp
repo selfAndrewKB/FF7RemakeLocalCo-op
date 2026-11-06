@@ -12,6 +12,7 @@
 #include <Unreal/UObjectGlobals.hpp>
 
 #include "engine_facts.h"
+#include "platform/game_thread.h"
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
@@ -235,7 +236,7 @@ void Session::OnFieldExit(void* self, const wchar_t* caller) noexcept
     {
         return;
     }
-    if (GetCurrentThreadId() != session->gameThread_)
+    if (!platform::OnGameThread())
     {
         platform::Log(L"field exit: requested off the game thread ({}); the players are left to the field-step check", caller);
         return;
@@ -285,7 +286,6 @@ void Session::LeaveForWorldChange(const wchar_t* why) noexcept
 void Session::Tick() noexcept
 try
 {
-    gameThread_                     = GetCurrentThreadId();
     ++ticks_;
     // The instance lives as long as the game; found once (a UE4SS object walk, never per tick: one try a second until
     // it exists), so LocalPlayer() answers before any join: the HUD's two-view layout under the mirror player read

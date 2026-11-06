@@ -3,6 +3,7 @@
 #include "control/registry.h"
 #include "engine_facts.h"
 #include "platform/call_redirect.h"
+#include "platform/game_thread.h"
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
@@ -68,7 +69,6 @@ std::atomic<void*>        g_instead{nullptr};
 std::atomic<std::uint8_t> g_insteadType{facts::kPlayerTypeNone};
 
 // Game thread.
-DWORD         g_thread       = 0;
 void*         g_leader       = nullptr;  // the game's leader last tick
 void*         g_enemyLeader  = nullptr;  // the enemy-facing leader last tick (null outside a battle)
 int           g_enemySeat    = 0;        // 0: the game's leader; else the seat whose member enemies follow
@@ -177,7 +177,7 @@ void* Standing(void* leader, std::uint32_t& counter) noexcept
     {
         return leader;
     }
-    if (GetCurrentThreadId() != g_thread)
+    if (!platform::OnGameThread())
     {
         ++g_offThread;
         if (!g_offThreadLogged)
@@ -303,7 +303,6 @@ void Remove() noexcept
 
 void Tick() noexcept
 {
-    g_thread = GetCurrentThreadId();
     if (g_iterBegin == nullptr || players::field_root::BattleSystem() == nullptr)  // not installed, or no battle
     {
         g_leader = g_enemyLeader = nullptr;

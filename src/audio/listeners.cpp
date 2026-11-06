@@ -6,6 +6,7 @@
 #include "hud/overlay_pass.h"
 #include "platform/call_redirect.h"
 #include "platform/entry_redirect.h"
+#include "platform/game_thread.h"
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
@@ -159,7 +160,7 @@ std::atomic<bool>                               g_leftBehind{false};
 std::atomic<void*> g_device{nullptr};  // the first audio device whose push ran (the game's one SEAD device)
 std::array<std::atomic<DWORD>, kHooks> g_threads{};
 std::array<std::atomic<bool>, kHooks>  g_otherThread{};  // a hook ran on a second thread
-std::atomic<DWORD>                     g_gameThread{0};
+platform::GameThreadMark g_gameThread;
 // Each seat's column while its listener is on (-1: off), written by the game thread, read by the SEAD thread.
 std::array<std::atomic<int>, kListeners> g_seatColumn{};
 
@@ -271,7 +272,7 @@ bool OnThreadOf(Hook hook) noexcept
 
 bool OnGameThread() noexcept
 {
-    return g_gameThread.load(std::memory_order_relaxed) == GetCurrentThreadId();
+    return g_gameThread.Here();
 }
 
 unsigned Take(std::atomic<unsigned>& counter) noexcept
@@ -807,7 +808,7 @@ void LogThreads() noexcept
         {
             g_threadLogged[i] = true;
             platform::LogDebug(L"sound listeners: {} runs on {} (thread {})", kHookNames[hook],
-                               id == g_gameThread.load(std::memory_order_relaxed) ? L"the game thread" : L"another thread",
+                               g_gameThread.Is(id) ? L"the game thread" : L"another thread",
                                id);
         }
         if (g_otherThread[i].load(std::memory_order_relaxed) && !g_otherLogged[i])
@@ -1208,7 +1209,7 @@ try
     {
         return;
     }
-    g_gameThread.store(GetCurrentThreadId(), std::memory_order_relaxed);
+    g_gameThread.Set();
     LogThreads();
 
     // The game thread's listeners (the viewport's SetListener copy): the seats' listeners, and the mirrors' gaps.

@@ -4,6 +4,7 @@
 #include "engine_facts.h"
 #include "platform/call_redirect.h"
 #include "platform/entry_redirect.h"
+#include "platform/game_thread.h"
 #include "platform/image.h"
 #include "platform/log.h"
 #include "platform/verified_code.h"
@@ -32,7 +33,7 @@ Listener                g_listener;
 std::uintptr_t          g_setLeader = 0, g_setLeaderToad = 0, g_hand = 0, g_return = 0;
 platform::EntryRedirect g_leader, g_leaderToad, g_handEntry, g_returnEntry;
 platform::CallRedirect  g_stream;
-DWORD                   g_thread = 0;
+platform::GameThreadMark g_thread;
 bool                    g_placed = false;
 
 struct Counts
@@ -43,7 +44,7 @@ Counts g_counts;
 
 bool OnGameThread() noexcept
 {
-    if (g_thread != 0 && GetCurrentThreadId() == g_thread)
+    if (g_thread.Here())
     {
         return true;
     }
@@ -165,7 +166,7 @@ void Tick() noexcept
         return;
     }
     g_placed = true;
-    g_thread = GetCurrentThreadId();
+    g_thread.Set();
     // The entries open position-independent (pushes, a home-area store, a frame reserve); the game thread alone
     // runs them, and it is here, outside. The hand's first two instructions go together: six bytes, as the pushes.
     const bool placed = g_leader.Install(g_setLeader, std::span(facts::kSetPartyLeaderEntry.data(), facts::kSetPartyLeaderPushes),

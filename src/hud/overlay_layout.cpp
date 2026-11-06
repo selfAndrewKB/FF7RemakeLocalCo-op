@@ -9,6 +9,7 @@
 #include "hud/second_image.h"
 #include "platform/call_redirect.h"
 #include "platform/code_redirect.h"
+#include "platform/game_thread.h"
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
@@ -69,7 +70,7 @@ std::uintptr_t          g_scaleResume = 0;
 alignas(8) std::uint8_t g_bandApplies = 0;
 
 // Game thread only.
-DWORD     g_gameThread  = 0;
+platform::GameThreadMark g_gameThread;
 bool      g_rectPending = false;  // the rect call waits for the game thread, outside the render
 bool      g_splitShown  = false;
 bool      g_bandOn      = true;
@@ -154,7 +155,7 @@ IntRect* LayoutRect(IntRect* out)
     g_pending.active = false;
     g_submit.active  = false;
     g_bandApplies    = 0;
-    if (!g_splitShown || GetCurrentThreadId() != g_gameThread)
+    if (!g_splitShown || !g_gameThread.Here())
     {
         return result;  // one view (its sets dropped by Tick), or another thread: the engine's own result
     }
@@ -227,7 +228,7 @@ void* LayerEntry(void* slot, std::uintptr_t name, const IntRect* rect)
     {
         image_entries::RecordEntry(overlay_pass::Column(), entry);
     }
-    if (!g_pending.active || entry == nullptr || GetCurrentThreadId() != g_gameThread)
+    if (!g_pending.active || entry == nullptr || !g_gameThread.Here())
     {
         return entry;
     }
@@ -303,7 +304,7 @@ void PlaceChildMatrices(const Submit& submit) noexcept
 /// Replaces the render's call to FEndMenuRenderer__SubmitLayerSlot (same register arguments; no result).
 void SubmitSlot(void* renderer, std::uintptr_t pool, void* slot)
 {
-    if (g_submit.active && GetCurrentThreadId() == g_gameThread)
+    if (g_submit.active && g_gameThread.Here())
     {
         g_submit.active = false;
         PlaceChildMatrices(g_submit);
@@ -473,7 +474,7 @@ void Remove() noexcept
     }
     // A call crossing two blocks is restored only from the game thread; elsewhere it stays and passes the engine's
     // rect through (the split is off).
-    const bool onGame = GetCurrentThreadId() == g_gameThread;
+    const bool onGame = g_gameThread.Here();
     const bool rect   = !g_rectCall.IsInstalled() || (onGame && g_rectCall.Restore());
     const bool submitBack = !g_submitCall.IsInstalled() || (onGame && g_submitCall.Restore());
     const bool entry = g_entryCall.Restore();
@@ -495,7 +496,7 @@ void Tick(bool splitShown, const ViewShares& shares, int count) noexcept
     {
         return;
     }
-    g_gameThread = GetCurrentThreadId();
+    g_gameThread.Set();
     if (g_rectPending)
     {
         g_rectPending = false;  // the game thread is outside the overlay render here, as InstallFromOwnThread requires
@@ -536,7 +537,7 @@ void Tick(bool splitShown, const ViewShares& shares, int count) noexcept
 HostSetScope::HostSetScope() noexcept
 {
     const std::uintptr_t overlay = Overlay();
-    hasSaved_ = overlay != 0 && GetCurrentThreadId() == g_gameThread &&
+    hasSaved_ = overlay != 0 && g_gameThread.Here() &&
                 platform::CopyGuarded(&saved_, reinterpret_cast<const void*>(overlay + facts::kOverlayLayoutMin), sizeof(saved_));
 }
 
@@ -548,7 +549,7 @@ HostSetScope::~HostSetScope()
 bool HostSetScope::Lend(int column) noexcept
 {
     if (!hasSaved_ || column < 0 || column >= kMaxColumns || !g_hostSet[column].valid ||
-        GetCurrentThreadId() != g_gameThread)
+        !g_gameThread.Here())
     {
         return false;
     }

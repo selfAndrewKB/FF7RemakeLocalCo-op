@@ -4,6 +4,7 @@
 #include "engine_facts.h"
 #include "platform/call_redirect.h"
 #include "platform/entry_redirect.h"
+#include "platform/game_thread.h"
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
@@ -57,7 +58,7 @@ bool                                          g_inScope   = false;
 unsigned                                      g_eventUser = 0;      // the pad whose key event is being handled
 bool                                          g_eventRouted = false;  // ... inside its player's UI context
 std::uint32_t                                 g_events[kMaxPads]{};
-DWORD                                         g_thread = 0;
+platform::GameThreadMark g_thread;
 bool                                          g_offThreadLogged = false;
 bool                                          g_buildFailedLogged = false;
 // The menus' share of the pads (players/menu_pads.h). Game thread only.
@@ -96,13 +97,13 @@ bool OwnPad(unsigned user) noexcept
 
 bool OnGameThread() noexcept
 {
-    const DWORD now = GetCurrentThreadId();
-    if (now != g_thread && !g_offThreadLogged)
+    const bool here = g_thread.Here();
+    if (!here && !g_offThreadLogged)
     {
         g_offThreadLogged = true;
         platform::LogWarning(L"pad buttons: the input object was driven off the game thread; that call is passed through");
     }
-    return now == g_thread;
+    return here;
 }
 
 /// The pad's copy, built on first use and rebuilt if the tables changed shape. Null if it cannot be.
@@ -333,7 +334,7 @@ std::int64_t KeyUp(void* self, void* app, const std::uint8_t* event)
     std::memcpy(&key, event + facts::kKeyEventKey, sizeof(key));
     if (!OwnPad(user) || !OnGameThread())
     {
-        if (user >= 1 && user < kMaxPads && GetCurrentThreadId() == g_thread)  // no off-thread warning for pad 1
+        if (user >= 1 && user < kMaxPads && g_thread.Here())  // no off-thread warning for pad 1
         {
             menu_pads::Forget(g_keys[user], key);
         }
@@ -541,7 +542,7 @@ void SetPads(std::uint32_t pads) noexcept
     const std::uint32_t added = pads & ~g_pads;
     const std::uint32_t left  = g_pads & ~pads;
     g_pads   = pads;
-    g_thread = GetCurrentThreadId();  // the game thread: joins and leaves run on it, as the input object does
+    g_thread.Set();  // the game thread: joins and leaves run on it, as the input object does
     for (unsigned user = 1; user < kMaxPads; ++user)
     {
         if (((added >> user) & 1u) != 0)

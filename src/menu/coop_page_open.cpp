@@ -8,6 +8,7 @@
 #include "menu/coop_menu_rules.h"
 #include "menu/coop_page.h"
 #include "menu/game_ui.h"
+#include "platform/game_thread.h"
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
@@ -94,7 +95,7 @@ platform::VTableEntry g_keyDown;
 std::array<platform::VTableEntry, rules::kCategoryKeys.size()> g_headings;
 
 // Game thread.
-unsigned long g_gameThread = 0;  // the tick's thread: only there may the hold be let go (with or without a further player)
+platform::GameThreadMark g_gameThread;  // set by Tick; only on the game thread may the hold be let go
 void*         g_mgr = nullptr;  // the main menu manager while open
 bool          g_atTitle = false;  // the page is open over the title menu, not the main menu
 weak::Weak    g_titleHost;        // the start menu it opened over
@@ -199,7 +200,7 @@ void ReleaseTop() noexcept
     {
         return;
     }
-    if (GetCurrentThreadId() != g_gameThread)
+    if (!g_gameThread.Here())
     {
         g_heldTop = nullptr;
         platform::LogDebug(L"Co-op page: the main menu's first page left held: the unload runs off the game thread");
@@ -623,7 +624,7 @@ catch (...)
 
 void Tick() noexcept
 {
-    g_gameThread = GetCurrentThreadId();
+    g_gameThread.Set();
     if (!coop_page::IsOpen())
     {
         return;

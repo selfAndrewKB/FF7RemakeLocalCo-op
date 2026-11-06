@@ -6,6 +6,7 @@
 #include "hud/arrow_timers.h"
 #include "hud/overlay_pass.h"
 #include "platform/call_redirect.h"
+#include "platform/game_thread.h"
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
@@ -42,7 +43,6 @@ std::uint8_t** g_gameMode  = nullptr;  // &g_AEndGameMode
 // Game thread.
 static_assert(players::kSeatsBuilt < players::scopes::kMaxPlayers);
 std::array<platform::CallRedirect, facts::kOutsideIconContextCalls.size()> g_lookups;
-DWORD g_gameThread = 0;
 bool  g_pending  = false;
 bool  g_ready    = false;  // the lookups are ours
 bool  g_refused  = false;  // a run faulted: the game's arrows only, from then on
@@ -237,7 +237,7 @@ void Remove() noexcept
     g_lookups[1].Restore();
     // The first lookup's call crosses a block: put back only from the game thread (outside the tick). Elsewhere it stays
     // ours, harmless: the DLL is pinned and the lookup answers the game's own controller while no run is on.
-    if (GetCurrentThreadId() == g_gameThread)
+    if (platform::OnGameThread())
     {
         g_lookups[0].Restore();
     }
@@ -249,7 +249,6 @@ void Remove() noexcept
 
 void Tick() noexcept
 {
-    g_gameThread = GetCurrentThreadId();
     if (!g_pending)
     {
         return;

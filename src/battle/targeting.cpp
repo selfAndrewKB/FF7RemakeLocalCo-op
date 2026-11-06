@@ -5,6 +5,7 @@
 #include "engine_facts.h"
 #include "platform/byte_scope.h"
 #include "platform/call_redirect.h"
+#include "platform/game_thread.h"
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
@@ -63,7 +64,6 @@ struct Seat
 };
 std::array<Seat, players::scopes::kMaxPlayers> g_seats;
 std::atomic<bool>                              g_enabled{true};  // Remove may run off the game thread
-std::atomic<DWORD>                             g_gameThread{0};  // Tick's thread (the unload restores the crossing call only there)
 bool                                           g_placed   = false;
 bool                                           g_inBattle = false;
 
@@ -264,7 +264,7 @@ void Remove() noexcept
     g_enabled.store(false, std::memory_order_relaxed);  // anything left in place runs the game's targeting alone
     // The normal call crosses a 16-byte block: put back only from the game thread, outside the battle tick (Tick's).
     if (g_normalCallRedirect.IsInstalled() &&
-        (GetCurrentThreadId() != g_gameThread.load(std::memory_order_relaxed) || !g_normalCallRedirect.Restore()))
+        (!platform::OnGameThread() || !g_normalCallRedirect.Restore()))
     {
         platform::Log(L"targeting: the battle tick's call is left in place (not on the game thread, or changed after us); "
                       L"it runs the game's targeting alone");
@@ -274,7 +274,6 @@ void Remove() noexcept
 
 void Tick() noexcept
 {
-    g_gameThread.store(GetCurrentThreadId(), std::memory_order_relaxed);
     if (!g_placed && g_normalCall != 0)
     {
         g_placed = true;

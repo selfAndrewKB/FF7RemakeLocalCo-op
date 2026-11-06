@@ -18,6 +18,7 @@
 #include "platform/call_redirect.h"
 #include "platform/code_memory.h"
 #include "platform/entry_redirect.h"
+#include "platform/game_thread.h"
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
@@ -162,7 +163,6 @@ std::atomic<unsigned>                         g_seated{1u};  // bit per seat wit
 std::atomic<bool>                             g_on{false};
 std::atomic<bool>                             g_enabled{true};
 std::atomic<bool>                             g_areaOn{true};  // `member-area`: the area answer alone (an A/B)
-DWORD                                         g_thread = 0;  // the game thread
 
 // The enemy whose script native, opening or follow tick is running on this thread (null: none, or not an enemy).
 thread_local void*         t_enemy = nullptr;
@@ -779,7 +779,7 @@ bool MayScope(int seat, std::size_t lever, const wchar_t* what) noexcept
     {
         return false;
     }
-    if (GetCurrentThreadId() != g_thread)
+    if (!platform::OnGameThread())
     {
         Count(g_counts.offThread, g_totals.offThread);
         if (!g_offThreadLogged)
@@ -809,7 +809,7 @@ char HitApply(void* context, void* hit)
     const auto original = reinterpret_cast<HitApplyFn>(g_hitApply.Original());
     if (Tossing())
     {
-        if (GetCurrentThreadId() != g_thread)
+        if (!platform::OnGameThread())
         {
             // The weak pairs cannot be resolved here; whoever the hit is on, it keeps the game's answers.
             Count(g_counts.offThread, g_totals.offThread);
@@ -1231,7 +1231,6 @@ void Remove() noexcept
 
 void Tick() noexcept
 {
-    g_thread = GetCurrentThreadId();
     if (!g_on.load(std::memory_order_relaxed))
     {
         return;

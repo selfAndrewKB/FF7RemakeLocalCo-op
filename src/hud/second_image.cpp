@@ -16,6 +16,7 @@
 #include "hud/ui_targets.h"
 #include "platform/call_redirect.h"
 #include "platform/code_redirect.h"
+#include "platform/game_thread.h"
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
@@ -59,7 +60,7 @@ bool                   g_installed = false;
 bool                   g_acquirePending = false;
 
 // Game thread only.
-DWORD                   g_gameThread = 0;
+platform::GameThreadMark g_gameThread;
 bool                    g_on         = true;
 bool                    g_catchUp    = true;     // a further pass does not count as a frame's paint (hud-catch-up)
 std::uint32_t           g_catchUpPasses = 0;     // further passes rendered with the frame number taken back
@@ -209,11 +210,11 @@ void Driver(void* delegate)
     {
         return;
     }
-    if (GetCurrentThreadId() == g_gameThread)
+    if (g_gameThread.Here())
     {
         WatchFade(overlay);
     }
-    const bool further = GetCurrentThreadId() == g_gameThread && Ready();
+    const bool further = g_gameThread.Here() && Ready();
     if (further != g_running)
     {
         g_running = further;
@@ -263,7 +264,7 @@ void Driver(void* delegate)
     const int    own    = further ? 0 : overlay_pass::kSingle;
     // The hides read the game thread's widget list; the overlay renders there in practice (an off-thread render would
     // show the seats' icons once in player 1's view).
-    const bool   onGame = GetCurrentThreadId() == g_gameThread;
+    const bool   onGame = g_gameThread.Here();
     if (onGame)
     {
         pass_hide::BeginOwnPass();  // the seats' target icons are not player 1's (nor the single render's)
@@ -282,7 +283,7 @@ void Driver(void* delegate)
     }
     overlay_pass::Set(overlay_pass::kSingle);
     minimap::EndFrame();  // pool 0's slot, if player 1's map did not take it
-    if (GetCurrentThreadId() == g_gameThread)  // the replays' records are the game thread's
+    if (g_gameThread.Here())  // the replays' records are the game thread's
     {
         marker_replay::EndFrame();
         field_icons::EndFrame();
@@ -417,7 +418,7 @@ void Remove() noexcept
     }
     g_on = false;
     const bool driver  = g_driver.Restore();
-    const bool acquire = !g_acquireCall.IsInstalled() || (GetCurrentThreadId() == g_gameThread && g_acquireCall.Restore());
+    const bool acquire = !g_acquireCall.IsInstalled() || (g_gameThread.Here() && g_acquireCall.Restore());
     if (!driver || !acquire)
     {
         platform::Log(L"HUD image: a redirect was changed after us or is off the game thread; left in place (inert: the "
@@ -434,7 +435,7 @@ void Tick(bool splitShown, const Columns& columns) noexcept
     {
         return;
     }
-    g_gameThread = GetCurrentThreadId();
+    g_gameThread.Set();
     if (g_acquirePending)
     {
         g_acquirePending = false;  // outside the overlay render here, as InstallFromOwnThread requires

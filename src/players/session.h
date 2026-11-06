@@ -259,7 +259,6 @@ private:
     std::array<Seat, scopes::kMaxPlayers> seats_;  // index = seat; [0] unused (player 1 is the game's)
     MirrorPlayers        mirror_;
     RC::Unreal::UObject* gameInstance_ = nullptr;  // kept after a leave: the instance lives as long as the game
-    unsigned long        gameThread_         = 0;  // the engine tick's thread (Tick)
     bool                 worldChangeStuck_   = false;  // a world change could not take a seat out; not retried
     bool                 fieldExitInstalled_ = false;
     std::uintptr_t       removeLocalPlayer_ = 0;

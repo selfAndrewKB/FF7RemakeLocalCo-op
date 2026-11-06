@@ -2,6 +2,7 @@
 
 #include "control/registry.h"
 #include "engine_facts.h"
+#include "platform/game_thread.h"
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
@@ -53,7 +54,7 @@ constexpr std::array<std::uint8_t, 3> kCopiedLayers{facts::kCapLayerScript, fact
 platform::VTableEntry g_scriptTick, g_scriptEnd, g_guideTick, g_guideEnd, g_afterBegin, g_afterTick, g_afterEnd;
 std::atomic<bool>     g_installed{false};       // all seven slots placed
 bool                  g_enabled        = true;   // switch forced-walk
-std::atomic<DWORD>    g_gameThread{0};
+platform::GameThreadMark g_gameThread;
 
 /// Each seat's member as it was last seen bound (so a leave clears the one given back).
 std::array<players::weak_object::Weak, players::kSeatsBuilt + 1> g_held{};
@@ -172,7 +173,7 @@ bool MayFollow(Counts& counts, bool clear) noexcept
     {
         return false;
     }
-    if (GetCurrentThreadId() != g_gameThread.load(std::memory_order_relaxed))
+    if (!g_gameThread.Here())
     {
         ++counts.offThread;  // the acts run on the game thread (research §2); a call elsewhere is left alone
         return false;
@@ -426,7 +427,7 @@ void TickSeat(int seat, void* member) noexcept
     {
         return;  // a stale pointer for a tick after a level change: nothing read or written through it
     }
-    g_gameThread.store(GetCurrentThreadId(), std::memory_order_relaxed);
+    g_gameThread.Set();
     players::weak_object::Weak& held = g_held[seat];
     void*                       was  = players::weak_object::Resolve(held);
     if (member == was)

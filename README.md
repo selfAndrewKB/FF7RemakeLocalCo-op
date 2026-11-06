@@ -173,6 +173,7 @@ src/
                             function itself (Original()), and puts it back
     game_array.h            An FString or TArray as the engine lays them out (Data, Num, Max), and a source FString over
                             the mod's own text for the game's string copies to read
+    game_thread             The game thread: the one the engine ticks on
     guarded                 Structured-exception guards for touching engine memory and calling engine code
     image                   The game's executable image in memory, and the translation from IDA addresses to live ones
                             and back (the IDA form of a live address, for log lines)

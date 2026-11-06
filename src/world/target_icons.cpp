@@ -3,6 +3,7 @@
 #include "engine_facts.h"
 #include "platform/call_redirect.h"
 #include "platform/entry_redirect.h"
+#include "platform/game_thread.h"
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
@@ -90,7 +91,7 @@ bool                     g_mirrorPlaced     = false;    // player 1's icons stan
 std::uint32_t            g_mismatched = 0, g_passes = 0, g_mirrorPasses = 0, g_answered = 0, g_playerOneFreed = 0, g_offThreadSeen = 0;
 
 // Any thread.
-std::atomic<DWORD>  g_gameThread{0};
+platform::GameThreadMark g_gameThread;
 std::atomic<void*>  g_creatingPlayer{nullptr};  // the owner the widget creation's call answers, on g_creatingThread
 std::atomic<DWORD>  g_creatingThread{0};
 std::atomic<bool>   g_swapHeld{false};   // a seat's arrays are exchanged in (the items hold the seat's widgets)
@@ -100,7 +101,7 @@ std::array<std::atomic<std::uint64_t>, kItems / 64> g_freedElsewhere{};  // item
 
 bool OnGameThreadNow() noexcept
 {
-    return GetCurrentThreadId() == g_gameThread.load(std::memory_order_relaxed);
+    return g_gameThread.Here();
 }
 
 void* Ui15() noexcept
@@ -509,7 +510,7 @@ bool Place() noexcept
     {
         return false;
     }
-    g_gameThread.store(GetCurrentThreadId(), std::memory_order_relaxed);
+    g_gameThread.Set();
     if (g_placeTried)
     {
         return g_placed;
@@ -558,7 +559,7 @@ void Remove() noexcept
 
 void Tick(void* mgr) noexcept
 {
-    g_gameThread.store(GetCurrentThreadId(), std::memory_order_relaxed);
+    g_gameThread.Set();
     if (!g_placed || mgr == nullptr)
     {
         return;

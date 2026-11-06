@@ -2,6 +2,7 @@
 
 #include "engine_facts.h"
 #include "platform/call_redirect.h"
+#include "platform/game_thread.h"
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
@@ -76,8 +77,8 @@ platform::CallRedirect g_inputTickCall;
 bool                   g_seatInputOff = false;  // a seat's step raised an exception: the seats' steps stay off
 int                    g_tickingSeat  = 0;      // the seat whose own operator ticks, else 0
 
-// Game thread only (set by Start from the engine tick; the wrappers act only on that thread).
-DWORD g_gameThread = 0;
+// Set by the first Start, from the engine tick; until then, and on any other thread, the wrappers pass their calls through.
+platform::GameThreadMark g_gameThread;
 Weak  g_playerOne;  // player 1's controller while a seat is in (resolved at each use)
 bool  g_spawning = false;
 
@@ -108,7 +109,7 @@ std::array<CallCounts, kPlayers> g_counts;  // index 0 = player 1, s = seat s
 
 bool OnGameThread() noexcept
 {
-    return g_gameThread != 0 && GetCurrentThreadId() == g_gameThread;
+    return g_gameThread.Here();
 }
 
 }  // namespace
@@ -625,7 +626,7 @@ bool Start(int seat, void* playerOneController, void* seatController, void* memb
         return false;
     }
     const wchar_t* name = SeatName(seat);
-    g_gameThread        = GetCurrentThreadId();
+    g_gameThread.Set();
     g_playerOne         = MakeWeak(playerOneController);
     g_seats[seat]       = {};
     seat_objects::BindOperator(seat, nullptr);  // no operator of an earlier start survives here

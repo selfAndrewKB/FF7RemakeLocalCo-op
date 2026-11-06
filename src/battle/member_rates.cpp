@@ -3,6 +3,7 @@
 #include "control/registry.h"
 #include "engine_facts.h"
 #include "platform/call_redirect.h"
+#include "platform/game_thread.h"
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
@@ -39,7 +40,6 @@ PassiveAtbFn                                                       g_passive = n
 UcpcFlagFn                                                         g_flag    = nullptr;
 
 // Game thread.
-DWORD  g_thread    = 0;
 std::array<void*, players::scopes::kMaxPlayers> g_components{};  // each seat's member's battle component this tick; [0] unused
 bool   g_enabled   = true;
 constexpr int kLevers = 4;  // the passive ATB tick, the ability flag, the stagger hit, the turn during a roll
@@ -81,7 +81,7 @@ bool Scoped(int seat, int lever, const wchar_t* what) noexcept
     {
         return false;
     }
-    if (GetCurrentThreadId() != g_thread)
+    if (!platform::OnGameThread())
     {
         ++g_offThread[lever];
         if (!g_offThreadLogged[lever])
@@ -147,7 +147,7 @@ char Steer(void* component, float deltaTime)
     const bool          open = Read(c + facts::kBattleCompTurnRate, rate) && rate != 0.0f;
     if (!open)
     {
-        if (GetCurrentThreadId() == g_thread)
+        if (platform::OnGameThread())
         {
             g_turnOpen[static_cast<std::size_t>(seat)] = false;
         }
@@ -251,7 +251,6 @@ void Remove() noexcept
 
 void Tick() noexcept
 {
-    g_thread = GetCurrentThreadId();
     for (int seat = 1; seat <= players::kSeatsBuilt; ++seat)
     {
         void* member    = players::scopes::Member(seat);

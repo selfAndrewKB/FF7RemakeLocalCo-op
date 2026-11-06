@@ -3,6 +3,7 @@
 #include "control/registry.h"
 #include "engine_facts.h"
 #include "platform/call_redirect.h"
+#include "platform/game_thread.h"
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
@@ -23,7 +24,6 @@
 #include <Windows.h>
 
 #include <array>
-#include <atomic>
 #include <cstdint>
 #include <cstring>
 #include <format>
@@ -117,11 +117,11 @@ bool                     g_inside     = false;  // a seat's call runs now (the g
 std::array<Seat, kSeats> g_seats{};
 std::uint32_t            g_resets = 0, g_resetsSkipped = 0, g_slotFailures = 0;
 
-std::atomic<DWORD> g_gameThread{0};
+platform::GameThreadMark g_gameThread;  // set by the first tick once installed
 
 bool OnGameThread() noexcept
 {
-    return GetCurrentThreadId() == g_gameThread.load(std::memory_order_relaxed);
+    return g_gameThread.Here();
 }
 
 /// The slot object's arrows now: its map's elements less its free ones.
@@ -752,7 +752,7 @@ void TickSeat(int seat, void* localPlayer) noexcept
     {
         return;
     }
-    g_gameThread.store(GetCurrentThreadId(), std::memory_order_relaxed);
+    g_gameThread.Set();
     Seat& s = g_seats[seat];
     if (localPlayer != s.localPlayer)
     {
@@ -772,7 +772,7 @@ void Tick() noexcept
     {
         return;
     }
-    g_gameThread.store(GetCurrentThreadId(), std::memory_order_relaxed);
+    g_gameThread.Set();
     if (!g_resetTried)
     {
         g_resetTried = true;

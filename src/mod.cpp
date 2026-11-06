@@ -23,6 +23,7 @@
 #include "engine_facts.h"
 #include "hud/overlay_pass.h"
 #include "modules.h"
+#include "platform/game_thread.h"
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
@@ -66,7 +67,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.168.0-shared-name-text";  // the one version string (the log, UE4SS and the setup app)
+constexpr const wchar_t* kVersion = L"0.168.1-shared-game-thread";  // the one version string (the log, UE4SS and the setup app)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
@@ -293,6 +294,7 @@ public:
 private:
     void OnEngineTick() noexcept
     {
+        lss::platform::MarkGameThread();  // before anything of this tick asks which thread it is on
         // Ctrl+F7/F8 for the first further player, Ctrl+Shift+F7/F8 for the next (players/seats.h names the keys).
         static_assert(lss::players::kSeatsBuilt <= 2, "the keys: Ctrl+F7/F8 and Ctrl+Shift+F7/F8, one pair per built seat");
         for (int seat = 1; seat <= lss::players::kSeatsBuilt; ++seat)

@@ -2,6 +2,7 @@
 
 #include "control/registry.h"
 #include "engine_facts.h"
+#include "platform/game_thread.h"
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/instruction_patch.h"
@@ -18,7 +19,6 @@
 #include <Windows.h>
 
 #include <algorithm>
-#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <format>
@@ -111,7 +111,7 @@ std::wstring       g_lastBloomWarning;               // the same for the bloom a
 bool               g_holdFailed = false;             // the last hold failed: retried at new sizes or after kRetryEvery
 Sizes              g_failedAt;
 std::chrono::steady_clock::time_point g_failedWhen{};
-std::atomic<DWORD> g_gameThread{0};                  // read by Remove on UE4SS's thread
+platform::GameThreadMark g_gameThread;  // set by Tick once installed; Remove asks it from UE4SS's thread
 std::chrono::steady_clock::time_point g_lastCheck{};
 
 void Warn(std::wstring text, std::wstring& latch = g_lastWarning) noexcept
@@ -453,7 +453,7 @@ void Tick(bool split) noexcept
     {
         return;
     }
-    g_gameThread.store(GetCurrentThreadId(), std::memory_order_relaxed);
+    g_gameThread.Set();
     const auto now  = std::chrono::steady_clock::now();
     const bool flip = split != g_split;
     g_split         = split;
@@ -498,7 +498,7 @@ void Tick(bool split) noexcept
 void Remove() noexcept
 {
     SizeBloomArea(false);  // a code swap, safe from any thread
-    if (GetCurrentThreadId() != g_gameThread.load(std::memory_order_relaxed))
+    if (!g_gameThread.Here())
     {
         if (g_max.held || g_deny.held)
         {
