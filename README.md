@@ -125,9 +125,8 @@ log's `settings:` line lists every option's value and where it came from; a valu
 the option takes its default, and the value stays in the file as written, with a note. The repository ships no copy
 of the file, so none can go stale.
 
-**Choosing the monitors.** Copy `build/Game__Shipping__Win64/LocalSplitScreenSetup.exe` (its window is titled Multi Monitor
-Setup) next to `LocalSplitScreen.ini` and
-run it with the game closed: it shows the desktop as Windows arranges it, you click two or three monitors in the order you want
+**Choosing the monitors.** Copy `build/Game__Shipping__Win64/MultiMonitorSetup.exe` (Multi Monitor Setup) next to
+`LocalSplitScreen.ini` and run it with the game closed: it shows the desktop as Windows arranges it, you click two or three monitors in the order you want
 them, left to right, and **Save** keeps them with Multiple Monitors and Screen Order. Each monitor of the row is marked with the
 player it shows. With none picked the game takes the longest row it finds. The game is then started from Steam as always; the
 app need not stay open. Everything works by keyboard too: Tab and the arrow keys move, Left and Right change an option, Space
@@ -146,7 +145,8 @@ one leaves. A streaming host's virtual monitor (Apollo, Vibepollo, SudoVDA) work
 so give each client a name of its own.
 
 The app's look is drawn by its own code (`setup/view.cpp`, colours in `setup/theme.h`); its icon, `setup/app.ico`, is drawn by
-`../tools/make_setup_icon.py`. Its version is the mod's, read by CMake from `src/mod.cpp`.
+`../tools/make_setup_icon.py`. Its version is the mod's, read by CMake from `src/mod.cpp`; its file name is the one the mod
+starts the guard by, read by CMake and by `../tools/game.py` from `src/views/display_move.h` (`kSetupExe`).
 
 Picked monitors may differ in size and Windows scaling: each view fits its own monitor, top-aligned, and the window's part below a
 shorter monitor is simply not seen. A view wider than about 4096 px (a 32:9 monitor) shows a band of wrong colours at its right

@@ -24,8 +24,7 @@ using row_journal::Entry;
 using row_journal::Seen;
 
 using display_move::kRecordName;
-
-constexpr const wchar_t* kGuardName = L"LocalSplitScreenSetup.exe";
+using display_move::kSetupExe;
 
 std::vector<Entry> g_entries;       // the record while the monitors are moved; only those that moved say where to
 HANDLE             g_guard = nullptr;  // the guard process, once started
@@ -53,7 +52,7 @@ bool GuardRunning()
         CloseHandle(g_guard);
         g_guard = nullptr;
     }
-    const std::wstring exe = (ModFolder() / kGuardName).wstring();
+    const std::wstring exe = (ModFolder() / kSetupExe).wstring();
     if (GetFileAttributesW(exe.c_str()) == INVALID_FILE_ATTRIBUTES)
     {
         platform::LogWarning(L"window span: {} is not there, so nothing could put the monitors back after a crash", exe);

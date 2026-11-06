@@ -1,4 +1,4 @@
-// The setup app's icon and file properties. The version comes from the mod's one version string, through CMake.
+// The setup app's icon and file properties. The version and the file's name come from the mod's own lines, through CMake.
 
 #include <winver.h>
 
@@ -23,8 +23,8 @@ BEGIN
             VALUE "ProductName",      "LocalSplitScreen"
             VALUE "FileVersion",      LSS_VERSION_TEXT
             VALUE "ProductVersion",   LSS_VERSION_TEXT
-            VALUE "InternalName",     "LocalSplitScreenSetup"
-            VALUE "OriginalFilename", "LocalSplitScreenSetup.exe"
+            VALUE "InternalName",     LSS_SETUP_NAME
+            VALUE "OriginalFilename", LSS_SETUP_FILE
         END
     END
     BLOCK "VarFileInfo"

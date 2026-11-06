@@ -187,9 +187,17 @@ set(LSS_VERSION "${CMAKE_MATCH_1}")
 set(LSS_VERSION_MAJOR "${CMAKE_MATCH_2}")
 set(LSS_VERSION_MINOR "${CMAKE_MATCH_3}")
 set(LSS_VERSION_PATCH "${CMAKE_MATCH_4}")
+
+# The app's file name is the one the mod starts its guard by: read from that line, and read again whenever its file changes.
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS src/views/display_move.h)
+file(STRINGS src/views/display_move.h LSS_SETUP_LINE REGEX "kSetupExe = L\"" LIMIT_COUNT 1)
+if(NOT LSS_SETUP_LINE MATCHES "L\"([A-Za-z0-9_]+)\\.exe\"")
+    message(FATAL_ERROR "src/views/display_move.h: kSetupExe not found as L\"Name.exe\"")
+endif()
+set(LSS_SETUP_NAME "${CMAKE_MATCH_1}")
 configure_file(setup/setup_version.h.in "${CMAKE_CURRENT_BINARY_DIR}/generated/setup_version.h" @ONLY)
 
-add_executable(LocalSplitScreenSetup WIN32
+add_executable(SetupApp WIN32
     setup/main.cpp
     setup/guard.cpp
     setup/view.cpp
@@ -199,13 +207,14 @@ add_executable(LocalSplitScreenSetup WIN32
     src/views/monitor_list.cpp
     src/views/monitor_row.cpp
 )
-target_include_directories(LocalSplitScreenSetup PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src" "${CMAKE_CURRENT_SOURCE_DIR}"
-                                                         "${CMAKE_CURRENT_BINARY_DIR}/generated")
-target_compile_features(LocalSplitScreenSetup PRIVATE cxx_std_20)
-target_compile_definitions(LocalSplitScreenSetup PRIVATE NOMINMAX)
-target_link_libraries(LocalSplitScreenSetup PRIVATE user32 gdi32 msimg32 comctl32 shell32 dwmapi uxtheme)
+set_property(TARGET SetupApp PROPERTY OUTPUT_NAME "${LSS_SETUP_NAME}")
+target_include_directories(SetupApp PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src" "${CMAKE_CURRENT_SOURCE_DIR}"
+                                            "${CMAKE_CURRENT_BINARY_DIR}/generated")
+target_compile_features(SetupApp PRIVATE cxx_std_20)
+target_compile_definitions(SetupApp PRIVATE NOMINMAX)
+target_link_libraries(SetupApp PRIVATE user32 gdi32 msimg32 comctl32 shell32 dwmapi uxtheme)
 set_source_files_properties(setup/app.rc PROPERTIES OBJECT_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/setup/app.ico")  # a new icon rebuilds it
-set_property(TARGET LocalSplitScreenSetup PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")  # one file: no runtime to install
+set_property(TARGET SetupApp PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")  # one file: no runtime to install
 
 # ------------------------------------------------------------------------------------------------
 # Host-side tests: the logic that needs neither the game nor UE4SS (run with --target <name>, then the exe)

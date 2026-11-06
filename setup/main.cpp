@@ -1,4 +1,4 @@
-// LocalSplitScreenSetup.exe: a small window, run once, that says which monitors the game spans. It shows the desktop as
+// The setup app (its file is named in views/display_move.h): a small window, run once, that says which monitors the game spans. It shows the desktop as
 // Windows arranges it, lets the player click the monitors of the row in the order wanted, and writes LocalSplitScreen.ini beside
 // itself (or at the path given as its one argument). The game is then started from Steam as always: no launcher. Every name, word
 // and rule comes from the mod's own table and row code (platform/settings.h, views/monitor_row), so nothing here can drift from
@@ -834,7 +834,7 @@ int ShowWindowAndRun(HINSTANCE instance, int show)
     type.hInstance     = instance;
     type.hIcon         = LoadIconW(instance, MAKEINTRESOURCEW(1));
     type.hCursor       = LoadCursorW(nullptr, MAKEINTRESOURCEW(32512));  // IDC_ARROW, as the wide call takes it
-    type.lpszClassName = L"LocalSplitScreenSetup";
+    type.lpszClassName = LSS_WIDE(LSS_SETUP_NAME);
     if (RegisterClassExW(&type) == 0)
     {
         return Fail(L"The window could not be set up");

@@ -70,7 +70,7 @@ inline constexpr Option kMonitors{  // views/window_span, views/monitor_row Find
     L"Views", L"monitors", {}, L"",
     L"(read only) the monitors of the row, left to right, as the setup app wrote them; empty: any row the desktop has",
     false, L"Monitors in the Row", {},
-    L"The monitors of the row, left to right, chosen in LocalSplitScreenSetup.exe; they are moved into a row while the game holds it and back afterwards. Empty: the longest row the desktop has.",
+    L"The monitors of the row, left to right, chosen in the Multi Monitor Setup app; they are moved into a row while the game holds it and back afterwards. Empty: the longest row the desktop has.",
     true};
 inline constexpr Option kColumnOrder{  // views/column_layout
     L"Views", L"column-order", kColumnOrderWords, L"123",

@@ -24,6 +24,10 @@ namespace lss::views::display_move {
 /// The record's file name, beside the settings file: the mod writes it there and the guard takes no other.
 inline constexpr const wchar_t* kRecordName = L"LocalSplitScreen.desktop";
 
+/// The setup app's file, beside the settings file. The same exe is the guard, so the mod starts it by this name. The build
+/// names the exe from this line (CMakeLists.txt), and so do its file properties and the install tool.
+inline constexpr const wchar_t* kSetupExe = L"MultiMonitorSetup.exe";
+
 /// Every active monitor's position now; empty if it could not be read.
 std::vector<row_journal::Seen> Read() noexcept;
 

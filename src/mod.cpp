@@ -66,7 +66,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.166.1-setup-trim";  // the one version string (the log, UE4SS and the setup app)
+constexpr const wchar_t* kVersion = L"0.166.2-setup-exe-name";  // the one version string (the log, UE4SS and the setup app)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
