@@ -137,16 +137,6 @@ struct Painter
         Edge(dc, rect, theme::kAccent, 1);
     }
 
-    void Title() const noexcept
-    {
-        const RECT rect = ToRect(scene.frame.title);
-        Line(dc, fonts.heading, theme::kAccent, rect, L"SPLIT-SCREEN SETUP", DT_LEFT | DT_VCENTER, Px(2));
-        Line(dc, fonts.minor, theme::kTextDim, rect, scene.version, DT_RIGHT | DT_VCENTER);
-        const LONG y = rect.bottom + Px(4);
-        Fill(dc, RECT{rect.left, y, rect.right, y + 1}, theme::kEdge);
-        Fill(dc, RECT{rect.left, y - Px(1), rect.left + Px(72), y + 1}, theme::kAccent);
-    }
-
     void Option(const row::Rect& cell, rules::Part part, std::wstring_view label, std::wstring_view value) const noexcept
     {
         const RECT rect = ToRect(cell);
@@ -263,46 +253,16 @@ struct Painter
         }
     }
 
-    /// The row as the game holds it: each monitor as wide as it is, left to right, top-aligned, with its player.
-    void Strip() const
-    {
-        const RECT rect = ToRect(scene.frame.strip);
-        if (scene.strip.empty())
-        {
-            Fill(dc, rect, theme::kWell);
-            Edge(dc, rect, theme::kEdge, 1);
-            Line(dc, fonts.minor, theme::kTextDim, rect, L"No row yet", DT_CENTER | DT_VCENTER);
-            return;
-        }
-        std::int64_t total   = 0;
-        std::int32_t tallest = 1;
-        for (const Screen& screen : scene.strip)
-        {
-            total += screen.width;
-            tallest = std::max(tallest, screen.height);
-        }
-        const int room = rect.right - rect.left + Px(4);
-        LONG      x    = rect.left;
-        for (const Screen& screen : scene.strip)
-        {
-            const int width = total > 0 ? static_cast<int>(room * screen.width / total) : 0;
-            // Never too short for its two lines: who plays on it matters more than its exact shape.
-            const int  height = std::max(MulDiv(rect.bottom - rect.top, screen.height, tallest), Px(42));
-            const RECT tile{x, rect.top, x + width - Px(4), rect.top + height};
-            Fill(dc, tile, scene.rowLive ? theme::kTileLive : theme::kTile);
-            Edge(dc, tile, scene.rowLive ? theme::kAccentDim : theme::kEdge, 1);
-            const std::wstring player = screen.player > 0 ? std::format(L"PLAYER {}", screen.player) : std::wstring();
-            RECT               inner  = tile;
-            InflateRect(&inner, -Px(6), -Px(4));
-            Stack(inner, {{fonts.heading, scene.rowLive ? theme::kAccent : theme::kTextDim, player, Px(2)},
-                          {fonts.minor, scene.rowLive ? theme::kText : theme::kTextDim, screen.name}});
-            x += width;
-        }
-    }
-
+    /// The status with its coloured mark, when there is one, and the version at the far end of its line.
     void Status() const noexcept
     {
-        RECT       rect = ToRect(scene.frame.status);
+        RECT rect = ToRect(scene.frame.status);
+        Line(dc, fonts.minor, theme::kTextDim, rect, scene.version, DT_RIGHT | DT_VCENTER);
+        if (scene.status.text.empty())
+        {
+            return;
+        }
+        rect.right -= TextWidth(dc, fonts.minor, scene.version) + Px(16);
         const LONG side = Px(8);
         const LONG top  = rect.top + (rect.bottom - rect.top - side) / 2;
         Fill(dc, RECT{rect.left, top, rect.left + side, top + side}, ToneColour(scene.status.tone));
@@ -337,13 +297,10 @@ struct Painter
     void All(const RECT& client) const
     {
         Fill(dc, client, theme::kWindow);
-        Title();
         Option(scene.frame.multi, rules::Part::Multi, scene.multiLabel, scene.multiValue);
         Option(scene.frame.order, rules::Part::Order, scene.orderLabel, scene.orderValue);
-        Caption(scene.frame.caption, L"YOUR DESKTOP", L"Click monitors in order, left to right");
+        Caption(scene.frame.caption, L"DISPLAYS", L"Click monitors in order, left to right");
         Picture();
-        Caption(scene.frame.stripCaption, L"WHILE THE GAME RUNS", L"");
-        Strip();
         Status();
         if (scene.canRestore)
         {

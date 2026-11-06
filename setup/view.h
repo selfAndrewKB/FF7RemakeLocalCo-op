@@ -19,8 +19,8 @@ struct Fonts
 {
     HFONT body    = nullptr;  // names and the status line
     HFONT strong  = nullptr;  // values, monitor names, button labels
-    HFONT minor   = nullptr;  // sizes and hints
-    HFONT heading = nullptr;  // the small capitals over each part
+    HFONT minor   = nullptr;  // sizes, hints and the version
+    HFONT heading = nullptr;  // the small capitals: the picture's caption and a monitor's player
     HFONT arrow   = nullptr;  // the arrows beside an option's value
 };
 
@@ -40,32 +40,22 @@ struct Tile
     bool         problem = false;  // clicked, and the clicked monitors make no row
 };
 
-/// A monitor of the row as it stands while the game runs.
-struct Screen
-{
-    std::wstring name;
-    std::int32_t width  = 0;
-    std::int32_t height = 0;
-    int          player = 0;
-};
-
 /// Everything the window shows.
 struct Scene
 {
-    rules::Frame        frame;
-    std::wstring        version;
-    std::wstring        multiLabel, multiValue;
-    std::wstring        orderLabel, orderValue;
-    std::vector<Tile>   tiles;
-    std::vector<Screen> strip;
-    bool                rowLive = false;  // the game will take this row: a row that works, with Multiple Monitors on
-    rules::Status       status;
-    bool                canSave    = false;
-    bool                canRestore = false;
-    rules::Hit          hover;    // under the mouse
-    rules::Hit          pressed;  // held down by the mouse
-    rules::Hit          focus;    // chosen by the keyboard; drawn only when `showFocus`
-    bool                showFocus = false;
+    rules::Frame      frame;
+    std::wstring      version;
+    std::wstring      multiLabel, multiValue;
+    std::wstring      orderLabel, orderValue;
+    std::vector<Tile> tiles;
+    bool              rowLive = false;  // the game will take this row: a row that works, with Multiple Monitors on
+    rules::Status     status;
+    bool              canSave    = false;
+    bool              canRestore = false;
+    rules::Hit        hover;    // under the mouse
+    rules::Hit        pressed;  // held down by the mouse
+    rules::Hit        focus;    // chosen by the keyboard; drawn only when `showFocus`
+    bool              showFocus = false;
 };
 
 /// Draws `scene` over the whole client area, without flicker.

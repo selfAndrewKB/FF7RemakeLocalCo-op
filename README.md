@@ -125,10 +125,11 @@ log's `settings:` line lists every option's value and where it came from; a valu
 the option takes its default, and the value stays in the file as written, with a note. The repository ships no copy
 of the file, so none can go stale.
 
-**Choosing the monitors.** Copy `build/Game__Shipping__Win64/LocalSplitScreenSetup.exe` next to `LocalSplitScreen.ini` and
+**Choosing the monitors.** Copy `build/Game__Shipping__Win64/LocalSplitScreenSetup.exe` (its window is titled Multi Monitor
+Setup) next to `LocalSplitScreen.ini` and
 run it with the game closed: it shows the desktop as Windows arranges it, you click two or three monitors in the order you want
-them, left to right, and **Save** keeps them with Multiple Monitors and Screen Order. The row below the picture shows who plays
-on which monitor. With none picked the game takes the longest row it finds. The game is then started from Steam as always; the
+them, left to right, and **Save** keeps them with Multiple Monitors and Screen Order. Each monitor of the row is marked with the
+player it shows. With none picked the game takes the longest row it finds. The game is then started from Steam as always; the
 app need not stay open. Everything works by keyboard too: Tab and the arrow keys move, Left and Right change an option, Space
 or Enter presses, Enter alone saves, Escape closes. Run from another folder, the app says the game will not read its file.
 

@@ -53,7 +53,7 @@ void PickedPair()
     Look look = LookOf(kDesktop, {0, 1});
     EXPECT(look.ok && look.picked);
     EXPECT((look.screens == std::vector<std::size_t>{0, 1}));
-    EXPECT(look.tone == Tone::Good && look.detail.empty());  // already a row: nothing to say about moving
+    EXPECT(look.tone == Tone::Good && look.text.empty() && look.detail.empty());  // already a row: the picture shows it, nothing to add
 
     // Any monitors, in the order clicked: a gap between them, one above the other, the order reversed.
     look = LookOf(kDesktop, {1, 2});
@@ -101,7 +101,7 @@ void AnyMonitors()
     EXPECT(look.text.find(L"wrong colours") == std::wstring::npos);
     EXPECT(LookOf(mixed, {2, 0}).ok);
     look = LookOf(mixed, {0, 3});
-    EXPECT(look.ok && look.text.find(L"wrong colours") != std::wstring::npos && look.tone == Tone::Warning);
+    EXPECT(look.ok && look.text.find(L"A view over") == 0 && look.text.find(L"wrong colours") != std::wstring::npos && look.tone == Tone::Warning);
 }
 
 /// One line, the most pressing thing first: what stops a save, what the last action did, then the choice itself.
@@ -109,8 +109,19 @@ void OneStatusLine()
 {
     const Look row  = LookOf(kDesktop, {1, 2});
     const Look none = LookOf(kDesktop, {0});
-    EXPECT(StatusLine(row, {}).text == row.text && StatusLine(row, {}).detail == row.detail && StatusLine(row, {}).tone == Tone::Good);
-    EXPECT(StatusLine(none, {}).tone == Tone::Plain);
+    const Look wide = LookOf(std::vector<Monitor>{At(0, 0, 3440), At(3440, 0, 5120, 1440)}, {0, 1});
+    // A row that works says nothing: no words, and so no hover text over an empty line. What moving the monitors means is
+    // said over the picture instead, and only for a row the game will use.
+    EXPECT(StatusLine(row, {}).text.empty() && StatusLine(row, {}).detail.empty());
+    EXPECT(PictureHelp(row, {}) == kMovesNote);
+    EXPECT(StatusLine(wide, {}).text == wide.text && StatusLine(wide, {}).tone == Tone::Warning);
+    // A row with a warning whose monitors must also move: the line warns, and both hover texts say what moving means.
+    const Look wideMoved = LookOf(std::vector<Monitor>{At(0, 0, 3440), At(3440, 0), At(-5120, 0, 5120, 1440)}, {1, 2});
+    EXPECT(wideMoved.ok && StatusLine(wideMoved, {}).text == wideMoved.text && StatusLine(wideMoved, {}).tone == Tone::Warning);
+    EXPECT(StatusLine(wideMoved, {}).detail == kMovesNote && PictureHelp(wideMoved, {}) == kMovesNote);
+    EXPECT(StatusLine(none, {}).text == none.text && StatusLine(none, {}).detail == none.detail && StatusLine(none, {}).tone == Tone::Plain);
+    EXPECT(PictureHelp(none, {}).empty() && PictureHelp(LookOf(kDesktop, {}), {}).empty());  // the status line speaks for these
+    EXPECT(PictureHelp(LookOf(kDesktop, {0, 1}), {}).empty());                               // already a row: nothing moves
 
     Notes notes;
     notes.note = L"Saved.";
@@ -124,6 +135,7 @@ void OneStatusLine()
     notes.notConnected = 0;
     notes.spanOn       = false;
     EXPECT(StatusLine(row, notes).text.find(L"Multiple Monitors is off") == 0 && StatusLine(row, notes).tone == Tone::Plain);
+    EXPECT(StatusLine(row, notes).detail.empty() && PictureHelp(row, notes).empty());  // nothing moves for a row left unused
 
     // Clicked monitors that make no row are said before the option being off: they are what stops the save.
     notes.picksChanged = true;
@@ -142,7 +154,7 @@ void OneStatusLine()
     EXPECT(StatusLine(row, notes).text.find(L"Close the game") == 0);
 
     // Every line is short enough for one line of the window.
-    for (const Look& look : {row, none, LookOf(kDesktop, {}), LookOf(kDesktop, {0, 1, 2, 3})})
+    for (const Look& look : {wide, none, LookOf(kDesktop, {}), LookOf(kDesktop, {0, 1, 2, 3})})
     {
         EXPECT(!look.text.empty() && look.text.size() <= 70);
     }
@@ -187,13 +199,12 @@ void WindowLayout()
 {
     for (const std::uint32_t dpi : {96u, 144u, 192u})
     {
-        for (const auto& [width, height] : {std::pair{kMinWidth, kMinHeight}, std::pair{880, 640}, std::pair{1600, 1000}})
+        for (const auto& [width, height] : {std::pair{kMinWidth, kMinHeight}, std::pair{880, 560}, std::pair{1600, 1000}})
         {
             const std::int32_t w = Scaled(width, dpi), h = Scaled(height, dpi);
             const Frame        frame = Arrange(w, h, dpi);
             const Rect         client{0, 0, w, h};
-            const Rect         parts[]{frame.title, frame.multi, frame.order, frame.caption, frame.picture, frame.stripCaption,
-                                       frame.strip, frame.status, frame.restore, frame.save, frame.close};
+            const Rect         parts[]{frame.multi, frame.order, frame.caption, frame.picture, frame.status, frame.restore, frame.save, frame.close};
             for (std::size_t i = 0; i < std::size(parts); ++i)
             {
                 EXPECT(Within(parts[i], client));
@@ -215,7 +226,7 @@ void WindowLayout()
 void Clicks()
 {
     const std::uint32_t dpi   = 96;
-    const Frame         frame = Arrange(880, 640, dpi);
+    const Frame         frame = Arrange(880, 560, dpi);
     const auto          tiles = Tiles(kDesktop, frame.picture, 10, 4);
     EXPECT(tiles.size() == kDesktop.size());
     for (const Rect& tile : tiles)
@@ -234,7 +245,7 @@ void Clicks()
         EXPECT((at(tiles[i]) == Hit{Part::Tile, i, 0}));
     }
     EXPECT(at(frame.save).part == Part::Save && at(frame.close).part == Part::Close && at(frame.restore).part == Part::Restore);
-    EXPECT(at(frame.status).part == Part::None && at(frame.strip).part == Part::None);
+    EXPECT(at(frame.status).part == Part::None && at(frame.caption).part == Part::None);
     EXPECT(HitTest(frame, tiles, dpi, -5, -5).part == Part::None);
 }
 

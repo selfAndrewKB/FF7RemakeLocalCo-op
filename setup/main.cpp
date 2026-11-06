@@ -45,18 +45,18 @@ namespace row      = lss::views::monitor_row;
 namespace listing  = lss::views::monitor_list;
 namespace move     = lss::views::display_move;
 
-constexpr const wchar_t* kTitle     = L"FF7 Remake Split-Screen Setup";
+constexpr const wchar_t* kTitle     = L"Multi Monitor Setup";
 constexpr const wchar_t* kFileName  = L"LocalSplitScreen.ini";
 constexpr const wchar_t* kModFolder = L"dlls";  // stands beside the settings file where the mod reads it
 constexpr const wchar_t* kGameExe   = L"ff7remake_.exe";
 constexpr UINT_PTR       kGameTimer = 1;
 constexpr int            kWidth     = 880;  // the client area the window opens with, at 96 dpi
-constexpr int            kHeight    = 640;
+constexpr int            kHeight    = 560;
 
 // The parts with a longer explanation on hover.
 constexpr UINT_PTR kTipMulti   = 1;
 constexpr UINT_PTR kTipOrder   = 2;
-constexpr UINT_PTR kTipStrip   = 3;
+constexpr UINT_PTR kTipPicture = 3;
 constexpr UINT_PTR kTipStatus  = 4;
 constexpr UINT_PTR kTipRestore = 5;
 constexpr const wchar_t* kRestoreHelp =
@@ -83,6 +83,7 @@ struct App
     // Worked out by Refresh from the above, for the paint, the mouse and the keyboard.
     rules::Look   look;
     rules::Status status;
+    std::wstring  pictureHelp;  // the hover text over the desktop's picture
     bool          canSave    = false;
     bool          canRestore = false;
     rules::Hit    hover, pressed, focus;
@@ -231,7 +232,7 @@ void PlaceTips()
     const rules::Frame frame = FrameNow();
     PlaceTip(kTipMulti, frame.multi, settings::kMultiMonitor.menuHelp);
     PlaceTip(kTipOrder, frame.order, settings::kColumnOrder.menuHelp);
-    PlaceTip(kTipStrip, frame.strip, g_app.look.screens.empty() ? L"" : rules::kMovesNote);
+    PlaceTip(kTipPicture, frame.picture, g_app.pictureHelp);
     PlaceTip(kTipStatus, frame.status, g_app.status.detail);
     PlaceTip(kTipRestore, g_app.canRestore ? frame.restore : row::Rect{}, kRestoreHelp);
 }
@@ -262,7 +263,7 @@ void MakeTips()
     SetWindowTheme(g_app.tips, L"", L"");  // the system's look off: the control then takes the colours it is given
     StyleTips();
     SendMessageW(g_app.tips, TTM_SETDELAYTIME, TTDT_AUTOPOP, 15000);
-    for (const UINT_PTR id : {kTipMulti, kTipOrder, kTipStrip, kTipStatus, kTipRestore})
+    for (const UINT_PTR id : {kTipMulti, kTipOrder, kTipPicture, kTipStatus, kTipRestore})
     {
         wchar_t     none[] = L"";
         TTTOOLINFOW tool{};
@@ -301,6 +302,7 @@ void Refresh()
     notes.note         = g_app.note;
     notes.noteTone     = g_app.noteTone;
     g_app.status       = rules::StatusLine(g_app.look, notes);
+    g_app.pictureHelp  = rules::PictureHelp(g_app.look, notes);
     g_app.canSave      = rules::CanSave(g_app.look, notes);
     // Offered only when there is something to put back: a desktop that differs from what Windows has saved, with no game to hold it.
     g_app.canRestore = !g_app.gameRunning && !move::IsSavedLayout();
@@ -361,12 +363,6 @@ view::Scene SceneNow()
             tile.player = rules::PlayerOnScreen(order, screens.size(), static_cast<std::size_t>(screen - screens.begin())).value_or(0);
         }
         scene.tiles.push_back(std::move(tile));
-    }
-    for (std::size_t at = 0; at < screens.size(); ++at)
-    {
-        const listing::Listed& monitor = g_app.monitors[screens[at]];
-        scene.strip.push_back({monitor.name, monitor.monitor.rect.Width(), monitor.monitor.rect.Height(),
-                               rules::PlayerOnScreen(order, screens.size(), at).value_or(0)});
     }
     return scene;
 }

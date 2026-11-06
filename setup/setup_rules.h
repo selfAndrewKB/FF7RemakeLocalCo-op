@@ -74,7 +74,7 @@ struct Look
     bool                     ok = false;       // a row the mod would take, or no pick and a row it would find itself
     bool                     picked = false;   // the player picked monitors; else any row serves
     std::vector<std::size_t> screens;          // the row's monitors, left to right
-    std::wstring             text;             // a few words for the status line
+    std::wstring             text;             // a few words for the status line; empty for a row with nothing to add
     std::wstring             detail;           // the longer explanation, shown on hover; may be empty
     Tone                     tone = Tone::Plain;
 };
@@ -154,12 +154,12 @@ inline Look LookAt(std::span<const row::Monitor> monitors, std::span<const std::
         look.tone = Tone::Problem;
         return look;
     }
+    // A row that works is shown by the picture alone: the line speaks only when there is something to know.
     look.screens.assign(picks.begin(), picks.end());
-    look.text = std::format(L"Row of {} monitors.", picks.size());
     look.tone = Tone::Good;
     if (std::any_of(choice.widths.begin(), choice.widths.end(), [](std::int32_t width) { return width > row::kWidestCleanView; }))
     {
-        look.text += std::format(L" A view over {} px wide shows a band of wrong colours.", row::kWidestCleanView);
+        look.text = std::format(L"A view over {} px wide shows a band of wrong colours.", row::kWidestCleanView);
         look.tone = Tone::Warning;
     }
     if (!choice.moves.empty())
@@ -191,13 +191,14 @@ inline bool CanSave(const Look& look, const Notes& notes) noexcept
 /// The window's one status line.
 struct Status
 {
-    std::wstring text;
+    std::wstring text;    // empty when there is nothing to say
     std::wstring detail;  // shown on hover; may be empty
     Tone         tone = Tone::Plain;
 };
 
 /// The one thing to say, the most pressing first: what stops a save, an action that failed, a file the game will not read
-/// (with what the last action did, so a save is still answered), what the last action did, then the choice.
+/// (with what the last action did, so a save is still answered), what the last action did, then the choice. Nothing at all
+/// for a row that works.
 inline Status StatusLine(const Look& look, const Notes& notes)
 {
     if (notes.gameRunning)
@@ -229,9 +230,20 @@ inline Status StatusLine(const Look& look, const Notes& notes)
     // Clicked monitors that make no row stop a save whatever the option says: that comes first.
     if (!notes.spanOn && (look.ok || !look.picked))
     {
-        return {L"Multiple Monitors is off: the game stays in one window.", look.detail, Tone::Plain};
+        return {L"Multiple Monitors is off: the game stays in one window.", {}, Tone::Plain};
+    }
+    if (look.text.empty())
+    {
+        return {};
     }
     return {look.text, look.detail, look.tone};
+}
+
+/// The hover text over the desktop's picture: what happens to the monitors of a picked row the game will use. Nothing for
+/// any other choice: the status line speaks for those.
+inline std::wstring_view PictureHelp(const Look& look, const Notes& notes) noexcept
+{
+    return look.ok && look.picked && notes.spanOn ? std::wstring_view(look.detail) : std::wstring_view();
 }
 
 /// The player a screen of the row shows, by the Screen Order word: its digits are the players, the first screen's first. A row
@@ -259,7 +271,7 @@ inline std::optional<int> PlayerOnScreen(std::wstring_view order, std::size_t sc
 
 /// The smallest client area the layout is drawn for, at 96 dpi.
 inline constexpr std::int32_t kMinWidth  = 720;
-inline constexpr std::int32_t kMinHeight = 520;
+inline constexpr std::int32_t kMinHeight = 440;
 
 constexpr std::int32_t Scaled(std::int32_t units, std::uint32_t dpi) noexcept
 {
@@ -269,13 +281,10 @@ constexpr std::int32_t Scaled(std::int32_t units, std::uint32_t dpi) noexcept
 /// Where each part of the window stands.
 struct Frame
 {
-    row::Rect title;         // the heading and the version
     row::Rect multi, order;  // the two options, side by side
     row::Rect caption;       // the line over the desktop's picture
     row::Rect picture;       // the desktop, a tile per monitor
-    row::Rect stripCaption;  // the line over the row
-    row::Rect strip;         // the row as it stands while the game runs
-    row::Rect status;        // the one status line
+    row::Rect status;        // the one status line, the version at its far end
     row::Rect restore, save, close;  // the buttons
 };
 
@@ -289,17 +298,14 @@ inline Frame Arrange(std::int32_t width, std::int32_t height, std::uint32_t dpi)
     const std::int32_t middle = width / 2;
     const std::int32_t button = height - px(18) - px(34);
     Frame              frame;
-    frame.title        = {left, px(14), right, px(42)};
-    frame.multi        = {left, px(56), middle - px(6), px(98)};
-    frame.order        = {middle + px(6), px(56), right, px(98)};
-    frame.caption      = {left, px(112), right, px(132)};
-    frame.restore      = {left, button, left + px(180), button + px(34)};
-    frame.close        = {right - px(104), button, right, button + px(34)};
-    frame.save         = {frame.close.left - px(130), button, frame.close.left - px(10), button + px(34)};
-    frame.status       = {left, button - px(38), right, button - px(14)};
-    frame.strip        = {left, frame.status.top - px(72), right, frame.status.top - px(12)};
-    frame.stripCaption = {left, frame.strip.top - px(22), right, frame.strip.top - px(4)};
-    frame.picture      = {left, frame.caption.bottom + px(4), right, frame.stripCaption.top - px(10)};
+    frame.multi   = {left, px(18), middle - px(6), px(60)};
+    frame.order   = {middle + px(6), px(18), right, px(60)};
+    frame.caption = {left, px(74), right, px(94)};
+    frame.restore = {left, button, left + px(180), button + px(34)};
+    frame.close   = {right - px(104), button, right, button + px(34)};
+    frame.save    = {frame.close.left - px(130), button, frame.close.left - px(10), button + px(34)};
+    frame.status  = {left, button - px(38), right, button - px(14)};
+    frame.picture = {left, frame.caption.bottom + px(4), right, frame.status.top - px(12)};
     return frame;
 }
 
