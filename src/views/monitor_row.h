@@ -75,7 +75,6 @@ struct Choice
     std::vector<std::int32_t> widths;   // when ok: the span's monitors' widths, left to right (one per column)
     std::vector<std::int32_t> heights;  // when ok: their heights, the same way; the span is as tall as the tallest
     std::wstring      why;              // when not ok: what is missing or wrong, and what to change in Windows
-    std::wstring      stopped;          // when not ok: only what to change in Windows; empty if no monitor stopped a row
 };
 
 /// `columns` >= 1 monitors of a row the desktop has; the row around `monitors[gameMonitor]` when it qualifies.

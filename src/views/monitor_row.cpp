@@ -225,7 +225,6 @@ Choice Choose(std::span<const Monitor> monitors, std::size_t gameMonitor, std::i
             stopped += (stopped.empty() ? L"" : L"; ") + stop.text;
         }
         choice.rowMonitors = longest;
-        choice.stopped     = stopped;
         if (game.dpi != 96 && rows.empty())
         {
             choice.why = std::format(L"the game's monitor is scaled to {} % in Windows (needs 100 %) and no other row of "

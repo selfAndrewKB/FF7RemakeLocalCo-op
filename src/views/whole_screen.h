@@ -62,13 +62,7 @@ bool Install(const platform::GameImage& image) noexcept;
 /// camera manager, null when player 1 has none), logs what changed.
 void Tick(const void* managerOne) noexcept;
 
-/// This tick's reason, None when nothing takes the whole screen or nothing is readable.
-Reason ReasonNow() noexcept;
-
 /// The game shows something that takes the whole screen this tick.
 bool Shown() noexcept;
-
-/// This tick's signals.
-Signals SignalsNow() noexcept;
 
 }  // namespace lss::views::whole_screen

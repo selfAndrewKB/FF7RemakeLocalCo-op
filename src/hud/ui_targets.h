@@ -39,9 +39,6 @@ void Remove() noexcept;
 void SetEnabled(bool on) noexcept;
 bool Enabled() noexcept;
 
-/// True once the render thread has given column 1's view its own target in a Render since the last call (game thread).
-bool TakeSecondTargetSeen() noexcept;
-
 /// Game thread, each tick: the columns with a HUD image of their own (player 1's, the seats' and, on monitors of
 /// another shape, the mirrors'; 1..kMaxColumns); the columns beyond are the mirrors', whose views sample column 0's image.
 void SetPlayerColumns(int columns) noexcept;

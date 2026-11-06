@@ -36,7 +36,7 @@
 //
 // The entry point logs each seat's change once, with its reason, in plain words (Describe). Kept for parity with
 // Rebirth's, unused in Remake today: Shown's per-column sources, ViewsSplit and ListenerColumn (audio/listeners
-// follows each seat's own controller), Map's PlayersListed and mirrors.
+// follows each seat's own controller), Map's mirrors.
 
 #include "players/seat_state.h"
 #include "players/seats.h"

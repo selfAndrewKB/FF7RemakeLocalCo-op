@@ -187,19 +187,9 @@ void Tick(const void* managerOne) noexcept
     g_logged  = true;
 }
 
-Reason ReasonNow() noexcept
-{
-    return g_reason;
-}
-
 bool Shown() noexcept
 {
     return g_reason != Reason::None;
-}
-
-Signals SignalsNow() noexcept
-{
-    return g_signals;
 }
 
 }  // namespace lss::views::whole_screen

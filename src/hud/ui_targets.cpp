@@ -35,7 +35,6 @@ bool                   g_installed = false;
 
 std::atomic<bool>     g_enabled{false};
 std::atomic<int>      g_logFrames{0};
-std::atomic<bool>     g_secondSeen{false};
 std::atomic<int>      g_playerColumns{overlay_pass::kMaxColumns};  // the columns with a HUD image of their own (game thread writes)
 
 constexpr int kMaxColumns = overlay_pass::kMaxColumns;
@@ -183,10 +182,6 @@ std::uint64_t UiPass(void* sceneTargets, void* commandList, void* view, platform
     const std::uint64_t bound = reinterpret_cast<AllocBindFn>(call.Original())(sceneTargets, commandList);
     void* const after = Member();
     g_render.rotation.AfterUiPass(column, after);
-    if (column == 1 && moved)
-    {
-        g_secondSeen.store(true, std::memory_order_relaxed);
-    }
     if (Logging())
     {
         const render::family_now::Family family = render::family_now::For(view);
@@ -321,11 +316,6 @@ void SetEnabled(bool on) noexcept
 bool Enabled() noexcept
 {
     return g_enabled.load(std::memory_order_relaxed);
-}
-
-bool TakeSecondTargetSeen() noexcept
-{
-    return g_secondSeen.exchange(false, std::memory_order_relaxed);
 }
 
 void SetPlayerColumns(int columns) noexcept

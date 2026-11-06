@@ -43,17 +43,6 @@ struct Map
     std::array<int, players::scopes::kMaxPlayers> columnOf{-1, -1, -1, -1};  // -1: the seat is not listed
     int                                   mirrors = 0;
 
-    /// Player 1 and the seats listed.
-    constexpr int PlayersListed() const noexcept
-    {
-        int n = 0;
-        for (const int column : columnOf)
-        {
-            n += column >= 0 ? 1 : 0;
-        }
-        return n;
-    }
-
     /// The seat whose column this is (0 player 1's), or kMirror / kUnknown.
     constexpr int SeatOf(int column) const noexcept
     {
