@@ -44,6 +44,7 @@ try
     for (std::size_t i = 0; i < listed.size(); ++i)
     {
         desktop.devices.push_back(listed[i].device);
+        desktop.ids.push_back(listed[i].id);
         if (listed[i].handle == own)
         {
             desktop.gameAt = i;
@@ -76,7 +77,7 @@ std::vector<row_journal::Seen> PlacesFor(const monitor_row::Choice& choice, cons
         {
             if (desktop.list[i].rect == move.from)
             {
-                places.push_back({desktop.devices[i], move.toLeft, move.toTop});
+                places.push_back({desktop.ids[i], move.toLeft, move.toTop});
             }
         }
     }

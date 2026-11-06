@@ -45,7 +45,7 @@ catch (...)
 
 struct Identity
 {
-    std::wstring path, name;
+    std::wstring id, name;  // display_config::MonitorId, and the name the monitor reports (empty if unread)
 };
 
 /// Each active output by its GDI device name; the first target of a cloned output stands for it.
@@ -60,10 +60,10 @@ std::map<std::wstring, Identity> Identities()
     for (const DISPLAYCONFIG_PATH_INFO& path : config->paths)
     {
         const std::wstring source = display_config::SourceName(path);
-        const auto         target = display_config::TargetOf(path);
-        if (!source.empty() && target)
+        if (!source.empty())
         {
-            identities.try_emplace(source, Identity{target->path, target->name});
+            const auto target = display_config::TargetOf(path);
+            identities.try_emplace(source, Identity{display_config::MonitorId(path, target), target ? target->name : std::wstring()});
         }
     }
     return identities;
@@ -80,7 +80,7 @@ std::vector<Listed> List()
     {
         const auto found = identities.find(listed.device);
         const bool known = found != identities.end();
-        listed.id        = platform::Lower(known && !found->second.path.empty() ? found->second.path : listed.device);
+        listed.id        = known ? found->second.id : platform::Lower(listed.device);
         listed.name      = known && !found->second.name.empty() ? found->second.name : listed.device;
         listed.key       = known ? monitor_picks::IdentityKey(listed.id, found->second.name) : std::wstring();
         // Shown to the player: a monitor may pad the name it reports with spaces.

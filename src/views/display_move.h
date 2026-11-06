@@ -29,11 +29,17 @@ inline constexpr const wchar_t* kSetupExe = L"MultiMonitorSetup.exe";
 /// The first word after the exe's name that makes it the guard: `<exe> --guard <handle to the game, in hex> "<the record's path>"`.
 inline constexpr const wchar_t* kGuardSwitch = L"--guard";
 
-/// Every active monitor's position now; empty if it could not be read.
+/// Every active monitor's position now, each under its id (row_journal::Seen); empty if it could not be read.
 std::vector<row_journal::Seen> Read() noexcept;
 
+/// The same for a judgment that is not taken back, the record's writing and its settling: tried again for up to a second
+/// while the desktop does not read or a monitor's device path does not. A monitor read without its path goes by its
+/// source's name, which matches no record made with the path, and a record judged against such a read would be given up
+/// with the monitors still moved. What reads after that second is returned as it is.
+std::vector<row_journal::Seen> ReadSteady() noexcept;
+
 /// Puts each named monitor at its position, all at once, for this Windows session. ERROR_SUCCESS (0) does not prove it
-/// happened: read it back. A device that is not an active source fails with ERROR_NOT_FOUND and changes nothing.
+/// happened: read it back. A monitor that is not an active output fails with ERROR_NOT_FOUND and changes nothing.
 long Place(std::span<const row_journal::Seen> places) noexcept;
 
 /// Windows' saved arrangement, now.

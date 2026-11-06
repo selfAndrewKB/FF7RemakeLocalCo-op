@@ -40,6 +40,14 @@ struct Target
 /// Nothing if it could not be read.
 std::optional<Target> TargetOf(const DISPLAYCONFIG_PATH_INFO& path);
 
+/// The id of a path's monitor, given its target as TargetOf read it: the device path, lower-cased. With no path to go by,
+/// the source's name, lower-cased: such an id is only as stable as Windows' numbering. One function for everyone
+/// who names a monitor, so the settings file, the list and the record agree.
+std::wstring MonitorId(const DISPLAYCONFIG_PATH_INFO& path, const std::optional<Target>& target);
+
+/// The id is a device path, not a source's name standing in for one.
+bool HasPath(const std::optional<Target>& target) noexcept;
+
 /// A path's source mode, which holds its desktop position; null when the path has none.
 const DISPLAYCONFIG_SOURCE_MODE* SourceMode(const Config& config, const DISPLAYCONFIG_PATH_INFO& path) noexcept;
 DISPLAYCONFIG_SOURCE_MODE*       SourceMode(Config& config, const DISPLAYCONFIG_PATH_INFO& path) noexcept;

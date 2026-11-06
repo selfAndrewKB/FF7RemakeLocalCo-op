@@ -23,10 +23,16 @@ int g_failures = 0;
         }                                                                \
     } while (false)
 
-const std::vector<Entry> kEntries{{L"\\\\.\\DISPLAY1", 0, 0, 0, 0}, {L"\\\\.\\DISPLAY3", -2560, 0, 0, 1440}, {L"\\\\.\\DISPLAY66", 6000, -5, 2560, 1440}};
+// Monitors as the record names them: by device path, lower-cased.
+const wchar_t* const kLg    = L"\\\\?\\display#gsm774b#5&21434701&1&uid4353#{e6f07b5f-ee97-4a90-b076-33f57bf4eaa7}";
+const wchar_t* const kDell  = L"\\\\?\\display#dela199#5&21434701&1&uid4355#{e6f07b5f-ee97-4a90-b076-33f57bf4eaa7}";
+const wchar_t* const kDeck  = L"\\\\?\\display#smkd1ce#1&15ecd195&1&uid256#{e6f07b5f-ee97-4a90-b076-33f57bf4eaa7}";
+const wchar_t* const kOther = L"\\\\?\\display#smkd1ce#1&15ecd195&1&uid257#{e6f07b5f-ee97-4a90-b076-33f57bf4eaa7}";
+
+const std::vector<Entry> kEntries{{kLg, 0, 0, 0, 0}, {kDell, -2560, 0, 0, 1440}, {kDeck, 6000, -5, 2560, 1440}};
 const Record             kRecord{4242, 133000000000000000ull, kEntries};
-const std::vector<Seen>  kLeft{{L"\\\\.\\DISPLAY66", 2560, 1440}, {L"\\\\.\\DISPLAY1", 0, 0}, {L"\\\\.\\DISPLAY3", 0, 1440}};
-const std::vector<Seen>  kBefore{{L"\\\\.\\DISPLAY1", 0, 0}, {L"\\\\.\\DISPLAY3", -2560, 0}, {L"\\\\.\\DISPLAY66", 6000, -5}};
+const std::vector<Seen>  kLeft{{kDeck, 2560, 1440}, {kLg, 0, 0}, {kDell, 0, 1440}};
+const std::vector<Seen>  kBefore{{kLg, 0, 0}, {kDell, -2560, 0}, {kDeck, 6000, -5}};
 
 void RoundTrip()
 {
@@ -71,13 +77,13 @@ void Decisions()
     EXPECT(Decide(kEntries, kBefore) == Verdict::AlreadyBack);
 
     // Partway: Windows was still applying the move, or applied part of it. Ours to undo, not the player's doing.
-    EXPECT(Decide(kEntries, std::vector<Seen>{{L"\\\\.\\DISPLAY1", 0, 0}, {L"\\\\.\\DISPLAY3", 0, 1440}, {L"\\\\.\\DISPLAY66", 6000, -5}}) == Verdict::PutBack);
+    EXPECT(Decide(kEntries, std::vector<Seen>{{kLg, 0, 0}, {kDell, 0, 1440}, {kDeck, 6000, -5}}) == Verdict::PutBack);
 
     // The player moved a monitor, a monitor went, a monitor came: none is the mod's to undo.
-    EXPECT(Decide(kEntries, std::vector<Seen>{{L"\\\\.\\DISPLAY1", 0, 0}, {L"\\\\.\\DISPLAY3", 100, 1440}, {L"\\\\.\\DISPLAY66", 2560, 1440}}) == Verdict::Changed);
-    EXPECT(Decide(kEntries, std::vector<Seen>{{L"\\\\.\\DISPLAY1", 0, 0}, {L"\\\\.\\DISPLAY3", 0, 1440}}) == Verdict::Changed);
+    EXPECT(Decide(kEntries, std::vector<Seen>{{kLg, 0, 0}, {kDell, 100, 1440}, {kDeck, 2560, 1440}}) == Verdict::Changed);
+    EXPECT(Decide(kEntries, std::vector<Seen>{{kLg, 0, 0}, {kDell, 0, 1440}}) == Verdict::Changed);
     auto more = kLeft;
-    more.push_back({L"\\\\.\\DISPLAY67", 5120, 1440});
+    more.push_back({kOther, 5120, 1440});
     EXPECT(Decide(kEntries, more) == Verdict::Changed);
 
     // A desktop that could not be read proves nothing.
@@ -105,8 +111,19 @@ void Owners()
 
 }  // namespace
 
+/// A monitor's id in a log line: its model and its place on the adapter; any other text as it is.
+void ShortNames()
+{
+    using lss::views::row_journal::ShortName;
+    EXPECT(ShortName(kLg) == L"gsm774b uid4353");
+    EXPECT(ShortName(kDeck) == L"smkd1ce uid256" && ShortName(kOther) == L"smkd1ce uid257");
+    EXPECT(ShortName(L"\\\\.\\display5") == L"\\\\.\\display5");  // a monitor whose path could not be read
+    EXPECT(ShortName(L"a#b#c#d") == L"b c" && ShortName(L"a#b#c") == L"a#b#c" && ShortName(L"").empty());
+}
+
 int main()
 {
+    ShortNames();
     RoundTrip();
     DamagedRecordIsDamaged();
     Decisions();

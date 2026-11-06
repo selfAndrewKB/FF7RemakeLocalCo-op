@@ -142,20 +142,26 @@ try
         platform::LogWarning(L"window span: a record of moved monitors stands and cannot be settled now; nothing moves");
         return false;
     }
-    const auto now = display_move::Read();
+    const auto now = display_move::ReadSteady();
     if (now.empty())
     {
         platform::LogWarning(L"window span: the display configuration could not be read; nothing moves");
         return false;
     }
     std::vector<Entry> entries;
-    std::size_t        active = 0;  // the monitors to move that are active display sources
+    std::size_t        active = 0;  // the monitors to move that are active outputs
     for (const Seen& seen : now)
     {
-        Entry entry{seen.device, seen.x, seen.y, seen.x, seen.y};
+        if (seen.monitor.find(L'#') == std::wstring::npos)
+        {
+            platform::Log(L"window span: the monitor {} has no device path to go by: it is named by its display number, and each read of "
+                          L"the desktop for a move waits about a second for the path",
+                          seen.monitor);
+        }
+        Entry entry{seen.monitor, seen.x, seen.y, seen.x, seen.y};
         for (const Seen& place : places)
         {
-            if (place.device == seen.device)
+            if (place.monitor == seen.monitor)
             {
                 entry.toX = place.x;
                 entry.toY = place.y;
@@ -166,7 +172,7 @@ try
     }
     if (active != places.size())
     {
-        platform::LogWarning(L"window span: {} of the {} monitors to move are not active display sources; nothing moves", places.size() - active, places.size());
+        platform::LogWarning(L"window span: {} of the {} monitors to move are not active outputs; nothing moves", places.size() - active, places.size());
         return false;
     }
     if (!GuardRunning())
@@ -234,7 +240,7 @@ try
     {
         if (entry.fromX != entry.toX || entry.fromY != entry.toY)
         {
-            text += std::format(L"{}{} {},{} -> {},{}", text.empty() ? L"" : L", ", entry.device, entry.fromX, entry.fromY, entry.toX, entry.toY);
+            text += std::format(L"{}{} {},{} -> {},{}", text.empty() ? L"" : L", ", row_journal::ShortName(entry.monitor), entry.fromX, entry.fromY, entry.toX, entry.toY);
         }
     }
     return text;

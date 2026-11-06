@@ -1,5 +1,7 @@
 #include "views/display_config.h"
 
+#include "platform/text.h"
+
 #include <utility>
 
 namespace lss::views::display_config {
@@ -56,6 +58,16 @@ std::optional<Target> TargetOf(const DISPLAYCONFIG_PATH_INFO& path)
         return std::nullopt;
     }
     return Target{name.monitorDevicePath, name.monitorFriendlyDeviceName};
+}
+
+bool HasPath(const std::optional<Target>& target) noexcept
+{
+    return target && !target->path.empty();
+}
+
+std::wstring MonitorId(const DISPLAYCONFIG_PATH_INFO& path, const std::optional<Target>& target)
+{
+    return platform::Lower(HasPath(target) ? target->path : SourceName(path));
 }
 
 const DISPLAYCONFIG_SOURCE_MODE* SourceMode(const Config& config, const DISPLAYCONFIG_PATH_INFO& path) noexcept

@@ -26,10 +26,12 @@
 
 namespace lss::views::row_journal {
 
-/// A monitor's desktop position by its GDI device name.
+/// A monitor's desktop position. The monitor is named by its id: its device path, lower-cased, as views/monitor_list gives it
+/// and the settings file keeps it. A DISPLAYn number is handed out anew whenever Windows applies an arrangement, so a record
+/// made under one numbering could name another monitor under the next; the path stays with the monitor.
 struct Seen
 {
-    std::wstring device;
+    std::wstring monitor;
     std::int32_t x = 0, y = 0;
     bool         operator==(const Seen&) const noexcept = default;
 };
@@ -37,7 +39,7 @@ struct Seen
 /// A monitor of the record: where it was and where the mod put it (the same for one that did not move).
 struct Entry
 {
-    std::wstring device;
+    std::wstring monitor;  // its id, as Seen names it
     std::int32_t fromX = 0, fromY = 0, toX = 0, toY = 0;
     bool         operator==(const Entry&) const noexcept = default;
 };
@@ -51,12 +53,30 @@ struct Record
     bool               operator==(const Record&) const noexcept = default;
 };
 
+/// A monitor's id shortened for a log line: its model and the last part of its place on the adapter ("gsm774b uid4353" for
+/// "\\?\display#gsm774b#5&21434701&1&uid4353#{...}"). An id of any other form is given as it is.
+inline std::wstring ShortName(std::wstring_view id)
+{
+    constexpr auto    none   = std::wstring_view::npos;
+    const std::size_t first  = id.find(L'#');
+    const std::size_t second = first == none ? none : id.find(L'#', first + 1);
+    const std::size_t third  = second == none ? none : id.find(L'#', second + 1);
+    if (third == none)
+    {
+        return std::wstring(id);
+    }
+    const std::wstring_view model = id.substr(first + 1, second - first - 1);
+    const std::wstring_view place = id.substr(second + 1, third - second - 1);
+    const std::size_t       last  = place.rfind(L'&');
+    return std::wstring(model) + L' ' + std::wstring(last == none ? place : place.substr(last + 1));
+}
+
 inline std::wstring Format(const Record& record)
 {
     std::wstring text = std::format(L"owner\t{}\t{}\n", record.ownerPid, record.ownerStart);
     for (const Entry& e : record.entries)
     {
-        text += std::format(L"{}\t{}\t{}\t{}\t{}\n", e.device, e.fromX, e.fromY, e.toX, e.toY);
+        text += std::format(L"{}\t{}\t{}\t{}\t{}\n", e.monitor, e.fromX, e.fromY, e.toX, e.toY);
     }
     return text;
 }
@@ -139,7 +159,7 @@ inline std::optional<Record> Parse(std::wstring_view text)
         {
             return std::nullopt;
         }
-        entry.device = std::wstring(parts[0]);
+        entry.monitor = std::wstring(parts[0]);
         record.entries.push_back(std::move(entry));
     }
     return owned ? std::optional<Record>(std::move(record)) : std::nullopt;
@@ -169,7 +189,7 @@ inline Verdict Decide(std::span<const Entry> entries, std::span<const Seen> now)
     bool allBefore = true;
     for (const Entry& entry : entries)
     {
-        const auto seen = std::find_if(now.begin(), now.end(), [&](const Seen& s) { return s.device == entry.device; });
+        const auto seen = std::find_if(now.begin(), now.end(), [&](const Seen& s) { return s.monitor == entry.monitor; });
         if (seen == now.end())
         {
             return Verdict::Changed;

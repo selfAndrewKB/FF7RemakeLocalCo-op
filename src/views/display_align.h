@@ -22,9 +22,9 @@ namespace lss::views::display_align {
 /// A record left by an earlier run, undone before this one starts anything. Logged.
 void HealEarlierRun() noexcept;
 
-/// Places the monitors for as long as the row lasts and remembers where they were: each by its GDI device name as
-/// GetMonitorInfo gives it (`\\.\DISPLAY2`), at its new top-left corner. False (logged) if the guard or the record could not
-/// be had, a device is not an active source, or Windows refused; nothing is changed then.
+/// Places the monitors for as long as the row lasts and remembers where they were: each by its id (views/monitor_list), at
+/// its new top-left corner. False (logged) if the guard or the record could not be had, a monitor is not an active output,
+/// or Windows refused; nothing is changed then.
 bool Apply(std::span<const row_journal::Seen> places) noexcept;
 
 /// Puts the monitors back, if the desktop still reads as this module left it (logged). Nothing happens when none is moved.

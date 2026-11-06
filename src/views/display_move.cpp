@@ -27,24 +27,38 @@ using row_journal::Entry;
 using row_journal::Seen;
 using row_journal::Verdict;
 
-constexpr int           kReadTries = 10;       // a desktop or a record that cannot be read now may read in a moment
+constexpr int           kReadTries = 10;       // a desktop, a monitor's path or a record that cannot be read now may read in a moment
 constexpr unsigned long kReadPause = 100;      // ms between those tries
 
-/// A cloned output's paths share a source: it is listed once.
-std::vector<Seen> Positions(Config& config)
+/// Each source once, under the id of its first path's monitor, as views/monitor_list names it: a cloned output's paths share
+/// a source. `everyPath` turns false when a monitor's device path did not read, so its id is its source's name.
+std::vector<Seen> Positions(const Config& config, bool& everyPath)
 {
-    std::vector<Seen> seen;
+    std::vector<Seen>         seen;
+    std::vector<std::wstring> sources;
     for (const auto& path : config.paths)
     {
-        const auto*  mode = SourceMode(config, path);
-        std::wstring name = SourceName(path);
-        const bool   known = std::any_of(seen.begin(), seen.end(), [&](const Seen& s) { return s.device == name; });
-        if (mode != nullptr && !name.empty() && !known)
+        std::wstring source = SourceName(path);
+        if (source.empty() || std::find(sources.begin(), sources.end(), source) != sources.end())
         {
-            seen.push_back({std::move(name), mode->position.x, mode->position.y});
+            continue;
+        }
+        sources.push_back(std::move(source));
+        if (const auto* mode = SourceMode(config, path); mode != nullptr)
+        {
+            const auto target = display_config::TargetOf(path);
+            everyPath         = everyPath && display_config::HasPath(target);
+            seen.push_back({display_config::MonitorId(path, target), mode->position.x, mode->position.y});
         }
     }
     return seen;
+}
+
+std::vector<Seen> ReadOnce(bool& everyPath)
+{
+    everyPath   = true;
+    auto config = Query(QDC_ONLY_ACTIVE_PATHS);
+    return config ? Positions(*config, everyPath) : std::vector<Seen>{};
 }
 
 /// Each monitor's place by the connector it hangs on (the adapter and its output), in one order. Two arrangements are
@@ -72,8 +86,25 @@ std::vector<ConnectorPlace> PlacesByConnector(const Config& config)
 std::vector<Seen> Read() noexcept
 try
 {
-    auto config = Query(QDC_ONLY_ACTIVE_PATHS);
-    return config ? Positions(*config) : std::vector<Seen>{};
+    bool everyPath = true;
+    return ReadOnce(everyPath);
+}
+catch (...)
+{
+    return {};
+}
+
+std::vector<Seen> ReadSteady() noexcept
+try
+{
+    bool everyPath = true;
+    auto now       = ReadOnce(everyPath);
+    for (int tries = 1; (now.empty() || !everyPath) && tries < kReadTries; ++tries)
+    {
+        Sleep(kReadPause);
+        now = ReadOnce(everyPath);
+    }
+    return now;
 }
 catch (...)
 {
@@ -88,16 +119,21 @@ try
     {
         return ERROR_GEN_FAILURE;
     }
+    std::vector<std::wstring> ids;  // each path's monitor, read once
+    for (const auto& path : config->paths)
+    {
+        ids.push_back(display_config::MonitorId(path, display_config::TargetOf(path)));
+    }
     for (const Seen& place : places)
     {
         bool found = false;
-        for (const auto& path : config->paths)
+        for (std::size_t i = 0; i < config->paths.size(); ++i)
         {
-            if (SourceName(path) != place.device)
+            if (ids[i] != place.monitor)
             {
                 continue;
             }
-            if (auto* mode = SourceMode(*config, path); mode != nullptr)
+            if (auto* mode = SourceMode(*config, config->paths[i]); mode != nullptr)
             {
                 mode->position.x = place.x;
                 mode->position.y = place.y;
@@ -168,17 +204,6 @@ catch (...)
 
 namespace {
 
-std::vector<Seen> ReadSettled()
-{
-    auto now = Read();
-    for (int tries = 1; now.empty() && tries < kReadTries; ++tries)
-    {
-        Sleep(kReadPause);
-        now = Read();
-    }
-    return now;
-}
-
 /// Acts on a verdict and gives up the record only on a definite one.
 Healed Act(const std::wstring& path, std::span<const Entry> entries, Verdict verdict)
 {
@@ -206,7 +231,7 @@ Healed Act(const std::wstring& path, std::span<const Entry> entries, Verdict ver
             std::vector<Seen> places;
             for (const Entry& entry : entries)
             {
-                places.push_back({entry.device, entry.fromX, entry.fromY});
+                places.push_back({entry.monitor, entry.fromX, entry.fromY});
             }
             result = Place(places) == ERROR_SUCCESS && WaitForPlaces(places, 2000) ? Healed::PutBack : Healed::Failed;
             if (result == Healed::Failed)
@@ -240,7 +265,7 @@ try
         return Healed::Kept;
     }
     const bool alive   = game == 0 && file.record && record_file::OwnerAlive(*file.record);
-    const auto verdict = row_journal::Judge(file.record, ReadSettled(), game, alive);
+    const auto verdict = row_journal::Judge(file.record, ReadSteady(), game, alive);
     return Act(path, file.record ? std::span<const Entry>(file.record->entries) : std::span<const Entry>(), verdict);
 }
 catch (...)
@@ -251,7 +276,7 @@ catch (...)
 Healed PutBack(const std::wstring& path, std::span<const Entry> entries) noexcept
 try
 {
-    return Act(path, entries, row_journal::Decide(entries, ReadSettled()));
+    return Act(path, entries, row_journal::Decide(entries, ReadSteady()));
 }
 catch (...)
 {
