@@ -136,7 +136,7 @@ std::wstring ViewName(int view)
     return players::SeatName(view);
 }
 
-/// The game's sequence for one window (EndUI_ShowMessageWindow's, §12.9), its focus layer popped at once. Refused inside
+/// The game's sequence for one window (EndUI_ShowMessageWindow's), its focus layer popped at once. Refused inside
 /// a player's scope: Open pushes onto whichever focus context is current, and the swapped one is that player's copy.
 void* OpenWindow(int view, const std::wstring& text) noexcept
 {
@@ -452,7 +452,7 @@ void Play(Sound sound) noexcept
     {
         return;
     }
-    // The 0x34-byte arguments as the message window builds them (§12.6).
+    // The 0x34-byte arguments as the message window builds them.
     alignas(16) std::uint8_t args[0x38]{};
     const std::int32_t       index    = -1;
     const float              mix[4]   = {0.0f, 1.0f, 1.0f, 0.0f};

@@ -1,6 +1,6 @@
 #pragma once
 
-// The game's party funnels, heard by the session (RE-slot-member.md §1.5, §2.5, §3; Rebirth's player_two/party_events).
+// The game's party funnels, heard by the session (research/RE-slot-member.md).
 //   leader   PartyManager_SetPartyLeader and its toad twin: every path that makes a character player 1's (the battle
 //            cycle and KO switch, the battle-start default leader, the battle-end and result restores, scripts, toad)
 //            passes one of them before any party-manager write. The listener hears it first, so a further player can
@@ -8,7 +8,7 @@
 //   stream   the formation rebuild at the end of every player stream (the one writer of the deployed formation;
 //            story party changes, party applies): heard before and after. After it every member is typed PARTY
 //            again, so a seated member's PLAYER type is re-asserted by the session.
-//   event    the game's hand of its leader to its AI and its return (RE-script-release.md §1: an event's start and
+//   event    the game's hand of its leader to its AI and its return (RE-script-release.md: an event's start and
 //            end, the field-action tick, the field control lock's first set and last clear), heard at the two
 //            functions' entries, so every site counts: a further player's member gets the same.
 // The functions are redirected at their entries (platform/entry_redirect.h; the rebuild at its tail jump,

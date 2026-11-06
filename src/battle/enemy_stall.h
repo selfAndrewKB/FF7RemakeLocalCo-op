@@ -1,10 +1,10 @@
 #pragma once
 
 // An enemy aimed at a human it cannot reach picks again: a MonoDrive at full ATB, aimed at a player 28 m away, was seen
-// to wait 95 s with another player 0.7 m from it (research/RE-enemy-stall-repick.md, pass S-RMK-STALL).
+// to wait 95 s with another player 0.7 m from it (research/RE-enemy-stall-repick.md).
 //
 // In single player every human target is the one character the party moves with. In co-op the hate rows give every
-// human the player's weight (battle/enemy_coin's rule B), so a hate enemy's target moves to another human after each
+// human the player's weight (battle/enemy_coin), so a hate enemy's target moves to another human after each
 // attack, at any distance. Many enemies' heavy attack tests its reach (the MonoDrive's Fire: within 20 m and in sight)
 // and is simply not requested otherwise; at full ATB only the heavy event fires, and the game picks a hate enemy's
 // target again only after an action, so the enemy waits until that human comes near.

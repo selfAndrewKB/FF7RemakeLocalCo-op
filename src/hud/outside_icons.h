@@ -7,7 +7,7 @@
 // so every column showed player 1's arrows. The tick reads no other player: its inputs are that controller (two
 // lookups, FLocalPlayerContext::GetPlayerController), each arrow's one timer (the element's +0x14, stepped by the game
 // mode's HUD step inside Place), the highlight name (+0x98, the player's last target's owner) and the host set the
-// pass writes. So, as Rebirth's marker timers did, the game's own tick runs again per pass:
+// pass writes. So the game's own tick runs again per pass:
 //   - a further column: the seat's timers swapped into the arrows, the seat's highlight name (its copy in
 //     battle/target_cursor), the two lookups answering the seat's controller, the real step (the seat's arrows
 //     fade at the game's rate); then player 1's timers and name put back;
@@ -19,7 +19,7 @@
 // Timers per seat (a seat keeps them when its column changes), keyed by the arrow's weak widget and the source it was
 // made for (a widget reused from the pool starts at 0, as the game's new arrow does); a seat's arrows not seen in a
 // frame are forgotten, and all of a seat's when its column did not run (out, no battle).
-// The corner test of the one-window band layouts (the 60/120 degree split at 0x1413E3977, the wrong edge near a band's
+// The corner test of the one-window band layouts (the 60/120 degree split, the wrong edge near a band's
 // corners) is hud/layout_code.h's third piece, installed by hud/overlay_layout.
 // Game thread only (the HUD tick, the overlay driver and the redirects' installation run there).
 

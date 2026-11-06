@@ -5,7 +5,7 @@
 //
 // A further player's NPC talk plays as the game scripts it (world/field_targets): its speaker and listeners are named
 // by the data, so player 1's character (Cloud) speaks wherever it stands, and the talk camera frames it there. Nothing
-// in the game gates a talk on distance or brings the speaker over (RE §2). So, with the game's own calls, in the order
+// in the game gates a talk on distance or brings the speaker over. So, with the game's own calls, in the order
 // the game makes them after its own leader teleports:
 //   - the act channel ticking is noted around the act tick's two calls (call redirects), so the game's hand of its
 //     leader to its AI (heard by players/party_events) knows which act took the field lock;

@@ -64,7 +64,7 @@ void WhoTakesIt()
     EXPECT(!Applies({1920, 540, 1920, 1080}, 0.0f));
 }
 
-/// The rule's values: Rebirth's formula, measured against the single-player picture.
+/// The rule's values, measured against the single-player picture.
 void Values()
 {
     const float fov = 90.0f;  // horizontal at 16:9
@@ -99,7 +99,7 @@ void Values()
     EXPECT(Near(HeightRatio({1920, 540, 1920, 1200}, kSolo), 0.5f, 0.0001f));  // 16:10: the picture is 1080 tall
 }
 
-/// Which views take the narrow rule, and its values: Rebirth's measured table at 8:9 from a 60 degree camera.
+/// Which views take the narrow rule, and its values: the measured table at 8:9 from a 60 degree camera.
 void Narrow()
 {
     EXPECT(AppliesNarrow({960, 1080, 1920, 1080}, kSolo));    // side by side

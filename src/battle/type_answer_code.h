@@ -1,7 +1,7 @@
 #pragma once
 
 // The bytes of a small function that answers the game's inlined "is this member the player" test for every human's
-// member (battle/enemy_coin.h; RE-enemy-attention-coin.md §4.3, rule B). Pure: the bytes are built here and tested on
+// member (battle/enemy_coin.h; research/RE-enemy-attention-coin.md). Pure: the bytes are built here and tested on
 // the host (tests/type_answer_code_test.cpp); enemy_coin places them near the game's code and points the call at them.
 //
 // The test the game compiled inline, at four places (the hate rows, the two tie-break reads, IsAIPC), is

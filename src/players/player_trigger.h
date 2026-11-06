@@ -1,6 +1,6 @@
 #pragma once
 
-// Each seat's own PlayerTrigger: a copy of the game's one placed trigger actor (RE-player-trigger.md §4-§5, Fix A).
+// Each seat's own PlayerTrigger: a copy of the game's one placed trigger actor (research/RE-player-trigger.md).
 //
 // The game has exactly one PlayerTrigger, a plain Actor placed in the party level with a capsule and an
 // EndCapsuleOverlapComponent, handed to the primary controller's InitPartyLevel and attached to that controller's

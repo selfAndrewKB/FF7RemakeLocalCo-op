@@ -605,7 +605,7 @@ bool g_mirrorsOwnImage = false;  // the mirrors' columns had HUD passes of their
 
 /// The world around the views (world/): party members kept visible near a camera, characters animated by the
 /// camera that sees them best, the NPCs near every further player kept awake and spawned around them too, and
-/// able to see them. Every world module per built seat (plan/seats.md step 3): each told the seat's member, camera
+/// able to see them. Every world module per built seat: each told the seat's member, camera
 /// or controller while the seat's player is in, then its once-a-tick work.
 void TickWorld(const Frame& frame) noexcept
 {

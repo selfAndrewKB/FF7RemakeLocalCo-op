@@ -1,6 +1,6 @@
 #pragma once
 
-// Whose sun cascade a view may use (RE-haze-per-view.md §3, §9.10).
+// Whose sun cascade a view may use (research/RE-haze-per-view.md).
 //
 // The game makes the sun's shadow cascades once per view and records the view each one was made for (stock
 // FProjectedShadowInfo::DependentView; null for a shadow that belongs to no one view, such as a lamp's). Two consumers

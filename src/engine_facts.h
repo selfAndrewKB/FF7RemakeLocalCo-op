@@ -446,7 +446,7 @@ inline constexpr std::uint32_t kRscSnap      = 0x2E4;
 inline constexpr std::uint8_t  kRscTimeInBox    = 3;
 inline constexpr std::uint8_t  kRscTimeInSphere = 4;
 /// FSceneViewFamily +0x70 (Square Enix): nonzero skips the scene's frame-number step in BeginRenderingViewFamily (the
-/// gate `0x1425C9A88`), the same offset as Rebirth. +0x74 is the FrameNumber the submit writes; this build has no
+/// gate `0x1425C9A88`). +0x74 is the FrameNumber the submit writes; this build has no
 /// bAdditionalViewFamily (RE-haze-occlusion.md Pass 9 H.3.2).
 inline constexpr std::uint32_t kFamilySkipFrameStep = 0x70;
 /// APlayerCameraManager::SetGameCameraCutThisFrame (stock 4.18, `or [rcx+1E18h], 400h; ret`): the next draw's views of

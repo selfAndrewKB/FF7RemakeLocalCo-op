@@ -2,7 +2,7 @@
 
 // Whether a further player keeps a member the level walks to its marks, and when the game takes it over at a mark
 // (the player keeps control without breaking the scripting, guided by the mod's own markers;
-// research/RE-holder-keeps-lead.md, RE-lead-marker.md §7).
+// research/RE-holder-keeps-lead.md, RE-lead-marker.md).
 //
 // The lead gate (players/lead_gate.h) finds a lead or a run to a mark the level needs the member to finish (a waiter
 // on its arrival, the story's marker on it, a further move in its own chain, a leash on player 1). Left to the gate
@@ -10,8 +10,8 @@
 //   - the player keeps the member and is shown the move's point (hud/lead_mark: the main-objective diamond in that
 //     player's view only, a pin on that player's own minimap);
 //   - when the move signals its arrival to the level, within kHandRadius of the point (2D, as the game measures an
-//     arrival) the member goes to its AI: the game's own Enter of the move runs again from there (RE-holder-keeps-lead.md
-//     §B: within the row's GoalRadius - 15 cm, 35 to 85 cm on the rows read, it arrives where it stands, else it walks
+//     arrival) the member goes to its AI: the game's own Enter of the move runs again from there (within the
+//     row's GoalRadius - 15 cm, 35 to 85 cm on the rows read, it arrives where it stands, else it walks
 //     the last steps; a Lead then waits for player 1 to come within about 8-10 m, as in single player) and signals;
 //   - it stays on its AI until the level writes its next setting (the move's state changes), then comes back;
 //   - a move with no arrival trigger (Tifa's Ch. 4 lead: only the leash needs her) signals nothing: kept throughout.

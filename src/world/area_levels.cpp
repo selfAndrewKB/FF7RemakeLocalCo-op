@@ -312,7 +312,7 @@ void Tick() noexcept
 {
     // The field's exit (the step machine leaves its steady step): player 1's last list belongs to the field being left
     // (fields are sub-levels of one world, so the world check alone does not see it). Nothing is built on it again until
-    // the game's own next request (research §2, the field exit and GameMode reset rows).
+    // the game's own next request (research/RE-world-streaming-levers.md, the field exit and GameMode reset rows).
     const players::game_state::Snapshot& state = players::game_state::Current();
     const bool steady = state.hasRoot && state.running && state.step == kSteadyFieldStep;
     if (g_wasSteady && !steady && g_lastKnown)

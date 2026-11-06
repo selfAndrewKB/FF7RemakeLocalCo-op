@@ -208,7 +208,7 @@ const wchar_t* Describe(int seat) noexcept
 
 /// The member the game's forced switch would take from the downed leader when no human's member stands: the next
 /// deployed slot from the leader's, with wrap-around (the cycle's direction 1), that no human plays and passes the
-/// cycle's own candidate test (0x1409BAC99..: an actor, a battle component not KO'd, not a battle-support guest; no
+/// cycle's own candidate test (an actor, a battle component not KO'd, not a battle-support guest; no
 /// trap or sync-action test). Null if none. The cycle's tests after its pick (inside the battle area, party side) are
 /// not repeated [ASSUMPTION: an ally in the party's battle is inside it]. Game thread.
 void* AllyInstead(std::uint8_t& type) noexcept

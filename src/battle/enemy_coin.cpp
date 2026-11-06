@@ -1094,7 +1094,8 @@ bool Install(const platform::GameImage& image) noexcept
                       ? 1
                       : 0;
     }
-    // Rule B at the inlined tests (on_unreal_init: no battle runs, so the crossing calls can be placed from here).
+    // The player's weight at the inlined tests (on_unreal_init: no battle runs, so the crossing calls can be placed
+    // from here).
     const auto hate = image.Rebase(facts::kBattleHateTypeCall, 5);
     placed += hate && PlaceTypeAnswer(g_hate, *hate, type_answer_code::kR14, *pmGet, false, L"the hate rows' leader test") ? 1 : 0;
     for (std::size_t i = 0; i < g_tie.size(); ++i)

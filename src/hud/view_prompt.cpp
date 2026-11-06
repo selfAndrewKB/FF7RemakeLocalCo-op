@@ -42,7 +42,7 @@ using DrawStringFn = std::int32_t (*)(void* canvas, float x, float y, const wcha
 constexpr int kPlayers = players::scopes::kMaxPlayers;
 
 // The look: a dark translucent box in the lower middle of the view, white lines, one in a warm highlight. Sizes are
-// for a 1080-pixel-high view and scale with the view's height (the font's legacy size is small: RE-view-text.md §2.5).
+// for a 1080-pixel-high view and scale with the view's height (the font's legacy size is small: RE-view-text.md).
 constexpr float kBox[4]       = {0.0f, 0.0f, 0.0f, 0.65f};
 constexpr float kText[4]      = {1.0f, 1.0f, 1.0f, 1.0f};
 constexpr float kHighlight[4] = {1.0f, 0.85f, 0.35f, 1.0f};
@@ -70,7 +70,7 @@ std::array<bool, kPlayers>   g_logged{};  // the first draw in that view logged
 float                        g_lineAt1 = kLineAt1;
 std::uint64_t                g_draws = 0, g_noFont = 0, g_noCanvas = 0;
 
-/// The offsets of the reflected `HUD:DrawRect`'s parameters, by name (RE-view-text.md §2.4 lays them out from the dump;
+/// The offsets of the reflected `HUD:DrawRect`'s parameters, by name (RE-view-text.md lays them out from the dump;
 /// read here so a different layout is refused rather than written into).
 bool LookUpDrawRect()
 {

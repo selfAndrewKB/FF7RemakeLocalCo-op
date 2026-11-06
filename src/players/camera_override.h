@@ -1,15 +1,14 @@
 #pragma once
 
-// A seat's member's camera overrides reach that seat's camera (RE-lock-camera-ledger.md row X3).
+// A seat's member's camera overrides reach that seat's camera (research/RE-lock-camera-ledger.md).
 //
 // A character's attack animations carry camera-override notify states. Their begin and end call the delegate the
 // character holds (a TFunction whose handler is one static function of the game): it looks up "the" operator's
 // NotifyOverride flavor through the field root's operator weak, so the root operator plays it. A seat's operator
 // binds that delegate on the seat's member with the game's own SetOwnerChara, but the handler still reaches player
-// 1's operator: player 2's attacks shook player 1's camera and never player 2's. The game has no per-operator route
-// (in single player the one bound character is the leader, and the root operator is its operator). Rebirth met the
-// same leak as one global module shared by every camera manager and gave each its own instance; here each operator
-// already owns its flavor, only the routing is global.
+// 1's operator: left alone, a further player's attacks shake player 1's camera and never their own. The game has no
+// per-operator route (in single player the one bound character is the leader, and the root operator is its
+// operator). Each operator already owns its flavor; only the routing is global.
 //
 // So the lever is the routing: the handler pointer in the seat's member's delegate is replaced by one that opens
 // that seat's operator scope (the root weak answering the seat's operator) and calls the game's handler, so the

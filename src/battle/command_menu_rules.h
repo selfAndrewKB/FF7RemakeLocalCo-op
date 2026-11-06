@@ -1,7 +1,6 @@
 #pragma once
 
-// The command menus' shared engine state, as rules without the game (battle/command_menu_tick.h applies them;
-// Rebirth's player_two/menu_rules held the two-player form).
+// The command menus' shared engine state, as rules without the game (battle/command_menu_tick.h applies them).
 
 #include <algorithm>
 #include <cstdint>
@@ -13,8 +12,8 @@ namespace lss::battle::command_menu_rules {
 /// game's first and then each seat's in order, and the last write wins. So that any menu slows the world, player
 /// 1's write starts the frame's least value and each seat's write takes the least of the frame's so far and its
 /// own. A seat's write in a frame where player 1's tick wrote nothing goes as asked and is counted: the game's tick
-/// writes every frame (RE-battle.md §2.7), so the count stays 0 unless that changes.
-/// With the slow switched off (the menu-slow setting, RE-menu-slow.md §7) every write asks for full speed, the value
+/// writes every frame (research/RE-battle.md), so the count stays 0 unless that changes.
+/// With the slow switched off (the menu-slow setting, RE-menu-slow.md) every write asks for full speed, the value
 /// the game's tick writes while no menu is open, so the world runs on under an open menu.
 class SlowWrites
 {

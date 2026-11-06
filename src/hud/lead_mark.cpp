@@ -29,7 +29,7 @@ constexpr float         kLineLength     = 60;  // cm: the diamond above a standi
 constexpr float         kVisibleStart   = 5000;  // cm: the diamond shows within 50 m of the seat's character
 // The "new" flag clears within this of the instance's character. AddIcon sets it again on every call for a key the
 // story registry lacks; at this range the first update clears it, so the mark looks like a seen objective (no rim, no
-// "new" label), and the hidden entry's label in the game's instance stays empty (RE-lead-mark-check.md §2.2, §3).
+// "new" label), and the hidden entry's label in the game's instance stays empty (RE-lead-mark-check.md).
 constexpr float         kSeenWithin     = 1.0e7f;  // cm
 constexpr std::uint32_t kCheckEvery     = 10;  // ticks
 constexpr float         kMovedCm        = 1;   // a point further than this from the placed one is a new point

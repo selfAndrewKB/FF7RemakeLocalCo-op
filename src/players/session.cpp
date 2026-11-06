@@ -64,7 +64,7 @@ using RC::Unreal::UFunction;
 using RC::Unreal::UObject;
 namespace UObjectGlobals = RC::Unreal::UObjectGlobals;
 
-/// The field is back after a world change (RE-lifecycle-world.md §8): play state, the steady step, running. The
+/// The field is back after a world change (research/RE-lifecycle-world.md): play state, the steady step, running. The
 /// entry's step 12 re-reconciles every non-leader controller, so a join before step 13 would be undone.
 constexpr std::uint8_t kStatePlay  = 6;
 constexpr std::uint8_t kStateLoading = 5;
@@ -1053,7 +1053,7 @@ try
                                seat.Name(), lock, back ? L"yes" : L"NO");
             return;
         }
-        // The game's own state decides the return (RE-script-release.md §4: the event bit alone undid a keep-group
+        // The game's own state decides the return (RE-script-release.md: the event bit alone would undo a keep-group
         // hand): its leader back with a player controller. The funnel is heard at its entry; this is the backstop,
         // and the retry while a script still held the member at the game's return.
         if (party_member::LeaderWithPlayer())

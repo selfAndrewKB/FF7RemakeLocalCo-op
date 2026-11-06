@@ -6,11 +6,11 @@
 // The sideways offset. The game's camera places itself from a pose whose aim offset is in world units (a town's row 48, an
 // interior's 50, wall running and battle targeting 50), so the same offset fills about twice the screen share in a view half
 // as wide, and the worst scripted rows push the character off it. Nothing in the camera reads the view's shape and no
-// per-player lever for the offset exists, so this is a documented exception, as in Rebirth (camera/shoulder_scale): the one
+// per-player lever for the offset exists, so this is a documented exception: the one
 // call that turns the aim offset into a world point (FRotator::RotateVector in AEndFieldCameraOperator's Tick) gets a copy with
 // its sideways part multiplied by the view's factor (split_fov_rules::ShoulderFactor). The operator's own pose is not touched,
 // so nothing accumulates and every later step follows the placed camera. Field and battle are one operator, one site.
-// Rebirth's multiply sits on the pose before its FinalizePose; Remake has no such step, and its aim offset is lagged and read
+// The pose itself cannot take the multiply: its aim offset is lagged and read
 // back next frame, so writing the pose would shrink it a little more each frame in a leader change.
 //
 // The battle camera's lean. FEndCameraFlavorTargetOffset aims by the target's screen X against the middle of the whole window,

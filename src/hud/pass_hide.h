@@ -1,6 +1,6 @@
 #pragma once
 
-// Each view's HUD image shows only its own player's world cursors (RE-hud-families.md §3, RE-field-icons-two.md):
+// Each view's HUD image shows only its own player's world cursors (RE-hud-families.md, RE-field-icons-two.md):
 // left alone, player 1's blue talk and examine cursor shows in every other player's view.
 //
 // The turn-back alert (slot 36, over player 1's leader) is decided from player 1's leader and placed through player 1's

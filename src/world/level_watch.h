@@ -1,7 +1,7 @@
 #pragma once
 
 // Logging only: what loads, shows, hides and unloads the world's levels, so the further players' areas can be held by
-// the game's own loader (research/RE-world-streaming-players.md, lever A and the live checks of §8).
+// the game's own loader (research/RE-world-streaming-players.md).
 //
 // The game decides residency and visibility from player 1's area alone: Square Enix's EnvironmentSet manager traces
 // down from the party leader, and on a change of the area set it requests that set's level list on visibility slot 4

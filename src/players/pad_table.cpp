@@ -114,7 +114,7 @@ DWORD WINAPI GetStateFor(DWORD slot, XINPUT_STATE* state) noexcept
     const DWORD result = g_get(static_cast<DWORD>(user), state);
     if (result != ERROR_SUCCESS)
     {
-        *state = XINPUT_STATE{};  // the engine reads the buffer as left after a failure (RE-pad-slots.md §3)
+        *state = XINPUT_STATE{};  // the engine reads the buffer as left after a failure (RE-pad-slots.md)
         g_pads[static_cast<std::size_t>(user)].hold  = {};  // a View held back as it dropped out is not a tap on its return
         g_pads[static_cast<std::size_t>(user)].leave = {};
         g_pads[static_cast<std::size_t>(user)].last  = 0;

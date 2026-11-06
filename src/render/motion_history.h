@@ -1,8 +1,7 @@
 #pragma once
 
 // Every player's view keeps the motion of moving things: the renderer's table of where each moving object was last frame
-// steps once a frame, as with one player, not once per player's family (research/RE-velocity-per-family.md,
-// S-RMK-VELFAMILY).
+// steps once a frame, as with one player, not once per player's family (research/RE-velocity-per-family.md).
 //
 // Why: TAA lines each frame up with the last one by each object's motion since then, which the velocity pass reads from
 // the scene's motion table (stock 4.18 FMotionBlurInfoData, FScene+0x6350). Every submission steps the table twice:

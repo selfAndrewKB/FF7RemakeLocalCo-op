@@ -43,7 +43,7 @@ GetStateFn Load() noexcept
     if (!g_loadTried)
     {
         g_loadTried = true;
-        // The game's own XInput first (its only import, RE-pad-slots.md §2.5): the poll sees what the game's reader sees.
+        // The game's own XInput first (its only import, RE-pad-slots.md): the poll sees what the game's reader sees.
         for (const wchar_t* name : {L"xinput1_3.dll", L"xinput1_4.dll", L"xinput9_1_0.dll"})
         {
             if (HMODULE module = LoadLibraryW(name); module != nullptr)

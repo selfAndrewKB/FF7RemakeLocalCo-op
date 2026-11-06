@@ -1,10 +1,9 @@
 #pragma once
 
 // The scene camera on every further player's view: a cutscene, a talk scene or an event camera plays on each further
-// player's view as it does on player 1's (research/RE-cutscene-camera-two.md, pass S-RMK-CUTCAM;
-// RE-cutscene-scene-state.md; RE-camera.md §2.2-2.4). Rebirth collapsed to player 1's single view for scenes (its
-// whole_screen module); here the scene camera is given to each further player's camera manager instead: on a monitor
-// row this is what each further column shows, and in one window the views collapse for scenes
+// player's view as it does on player 1's (research/RE-cutscene-camera-two.md;
+// RE-cutscene-scene-state.md; RE-camera.md). The scene camera is given to each further player's camera manager: on a
+// monitor row this is what each further column shows, and in one window the views collapse for scenes
 // (views/whole_screen).
 //
 // Each camera manager shows the lowest active of its 25 pose slots and blends between its own slots. A scene writes

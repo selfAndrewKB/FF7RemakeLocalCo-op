@@ -4,7 +4,7 @@
 //
 // When a player joins during play, the engine spawns its controller and camera manager, and the camera
 // manager's BeginPlay (AEndPlayerCameraManager, vtable slot 94) runs inside that spawn. For a second
-// player it fails two ways (Remake/Documentation/research/RE-players-viewport.md §1):
+// player it fails two ways (research/RE-players-viewport.md):
 //   - its owning controller (PCOwner) is not set yet, and SetViewTarget reads the controller's pawn
 //     through it (the crash CreatePlayer(1, true) produces);
 //   - it spawns its main camera actor with the fixed name "EndCameraActor", and UE 4.18's spawn silently

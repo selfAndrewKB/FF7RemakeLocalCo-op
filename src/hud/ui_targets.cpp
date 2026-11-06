@@ -150,7 +150,7 @@ bool Logging() noexcept
     return g_logFrames.load(std::memory_order_relaxed) > 0;
 }
 
-/// H1, both AllocBind sites.
+/// The bind: both AllocBind sites.
 std::uint64_t UiPass(void* sceneTargets, void* commandList, void* view, platform::CallRedirect& call)
 {
     std::int32_t rect[4];
@@ -202,7 +202,7 @@ std::uint64_t UiPassClearOnly(void* sceneTargets, void* commandList, void* view)
     return UiPass(sceneTargets, commandList, view, g_allocClearCall);
 }
 
-/// H4.
+/// The final pass.
 void PostProcess(void* postProcessing, void* commandList, void* view, void* velocity)
 {
     image_entries::EndUiPasses();

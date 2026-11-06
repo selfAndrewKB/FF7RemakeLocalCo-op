@@ -1,16 +1,16 @@
 #pragma once
 
 // The pieces of world/area_levels that need no game: the one level request every player's area shares
-// (research/RE-world-streaming-levers.md §1, §4.2-§4.4). Host-tested (tests/area_levels_rules_test.cpp).
+// (research/RE-world-streaming-levers.md). Host-tested (tests/area_levels_rules_test.cpp).
 //
 // The game asks its slot-4 level request for player 1's area's level list, one byte per level: 0 shown, 1 hidden
 // (collision off), 2 hidden (collision kept). The game loads what the list adds and unloads what it drops, so the list
 // is what is loaded as well as what is shown. The merge adds each further player's area to it:
 //   - player 1's levels first, in the game's order, then each further player's levels not listed yet;
-//   - a level is listed once (a second copy takes a level reference the game never gives back, §4.3);
+//   - a level is listed once (a second copy takes a level reference the game never gives back);
 //   - its byte: shown if any player's area shows it, else hidden with its collision if any player's area keeps that,
 //     else the first lister's (a player standing on a level must keep its floor; the per-view hides are separate);
-//   - at most 256 levels (the request holds 256 and does not check, §4.2): all of player 1's, then the further
+//   - at most 256 levels (the request holds 256 and does not check): all of player 1's, then the further
 //     players' shown levels, then their hidden-with-collision, then the rest; whatever does not fit is cut and counted.
 
 #include <array>

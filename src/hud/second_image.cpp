@@ -304,7 +304,7 @@ void Driver(void* delegate)
     if (g_slot != nullptr)
     {
         // Player 1's pass did not take the slot (its render returned early). The acquire advanced the ring, so the slot
-        // is submitted as the game's own pass would have, holding the further columns' entries alone (Rebirth's lesson).
+        // is submitted as the game's own pass would have, holding the further columns' entries alone.
         g_submit(g_renderer, 2, g_slot);
         g_slot = nullptr;
         platform::LogDebug(L"HUD image: player 1's pass did not render; the held slot submitted on its own");

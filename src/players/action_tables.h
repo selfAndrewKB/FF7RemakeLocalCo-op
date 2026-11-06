@@ -1,6 +1,6 @@
 #pragma once
 
-// A pad's own copy of the game's action state (RE-input.md §1.6-§1.7, RE-input-p2.md §2.3).
+// A pad's own copy of the game's action state (research/RE-input.md, RE-input-p2.md).
 //
 // Square Enix's input object keeps every action in two TSets of 40-byte elements (an FName key, then at +0x18
 // four state bytes: held last frame, held now, repeat, changed-this-frame latch): the raw table the gameplay

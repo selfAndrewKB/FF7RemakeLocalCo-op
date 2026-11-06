@@ -3,8 +3,8 @@
 // What a player's window says (players/player_window; the rules: players/player_window_rules.h). Pure: host-tested
 // (tests/player_window_test.cpp).
 //
-// One text, two forms. The game's form is markup for its message window (hud/view_window; research/RE-game-widgets.md
-// §12): button icons by physical name (`<button=cross>` is A on an Xbox pad and ✕ on a DualShock; physical, because
+// One text, two forms. The game's form is markup for its message window (hud/view_window, RE-game-widgets.md):
+// button icons by physical name (`<button=cross>` is A on an Xbox pad and ✕ on a DualShock; physical, because
 // the window reads the physical buttons, never the confirm swap), each forced to a pad's art (`,pad`: the game
 // otherwise draws the last device's, a keyboard's keycaps after a key press), the character in the game's yellow,
 // lines joined by CR LF as the game's own strings are. The plain form is the same lines in words, for the fallback

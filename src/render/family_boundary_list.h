@@ -1,7 +1,7 @@
 #pragma once
 
-// The RHI command list and context layout the family boundary relies on (render/family_boundary.h; RE-haze-occlusion.md
-// Pass 10 I.1.4, I.1.5). Pure logic over the game's memory (tests/family_boundary_list_test.cpp).
+// The RHI command list and context layout the family boundary relies on (render/family_boundary.h;
+// research/RE-haze-occlusion.md). Pure logic over the game's memory (tests/family_boundary_list_test.cpp).
 //
 // FRHICommandListBase (stock 4.18 roles, this build's offsets):
 //   +0x00 Root            the first node
@@ -11,12 +11,12 @@
 //   +0x20 Context         the command context the walk executes on (RHIGetDefaultContext)
 //   +0x30 / +0x38         the arena: cursor, end
 // A node is {Next, ExecuteAndDestruct}: 4.18 nodes hold a function pointer, called as fn(list, node), with Next read
-// before the call (FRHICommandListExecutor::ExecuteInner 0x1426E0560). Rebirth's 4.26 nodes hold a vtable instead.
+// before the call (FRHICommandListExecutor::ExecuteInner).
 //
 // The game appends a node inline in every command (there is no callable "append"); AppendNode is that sequence written
-// out once, byte for byte as the game's own mid-family submit node in FenceOcclusionTests (0x1421E6280..0x1421E62EA):
+// out once, byte for byte as the game's own mid-family submit node in FenceOcclusionTests:
 // align the cursor to 8; when the node does not fit (or the arena is empty), grow the arena through the game's
-// allocator (0x141CB8DA0, passed the node size + 8 as the game passes it) and align again; then advance the cursor,
+// allocator (passed the node size + 8 as the game passes it) and align again; then advance the cursor,
 // count the command, link the node and fill it.
 
 #include <cstddef>
@@ -43,7 +43,7 @@ inline constexpr std::size_t kDeviceDirect = 0x690;
 inline constexpr std::size_t  kNodeSize    = 0x10;  // {Next, ExecuteAndDestruct}
 inline constexpr std::int32_t kGrowRequest = kNodeSize + 8;
 
-/// The arena's grow (0x141CB8DA0): gives the arena a new block, rewriting its cursor and end.
+/// The arena's grow: gives the arena a new block, rewriting its cursor and end.
 using GrowFn = void (*)(void* arena, std::int32_t bytes);
 /// A node's ExecuteAndDestruct(list, node).
 using NodeFn = void (*)(void* commandList, void* node);

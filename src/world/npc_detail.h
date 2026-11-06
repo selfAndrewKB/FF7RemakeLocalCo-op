@@ -1,8 +1,7 @@
 #pragma once
 
 // The NPCs a further player is near keep the detail the game would give them from that player's own camera
-// (research/RE-npc-near-player-two.md §1; Rebirth's player_two/charapop_near, single-seat; the seats
-// follow plan/seats.md step 3: the reach is the union of every further player's view).
+// (research/RE-npc-near-player-two.md): the reach is the union of every further player's view.
 //
 // The game's NPC detail (CharaPop) judges every entry from player 1's camera only: an NPC beside player 2 pauses as
 // soon as it is past a few metres outside player 1's view cone, and the ones that hide by distance fade out. The
@@ -10,7 +9,7 @@
 // animations set with CharaPop_SetEntryMinLODLevel_ByName (3 keeps an entry awake, shown and fully animated; 0 clears
 // it). While a further player is in, the mod calls it the same way for the entries their views need.
 //
-// The one recreated piece, documented in the plan's §2: which entries the further players' views need. It is the
+// The one recreated piece, documented in the plan: which entries the further players' views need. It is the
 // evaluator's own rule (world/charapop_rule.h) with the game's own distances and overrides read from the manager,
 // applied to each further player's camera instead of player 1's. Only entries player 1's camera does not already
 // keep are raised, so with the players together almost nothing is. A raised entry is released after about a second

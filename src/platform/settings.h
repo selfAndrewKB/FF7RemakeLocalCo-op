@@ -37,7 +37,7 @@ struct Option
     std::span<const wchar_t* const> words;     // the words the option takes, lower case, in the help's order
     const wchar_t*                  fallback;  // the word taken when the file has none: one of `words`
     const wchar_t*                  help;      // one line, the console's help
-    bool                            experimental = false;  // the mod menu shows it as experimental (plan/README.md §9)
+    bool                            experimental = false;  // the mod menu shows it as experimental
     // The Co-op page (menu/coop_menu_rules.h): the row's name, each word's name in `words`' order, a short help line.
     const wchar_t*                  label = L"";
     std::span<const wchar_t* const> wordLabels{};

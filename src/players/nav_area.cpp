@@ -428,9 +428,10 @@ void TickSeat(int seat, void* member) noexcept
         return;
     }
     // A member taken or given back keeps the room limit its last component wrote: a seat's controller ends with no
-    // Leave, and running the game's Leave instead would pop records the next diff still needs (RE-room-walk-limit.md
-    // §8). Cleared to the game's own "no room" value; a component holding it in a room writes it again on its next
-    // diff (a new controller's Enters, a kept one's Stay). Player 1's room character is left to its own component.
+    // Leave, and running the game's Leave instead would pop records the next diff still needs
+    // (RE-room-walk-limit.md). Cleared to the game's own "no room" value; a component holding it in a room writes it
+    // again on its next diff (a new controller's Enters, a kept one's Stay). Player 1's room character is left to its
+    // own component.
     void* const one = RoomPlayerOne();
     const auto  otherSeats = [seat](const void* character) {
         for (int other = 1; other <= kSeatsBuilt; ++other)

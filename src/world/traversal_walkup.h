@@ -3,17 +3,16 @@
 // Players 2 and 3 walk their member up to ladders, squeezes, crawls, monkey bars, climbs, jumps, vaults, rubble,
 // duck-unders, slides, fence gaps, steps, balance beams, fans, counter gates, lifting ropes, gap jumps, pole slides and
 // wire fences, as player 1 does
-// (research/RE-traversal-walkup-two.md, RE-traversal-items.md
-// §10-§13; the action itself: world/traversal_action.h).
+// (research/RE-traversal-walkup-two.md, RE-traversal-items.md; the action itself: world/traversal_action.h).
 //
 // Every walk-up spot is a field-action actor. In single player the primary controller's PlayerTrigger enters the spot's
 // volume, the actor's enter stores the party leader as its one user, and every frame the actor's TryStart tests that
 // user (moving toward an end, the stick turned by the primary camera) and requests the action on the user's own
 // field-action component. Nothing of that reaches a further player: the game sweeps only the primary controller's
-// trigger, and the user is always the leader. Rebirth's trigger_two did the same job (taken: a
-// second pass right after the game's, admitted classes only, the rest held back and logged; changed: Remake's
-// dispatcher resolves the trigger through the party manager, so the pass is the game's own dispatch with the seat's
-// controller answered at that one call, and the per-player state is the actor's user block):
+// trigger, and the user is always the leader. So a second pass runs right after the game's (admitted classes only,
+// the rest held back and logged). The game's dispatcher resolves the trigger through the party manager, so the pass
+// is the game's own dispatch with the seat's controller answered at that one call, and the per-player state is the
+// actor's user block:
 //   - the sweep: after the game's sweep of player 1's trigger, the game's sweep runs for each seat's own trigger copy
 //     (players/player_trigger.h), which adds the seat's entry to the same pending list; a queue records whose each
 //     PlayerTrigger entry is, and the dispatcher's resolve of that entry answers the seat's controller;

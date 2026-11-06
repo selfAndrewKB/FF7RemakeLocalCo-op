@@ -1,20 +1,20 @@
 #pragma once
 
-// The columns' layer entries on the render thread (RE-hud-two-images.md §3, §7: H2 and H3).
+// The columns' layer entries on the render thread (research/RE-hud-two-images.md).
 //
 // Pool 2's ring slot holds [the further columns' entries, player 1's entry] while a further column has an image
 // (hud/second_image.h). The render thread draws the slot once per view (hud/ui_targets.h gives each view its own
 // target), so:
 //   - each entry is drawn only in its own column's view: the call to FEndMenuRenderer__DrawEntryBatchToTarget
-//     (0x1439FCFD8) is redirected and skipped for another column's entry (overlay_pass::DrawSkipped). Uploads stay
+//     is redirected and skipped for another column's entry (overlay_pass::DrawSkipped). Uploads stay
 //     (they run before it, and only on a fresh consume), so whichever view consumes the slot uploads every entry;
 //   - each further column's entries upload into and draw from a vertex/index buffer pair of that column's own
-//     (hud/image_code.h at 0x143A000E2), so a view that reuses the slot draws each entry from its own last upload.
+//     (hud/image_code.h), so a view that reuses the slot draws each entry from its own last upload.
 // The pairs are made on the render thread the way FEndMenuRenderer's constructor makes pool 2's (64-byte resources with
 // the game's vtables, capacities 1024/1536, InitResource), once, and never freed (the renderer lives as long as the
 // game). The game grows them as it grows its own. No game path makes a second pair: documented in
-// RE-hud-two-images.md §7 as the one recreation of this step, made once more for the third column (plan/seats.md
-// step 6). One entry table and one pair per further column (columns 1 and 2).
+// RE-hud-two-images.md as the one recreation of this step, made once more for the third column.
+// One entry table and one pair per further column (columns 1 and 2).
 
 namespace lss::platform {
 class GameImage;

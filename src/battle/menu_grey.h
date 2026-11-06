@@ -31,7 +31,7 @@
 // the slow-down in the game, so the switch has to reach it here. Switched off: both calls are skipped (the game's other sites,
 // a summon's own muffle among them, stay as they are; an unmatched lift from them is harmless, the values being absolute).
 // Switched on: the game's, except that a close leaves the muffle up while another player's menu still waits, or the first of
-// two to close would lift it for the other (Rebirth's rule). A flip with a menu waiting runs the game's own call once. The
+// two to close would lift it for the other. A flip with a menu waiting runs the game's own call once. The
 // reading `menu-sound` shows what the mix holds. Logged at Info at install, Debug per skip, hold and flip.
 // Known edge, switched on only: a further player's controller that stops ticking at an open wait (`command-menu` off mid-menu)
 // still counts as waiting, so the muffle stays until that player leaves or its menu ticks again.

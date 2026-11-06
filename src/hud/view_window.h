@@ -1,7 +1,7 @@
 #pragma once
 
 // The game's own framed message window in one player's view: the player windows (players/player_window;
-// research/RE-game-widgets.md §12).
+// research/RE-game-widgets.md).
 //
 // Each window is the game's Com_Window_01_C (UEndMessageWindow), made and shown by the game's own sequence
 // (EndUI_ShowMessageWindow's: create, add to the HUD overlay, text, no options, open with its In animation and sound,
@@ -11,7 +11,7 @@
 // PopFromFocusStack), so focus never leaves what had it and no key ever reaches the window: the player windows read the pads
 // itself. Every root on the overlay is painted in every player's column; hud/pass_hide makes a window transparent in
 // every pass but its view's (ViewOf), as it does for the cursors, and the window's animations never write that
-// colour (§12.5). A copy of player 1's picture shows no window (its own HUD pass hides them all). A closed window plays
+// colour. A copy of player 1's picture shows no window (its own HUD pass hides them all). A closed window plays
 // the game's Out and close sound and is taken out of the overlay by its own tick (the game's remove-after-Out byte). A
 // load or map change closes the windows through the game's list. Opens and closes logged at Info, text changes at
 // Debug. Reading `views.window`. Game thread.

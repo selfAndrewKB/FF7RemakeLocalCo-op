@@ -1,8 +1,7 @@
 #pragma once
 
-// The enemy bar's class in a further column (RE-hud-battle-markers.md §3.1, RE-target-cursor-two.md §6.4; Rebirth's
-// hud_rules::ClassifyGauge, the same decision from the same inputs), a pure rule tested on the host
-// (tests/bar_class_test.cpp). hud/marker_replay keeps the engine reads, the calls and the log.
+// The enemy bar's class in a further column (research/RE-hud-battle-markers.md, RE-target-cursor-two.md), a pure rule
+// tested on the host (tests/bar_class_test.cpp). hud/marker_replay keeps the engine reads, the calls and the log.
 //
 // The game's tick classifies each bar once, with player 1's displayed target: targeted = (a) the bar's source is
 // that target, or (b) its main target, or (c) the "always show" case (the leader clamp skipped: the tick passes the

@@ -2,7 +2,7 @@
 
 // The mirror players: an extra local player of the mod's in every column no player fills, showing player 1's picture,
 // so a spanned window never shows one view across the whole row (plan/topics/views.md: the mirror, always, for
-// everything outside field gameplay; plan/seats.md step 5: up to two mirrors,
+// everything outside field gameplay; up to two mirrors,
 // one per empty column of three).
 //
 // The engine's own levers. UGameplayStatics::CreatePlayer for each empty column (as a further player's join, through
@@ -22,10 +22,9 @@
 // title all keep the world and the local players (players/field_exit.h), so a loading screen draws in their columns
 // too; the column a further player leaves for a world change is filled on that tick (FillAtLeave). A mirror is added only
 // in a steady field (the title is one), one per tick, and again if the engine drops it.
-// Rebirth's views/third_view gave the shape: a local player of the mod's beside the session's, removed before a
-// further player leaves. The differences: Remake's End manager ignores every view target but its own camera actor
-// (research/RE-camera.md §2.1), so the camera is a slot copy, not a SetViewTarget re-aim; the mirrors fill the
-// columns no player has instead of needing a further player in; they stay through world changes; two of them.
+// A mirror is a local player of the mod's beside the session's, removed before a further player leaves. The End
+// manager ignores every view target but its own camera actor (research/RE-camera.md), so the camera is a slot copy,
+// not a SetViewTarget re-aim. The mirrors stay through world changes.
 //
 // Wanted while more columns are shown than players are in (views/column_rules.h: the span's columns while held, or
 // the console's `view-columns`). Always on: nothing else fills such a column. Reading `mirror-player.state`. Game thread only.

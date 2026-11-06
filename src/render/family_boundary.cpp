@@ -20,7 +20,7 @@ namespace lss::render::family_boundary {
 
 namespace {
 
-// Facts read from the database (RE-haze-occlusion.md Pass 10 I.1.5, checked). The entry bytes hold no relocated or
+// Facts read from the database (research/RE-haze-occlusion.md, checked). The entry bytes hold no relocated or
 // RIP-relative operand.
 constexpr std::array<std::uint8_t, 16> kClearStateBytes{0x48, 0x89, 0x5C, 0x24, 0x18, 0x48, 0x89, 0x4C,
                                                         0x24, 0x08, 0x55, 0x56, 0x57, 0x41, 0x54, 0x41};
@@ -32,7 +32,7 @@ constexpr std::array<std::uint8_t, 16> kGrowBytes{0x40, 0x56, 0x57, 0x41, 0x56, 
                                                   0x30, 0x83, 0xC2, 0x10, 0x4C, 0x8B, 0xF1, 0x48};
 constexpr platform::FunctionFact kGrow{L"the RHI command arena's grow", 0x141CB8DA0, kGrowBytes};
 
-constexpr std::uintptr_t kContextVtable    = 0x144D3AA68;  // FD3D12CommandContext (the redirector's is 0x144D3A690)
+constexpr std::uintptr_t kContextVtable    = 0x144D3AA68;  // FD3D12CommandContext (not the redirector's)
 constexpr std::uint32_t  kSubmitSlot       = 0x90;         // its RHISubmitCommandsHint entry (slot 18)
 constexpr std::uintptr_t kImmediateList    = 0x14593F4D8;  // GRHICommandList_Immediate (the object)
 constexpr std::size_t    kImmediateListEnd = 0x40;         // the fields the boundary reads and writes
@@ -47,7 +47,7 @@ constexpr std::uint64_t kLogPeriod = 30'000;  // ms between the Debug lines
 using QueueTaskFn = void (*)(void* taskGraph, void* task, std::uint32_t thread, std::uint32_t currentThread);
 using ContextFn   = void (*)(void* context);
 
-/// A render-thread task laid out as the game's render commands (TGraphTask, Pass 10 I.1.4): FBaseGraphTask's vtable,
+/// A render-thread task laid out as the game's render commands (TGraphTask): FBaseGraphTask's vtable,
 /// the thread to run on and the prerequisites outstanding, the task's storage, TaskConstructed and Subsequents (none:
 /// fire and forget). The task graph reads only the first three; the mod's own fields follow.
 struct Task
@@ -320,7 +320,7 @@ void Body(family_now::Family next, bool reset, ByteWrite write) noexcept
 }
 
 /// The task's vtable[1]: ExecuteTask(this, NewTasks&, CurrentThread). The task is the mod's: freed here, never given to
-/// the game's small-task free list (the caller does not touch the task after this returns, Pass 10 I.1.5 point 4).
+/// the game's small-task free list (the caller does not touch the task after this returns).
 void TaskExecute(Task* task, void* /*newTasks*/, std::uint32_t /*currentThread*/) noexcept
 {
     Body(task->next, task->reset, task->write);

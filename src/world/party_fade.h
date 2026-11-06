@@ -1,9 +1,8 @@
 #pragma once
 
 // Party members never vanish near a camera while a further player is in: the game fades a party member that comes too
-// close to the camera, which suits one camera and not several (research/RE-camera-fades.md L1 and L2;
-// the seats follow plan/seats.md step 3: the rule is the same for any number of further players, so it is keyed on
-// how many are in, not on a seat).
+// close to the camera, which suits one camera and not several (research/RE-camera-fades.md). The rule is the same
+// for any number of further players, so it is keyed on how many are in, not on a seat.
 //
 // What hid them is Square Enix's render near-fade on each mesh. Every view fades a mesh its own camera is within a
 // few centimetres of, but the fade state is kept once per mesh and reset when another view evaluates it in the same

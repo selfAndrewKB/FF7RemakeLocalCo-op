@@ -18,10 +18,10 @@ namespace lss::views::whole_screen {
 
 namespace {
 
-// EndFieldOnOffTable (Dumps/CXXHeaderDump/EndGame_enums.hpp; research/RE-lifecycle-world.md §2.4: the ids the game
+// EndFieldOnOffTable (Dumps/CXXHeaderDump/EndGame_enums.hpp; research/RE-lifecycle-world.md: the ids the game
 // state's own menu opener reads): ShowMainMenu, ShowShopMenu, ShowMapJournal, ShowTutorial, ShowTutorial_TouchPanel.
 // 78 ShowColosseumMenu is not a menu: it is held for a whole VR simulator or colosseum session, fights included
-// (research/RE-minigame-signal.md §1), so it is the arena signal, read with the minigame bit and the battle state.
+// (research/RE-minigame-signal.md), so it is the arena signal, read with the minigame bit and the battle state.
 constexpr std::array<std::uint32_t, 5> kMenuIds{72, 73, 74, 75, 76};
 constexpr std::uint32_t                kShowColosseumMenu = 78;
 constexpr std::uint32_t                kMiniGamePlaying = 36;
@@ -91,7 +91,7 @@ Signals Read(const void* managerOne) noexcept
     // The event camera system's slot on player 1's manager: a scripted talk (the game's own angles and cuts, the HUD
     // off, the speakers alone in frame) or an event; a free talk keeps the field camera's slot (seen live:
     // Chadley's scripted talk on 18 with cuts, the armed leader's free talk on 24 alone). A field area's rail camera
-    // writes 18 in free play too (research/RE-cutscene-camera-two.md §2.3, §11 Q3), so the rule takes the slot only
+    // writes 18 in free play too (research/RE-cutscene-camera-two.md), so the rule takes the slot only
     // while a scene holds the players (the lock outside player 1's own move, or the cutscene) [ASSUMPTION until a
     // rail area is played: a rail camera holds no lock].
     s.eventCamera = scene_camera::SlotActive(managerOne, facts::kCameraSlotEvent);

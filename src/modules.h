@@ -5,15 +5,14 @@
 // it in reverse; each module logs its own install line, one whose check fails stands aside alone, and a row whose
 // needed row stood aside stands aside too (said once). The order constraints the modules carry (the shadows' call
 // site before the area blend, every needed row before the row that needs it) are pinned by static_asserts beside
-// the table: the build fails if a row moves past one. The design is Rebirth's modules.h, in place of three hand-kept
-// lists of install, remove and tick order with nested install conditions. For Remake a row names the rows it needs
+// the table: the build fails if a row moves past one. A row names the rows it needs
 // instead of each module checking its dependency at install, and the world hooks the seats' members use are removed
 // only with every further player out (RemoveWithPlayersOut).
 //
 // Outside the table, in the entry point: what every module relies on (the weak pointers, the field root, the session
 // and the modules it installs itself) before it; the session's commands, the console and the engine callback after
 // it. The mirror views are cleared and the split's show-flag mask put back by the entry point before the table's
-// removal, as before.
+// removal.
 //
 // The same file lists the modules' per-tick calls, in three phases around the session's tick: TickBeforeSession (the
 // game's state and the pads, read before the session and the console act), TickColumns (the letterbox, the window

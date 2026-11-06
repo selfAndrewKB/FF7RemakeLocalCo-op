@@ -2,19 +2,19 @@
 
 // Lays Square's HUD out inside the part of its UI image a split view shows, so each half shows the whole HUD,
 // anchored as a native screen of the half's shape, with its world markers on their objects (hud/overlay_band.h has
-// the arithmetic; RE-hud-split.md §1, RE-hud-overlay-pass.md §3, §5).
+// the arithmetic; research/RE-hud-split.md, RE-hud-overlay-pass.md).
 //
-// Two calls of the overlay's own per-frame render (SEndRootOverlay__RenderToInGameUILayer 0x141509D00, game thread)
+// Two calls of the overlay's own per-frame render (SEndRootOverlay__RenderToInGameUILayer, game thread)
 // are redirected (platform/call_redirect.h); both pass the game's values through unless the split is shown and the
 // band is on:
-//   - EndUI__GetInGameUIRect (0x141509E9D) returns the band the view's cover fit shows instead of the whole image,
+//   - EndUI__GetInGameUIRect returns the band the view's cover fit shows instead of the whole image,
 //     so the widget tree lays itself out at the band's size and anchors (a native 32:9 screen for a top/bottom half).
 //     The call crosses a 16-byte block, so it is installed from the game thread, outside the render (Tick);
-//   - FEndMenuRenderer__FindOrAddNamedLayerEntry (0x14150A006): after it, the entry's matrix gets the terms that draw
+//   - FEndMenuRenderer__FindOrAddNamedLayerEntry: after it, the entry's matrix gets the terms that draw
 //     that layout into the band unstretched (the game's matrix ignores the rect's Min), and the overlay's marker host
 //     rect becomes the pass's player's view: origin and size in window pixels, and the host scale that keeps markers on
 //     their objects. Square's own OnPaint fallback sets the host rect to the first player's view rect; the delegate
-//     path uses the whole window only because single player's view is the window (RE-hud-split.md §1.4). The HUD
+//     path uses the whole window only because single player's view is the window (RE-hud-split.md). The HUD
 //     ticks, which run before the next render, read these values.
 // A few of the render's and the placements' own 16:9 assumptions change with it (hud/layout_code.h: the centred frame, the
 // off-screen arrows' edges, the layout scale), so a band narrower than 16:9 lays out at its width.

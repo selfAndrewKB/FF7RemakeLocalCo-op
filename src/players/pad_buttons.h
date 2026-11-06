@@ -1,6 +1,6 @@
 #pragma once
 
-// Each pad's buttons for its own player (RE-input.md §1, §8; RE-input-p2.md §2: the design, a written exception).
+// Each pad's buttons for its own player (research/RE-input.md, RE-input-p2.md: the design, a written exception).
 //
 // The game keeps one merged action state for every pad: a second pad presses and releases player 1's actions,
 // and opens player 1's menus. The pad is known in exactly one place, the Slate key event's UserIndex in the

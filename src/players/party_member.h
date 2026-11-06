@@ -1,7 +1,7 @@
 #pragma once
 
-// Which deployed party member a further player plays, and when it is the player's to take (the rule carried from
-// Rebirth's player_two/party_member; RE-slot-member.md).
+// Which deployed party member a further player plays, and when it is the player's to take
+// (research/RE-slot-member.md).
 //
 // The first further player plays the member in the 2nd slot of the game's own party order: the row after the field
 // leader in the deployed formation (PartyManager+0x230..+0x232, the deployed types in ascending order, the order the

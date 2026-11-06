@@ -1,6 +1,6 @@
 #pragma once
 
-// The HUD passes by column (plan/seats.md step 4). A column is a view's place in the engine's list (where it shows on
+// The HUD passes by column. A column is a view's place in the engine's list (where it shows on
 // screen is the column order's, views/column_rules.h; each module reads a view's own rectangle): column 0 is player 1's,
 // the game's own render of the overlay, run last in the frame; the further columns (1..) are the seats' (a seat's
 // column is its place in the engine's list: the columns map, views/columns.h, set each tick) and get the mod's extra
@@ -64,7 +64,7 @@ constexpr bool OtherShape(float sizeX, float sizeY, float oneX, float oneY) noex
 
 /// The FName value of a column's layer entry: the stock name for column 0 (and the single render); for a further column
 /// the stock name with another number, column + 1 (a distinct FName to the entry search's 8-byte compare, which needs
-/// no registration; RE-hud-overlay-pass.md §3.3). Number is the FName's high dword.
+/// no registration; RE-hud-overlay-pass.md). Number is the FName's high dword.
 constexpr unsigned long long EntryName(unsigned long long stockName, int column) noexcept
 {
     return column >= 1 ? stockName + (static_cast<unsigned long long>(column + 1) << 32) : stockName;

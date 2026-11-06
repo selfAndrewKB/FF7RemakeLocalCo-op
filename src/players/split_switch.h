@@ -1,7 +1,7 @@
 #pragma once
 
 // The game viewport's stock split switch, UGameViewportClient::bDisableSplitScreenOverride
-// (research/RE-layout-fov.md §2.2 [CONFIRMED static]): while it is set, UpdateActiveSplitscreenType picks the None
+// (research/RE-layout-fov.md [CONFIRMED static]): while it is set, UpdateActiveSplitscreenType picks the None
 // layout whatever the player count, player 1's view fills the screen and every further local player gets a zero-size
 // view (CalcSceneViewInitOptions refuses it: no scene view, no render, no listener update, no HUD pass). 4.18 has no
 // reflected setter (SetForceDisableSplitscreen is 4.26's), so the byte is read and written directly, guarded, on the

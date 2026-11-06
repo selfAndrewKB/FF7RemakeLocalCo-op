@@ -1,6 +1,6 @@
 #pragma once
 
-// The pure rules of the view columns (plan/seats.md step 5: three columns). Host-tested (tests/column_rules_test.cpp).
+// The pure rules of the view columns. Host-tested (tests/column_rules_test.cpp).
 //
 // A column is a view slot across the window, as tall as its monitor on a span: column 0 is player 1's, the seats' follow in order, and the
 // mirror player fills the rest (views/mirror_player.h). How many columns the frame shows is one number for the whole
@@ -8,8 +8,8 @@
 // (`view-columns`, for the checks on one monitor).
 //
 // The engine lays three local players out from its own layout table's three-player entry (UGameViewportClient::
-// SplitscreenInfo, ThreePlayer_FavorTop: one on top, two quadrants below; research/RE-layout-fov.md §2,
-// RE-multi-monitor-views.md §7, RE-three-views.md §1). UE 4.18 has no three-column entry, so the mod writes that
+// SplitscreenInfo, ThreePlayer_FavorTop: one on top, two quadrants below; research/RE-layout-fov.md,
+// RE-multi-monitor-views.md, RE-three-views.md). UE 4.18 has no three-column entry, so the mod writes that
 // entry's three records to three equal columns while three columns are wanted and puts the stock records back after
 // (views/column_layout.cpp). The records here are the ones compared and written.
 //
@@ -18,8 +18,8 @@
 // a column shows on screen is the column order's (the setting `column-order`): by player number
 // whatever the order the players joined in; with `1 3 2` player 2's view takes the right-hand record and player 3's the
 // middle one, through the same entry, the records arranged (Slots, Arrange). A view of no player (a mirror) takes a slot left over. Any player may
-// take any screen, player 1 too (nothing in the engine ties player 1 to the first record, RE-layout-fov.md
-// §9, and the mod tells views by their place in the list, not on screen). Two views take one of the engine's two-player
+// take any screen, player 1 too (nothing in the engine ties player 1 to the first record, RE-layout-fov.md,
+// and the mod tells views by their place in the list, not on screen). Two views take one of the engine's two-player
 // entries (top and bottom, or side by side), arranged the same way (TwoSlots): the two players in the order's order.
 
 #include <algorithm>
@@ -64,7 +64,7 @@ struct Record
 inline constexpr int kThreePlayerRecords = 3;
 
 /// The stock ThreePlayer_FavorTop entry, as the viewport client's constructor fills it [CONFIRMED static,
-/// RE-multi-monitor-views.md §7]: player 1 on top at full width, the other two in the quadrants below.
+/// RE-multi-monitor-views.md]: player 1 on top at full width, the other two in the quadrants below.
 inline constexpr Record kStockFavorTop[kThreePlayerRecords] = {
     {1.0f, 0.5f, 0.0f, 0.0f},
     {0.5f, 0.5f, 0.0f, 0.5f},
@@ -81,7 +81,7 @@ inline constexpr Record kThreeColumns[kThreePlayerRecords] = {
 /// The engine's two-player layouts hold two records.
 inline constexpr int kTwoPlayerRecords = 2;
 
-/// The stock two-player entries, as the constructor fills them [CONFIRMED static, RE-layout-fov.md §9.3]: TwoPlayer_
+/// The stock two-player entries, as the constructor fills them [CONFIRMED static, RE-layout-fov.md]: TwoPlayer_
 /// Horizontal (player 1 on top, the other below) and TwoPlayer_Vertical (player 1 on the left, the other on the right).
 inline constexpr Record kStockTopBottom[kTwoPlayerRecords] = {
     {1.0f, 0.5f, 0.0f, 0.0f},

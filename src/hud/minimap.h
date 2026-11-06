@@ -1,21 +1,20 @@
 #pragma once
 
-// Each seat's own minimap and compass: a navi map manager per seat, the game's own (RE-hud-minimap-two.md; Rebirth's
-// area_icons_two and minimap, the pool-0 handover taken from them, written for the frame's passes in
-// hud/minimap_rules.h; the seats follow plan/seats.md step 3).
+// Each seat's own minimap and compass: a navi map manager per seat, the game's own (research/RE-hud-minimap-two.md;
+// the pool-0 handover between the frame's passes is written in hud/minimap_rules.h).
 //
 // EndUISystem[29] is one manager (0x268 bytes) owning the minimap root NaviMap_C, its octagon map, icons, footprints and
 // the compass, all centred on the party leader and turned by the primary camera. Each seat gets an instance of its own,
 // made with the game's allocator and constructor and bound to the banner fades as the game binds its own:
-//   - its tick runs right after the game's (the call 0x1413AE3A0 in the HUD tick), with the real DeltaTime, as the seat:
+//   - its tick runs right after the game's (its call in the HUD tick), with the real DeltaTime, as the seat:
 //     inside the seat's primary and leader contexts (players/scopes.h: the primary controller PM+0 the camera reads, the
 //     leader type byte PM+0x233 the centre reads, and the leader's weak pair, which the Leader context lends too; the
 //     tick's reads to depth 3 are the two former, RE-hud-minimap-two.md, deeper ones [UNKNOWN]), with the compass's
-//     first player controller (the call 0x1413EFDE9) the seat's, the slot EndUISystem[29] the seat's instance (the
+//     first player controller (one call in the tick) the seat's, the slot EndUISystem[29] the seat's instance (the
 //     compass reads the global slot's icons), and the seat's column's marker host set; the tick is skipped, with a
 //     line, while the contexts cannot be lent (a member not bound);
 //   - its octagon renders into a texture of its own: while a seat's root is created (the creator's AddToRootOverlay
-//     call 0x141473F36) the octagon's RenderTexture is nulled, so the game's Construct makes a private target;
+//     call) the octagon's RenderTexture is nulled, so the game's Construct makes a private target;
 //   - the game's events that only reach EndUISystem[29] (map set-up, field start and end, reset, icon add and remove:
 //     call redirects) are made on every seat's instance too, and each instance's shown/enabled/mode flags follow
 //     player 1's through the game's own setters;
@@ -64,7 +63,7 @@ void EndFrame() noexcept;
 void SetEnabled(bool on) noexcept;
 bool Enabled() noexcept;
 
-/// The game's icon parameter block (AddIcon's sixth argument, RE-lead-marker.md §1.2).
+/// The game's icon parameter block (AddIcon's sixth argument, RE-lead-marker.md).
 struct IconParams
 {
     float         lineLength         = 0.0f;  // the diamond's line height (cm; 150 when about 0)
@@ -83,7 +82,7 @@ static_assert(sizeof(IconParams) == 24, "the game's block");
 /// place. False when that instance is not there (not made yet, faulted) or the call faulted.
 bool AddIconTo(int seat, std::uint64_t key, std::uint8_t kind, const float (&at)[3], const IconParams& params) noexcept;
 /// The game's RemoveIcon on one instance only (the widget and the entry go at once; a missing key is a no-op:
-/// RE-lead-mark-check.md §4).
+/// RE-lead-mark-check.md).
 bool RemoveIconFrom(int seat, std::uint64_t key) noexcept;
 /// The field ends and resets heard: each empties every instance's icons, so an icon added before is added again.
 std::uint32_t IconResets() noexcept;

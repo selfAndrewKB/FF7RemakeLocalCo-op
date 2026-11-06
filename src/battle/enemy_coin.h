@@ -1,14 +1,14 @@
 #pragma once
 
-// Enemies share their attention between the humans: one coin per enemy decision (RE-enemy-attention-coin.md;
-// Rebirth's player_two/target_coin and leader_reads, reshaped to Remake's one decision call and inlined leader
-// tests).
+// Enemies share their attention between the humans: one coin per enemy decision
+// (research/RE-enemy-attention-coin.md).
 //
 // In the single-player game "the player" is one character: the enemy scripts aim at it (SetTargetByType(UCPC),
 // GetLeader, the target collectors, the expectation counts, IsAIPC, the party API), the hate rows weight it twice an
 // AI ally and win ties for it, the enemy EQS keeps it, and its opening target is the leader. In co-op every one of
-// those named player 1's character, so enemies chased Cloud and treated Aerith as the AI ally (Rude stayed on Cloud;
-// an enemy circled Barret without attacking). The co-op result is the single-player one for both:
+// those names player 1's character: left alone, enemies chase Cloud and treat a further player's character as the
+// AI ally (one enemy stays on Cloud; another circles Barret without attacking). The co-op result is the single-player
+// one for every human:
 //   - the toss: at the game's own decision call (the battle AI tick's gate, true only while no action runs; the
 //     mines' override too) each enemy whose last coin has seen an action tosses again, before the gate's hate
 //     update and the script's OnUpdate: one coin per decision, held through the action by the game's own target lock
@@ -16,7 +16,8 @@
 //   - the answers: the script natives that name the player run with the calling enemy recorded on this thread
 //     (their UFunction native pointers swapped), and the reads inside them (three leader reads, the two expectation
 //     counts' type reads, the party API's two results) answer the coin's human's member or type;
-//   - rule B at the inlined "is this member the player" tests (the hate rows, the hate pick's tie-break, IsAIPC):
+//   - the player's weight, at the inlined "is this member the player" tests (the hate rows, the hate pick's
+//     tie-break, IsAIPC):
 //     the party manager read there is answered by a block whose leader type is the member's own when the member is a
 //     further human's (battle/type_answer_code.h), so both humans get the player's rows and the AI ally keeps its
 //     single-player ratio; ties between humans go to the first in party order (the game's own rule with both "the

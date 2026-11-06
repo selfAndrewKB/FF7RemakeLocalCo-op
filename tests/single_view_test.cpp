@@ -1,5 +1,5 @@
-// Host-side tests for players/single_view.h, run without the game (Rebirth's tests/single_view_test.cpp, the same
-// rules). The switch is a fake bool. The cases: nothing happens while the single view is not wanted; the mod sets
+// Host-side tests for players/single_view.h, run without the game. The switch is a fake bool. The cases: nothing
+// happens while the single view is not wanted; the mod sets
 // the switch and clears only its own; a switch found set is never cleared; a switch cleared by someone else is not
 // written again; failures reported once per request and retried when the request changes. Which moments want the
 // single view is views/column_source.h's (tests/column_source_test.cpp).

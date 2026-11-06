@@ -1,7 +1,7 @@
 #pragma once
 
-// Each seat's own timers for the off-screen enemy arrows (hud/outside_icons; Rebirth's hud_rules::TimerSwap, one store
-// per seat here and no allocation), a pure store tested on the host (tests/arrow_timers_test.cpp).
+// Each seat's own timers for the off-screen enemy arrows (hud/outside_icons; one store
+// per seat and no allocation), a pure store tested on the host (tests/arrow_timers_test.cpp).
 //
 // Around a seat's run of the game's arrow tick: player 1's timer of each arrow is set aside and the seat's put in (0 for
 // an arrow the seat has not seen); after it, the seat keeps what its run left on the arrows it saw (the others are

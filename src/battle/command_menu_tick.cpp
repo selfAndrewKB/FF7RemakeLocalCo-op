@@ -128,7 +128,7 @@ void TickSeat(int seat, float deltaTime)
     players::pad_buttons::ButtonScope      buttons(static_cast<unsigned>(seat));
     players::seat_camera::StickScope stick(static_cast<std::uint32_t>(seat), true);
     // A command executed here aims at the displayed target and re-locks the camera on it while the member is the
-    // leader and locked on: the seat's target fields, not player 1's (RE-lock-camera-ledger.md row X4).
+    // leader and locked on: the seat's target fields, not player 1's (RE-lock-camera-ledger.md).
     const targeting::FieldsScope targets(seat);
     if (!scope.Held())
     {
@@ -174,7 +174,7 @@ std::int64_t SetSlot(std::uint8_t slot, float value)
     value                           = g_slowWrites.Write(seat, value);
     if (seat != 0 && g_slowWrites.Alone() != aloneBefore && !g_aloneLogged)
     {
-        g_aloneLogged = true;  // the game's tick writes every frame (RE-battle.md §2.7): this line means that changed
+        g_aloneLogged = true;  // the game's tick writes every frame (RE-battle.md): this line means that changed
         platform::Log(L"command menu: WARNING: {}'s tick wrote the world slow with no write of player 1's this frame; "
                       L"written as asked",
                       SeatName(seat));

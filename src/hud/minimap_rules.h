@@ -1,7 +1,7 @@
 #pragma once
 
 // The navi map's pool-0 handover across the frame's HUD passes, as a pure rule (hud/minimap.h holds the game
-// side; the seats follow plan/seats.md step 3).
+// side).
 //
 // The menu renderer's pool 0 turns once a frame: one slot acquired, one submitted, or the next acquire landing on an
 // unsubmitted slot spins. The HUD renders once per column (hud/overlay_pass.h: the further columns first, the highest

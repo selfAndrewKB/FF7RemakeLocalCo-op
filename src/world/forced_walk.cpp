@@ -175,7 +175,7 @@ bool MayFollow(Counts& counts, bool clear) noexcept
     }
     if (!g_gameThread.Here())
     {
-        ++counts.offThread;  // the acts run on the game thread (research §2); a call elsewhere is left alone
+        ++counts.offThread;  // the acts run on the game thread; a call elsewhere is left alone
         return false;
     }
     if (!clear && AnySeatLeaderScope())

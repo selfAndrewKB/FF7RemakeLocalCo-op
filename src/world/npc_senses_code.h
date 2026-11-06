@@ -1,7 +1,7 @@
 #pragma once
 
 // The pieces of world/npc_senses that need no game: the stimulus grid's cell rule, the choice of its centre, and the
-// machine code that puts that centre in place (research/RE-npc-reactions.md §2, §9). Host-tested
+// machine code that puts that centre in place (research/RE-npc-reactions.md). Host-tested
 // (tests/npc_senses_code_test.cpp; the code is executed).
 //
 // The NPCs' senses look through one grid of 15 x 15 x 3 cells of 4 m that the game centres every field tick on
@@ -117,16 +117,17 @@ inline Choice ChooseCentre(Cell one, Cell two) noexcept
 }
 
 // --- The code at the grid build -------------------------------------------------------------------------------------
-// Replaced: `movss xmm2, [rip+...]` (the 400.0f cell size, 8 bytes at 0x1406B6401, resume 0x1406B6409), the join
+// Replaced: `movss xmm2, [rip+...]` (the 400.0f cell size, 8 bytes at kCentreSite, resume kCentreResume), the join
 // right after the game stores its centre (rbx = the manager; mgr+0x16718/0x1671C/0x16720 are read from memory by
 // everything after). If the state's `on` byte is set, the code writes the state's three cells over the game's and
 // counts the write; then it loads the same 400.0f from the game's own constant. rax, edx and the flags change: the
-// next instructions overwrite all three (0x1406B6410 `lea eax`, 0x1406B641A `imul edx`, `imul`/`sub` the flags).
+// next instructions overwrite all three (`lea eax` at kCentreResume + 7, `imul edx` at kCentreResume + 0x11,
+// `imul`/`sub` the flags).
 
 inline constexpr std::uintptr_t kCentreSite     = 0x1406B6401;
 inline constexpr std::uintptr_t kCentreResume   = 0x1406B6409;
 inline constexpr std::uintptr_t kCellSizeGlobal = 0x144F92728;  // the 400.0f the replaced instruction loads
-/// 0x1406B63E9 through 0x1406B6410 (the centre's stores, the replaced load, the loop setup), as the research read it.
+/// kCentreCheckStart to the loop head at kCentreResume + 7: the centre's stores, the replaced load, the loop setup.
 inline constexpr std::uintptr_t kCentreCheckStart = 0x1406B63E9;
 inline constexpr std::uint8_t   kCentreBytes[]    = {
     0xF2, 0x0F, 0x11, 0x83, 0x18, 0x67, 0x01, 0x00,  // movsd [rbx+16718h], xmm0   the x and y cells
@@ -136,7 +137,7 @@ inline constexpr std::uint8_t   kCentreBytes[]    = {
     0x89, 0x83, 0x20, 0x67, 0x01, 0x00,              // mov [rbx+16720h], eax       the height cell
     0xF3, 0x0F, 0x10, 0x15, 0x1F, 0xC3, 0x8D, 0x04,  // movss xmm2, [400.0f]         (the site)
     0x41, 0xBE, 0xFF, 0xFF, 0xFF, 0xFF,              // mov r14d, -1
-    0x90};                                           // nop; 0x1406B6410 is the loop head
+    0x90};                                           // nop; the loop head (kCentreResume + 7) follows
 static_assert(sizeof(kCentreBytes) == 0x1406B6410 - kCentreCheckStart);
 /// The instruction replaced.
 inline constexpr std::uint8_t kCentreLoad[] = {0xF3, 0x0F, 0x10, 0x15, 0x1F, 0xC3, 0x8D, 0x04};
@@ -170,7 +171,7 @@ inline std::array<std::uint8_t, kCentreCodeSize> CentreCode(CentreState& state, 
         0x48, 0xFF, 0x40, 0x10,              // 42: inc   qword [rax+10h]
         0x48, 0xB8, 0, 0, 0, 0, 0, 0, 0, 0,  // 46: load: mov rax, &400.0f (the game's constant)
         0xF3, 0x0F, 0x10, 0x10,              // 56: movss xmm2, [rax]    (the replaced load)
-    };                                       // 60: the jump back to 0x1406B6409 is appended here
+    };                                       // 60: the jump back to kCentreResume is appended here
     const auto stateAddress = reinterpret_cast<std::uint64_t>(&state);
     const auto sizeAddress  = static_cast<std::uint64_t>(cellSize);
     std::memcpy(&code[2], &stateAddress, sizeof(stateAddress));

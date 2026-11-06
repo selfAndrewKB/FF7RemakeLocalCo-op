@@ -1,6 +1,6 @@
 // Host-side tests for lead_keep_rules (players/lead_keep_rules.h): whether a further player keeps a member the level
 // walks to its marks, and when it goes to its AI at a mark. Run without the game. The cases are the rows read in
-// research/RE-holder-keeps-lead.md and RE-lead-marker.md §2 (Ch. 4 Tifa, Ch. 8 Aerith's walk home).
+// research/RE-holder-keeps-lead.md and RE-lead-marker.md (Ch. 4 Tifa, Ch. 8 Aerith's walk home).
 
 #include "players/lead_keep_rules.h"
 
@@ -31,7 +31,7 @@ namespace {
 using namespace lss::players::lead_keep_rules;
 
 // The stepless arrival radius of the rows read (GoalRadius - 15 cm): Aerith's walk rows and Tifa's 35 cm,
-// MovetoMonitor 85 cm (RE-holder-keeps-lead.md §B.1).
+// MovetoMonitor 85 cm (research/RE-holder-keeps-lead.md).
 constexpr float kSteplessRows[] = {35.0f, 85.0f};
 
 void TestTheHandRadiusLeavesTheAiTheLastSteps()
@@ -112,7 +112,7 @@ void TestReachedIsTwoDimensionalAndInclusive()
     EXPECT(Reached(120.0f, 160.0f));  // 200 cm
     EXPECT(!Reached(120.0f, 161.0f));
     EXPECT(!Reached(0.0f, -201.0f));
-    // Box 0040 lies 9.6 m past stop000 (RE-holder-keeps-lead.md §C): far outside the circle.
+    // Box 0040 lies 9.6 m past stop000 (research/RE-holder-keeps-lead.md): far outside the circle.
     EXPECT(!Reached(960.0f, 0.0f));
 }
 

@@ -1,8 +1,7 @@
 #pragma once
 
 // Each seat's own battle command menu: a FieldCommandCtrl per seat, built and kept with the game's own calls
-// (RE-command-menu-two.md; Rebirth's player_two/battle/command_menu_two, command_locks and command_menu_views in one, which
-// stayed single-seat; the seats here follow plan/seats.md step 3).
+// (research/RE-command-menu-two.md).
 //
 // The game owns one command controller (EndUISystem[19]) and builds it with three plain calls: GMalloc, the
 // constructor, SetupMenuWidgets(ctrl, world). Setup creates the controller's own two widgets (Command_C, the

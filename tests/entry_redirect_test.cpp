@@ -1,7 +1,7 @@
 // Host-side tests for platform::EntryRedirect, run without the game.
 //
 // A small executable page stands in for the game's code: a function whose first instruction is
-// `mov [rsp+8], rbx` (48 89 5C 24 08), as EndUI23_SetCommandCategoryEnabled's is (0x1439D0E08). The
+// `mov [rsp+8], rbx` (48 89 5C 24 08), as EndUI23_SetCommandCategoryEnabled's is. The
 // redirected function is EXECUTED: the replacement must run with the caller's argument and return
 // address, call the original through the trampoline (which runs the replaced store), and the
 // original must come back after Restore.

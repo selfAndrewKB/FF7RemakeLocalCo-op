@@ -9,7 +9,7 @@
 //                                         alignment. `roots` (the default) lists the widgets on SEndRootOverlay,
 //                                         `shown` the roots that are not collapsed, hidden or transparent, `all`
 //                                         every user widget; <text> keeps the lines whose class or name holds it.
-//   hud.overlay                           reading: the overlay's layout fields (RE-hud-split.md §1.2): the UI
+//   hud.overlay                           reading: the overlay's layout fields (RE-hud-split.md): the UI
 //                                         rect's Min and size, the marker host origin, size and scale, and the
 //                                         frame its last render ran in.
 // Game thread only.

@@ -1,6 +1,6 @@
 #pragma once
 
-// Every further player leaves before the game leaves the field (Remake/Documentation/research/RE-lifecycle-world.md §3, §8).
+// Every further player leaves before the game leaves the field (research/RE-lifecycle-world.md).
 //
 // A retry, a save load, a chapter or story jump and the return to the title all leave the field inside the same
 // world, with no map load: the game state enters "leaving" (9), whose entry calls the field root's exit request.
@@ -9,8 +9,8 @@
 // Both are redirected (platform/call_redirect.h), so `leave` runs inside the request, before the game's own work,
 // while the party is still intact. players::Session keeps a check of the field step as the fallback.
 //
-// Rebirth (player_two/field_exit) redirected the request's entry. Remake's entry starts with a 2-byte push, too
-// short for a jump, so the two call sites are redirected instead. The step and running byte are read by
+// The request's entry starts with a 2-byte push, too short for a jump, so its two call sites are redirected
+// instead. The step and running byte are read by
 // players/game_state, not by a reader of this module's own.
 // Game thread only.
 

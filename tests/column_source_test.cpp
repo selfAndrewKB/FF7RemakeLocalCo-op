@@ -1,8 +1,7 @@
 // Host-side tests for views/column_source.h: where each column's view comes from, per moment and per surface (the
-// table in plan/next-phase.md §7). Surfaces: one window with two or three players, the span (columns held) with
+// table in plan/next-phase.md). Surfaces: one window with two or three players, the span (columns held) with
 // and without a mirror. Moments: field play, the game taking the whole screen (a menu, a scene: views/whole_screen.h),
-// a seat's own shop camera on a row, a handed seat, the console's override. Rebirth's tests/column_source_test.cpp
-// gave the shape and the rows that apply.
+// a seat's own shop camera on a row, a handed seat, the console's override.
 
 #include "views/column_source.h"
 

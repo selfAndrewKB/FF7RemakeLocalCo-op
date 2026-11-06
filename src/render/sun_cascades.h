@@ -1,6 +1,6 @@
 #pragma once
 
-// Each view's own sun cascades where the game takes every view's (RE-haze-per-view.md §3, §9.10; rule:
+// Each view's own sun cascades where the game takes every view's (research/RE-haze-per-view.md; rule:
 // render/sun_owner.h).
 //
 // With more than one view the game makes the sun's shadow cascades per view, each marked with its view, and two

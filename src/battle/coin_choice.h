@@ -1,7 +1,7 @@
 #pragma once
 
-// Which human an enemy counts as "the player" for one decision (battle/enemy_coin.h; RE-enemy-attention-coin.md
-// §4.1, Rebirth's player_two/ucpc_choice.h generalised to seats). Pure, tested on the host.
+// Which human an enemy counts as "the player" for one decision (battle/enemy_coin.h;
+// research/RE-enemy-attention-coin.md). Pure, tested on the host.
 //
 // In the single-player game "the player" is the one character the player controls: the enemy scripts aim their
 // moves at it and the hate rows weight it. With two or more humans each decision names one of them, so all get the

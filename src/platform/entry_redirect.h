@@ -60,7 +60,7 @@ public:
     /// `first` is free of effects the replacement could see (a store into the caller's home area: no
     /// rsp change, no argument register written, its slot read by nothing before the trampoline
     /// stores it again) and that no branch in the game lands on `second` (seen live on 1.005's
-    /// FieldActionMgr_AddPoint, research/RE-1005-field-2.md §5). Unlike an entry redirect, `first`
+    /// FieldActionMgr_AddPoint, research/RE-1005-field-2.md). Unlike an entry redirect, `first`
     /// runs on every call before the replacement does, also on calls the replacement does not pass
     /// on to Original(): a replacement that skips the game's function must not mind that store.
     bool InstallAtSecondInstruction(std::uintptr_t entry, std::span<const std::uint8_t> first,

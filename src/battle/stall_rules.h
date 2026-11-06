@@ -1,7 +1,7 @@
 #pragma once
 
 // When an enemy that is ready to attack but declines counts as stalled, and whether the game may pick again for it
-// (battle/enemy_stall; research/RE-enemy-stall-repick.md §5, §6). Pure: no engine access, host-tested.
+// (battle/enemy_stall; research/RE-enemy-stall-repick.md). Pure: no engine access, host-tested.
 
 #include <cstdint>
 

@@ -10,8 +10,8 @@
 // operator; but without the UI slot and the focus scope it read player 1's controller and player 1's focus: no
 // open menu of its own there, nothing to frame (research/RE-command-camera-two.md).
 // This module:
-//   - holds the seat's UI slot and focus scope around its operator tick while its menu is in battle (Rebirth's
-//     rule: a further player's camera update in its UI context in battle), so the flavor reads the seat's own list;
+//   - holds the seat's UI slot and focus scope around its operator tick while its menu is in battle (a further
+//     player's camera updates in its own UI context in battle), so the flavor reads the seat's own list;
 //   - reads the flavor's per-frame aim (its vtable slot replaced, the game's function called): per seat, how often
 //     it ran on that seat's operator, how often with the seat's own controller in the UI slot, the target it
 //     settled on and its on/started bytes (`command-camera.aims`; a Debug line per new target).

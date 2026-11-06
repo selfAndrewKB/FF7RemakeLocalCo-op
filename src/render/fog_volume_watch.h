@@ -1,6 +1,6 @@
 #pragma once
 
-// A watch on each view's fog volumes (RE-haze-occlusion.md, Pass 4): logging only, for the blue haze in players 2's
+// A watch on each view's fog volumes (research/RE-haze-occlusion.md): logging only, for the blue haze in players 2's
 // and 3's views.
 //
 // Volumetric fog is shaped by fog-volume primitives (meshes with a volume material). Each view keeps its own list of
@@ -17,7 +17,7 @@
 // (Debug, only when something changed), each change (Trace). Reading `fog-volumes`: the last summary.
 //
 // Fog volumes are empty in the Mako 5 hallway, and the haze is views 2 and 3
-// losing their volumetric fog. Pass 5 found the one other fog input culling feeds: a view takes lights outside
+// losing their volumetric fog. Culling feeds only one other fog input: a view takes lights outside
 // the default lighting channel only while one of its visible objects uses such a channel (the view's
 // bUsesLightingChannels bit) [CONFIRMED code; whether it carries the haze is what this reads]. The watch counts,
 // per view and one-second window, the fog passes (one or two a frame) with that bit and those ignoring old

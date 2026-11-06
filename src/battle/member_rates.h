@@ -1,6 +1,6 @@
 #pragma once
 
-// Each further player's member at the player's rates (RE-battle-member-two.md §2, L1; Rebirth's player_two/player_hits).
+// Each further player's member at the player's rates (research/RE-battle-member-two.md).
 //
 // Every "is this the player's character" test in battle is the leader test, `comp+0x58 == PM+0x233`, so a further
 // player's member counts as an AI ally wherever the test runs outside that player's scopes: its passive ATB fills at

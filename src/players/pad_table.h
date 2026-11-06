@@ -61,7 +61,7 @@ void Listen(Listener listener) noexcept;
 /// Start is held back from the game. Once per engine tick from the session's players. Game thread.
 void SetPlaying(std::uint32_t slots) noexcept;
 
-/// The engine polls a slot it counts empty only after a device change it heard (RE-pad-slots.md §2.1). A pad that
+/// The engine polls a slot it counts empty only after a device change it heard (research/RE-pad-slots.md). A pad that
 /// comes back, or moves to another XInput number (Steam Input renumbers its pads when one turns off or on), can land
 /// on such a slot between those messages and stay dead to the game until the next device change. Given the XInput
 /// users that answer (bit N: user N, players/pad_presence's poll, once a second), every slot whose pad answers while

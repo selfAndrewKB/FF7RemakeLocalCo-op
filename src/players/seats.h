@@ -15,7 +15,7 @@
 
 namespace lss::players {
 
-/// The further players built and wired: seats 1..kSeatsBuilt (plan/seats.md step 6 wired seat 2, player 3). The
+/// The further players built and wired: seats 1..kSeatsBuilt (seat 2 is player 3). The
 /// modules behind them are sized by scopes::kMaxPlayers.
 inline constexpr int kSeatsBuilt = 2;
 static_assert(kSeatsBuilt >= 1 && kSeatsBuilt < scopes::kMaxPlayers, "the seats are numbered within the scopes' players");

@@ -88,7 +88,7 @@ alignas(16) code::CentreState g_centre;  // read by the grid code (game thread)
 platform::VTableEntry         g_lookSlot;
 UpdateFn                      g_update = nullptr;
 
-// Written by the game thread; the look reads them on the AI's worker threads (research/RE-npc-reactions.md §10.5).
+// Written by the game thread; the look reads them on the AI's worker threads (research/RE-npc-reactions.md).
 std::atomic<bool>  g_enabled{true};
 std::atomic<void*> g_one{nullptr};  // player 1's character
 std::array<std::atomic<void*>, kMaxPlayers> g_members{};  // each seat's character while in; [0] unused
@@ -187,7 +187,7 @@ bool Candidate(float timer, float interest, float experience, float threshold) n
 
 /// Any thread: the look runs in each NPC's own AI tick, on worker threads, one NPC never twice at once. Only this
 /// NPC's cognition entries are touched, around its own look's single call, and never while a look is running (so the
-/// look's current target is never set aside); the save and restore are exact (research/RE-npc-reactions.md §10.5).
+/// look's current target is never set aside); the save and restore are exact (research/RE-npc-reactions.md).
 void Update(void* intention, void* context) noexcept
 {
     void* const one = g_one.load(std::memory_order_acquire);  // this call's snapshot of the players

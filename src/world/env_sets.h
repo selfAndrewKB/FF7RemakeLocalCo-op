@@ -1,10 +1,9 @@
 #pragma once
 
 // Each further player's view hides what the area's design hides under that player, as player 1's view does under
-// player 1 (research/RE-picture-variants.md §5, §9, §10; the orphanage picture's flicker: three stacked picture
+// player 1 (research/RE-picture-variants.md; the orphanage picture's flicker: three stacked picture
 // variants, two of them hidden only while player 1 stands in the orphanage's set). Hiding per view, not world-wide:
-// a world-wide hide would take from player 1's view what only another player's place hides (the seats follow
-// plan/seats.md step 3).
+// a world-wide hide would take from player 1's view what only another player's place hides.
 //
 // Square Enix's EnvironmentSet manager traces straight down from the party leader every frame; the material of the
 // ground hit names the area's set, and the field's EnvironmentSetWrapper row lists the actors that set hides (hidden
@@ -24,7 +23,7 @@
 //      them, go into that seat's controller's HiddenActors. Stock UE 4.18 builds the view from that list alone
 //      (ULocalPlayer::CalcSceneView): those meshes leave that player's view and stay in the others'. The mod adds
 //      and removes only its own entries; the engine grows the list (its own resize).
-// Not per view (§10.4): collision, lights, decals and point/spot shadows follow the world, which is player 1's set;
+// Not per view: collision, lights, decals and point/spot shadows follow the world, which is player 1's set;
 // an actor a further player's set shows but player 1's set hides stays hidden for everyone (counted in the reading).
 // Hold mode (one scripted set for everyone): nothing hidden for a further player alone. Nor while a further player's
 // view shows player 1's camera (views/scene_camera.h ShowsPlayerOne: a scene's slots, or the column on player 1's

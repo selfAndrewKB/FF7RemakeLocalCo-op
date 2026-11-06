@@ -1,7 +1,7 @@
 #pragma once
 
 // Split views fill their part of the window whatever the game's resolution option, which can be changed while the
-// game runs (plan/next-phase.md §4; research/RE-split-upscale.md).
+// game runs (plan/next-phase.md; research/RE-split-upscale.md).
 //
 // Square Enix sizes the scene buffer from the resolution option, not the window. In single player its Borderless mode
 // draws the one view at the option's size and its final pass scales it to the window; in split the mod switches that
@@ -21,8 +21,8 @@
 // Only while the letterbox patch is applied (the views in window pixels); the sizes are sampled twice a
 // second and acted on once two samples agree (a resolution change and its window resize land on different frames).
 // Both values go through the engine's console (the game's own setting path; they are left at console priority after),
-// each held by Rebirth's players/held_setting rules, by hand here (two values in one
-// module): the value read before every write (one the mod did not write is the one to put back), the mod's counted as
+// each held the same way: the value read before every write (one the mod did not write is the one to put
+// back), the mod's counted as
 // written once its command ran, and put back only while the mod's is still in place. Logged at Info: each hold (with
 // the resolution that would show the views at full sharpness), each release, the game's dynamic resolution enabled; a
 // Warning when it is not (the cap then cannot act), at each change. `split-scale on|off` (on), reading

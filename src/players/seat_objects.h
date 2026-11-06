@@ -2,9 +2,7 @@
 
 // One registry of each seat's game objects: its player controller, its field camera operator and the member it
 // plays, kept as weak pairs (players/weak_object.h) so a destroyed or replaced object resolves to null wherever it is
-// asked for (plan/seats.md, the close of step 3; open-items §7: before, a seat's controller lived in the session's
-// record, the scopes' raw binding and the camera module's weak pair, and only the camera module's was
-// liveness-checked). The session binds the controller at the join and forgets the seat at the leave; the party seat
+// asked for. The session binds the controller at the join and forgets the seat at the leave; the party seat
 // binds the member at the seating and at the release; the camera module binds the operator at its spawn and at its
 // take. Every other module asks here: Controller(seat), Operator(seat), Member(seat), and SeatOf(object) for the
 // replacements the game hands an object with no identity. The scopes keep their own copies for the contexts they

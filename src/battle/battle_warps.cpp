@@ -85,7 +85,7 @@ const wchar_t* WhoseRest(int seat) noexcept
     return seat != 0 ? L"'s character" : L"";
 }
 
-/// The flat distance in metres between two actors' roots (the game's warp thresholds measure flat, RE §1.6), or -1 if
+/// The flat distance in metres between two actors' roots (the game's warp thresholds measure flat), or -1 if
 /// either cannot be read.
 float FlatMetres(void* a, void* b) noexcept
 {
@@ -202,7 +202,7 @@ bool Install(const platform::GameImage& image) noexcept
     // The file's word is one of the table's (platform/settings.h); set before the redirects are placed.
     g_mode = ModeOf(platform::settings::Of(platform::settings::kBattleWarps).word).value_or(Mode::PlayersStay);
 
-    // All three calls lie inside one code block each (RE §3.1-§3.2).
+    // All three calls lie inside one code block each.
     if (!g_startCall.Install(*startCall, g_getActor, reinterpret_cast<std::uintptr_t>(&StartMember)) ||
         !g_victoryCall.Install(*victoryCall, g_victory, reinterpret_cast<std::uintptr_t>(&VictoryMember)) ||
         !g_escapeCall.Install(*escapeCall, g_escape, reinterpret_cast<std::uintptr_t>(&EscapeMember)))

@@ -1,6 +1,6 @@
 #pragma once
 
-// The translucency lighting volume with more than one view (RE-haze-per-view.md §2, §5, §9): the blue haze in players
+// The translucency lighting volume with more than one view (research/RE-haze-per-view.md): the blue haze in players
 // 2's and 3's views.
 //
 // The volume is a small 3-D grid of light that see-through surfaces (mist sheets, light cards, particles, Square
@@ -11,10 +11,10 @@
 // ASSUMPTION, this switch tests it]
 //
 // For now this holds the discriminating test only: switch `volume-box` (off) gives the further views player 1's box,
-// the game's own rule for a stereo pair (the right eye takes the left eye's box, 0x1425C4F55..F6A), through the one call
+// the game's own rule for a stereo pair (the right eye takes the left eye's box), through the one call
 // that computes a view's box. They then read player 1's grid at the right places: where player 1's box reaches, their
 // mist should look as player 1's does. Not the fix (outside player 1's box they read its edge); the fix is each view's
-// own grid, filled by the game's own steps (§5). Reading `volume-box.views` (view setups that took player 1's box).
+// own grid, filled by the game's own steps. Reading `volume-box.views` (view setups that took player 1's box).
 
 namespace lss::platform {
 class GameImage;

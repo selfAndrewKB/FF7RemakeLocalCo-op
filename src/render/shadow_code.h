@@ -296,15 +296,15 @@ inline std::vector<std::uint8_t> DecideCode(State& s)
 }
 
 /// InitProjectedShadowVisibility's per-view test of a shadow: add rsi,[rbx+17B8h] (rsi = this view's
-/// VisibleLightInfos[light]); the game then tests the frustum bit and jumps to 0x1425F35FA ("not visible in this view,
-/// next view") when it is clear. The stub sends a view beyond the cutoff there for a lamp's whole-scene shadow.
+/// VisibleLightInfos[light]); the game then tests the frustum bit and jumps to kHideNotVisible ("not visible in this
+/// view, next view") when it is clear. The stub sends a view beyond the cutoff there for a lamp's whole-scene shadow.
 /// FProjectedShadowInfo +0x568: bit 4 directional, bit 6 whole-scene [ASSUMPTION: stock 4.18's bit order; bits 8, 9 and 14
 /// confirmed by their use in this build].
 inline constexpr std::uintptr_t kHideSite       = 0x1425F3418;
 inline constexpr std::uintptr_t kHideResume     = 0x1425F341F;
 inline constexpr std::uintptr_t kHideNotVisible = 0x1425F35FA;
 inline constexpr std::uint8_t   kHideAdd[]      = {0x48, 0x03, 0xB3, 0xB8, 0x17, 0x00, 0x00};
-/// At the resume: test byte [rsi+40h],1 and jz 0x1425F35FA (the second exit is where the game's own "not visible" goes).
+/// At the resume: test byte [rsi+40h],1 and jz kHideNotVisible (where the game's own "not visible" goes).
 inline constexpr std::uint8_t kHideResumeBytes[] = {0xF6, 0x46, 0x40, 0x01, 0x0F, 0x84, 0xD1, 0x01, 0x00, 0x00};
 
 inline std::vector<std::uint8_t> HideCode(State& s, std::uintptr_t notVisible)
@@ -337,14 +337,14 @@ inline std::vector<std::uint8_t> HideCode(State& s, std::uintptr_t notVisible)
 // --- Lever C --------------------------------------------------------------------------------------------------------
 
 /// The moving casters' loop takes Views[0]: mov rax,[r12+0D0h] (r12 = the renderer, r15 = the caster's primitive scene
-/// info, bounds centre +0xF0). The game then measures from [rax+4ACh] (the view origin), and its jnz at 0x1425F2E55 reads
-/// ZF from cmp byte [r14+18Ch],0 at 0x1425F2DE2, which the stub re-does last.
+/// info, bounds centre +0xF0). The game then measures from [rax+4ACh] (the view origin), and the jnz that follows
+/// reads ZF from cmp byte [r14+18Ch],0 at kCasterFlagCompare, which the stub re-does last.
 inline constexpr std::uintptr_t kCasterSite   = 0x1425F2DF2;
 inline constexpr std::uintptr_t kCasterResume = 0x1425F2DFA;
 inline constexpr std::uint8_t   kCasterLoad[] = {0x49, 0x8B, 0x84, 0x24, 0xD0, 0x00, 0x00, 0x00};
 inline constexpr std::uintptr_t kCasterFlagCompare = 0x1425F2DE2;
 inline constexpr std::uint8_t   kCasterFlagBytes[] = {0x41, 0x80, 0xBE, 0x8C, 0x01, 0x00, 0x00, 0x00};
-/// 0x1425F2DFA through the jnz at 0x1425F2E55: SSE only (no flag write) between the stub's compare and the jnz.
+/// From kCasterResume through that jnz: SSE only (no flag write) between the stub's compare and the jnz.
 inline constexpr std::uint8_t kCasterTail[] = {
     0xF3, 0x0F, 0x10, 0x88, 0xAC, 0x04, 0x00, 0x00, 0xF3, 0x41, 0x0F, 0x5C, 0x8F, 0xF0, 0x00, 0x00, 0x00, 0xF3, 0x0F, 0x10,
     0x90, 0xB0, 0x04, 0x00, 0x00, 0xF3, 0x41, 0x0F, 0x5C, 0x97, 0xF4, 0x00, 0x00, 0x00, 0xF3, 0x0F, 0x10, 0x80, 0xB4, 0x04,
@@ -423,7 +423,7 @@ inline std::vector<std::uint8_t> CasterCode(State& s)
 /// threaded), with {FScene*, the 0x50-byte blend data}.
 inline constexpr std::uintptr_t kStartFinalCall     = 0x14301909B;
 inline constexpr std::uintptr_t kStartFinal         = 0x14320FBD0;
-inline constexpr std::uintptr_t kSceneBlendEntry    = 0x144D63A90;  // FScene vtable 0x144D63A58 + 0x38
+inline constexpr std::uintptr_t kSceneBlendEntry    = 0x144D63A90;  // FScene's vtable, entry +0x38
 inline constexpr std::uintptr_t kSceneBlendSetter   = 0x142583CE0;
 inline constexpr std::uintptr_t kSceneBlendRt       = 0x142583F10;
 inline constexpr std::uintptr_t kSceneBlendRtTask   = 0x142599436;
@@ -435,7 +435,7 @@ inline constexpr std::uintptr_t kSceneBlendRtInline = 0x142583D58;
 inline constexpr std::uintptr_t kAreaSite   = 0x1425D25D5;
 inline constexpr std::uintptr_t kAreaResume = 0x1425D25DD;
 inline constexpr std::uint8_t   kAreaAdd[]  = {0x4D, 0x03, 0xAC, 0x24, 0xD0, 0x00, 0x00, 0x00};
-/// 0x1425D25C9..0x1425D25F5 (checked at install: the scene load into rcx, the site, the writes of rbx, r14, rdx, rax).
+/// From kAreaContextStart (checked at install: the scene load into rcx, the site, the writes of rbx, r14, rdx, rax).
 inline constexpr std::uintptr_t kAreaContextStart = 0x1425D25C9;
 inline constexpr std::uint8_t   kAreaContext[]    = {
     0x4C, 0x69, 0xE9, 0xB0, 0x28, 0x00, 0x00, 0x49, 0x8B, 0x4C, 0x24, 0x08, 0x4D, 0x03, 0xAC, 0x24, 0xD0, 0x00, 0x00, 0x00,
@@ -499,12 +499,12 @@ inline std::vector<std::uint8_t> AreaCode(State& s, const std::int32_t* familyIn
 }
 
 /// The sun's cascade setup, its view loop: add rsi,[rdi+0D0h] (rax = the view's index, rdi = the renderer, rsi = the
-/// view after it, the light at [rsp+58h]: r13 saved at 0x1425F4D67). rdx and r9 are live; rcx, r8, r10, r11 are written
-/// before any read on both paths after it.
+/// view after it, the light at [rsp+58h]: r13 saved at kSunContextStart - 0x29). rdx and r9 are live; rcx, r8, r10
+/// and r11 are written before any read on both paths after it.
 inline constexpr std::uintptr_t kSunSite   = 0x1425F4DA2;
 inline constexpr std::uintptr_t kSunResume = 0x1425F4DA9;
 inline constexpr std::uint8_t   kSunAdd[]  = {0x48, 0x03, 0xB7, 0xD0, 0x00, 0x00, 0x00};
-/// 0x1425F4D90..0x1425F4DBB (checked at install: rax the index, the site, rdx and the paths after it).
+/// From kSunContextStart (checked at install: rax the index, the site, rdx and the paths after it).
 inline constexpr std::uintptr_t kSunContextStart = 0x1425F4D90;
 inline constexpr std::uint8_t   kSunContext[]    = {
     0x48, 0x69, 0xF0, 0xB0, 0x28, 0x00, 0x00, 0x49, 0x8B, 0xD1, 0x48, 0xC7, 0x45, 0x98, 0x00, 0x00, 0x00, 0x00, 0x48, 0x03,
@@ -578,7 +578,7 @@ inline std::vector<std::uint8_t> SunCode(State& s, const std::int32_t* familyInd
 
 /// The fog: FScene's vtable entry +0x238 (the game thread's setter, which copies the 0x38-byte blend data whole into its
 /// render command); its render-thread half, called from the command's task with {FScene*, the data}.
-inline constexpr std::uintptr_t kSceneFogEntry  = 0x144D63C90;  // FScene vtable 0x144D63A58 + 0x238
+inline constexpr std::uintptr_t kSceneFogEntry  = 0x144D63C90;  // FScene's vtable, entry +0x238
 inline constexpr std::uintptr_t kSceneFogSetter = 0x14258BDE0;
 inline constexpr std::uintptr_t kSceneFogRt     = 0x14258C090;
 inline constexpr std::uintptr_t kSceneFogRtTask = 0x1425950F6;
@@ -590,11 +590,11 @@ inline constexpr std::uintptr_t kFogConstants     = 0x142205650;
 
 /// InitFogConstants' view loop (r15d = the view's index, rdi = the view, rbx = the scene, its fog count checked > 0):
 /// mov rbx,[rbx+1DC0h] (rbx = the first fog), which every field read of the view's fog parameters goes through. rax, rcx
-/// and rdx are written before any read after it (the powf call at 0x14220579C).
+/// and rdx are written before any read after it (through the powf call at kFogSite + 0x34).
 inline constexpr std::uintptr_t kFogSite   = 0x142205768;
 inline constexpr std::uintptr_t kFogResume = 0x14220576F;
 inline constexpr std::uint8_t   kFogLoad[] = {0x48, 0x8B, 0x9B, 0xC0, 0x1D, 0x00, 0x00};
-/// 0x142205757..0x1422057A0 (checked at install: the scene from the renderer, the count test, the site, the reads after
+/// From kFogContextStart (checked at install: the scene from the renderer, the count test, the site, the reads after
 /// it through the powf call).
 inline constexpr std::uintptr_t kFogContextStart = 0x142205757;
 inline constexpr std::uint8_t   kFogContext[]    = {

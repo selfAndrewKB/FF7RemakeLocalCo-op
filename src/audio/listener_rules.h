@@ -41,7 +41,7 @@ constexpr bool BeyondClip(const Vec3& character, const Vec3& listener, float dis
 }
 
 /// FQuat::RotateVector (two cross products), as the SEAD device's push turns the engine's listener [0]. `q` is x, y, z,
-/// w. Taken from Rebirth's listener_choice.h as is.
+/// w.
 inline Vec3 RotateVector(const float* q, const Vec3& v) noexcept
 {
     const float t[3] = {2.0f * (q[1] * v[2] - q[2] * v[1]), 2.0f * (q[2] * v[0] - q[0] * v[2]),
@@ -63,7 +63,7 @@ inline Vec3 SeadUp(const float* q) noexcept
 
 /// A sound with no listener chosen yet.
 inline constexpr int kNoChoice = -1;
-/// A sound changes listener once another is this much nearer (20 %, Rebirth's hand-over).
+/// A sound changes listener once another is this much nearer (20 %).
 inline constexpr float kHandOver = 0.8f;
 
 /// The listener a sound is measured from, by its distance to each (index 0 player 1's; a listener that is off has a

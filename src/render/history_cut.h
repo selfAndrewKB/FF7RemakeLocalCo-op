@@ -1,6 +1,6 @@
 #pragma once
 
-// A test for the blue haze in players 2's and 3's views (RE-haze-history.md, S-RMK-HAZEHIST): the game's own camera cut
+// A test for the blue haze in players 2's and 3's views (research/RE-haze-history.md): the game's own camera cut
 // on every camera but player 1's, held for a number of frames.
 //
 // The haze comes only when players 2 and 3 join within about a second of a load, and it stays with their columns

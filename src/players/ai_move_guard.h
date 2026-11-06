@@ -2,7 +2,7 @@
 
 // A further player's member is never given an AI-only move while its player holds it: handed to its AI, an interest
 // walk can loop on a ladder for minutes, and that loop must never happen
-// (research/RE-interest-ladder-loop.md §6.1, §7).
+// (research/RE-interest-ladder-loop.md).
 //
 // Square Enix's AI model (FEndAIModel, char+0x820) runs on a player's character too: its intentions (the walk to an
 // interest point, a bump on contact, a turn in a talk, a wall contact) ask EndAIModel_CanRequestBehavior before adding a

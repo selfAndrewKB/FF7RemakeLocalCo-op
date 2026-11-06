@@ -71,7 +71,7 @@ InputFn               g_processInput      = nullptr;
 ActorFloatFn          g_fieldMove         = nullptr;
 ActorFloatFn          g_cameraUpdate      = nullptr;
 
-// The game's input step for the primary controller (RE-input-p2.md §1, RE-camera-jump-combo.md): the one call the
+// The game's input step for the primary controller (research/RE-input-p2.md, RE-camera-jump-combo.md): the one call the
 // game makes during play, redirected so each seat's step follows it at the same point of the frame.
 platform::CallRedirect g_inputTickCall;
 bool                   g_seatInputOff = false;  // a seat's step raised an exception: the seats' steps stay off
@@ -343,9 +343,9 @@ void OperatorTick(void* self, float deltaSeconds)
     void* const                      controller = seat_objects::Controller(seat);
     const PrimaryScope               primary(controller);
     const OperatorScope              scope(seat_objects::OperatorWeak(seat));
-    const StickScope                 stick(static_cast<std::uint32_t>(seat), true);  // a sequence shot's input offset reads the stick (RE-seq-camera-two.md L-H)
+    const StickScope                 stick(static_cast<std::uint32_t>(seat), true);  // a sequence shot's input offset reads the stick (RE-seq-camera-two.md)
     // Its leader is the seat's member: the battle camera requests, the move and camera-input checks and the battle
-    // sequence overrides the tick reads are keyed on the party leader (RE-lock-camera-two.md §1.4), as the lock
+    // sequence overrides the tick reads are keyed on the party leader (RE-lock-camera-two.md), as the lock
     // camera follows the seat's target, not player 1's.
     const scopes::Scope              leader(seat, scopes::Leader);
     // In battle the seat's UI context too: the Command camera flavor frames the target the seat's own list cursor is
@@ -365,7 +365,7 @@ void OperatorTick(void* self, float deltaSeconds)
 
 /// AEndPlayerCameraManager::UpdateCamera: a seat's camera manager updates as the primary player's, with the seat's
 /// member as the leader (the occlusion fade toward the leader, the slot blends that write the primary
-/// controller's rotation; RE-lock-camera-ledger.md row X7).
+/// controller's rotation; RE-lock-camera-ledger.md).
 void UpdateCamera(void* self, float deltaSeconds)
 {
     if (const int mirror = views::scene_camera::MirrorSlotOf(self); mirror >= 0)
@@ -440,7 +440,7 @@ void ProcessPlayerInput(void* self, float deltaSeconds, bool gamePaused)
     const StickScope               stick(static_cast<std::uint32_t>(seat), true);
     const pad_buttons::ButtonScope buttons(seat);
     // The right stick is the lock's while the leader is locked on a target in range (the stick switches targets
-    // then; the camera does not turn): the seat's lock and leader, not player 1's (RE-lock-camera-ledger.md X1).
+    // then; the camera does not turn): the seat's lock and leader, not player 1's (RE-lock-camera-ledger.md).
     const scopes::Scope                      leader(seat, scopes::Leader);
     const battle::targeting::FieldsScope targets(seat);
     g_processInput(self, deltaSeconds, gamePaused);
@@ -475,7 +475,7 @@ void FieldMove(void* self, float deltaSeconds)
     const OperatorScope            scope(seat_objects::OperatorWeak(seat));  // no-op while the seat has no operator
     const StickScope               stick(static_cast<std::uint32_t>(seat), true);
     const pad_buttons::ButtonScope buttons(seat);
-    // Locked-on movement faces the target (strafes) on the seat's lock, not player 1's (RE-lock-camera-ledger.md X2).
+    // Locked-on movement faces the target (strafes) on the seat's lock, not player 1's (RE-lock-camera-ledger.md).
     const battle::targeting::FieldsScope targets(seat);
     g_fieldMove(self, deltaSeconds);
 }
@@ -792,7 +792,7 @@ void LogCounts() noexcept
 try
 {
     // Diagnostic fields of each controller: its control rotation (stock AController) and the camera
-    // sensitivity the game's ProcessPlayerInput scales the right stick by (RE-camera.md §9.3).
+    // sensitivity the game's ProcessPlayerInput scales the right stick by (RE-camera.md).
     constexpr std::uint32_t kCameraSensitivity = 0x9E8;
     for (int i = 0; i <= kSeatsBuilt; ++i)
     {

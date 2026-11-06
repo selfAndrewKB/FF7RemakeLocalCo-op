@@ -1,7 +1,6 @@
 #pragma once
 
-// The game's single slots answered for one further player (platform/byte_scope.h holds the mechanism; the
-// Rebirth mod kept one class per slot, player_two/primary_controller, leader_scope, focus_scope and lock_on).
+// The game's single slots answered for one further player (platform/byte_scope.h holds the mechanism).
 //
 // Square Enix's code keeps one copy of what is really per player. Each further player (2, and a later 3) gets
 // a set of contexts, bound as their objects appear and cleared as they go:

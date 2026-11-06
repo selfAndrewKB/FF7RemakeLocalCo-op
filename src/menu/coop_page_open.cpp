@@ -160,7 +160,7 @@ bool IsRootGuarded(void* object, bool& rooted) noexcept
 
 void ReleaseTop() noexcept;
 
-/// The hidden Top window kept from the garbage collector while the page is open (research RE-game-widgets.md §11.7):
+/// The hidden Top window kept from the garbage collector while the page is open (research/RE-game-widgets.md):
 /// Top's Hide takes it out of the overlay, nothing else holds it, and the manager's tick empties the title, help and
 /// guide once it is collected (about a minute in). The game's own System flow never reads Top while hidden; the page
 /// keeps it the current window, so it holds it as AddToRoot does, and only if no one else rooted it.

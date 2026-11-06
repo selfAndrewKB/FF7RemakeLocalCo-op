@@ -2,7 +2,7 @@
 
 // The rules of world/story_boxes, without the game (host-tested in tests/story_box_rules_test.cpp): which of a held
 // member's story-box entries wait, when a waiting one fires, and whether player 1's character has come to the box.
-// research/RE-held-member-story-boxes.md §3.4, §4, §7.
+// research/RE-held-member-story-boxes.md.
 
 #include <cmath>
 #include <cstdint>

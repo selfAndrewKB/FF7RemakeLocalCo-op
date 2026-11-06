@@ -1,13 +1,12 @@
 #pragma once
 
 // Walks the allocated elements of an Unreal TSparseArray (the element array of a TSet or TMap) by reading memory only.
-// Taken from Rebirth (platform/sparse_array.h, proven on its HUD sets), with two differences: the bound is a required
-// argument (a level's data table holds thousands of rows, a HUD set a few); and a bit word that cannot be read stops
-// the walk and reports false, where Rebirth skips it: a bad word means the bits pointer itself is suspect, and every
-// Remake walk this serves must stop there.
+// The bound is a required argument (a level's data table holds thousands of rows, a HUD set a few). A bit word that
+// cannot be read stops the walk and reports false: a bad word means the bits pointer itself is suspect, and every
+// walk this serves must stop there.
 //
-// Stock UE 4.18 layout, x64, the same as Rebirth's 4.26 (read in this build's own walk, UEndDataObjectAction__GetRowNames
-// 0x141988BD0, RE-data-table-rows.md):
+// Stock UE 4.18 layout, x64 (read in this build's own walk, UEndDataObjectAction__GetRowNames,
+// research/RE-data-table-rows.md):
 //   +0x00 Data (element pointer), +0x08 ArrayNum,
 //   +0x10 allocation bits, inline (4 dwords), +0x20 their heap pointer (used when non-null),
 //   +0x28 NumBits.

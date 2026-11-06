@@ -4,9 +4,9 @@
 // member goes to its AI, the player's view stays on it) or staging (the player keeps it), from the game's own data.
 //
 // Each kind's runner is the same code whether the level stages it or waits on it; the level data differs. Both
-// kinds signal the level on arrival through the same path (research/RE-fieldai-kinds.md §2, §3), so the same two of
+// kinds signal the level on arrival through the same path (research/RE-fieldai-kinds.md), so the same two of
 // the game's records say which:
-//   1. The level's waiters (research/RE-lead-arrival-wait.md §3). The setting's state row (Lead or MoveToTarget)
+//   1. The level's waiters (research/RE-lead-arrival-wait.md). The setting's state row (Lead or MoveToTarget)
 //      names its arrival trigger (string argument 2); the level state manager's active slots hold every level
 //      object's current state row, and a row lists the triggers it waits on. The member's own AI step always waits
 //      on its arrival (the setting to its next, e.g. Lead to Stable); any OTHER slot waiting on it (a story

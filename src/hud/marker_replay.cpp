@@ -456,8 +456,8 @@ void* ContextController(const void* context)
     return reinterpret_cast<ContextPcFn>(g_contextAt)(context);
 }
 
-/// The bar entry (p = element + 0x10) whose weak widget is `widget`, from the manager's set (RE-hud-battle-markers.md
-/// §2.4: data +0x08, NumBits +0x30, 0x150 per element, the weak widget at p+0).
+/// The bar entry (p = element + 0x10) whose weak widget is `widget`, from the manager's set (RE-hud-battle-markers.md:
+/// data +0x08, NumBits +0x30, 0x150 per element, the weak widget at p+0).
 std::uint8_t* BarEntryOf(void* manager, void* widget) noexcept
 {
     std::uint8_t* data  = nullptr;
@@ -482,7 +482,7 @@ std::uint8_t* BarEntryOf(void* manager, void* widget) noexcept
 }
 
 /// One reference more on the key's weak count: the targeted placement releases one (the tick does the same,
-/// `lock inc [ctrl+0xC]` at 0x1413DF7B3).
+/// `lock inc [ctrl+0xC]`).
 void AddWeakReference(void* controller) noexcept
 {
     if (controller != nullptr)
@@ -590,7 +590,7 @@ float HalfSizeOf(const BarObjects& objects) noexcept
     return half;
 }
 
-/// The visibility the tick gives a bar and its parts for `targeted` (RE-enemy-bar-two-content.md §6): 0 Visible, 1
+/// The visibility the tick gives a bar and its parts for `targeted` (RE-enemy-bar-two-content.md): 0 Visible, 1
 /// Collapsed. The stagger-bonus icon's applies only while the unit shows a bonus (the game sets it only then).
 struct Look
 {
@@ -735,7 +735,7 @@ void RefreshStatusIcons(const std::uint8_t* p, const BarObjects& objects, bool b
 }
 
 /// A further column's own y-ease for its displayed target's bar: the tick's arithmetic on the column's own copy
-/// (the game has no function for the step: it is inline in the tick, RE-enemy-bar-two-classification.md §4; the
+/// (the game has no function for the step: it is inline in the tick, RE-enemy-bar-two-classification.md; the
 /// recreation is three lines with the game's constants and its own dt helper).
 float& OwnEaseOf(int column, void* source) noexcept
 {
@@ -1065,9 +1065,9 @@ void ReplayBars(int column, const std::int32_t (&context)[2], void* controller) 
 }
 
 /// The displayed-target key on the bar manager answered for a seat's column while its label tick runs again (the
-/// ability label sits over that key's bar, RE-enemy-bar-two-classification.md §6; the tick only reads it). A seat with
+/// ability label sits over that key's bar, RE-enemy-bar-two-classification.md; the tick only reads it). A seat with
 /// no target gets the empty key: the label's bar lookup then finds nothing and the label stays at its own point, the
-/// single-player look of a player with no target (RE-enemy-bar-three-leaks.md (b)); left alone, the live key would put
+/// single-player look of a player with no target (RE-enemy-bar-three-leaks.md); left alone, the live key would put
 /// it over player 1's target. A mirror's column keeps the live key (player 1's look).
 class ColumnKeyScope
 {

@@ -1,10 +1,8 @@
 #pragma once
 
-// CharaPop's Light/Middle rule, as its evaluators apply it to one camera (research/RE-npc-near-player-two.md §1.3,
-// RE-world-two-views.md §1.2: CharaPopEntry_EvalLOD_Light_PrimaryCam 0x140F8E080, _Middle_PrimaryCam 0x140F8E6E0), for
-// the entries a further player's camera needs (world/npc_detail.h). Pure, host-tested (tests/charapop_rule_test.cpp). Taken from
-// Rebirth's player_two/charapop_rule.h unchanged in logic: Remake's evaluators apply the
-// same rule with the same parameter names.
+// CharaPop's Light/Middle rule, as its evaluators apply it to one camera (research/RE-npc-near-player-two.md,
+// RE-world-two-views.md: CharaPopEntry_EvalLOD_Light_PrimaryCam and _Middle_PrimaryCam), for
+// the entries a further player's camera needs (world/npc_detail.h). Pure, host-tested (tests/charapop_rule_test.cpp).
 //
 //   paused  when distance > should-tick and (in the FOV cone ? distance > in-camera : distance > out-of-camera)
 //   hidden  when distance > draw distance (the entries that hide only)
@@ -107,7 +105,7 @@ constexpr Hold HoldOf(const LodDistances& lod, const EntryView& two, const Entry
     return Hold::Keep;
 }
 
-// The same two questions for several further players' views at once (plan/seats.md step 3: the detail reach is the
+// The same two questions for several further players' views at once (the detail reach is the
 // union of every further player's): an entry is raised when any of their views needs it and player 1's camera does
 // not cover what that view asks; a raised entry is kept while any of their views still needs it.
 

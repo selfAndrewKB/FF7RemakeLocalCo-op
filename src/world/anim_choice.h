@@ -1,7 +1,7 @@
 #pragma once
 
 // Which camera the game's animation judge reads for one mesh, and a further player's camera snapshot in the game's own form
-// (research/RE-anim-two-views.md §1.2, §1.3, §2.4). Pure, host-tested (tests/anim_choice_test.cpp).
+// (research/RE-anim-two-views.md). Pure, host-tested (tests/anim_choice_test.cpp).
 //
 // The judge (EndSkelMeshComp_AnimOptimizationEval) turns a mesh's distance and angle to ONE camera snapshot into its
 // update mode, its bone refresh and its cloth and hair (Bonamik) mode, with thresholds written into the code:

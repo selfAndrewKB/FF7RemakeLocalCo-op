@@ -104,7 +104,7 @@ bool EnterSeat(int seat, std::uint64_t a1, std::uint64_t a2, std::uint64_t a3, s
     return platform::CallGuarded(g_enter, result, a1, a2, a3, a4);
 }
 
-/// The on/off table's battle-off block, step for step, on a seat's operator (RE-operator-settings-two.md §2.3):
+/// The on/off table's battle-off block, step for step, on a seat's operator (research/RE-operator-settings-two.md):
 /// mode 0, the Battle request popped, Free state, TargetLength and TargetOffset off, SpaceOffset back to following
 /// the row when the option says so, the MoveFollow elapsed reset, the field scales and pitch limits selected.
 void LeaveSeat(void* seatOperator) noexcept

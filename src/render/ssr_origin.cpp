@@ -68,7 +68,7 @@ std::atomic<bool> g_enabled{true};
 std::atomic<bool> g_loggedSwap{false};
 std::atomic<std::uint64_t> g_splitKept{0};  // pipeline calls inside a split frame, left with the game's shader
 
-// The pipeline calls run on the render thread [ASSUMPTION, as bloom's: RE-impl-facts-bloom-swap.md §7; the creation
+// The pipeline calls run on the render thread [ASSUMPTION, as bloom's: RE-impl-facts-bloom-swap.md; the creation
 // logs its thread]. The table is locked all the same, so a second thread could only wait, never create twice.
 std::mutex                         g_mutex;
 std::array<Shader, kShadersMax>    g_shaders{};

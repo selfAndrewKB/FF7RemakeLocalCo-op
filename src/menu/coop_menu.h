@@ -1,6 +1,6 @@
 #pragma once
 
-// The Co-op row of the game's main menu and the page it opens (research/RE-game-widgets.md §9-§10; plan/topics/
+// The Co-op row of the game's main menu and the page it opens (research/RE-game-widgets.md; plan/topics/
 // input.md; the rows and texts: menu/coop_menu_rules.h; the page: menu/coop_page; its opening and
 // closing: menu/coop_page_open).
 //

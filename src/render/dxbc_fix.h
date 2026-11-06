@@ -231,7 +231,7 @@ inline Swap SwapOnce(std::span<std::uint8_t> dxbc, std::span<const std::uint32_t
     return Swap::Done;
 }
 
-// --- Square Enix's SSR pixel shaders (research/RE-third-view-ghost.md §2.2) ---------------------------------------
+// --- Square Enix's SSR pixel shaders (research/RE-third-view-ghost.md) ---------------------------------------------
 // The pass draws every view over the whole buffer, so SV_Position (v1) is already the absolute pixel, yet the shader's
 // first instruction adds the view's corner (View.ViewRectMin, cb1[121]) again before its GBuffer and depth loads: a view
 // one column in reads the next column. The fix loads at the pixel itself (the same at corner 0, so right for every view).

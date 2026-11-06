@@ -1,6 +1,6 @@
 #pragma once
 
-// A seat's nav-area component ticks in that seat's scopes (RE-operator-settings-two.md §2.5).
+// A seat's nav-area component ticks in that seat's scopes (research/RE-operator-settings-two.md).
 //
 // Each End player controller owns a nav-area component whose tick diffs its own leader's nav areas and, on an
 // InDoor or Town volume's enter and leave, pushes or pops that volume's camera setting on "the" field camera
@@ -21,7 +21,7 @@
 // again so that every current volume Enters on the new operator through the game's own sequence.
 //
 // A hook area (EndNavAreaHookShot) is entered through the same diff: its enter writes the "Search (RS)" row on the
-// command controller in EndUISystem[19] and its leave clears it (RE-hookshot-two.md §1 item 5 (ii)). The component
+// command controller in EndUISystem[19] and its leave clears it (research/RE-hookshot-two.md). The component
 // diffs the seat's own leader, so every enter or leave it runs is the seat's: the seat's command controller is put in
 // that slot on its own, whether or not the other three held (a scene that gives the member back unbinds the operator
 // and leader, not the command controller), and the tick runs either way. Known edge: a seat that stands in a hook area

@@ -194,7 +194,7 @@ void Place(void* entry, void* canvas, float dt, void* controller, const Vector3*
             ++g_seen.recorded;
         }
         // A seat's own icon: the tick's placement (player 1's view, and the single view's) keeps it transparent, its alpha
-        // held at 0 with no step (RE-lead-marker.md §1.3); the owner's column fades its own alpha in the replay.
+        // held at 0 with no step (RE-lead-marker.md); the owner's column fades its own alpha in the replay.
         if (AnyOwned())
         {
             static std::uint32_t listedAt = ~0u;  // the frame the tick last walked the map

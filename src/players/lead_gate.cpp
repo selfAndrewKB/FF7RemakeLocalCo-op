@@ -308,7 +308,7 @@ struct MarkerPoint
 };
 
 /// A named point's world location: the level's field point of that name, the lookup the objective marker makes
-/// first (RE-lead-arrival-wait.md §6); false when the name is no field point of the loaded level.
+/// first (research/RE-lead-arrival-wait.md); false when the name is no field point of the loaded level.
 bool PointLocation(std::int64_t name, Vec3& out) noexcept
 {
     std::uint8_t*       root      = field_root::Root();
@@ -619,7 +619,7 @@ std::int64_t OwnBoxAhead(const std::vector<Slot>& slots, const Slot& self, std::
 }
 
 /// The waiters on the setting's arrival trigger: the slots whose current state lists it (in the trigger's scope), and
-/// the trigger row's own direct sets on other objects. RE-lead-arrival-wait.md §3.
+/// the trigger row's own direct sets on other objects (research/RE-lead-arrival-wait.md).
 Census Waiters(const std::vector<Slot>& slots, std::int64_t object, std::int64_t state,
                const std::vector<MarkerPoint>& markers, const void* member) noexcept
 try
@@ -741,7 +741,7 @@ struct Marker
     std::vector<MarkerPoint> points;  // where the shown markers are drawn
 };
 
-/// The objective markers shown now and what they ride on: RE-navi-icon-target.md §2, the game's own slot choice.
+/// The objective markers shown now and what they ride on, by the game's own slot choice (RE-navi-icon-target.md).
 Marker Markers(const std::uint8_t* root, std::int64_t object) noexcept
 try
 {
@@ -987,7 +987,7 @@ bool Enters(const std::uint8_t* row, std::int64_t act)
     return false;
 }
 
-/// A live AutoWalk act that leashes player 1 to the member (players/leash_rules.h; RE-lead-unlock.md §5). The search
+/// A live AutoWalk act that leashes player 1 to the member (players/leash_rules.h; RE-lead-unlock.md). The search
 /// runs from the level's few AutoWalk acts (the index) rather than from every active slot: an act aimed at the member
 /// and armed is live when an active slot of its object holds its state and that state enters it, as the act runner
 /// tests each tick. The same verdict as a walk over every slot's enter actions, at a few lookups a census

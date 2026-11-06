@@ -1,11 +1,11 @@
 #pragma once
 
 // The Co-op page's rules: what the game's Options screen shows when the mod opens its own copy from the Co-op row of the
-// main menu (research/RE-game-widgets.md §9-§10; plan/topics/input.md). The rows are the settings
+// main menu (research/RE-game-widgets.md; plan/topics/input.md). The rows are the settings
 // table's options (platform/settings.h), one category per section in the table's order, one List row per option with
 // its words' names as the values. A row is told apart from the game's own by its category byte: the game's real
 // settings live at 0..0x34, the mod's rows take 0x80 + the option's place in the table, which the game never makes, so
-// its own value code reads 0 for them and writes nothing (§9.3). Pure: tested on the host (tests/coop_menu_rules_test.cpp).
+// its own value code reads 0 for them and writes nothing. Pure: tested on the host (tests/coop_menu_rules_test.cpp).
 
 #include "control/registry.h"
 #include "platform/settings.h"
@@ -31,7 +31,7 @@ inline constexpr const wchar_t* kTitle    = L"Co-op";
 inline constexpr std::uint8_t kFirstRowByte = 0x80;
 
 /// The Options screen's category keys the page fills, in order: keys the game's own build leaves in its map, skipping 5
-/// and 6 (the controller and keyboard pages take their own paths, §9.3).
+/// and 6 (the controller and keyboard pages take their own paths).
 inline constexpr std::array<std::uint8_t, 6> kCategoryKeys{0, 1, 2, 3, 4, 7};
 
 /// A section's name and help on the page.
@@ -120,10 +120,10 @@ inline std::optional<int> OptionOf(std::uint8_t rowByte) noexcept
     return option < static_cast<int>(settings::kOptions.size()) ? std::optional<int>(option) : std::nullopt;
 }
 
-/// The game's longest value list built in code (Resolution, 11 values: research/RE-options-value-list.md §1): its value
+/// The game's longest value list built in code (Resolution, 11 values: research/RE-options-value-list.md): its value
 /// pull-down cannot scroll, so a row with more values is the game's slider row instead (a Range row over its values'
 /// places, 0 to count - 1, the same number a list row passes), shown through a window of the stock gauge's 10 cells
-/// that scrolls with the value (research/RE-options-gauge-scroll.md §5).
+/// that scrolls with the value (research/RE-options-gauge-scroll.md).
 inline constexpr std::size_t kListLongest  = 11;
 inline constexpr int         kSliderWindow = 10;
 

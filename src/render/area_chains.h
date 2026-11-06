@@ -1,7 +1,8 @@
 #pragma once
 
-// Each view's own chain of area light settings (lever A of render/shadows_per_view; RE-shadows-per-view-build.md §3), a
-// pure rule tested on the host (tests/area_chains_test.cpp) over a model of the game's setter.
+// Each view's own chain of area light settings (lever A of render/shadows_per_view;
+// research/RE-shadows-per-view-build.md), a pure rule tested on the host (tests/area_chains_test.cpp) over a model of
+// the game's setter.
 //
 // Every view's camera evaluation pushes "defaults" then "this view's blend" of the rendering-settings controllers to the
 // one scene (FScene::SetDirectLightControllerBlendData, run on the render thread in queue order), so the scene ends the

@@ -4,10 +4,10 @@
 // tested on the host (tests/battle_rates_rules_test.cpp).
 //
 // A multiplier is held as tenths (1 to 100: 0.1 to 10.0), the settings table's words (platform/settings.h). Every
-// scaled value is rounded as the game rounds its own rates (research/RE-enemy-stat-scaling.md §3.2-§3.3):
+// scaled value is rounded as the game rounds its own rates (research/RE-enemy-stat-scaling.md):
 // `(int)(2 * v * m + 0.5) >> 1` in float (157.5 gives 157, 157.75 gives 158); a scaled HP, stagger gauge or hit is at
-// least 1, as the game's own difficulty step keeps a hit. The EXP and AP rates are the game's integer percents (RE-streamlined-progression.md
-// §2.2), whole at every tenth.
+// least 1, as the game's own difficulty step keeps a hit. The EXP and AP rates are the game's integer percents
+// (research/RE-streamlined-progression.md), whole at every tenth.
 
 #include "platform/settings.h"
 
@@ -76,7 +76,7 @@ inline std::int32_t AwardPercent(std::int32_t stock, bool open, int tenths) noex
 }
 
 /// Whether the game's own per-hit difficulty step would see this hit, by its damage source's kind (the step's own
-/// conditions besides the sides and heal: research/RE-enemy-stat-scaling.md §3.3): damage types 2 to 9 (limit,
+/// conditions besides the sides and heal: research/RE-enemy-stat-scaling.md): damage types 2 to 9 (limit,
 /// status and ATB effects) and 12 and above (eat, steal) never reach it, nor power type 11 (HP to one digit).
 inline bool HitKindScales(std::uint8_t damageType, std::uint8_t powerType) noexcept
 {

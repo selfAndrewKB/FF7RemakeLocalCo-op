@@ -61,7 +61,7 @@ struct Status
     float        bound    = 0;
 };
 
-/// One console setting the mod holds, Rebirth's players/held_setting rules by hand: the value read before every write
+/// One console setting the mod holds: the value read before every write
 /// (one the mod did not write is the one to put back), the mod's value counted as written once its command ran, and
 /// put back only while the mod's is still in place.
 template <class T>

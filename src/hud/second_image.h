@@ -2,16 +2,15 @@
 
 // The further columns' HUD images: the game's own overlay rendered again each frame for each further column
 // (hud/overlay_pass.h), before the game's own render, into a layer entry per column of the same pool-2 ring slot
-// (RE-hud-overlay-pass.md §10; Rebirth's hud/second_image, the same mechanism re-found; built for one further column,
-// keyed by column in plan/seats.md step 4).
+// (research/RE-hud-overlay-pass.md).
 //
-// The overlay's render delegate (vtable slot 0x144BF4DB0, the thunk 0x14151BAF0 that calls
+// The overlay's render delegate (a vtable slot, the thunk that calls
 // SEndRootOverlay__RenderToInGameUILayer with the overlay) is replaced by a driver that, while the image is on and the
 // split is shown, runs:
 //   1. a pass per further column, the highest first: the game's render, with DeltaTime 0 (g_FApp_DeltaTime, read by the
 //      paint's widget ticks) and the overlay's fade saved and restored (it advances by the world's delta instead), so
 //      no timer or animation advances twice. The frame's first pass makes the real slot acquire and holds the slot
-//      (the acquire call 0x141509FCF, crossing a block: installed from the game thread outside the render); every later
+//      (the acquire call crosses a block: installed from the game thread outside the render); every later
 //      pass takes the held slot; each pass's layer entry is named for its column (hud/overlay_layout's entry call) and
 //      laid out in its column's view; its submit is skipped; the navi map's pool 0 is handed over between the passes
 //      (hud/minimap.h);

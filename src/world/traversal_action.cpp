@@ -853,9 +853,9 @@ int FlavorActive(const void* op, std::uint8_t id) noexcept
 }
 
 /// A seat's grappling hook starting or ending: the hookshot camera on its player's operator and on player 1's
-/// (research/RE-hookshot-two.md live check 4: the seat's goes on and off, player 1's stays off); whether the seat's
-/// controller possesses the member (the game's own move hold during the turn needs it, RE-hookshot-press.md live check 4)
-/// and the member's mesh tilt (a flight without its landing leaves it tilted, live check 1d).
+/// (the seat's goes on and off, player 1's stays off); whether the seat's
+/// controller possesses the member (the game's own move hold during the turn needs it)
+/// and the member's mesh tilt (a flight without its landing leaves it tilted).
 void LogHookShotCameras(int seat, const void* member, const wchar_t* when) noexcept
 {
     const void* controller = players::seat_objects::Controller(seat);

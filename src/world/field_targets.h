@@ -1,8 +1,7 @@
 #pragma once
 
 // A further player opens chests, picks up the shining items on the ground, opens doors and curtains and fires the
-// grappling hook with their own pad, as player 1 does (research/RE-chest-two.md, §8 the pre-build review;
-// research/RE-hookshot-two.md; Rebirth's player_two/field_pickup was the model).
+// grappling hook with their own pad, as player 1 does (research/RE-chest-two.md, RE-hookshot-two.md).
 //
 // The game keeps one field target manager. Each frame its pick finds the nearest target around the party leader (the
 // prompt row, the icons, the leader's glance), and its press opens the current target on FieldAction. Both are one game

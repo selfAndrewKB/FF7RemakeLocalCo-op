@@ -137,7 +137,7 @@ FreeRows FreeRowsOf(const Party& party) noexcept
 /// Each seat's rank (party_rank_rules.h); [0] unused. Game thread.
 std::array<int, kSeatSlots> g_rank{0, 1, 2};
 
-/// The field take tests of RE-slot-member.md §2.5 with the hold rule of field_hold.h, as a wait reason; None when
+/// The field take tests (research/RE-slot-member.md) with the hold rule of field_hold.h, as a wait reason; None when
 /// the member is free.
 Wait FieldWait(void* member) noexcept
 {

@@ -1,7 +1,7 @@
 #pragma once
 
-// Each seat's targeting: the game's own targeting tick run again, once per seat (RE-battle-member-two.md §5,
-// RE-battle.md §2.9; Rebirth's player_two/lock_on, the same shape, single-seat; the seats follow plan/seats.md step 3).
+// Each seat's targeting: the game's own targeting tick run again, once per seat (research/RE-battle-member-two.md,
+// RE-battle.md).
 //
 // The battle system keeps one set of target fields (the lock, the displayed target, the lock-camera target, the
 // target-list mode, the stick-switch latch, the dummy-lock option and timer). Its targeting tick (the lock toggle,

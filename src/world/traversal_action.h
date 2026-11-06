@@ -8,9 +8,8 @@
 // The game runs every character's field action from one tick function registered to run on any thread, so in practice
 // on a worker, where none of the mod's scopes reach. There its "is this the player?" tests (the component's type
 // against the party manager's leader type, inline in every state) say no for a further player's member, so the game
-// runs the member's version: it climbs to the far end by itself, with no input and no camera. Rebirth answered such
-// tests per thread through its one leader-test getter (climb_context, leader_answer); Remake has no
-// such getter, its tests are inline compares. So the mod uses the game's own placement instead: while a further player
+// runs the member's version: it climbs to the far end by itself, with no input and no camera. The tests are inline
+// compares, with no getter to answer per thread, so the mod uses the game's own placement: while a further player
 // is in, the tick function's "run on any thread" flag is cleared (the engine reads it every frame and runs the tick on
 // the game thread, as it does whenever concurrent ticks are off; set back when the last further player leaves), and
 // the call that ticks one character's component runs, for a seat's member, inside the seat's Leader, Primary and
@@ -70,7 +69,7 @@
 // eases out at the exit as player 1's does. The squeeze's and crawl's final switch-off also run on the animation side:
 // when a seat's action ends the mod leaves what is left on the seat's operator with the game's own leave (the duct and
 // ladder cameras, eased; skipped if already leaving) or deactivate (logged). A two-way jump takes its side from where
-// the jumper stands (research/RE-traversal-phases-two.md §3).
+// the jumper stands (research/RE-traversal-phases-two.md).
 // The three moves the game's AI companions also take (research/RE-traversal-deferred-two.md): the gap jump's long-jump
 // finish ticks the component on the animation side, outside these scopes: for a seat's member it only sets the state
 // done and the member's next scoped tick ends the jump; the pole slide's finish would leave player 1's pole camera (its

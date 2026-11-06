@@ -137,7 +137,7 @@ std::uint8_t NotFaded(const void* state) noexcept
 
 /// True if the state's character is the party leader's type (the game's own test, read the same way). Read live: the
 /// post-tick runs outside every scope of the mod, so it is player 1's leader; if a change ever runs it inside a seat's
-/// scopes (as the slide-down's), revisit this test (research §4.2 E12).
+/// scopes (as the slide-down's), revisit this test.
 bool LeaderState(const void* state) noexcept
 {
     const void*  component = ReadPointer(state, facts::kStateComponent);
@@ -161,7 +161,7 @@ void KeepFadeOff(void* state)
     platform::LogTrace(L"overlap fade: {} state {} not faded {}", kMoves[I].name, state, notFaded);
     if (LeaderState(state))
     {
-        original(state);  // the leader's own branch: only the vent crawl has one (when it fires is unknown, research §2.4)
+        original(state);  // the leader's own branch: only the vent crawl has one (when it fires is unknown)
         if (notFaded != 0 && NotFaded(state) == 0)
         {
             g_leaderFades.fetch_add(1, std::memory_order_relaxed);

@@ -116,7 +116,7 @@ void MakeBuffers() noexcept
     g_ready.store(true, std::memory_order_release);  // after the tables: the game thread records entries only then
 }
 
-/// Whether `batch` is one of `entries`' batches: the draw call is given [entry+0x80] + 0x50 (RE-hud-two-images.md §2.3).
+/// Whether `batch` is one of `entries`' batches: the draw call is given [entry+0x80] + 0x50 (RE-hud-two-images.md).
 bool BatchOf(const std::uintptr_t (&entries)[4], const void* batch) noexcept
 {
     for (const std::uintptr_t& slot : entries)

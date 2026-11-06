@@ -87,7 +87,7 @@ constexpr bool Waiting(std::int32_t wait) noexcept
 
 /// The close's sound is held back while another menu still waits, so the first of two menus to close does not lift the
 /// other's. The menus tick in order (player 1's first, then each seat's): one ticking later still counts while closing, so
-/// of several closing in one frame the last plays it. `me`: the ticking menu's place. Rebirth's rule (battle/menu_rules.h).
+/// of several closing in one frame the last plays it. `me`: the ticking menu's place.
 constexpr bool HoldSoundOff(int me, std::span<const std::int32_t> waits) noexcept
 {
     for (int other = 0; other < static_cast<int>(waits.size()); ++other)

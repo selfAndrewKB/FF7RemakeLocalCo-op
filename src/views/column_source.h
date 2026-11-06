@@ -3,7 +3,7 @@
 // Where each column's view comes from, decided in one place each tick (plan/seats.md), so that the scene camera, the
 // mirror player and the HUD's tick do not each decide a part with nothing naming the outcome per column. Pure rules over
 // this tick's facts, host-tested (tests/column_source_test.cpp); the entry point (mod.cpp) applies the result and nothing
-// else decides. The design is Rebirth's views/column_source, its names kept; the moments are Remake's.
+// else decides.
 //
 // A column (views/columns.h) shows one of three things, one mechanism each:
 //   - Self: the player's own view, their own camera and their own HUD pass (hud/second_image.h). A scene plays on
@@ -17,7 +17,7 @@
 //     1's image, or, on a monitor of another shape, gets a pass of player 1's HUD laid out for it, as a mirror's does;
 //   - Screen: no column at all; the whole screen is the engine's single view, player 1's (players/single_view.h
 //     holds the viewport's split switch to it): the one-window look for the game's whole-screen moments, where
-//     cutscenes, menus and minigames collapse as in Rebirth; the mirror look is the row's.
+//     cutscenes, menus and minigames collapse; the mirror look is the row's.
 //
 // The moments: the game shows something that takes the whole screen (views/whole_screen.h: a pause menu, a shop, a
 // script menu, a pause-family widget, a cutscene, the event camera (a scripted talk, an event), a skippable scene, a
@@ -32,8 +32,8 @@
 // on|off` is the development override. The entry point applies the single view through the switch and, when the
 // switch cannot be had, decides again with the columns held: never a split with a menu over it.
 //
-// The entry point logs each seat's change once, with its reason, in plain words (Describe). Kept for parity with
-// Rebirth's, unused in Remake today: Shown's per-column sources, ViewsSplit and ListenerColumn (audio/listeners
+// The entry point logs each seat's change once, with its reason, in plain words (Describe). Read by no
+// module: Shown's per-column sources, ViewsSplit and ListenerColumn (audio/listeners
 // follows each seat's own controller), Map's mirrors.
 
 #include "players/seat_state.h"
@@ -143,8 +143,7 @@ struct Shown
     }
 
     /// The column a second sound listener would follow: the first further column listed whose source is not
-    /// PlayerOne, or -1 when none is. Not applied in Remake (audio/listeners follows each seat's own controller);
-    /// kept as Rebirth's.
+    /// PlayerOne, or -1 when none is. Not applied (audio/listeners follows each seat's own controller).
     constexpr int ListenerColumn() const noexcept
     {
         for (int column = 1; column < columnCount; ++column)

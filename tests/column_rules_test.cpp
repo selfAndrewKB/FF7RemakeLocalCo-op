@@ -284,7 +284,7 @@ void TwoViews()
     EXPECT(Same(TwoEntryWanted(kStockTopBottom, true, kDefaultOrder, {0, 1, -1}).record, kStockTopBottom));
     EXPECT(Same(TwoEntryWanted(kStockSideBySide, false, p2First, {0, 1, 2}).record, kStockSideBySide));
     const TwoRecords swapped = TwoEntryWanted(kStockSideBySide, true, p2First, {0, 1, -1});
-    // RE-layout-fov.md §9.3's swapped values: player 1 on the right half, player 2 on the left.
+    // The swapped values (research/RE-layout-fov.md): player 1 on the right half, player 2 on the left.
     EXPECT((swapped.record[0] == Record{0.5f, 1.0f, 0.5f, 0.0f}) && (swapped.record[1] == Record{0.5f, 1.0f, 0.0f, 0.0f}));
     const TwoRecords below = TwoEntryWanted(kStockTopBottom, true, p2First, {0, 1, -1});
     EXPECT((below.record[0] == Record{1.0f, 0.5f, 0.0f, 0.5f}) && (below.record[1] == Record{1.0f, 0.5f, 0.0f, 0.0f}));

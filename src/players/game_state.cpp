@@ -194,7 +194,7 @@ bool MenuOwnsInput() noexcept
     {
         return true;
     }
-    // A shop runs in the field state (6): its UI's own "a shop is up" byte (RE-shop-two.md §3).
+    // A shop runs in the field state (6): its UI's own "a shop is up" byte (research/RE-shop-two.md).
     return ShopUp() || PauseWidgetAlive();
 }
 

@@ -89,7 +89,7 @@ bool g_oneTicking = false;  // player 1's operator is ticking (a request found t
 /// Within this many frames a change reads as "just before" a jump.
 constexpr std::uint64_t kNearFrames = 120;
 
-/// A seat's operator tick, read around it (RE-lock-camera-ledger.md L1, L2, L5; nothing is changed).
+/// A seat's operator tick, read around it (research/RE-lock-camera-ledger.md; nothing is changed).
 struct FrameReadings
 {
     std::uint32_t ticks            = 0;

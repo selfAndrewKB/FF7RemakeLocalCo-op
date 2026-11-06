@@ -9,7 +9,7 @@
 // cannot be carried in: the run from there to its point never passes through the box (story_box_rules RunCrosses), so
 // left alone, the box's held-back enter fires at the hand and the step plays where the member stands (seen in play: Tifa's
 // fence animation against the wrong stretch of the gate, a slow slide back). In single player the game's own follow AI
-// warps a companion more than 10 m from its leader back beside it (RE §1); a held member never gets that warp. So, just
+// warps a companion more than 10 m from its leader back beside it; a held member never gets that warp. So, just
 // before the hand, when the run from where the member stands misses its box and the run from beside player 1's character
 // passes through it:
 //   - a navmesh point 1.5 m from player 1's character toward the run's point, else 35 degrees to either side, else
@@ -17,7 +17,7 @@
 //     world/talk_gather's call);
 //   - the game's battle-warp move on the member there (its party teleport, which syncs the member's own trigger sweep at
 //     the landing, and a short fade-in), facing the run's point. Nothing else of the battle warp (its control-layer bits
-//     can leave a field member unable to move: RE §4). The member is still its player's at that moment, its AI's move
+//     can leave a field member unable to move). The member is still its player's at that moment, its AI's move
 //     refused, so the run starts from the new spot when the hand follows;
 //   - the member's held-back story enters that this run passes through wait for its own body (world/story_boxes
 //     AwaitRun): the game's own enter as it runs in (seen at the enter's redirect). A run that misses its box (the AI's

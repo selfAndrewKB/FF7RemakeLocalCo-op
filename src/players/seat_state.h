@@ -1,7 +1,7 @@
 #pragma once
 
-// A seat's state, derived from the session's record of it (plan/seats.md: out, awaiting, rejoining, in, playing,
-// handed; the deferred design item of the first review, open-items §7). The session keeps flags; the readings and
+// A seat's state, derived from the session's record of it (out, awaiting, rejoining, in, playing,
+// handed). The session keeps flags; the readings and
 // the log want one word. Pure, host-tested (tests/seat_state_test.cpp).
 
 namespace lss::players {

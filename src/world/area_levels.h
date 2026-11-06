@@ -1,8 +1,8 @@
 #pragma once
 
 // Every player's area stays loaded and solid, not only player 1's: left to the game, the world and much of its lighting
-// unload around a further player, who cannot move until player 1 returns (research/RE-world-streaming-levers.md
-// §1, §2, §4; S-RMK-STREAM's lever A, the planner set by id, loads nothing of the ground and is not used).
+// unload around a further player, who cannot move until player 1 returns (research/RE-world-streaming-levers.md;
+// the planner set by id loads nothing of the ground and is not used).
 //
 // The game streams the world by player 1's area alone: Square Enix's EnvironmentSet manager traces down from the party
 // leader, and on a change of the area's set it hands that set's level list, one byte per level (0 shown, 1 hidden,
@@ -23,7 +23,7 @@
 // comes first. `env-sets off` stops the further players' view hides only; their areas still load.
 // Not built yet (logged): the per-view hides of a level that one player's area hides and another's shows (it shows in
 // both views; counted per player in the request line), and the further players' planner levels (triggers, nav walls,
-// minimap volumes: lever A' of the research).
+// minimap volumes).
 // Logged: player 1's list as the game asks for it (Info, from level_watch), each merged or own request with what it
 // added and dropped (Info), a cut (Info). `area-levels on|off` (on); reading `world.area-levels`.
 // Game thread: the game calls the slot-4 request inside the manager's tick, where env_sets' read runs too. The call's

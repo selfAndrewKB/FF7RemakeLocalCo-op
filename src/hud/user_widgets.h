@@ -3,7 +3,7 @@
 // The live UUserWidgets, kept current without walking every UObject.
 //
 // A walk of GUObjectArray (UE4SS FindAllOf) costs ~20-25 ms in FF7R, so doing it every few frames
-// stalls the game (seen in Rebirth: a scan every 30 ticks while player 2 was in; taken from Rebirth's hud/user_widgets). Instead, UE4SS's
+// stalls the game. Instead, UE4SS's
 // StaticConstructObject post-callback records each UUserWidget as the engine constructs it; one
 // walk at install (while the game loads) finds the widgets made before. Construction may run on loading threads,
 // so new widgets are queued under a lock and taken on the game thread. Collected widgets are

@@ -1,15 +1,15 @@
 #pragma once
 
-// Battle world markers placed through each player's own camera (RE-hud-battle-markers.md §3.1, §3.3; Rebirth's
-// enemy_gauges and popups, the same capture-and-replay shape).
+// Battle world markers placed through each player's own camera (research/RE-hud-battle-markers.md), by capture and
+// replay.
 //
 // The HUD ticks run once a frame, before the overlay renders, and place every marker through player 1's view. Their
 // placement functions are stateless (they project, then write the widget's viewport offsets), so the mod records each
 // call's arguments during the game's own tick and makes the same calls again around each further column's pass:
-//   - enemy bars (slot 27): EndUISlot27_EnemyBar_PlaceUntargeted 0x1413DBBC0 and _PlaceTargeted_LeaderClamp 0x1413DC010,
+//   - enemy bars (slot 27): EndUISlot27_EnemyBar_PlaceUntargeted and _PlaceTargeted_LeaderClamp,
 //     which project with the bar widget's PlayerContext (UUserWidget+0x1E8: the column's local player for the replay);
 //     the displayed target's bar then gets its y-ease applied (SetPositionInViewport, the ease not stepped);
-//   - battle text and damage numbers (slot 16): EndUI_BattleText_PlaceAtWorld_StoredPC 0x141496AD0, which projects with
+//   - battle text and damage numbers (slot 16): EndUI_BattleText_PlaceAtWorld_StoredPC, which projects with
 //     the controller it is given (the column's for the replay).
 // The entries are redirected (platform/entry_redirect.h; their first two instructions are copied, so the redirects are
 // installed from the game thread, outside these functions, which only the game thread runs).

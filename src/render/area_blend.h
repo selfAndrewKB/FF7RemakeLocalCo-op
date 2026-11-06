@@ -2,7 +2,7 @@
 
 // Each player's view takes the indoor or outdoor look of its own camera. Left alone, when player 1's Cloud walks into a
 // building the picture brightens for Cloud and the outside turns very bright in the other players' views
-// (research/RE-indoor-light-two.md; Rebirth has no counterpart).
+// (research/RE-indoor-light-two.md).
 //
 // Square Enix places area controllers in each level's lighting sublevel (camera exposure, auto exposure, tonemap, fog,
 // lights). Those of the "time in box / time in sphere" kinds fade their settings in over a blend time while the camera

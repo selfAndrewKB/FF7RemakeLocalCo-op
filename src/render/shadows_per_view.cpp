@@ -159,7 +159,7 @@ bool CopyFog(std::uint8_t* fog, code::FogRec& r, bool intoFog) noexcept
 /// InitFogConstants: the fog stub gives the scene's first fog each view's values as the loop reaches that view; what it
 /// held before is the game's record for the stub's fallback, and is put back after, so everything later in the frame
 /// (volumetric fog) reads the game's.
-void FogConstants(void* renderer)  // the original returns a pointer no caller reads (0x1425D3789)
+void FogConstants(void* renderer)  // the original returns a pointer no caller reads
 {
     std::uint8_t* scene = nullptr;
     std::uint8_t* fog   = platform::Read(static_cast<const std::uint8_t*>(renderer) + 8, scene) ? FirstFog(scene) : nullptr;

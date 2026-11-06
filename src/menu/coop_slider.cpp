@@ -115,7 +115,7 @@ std::wstring ClassName(void* object) noexcept
     return object != nullptr && platform::CallGuarded(&ClassText, object, &text) && !text.empty() ? text : L"(none)";
 }
 
-/// The strip's readings the build rests on (research/RE-options-gauge-scroll.md §6 check 1): its clipping, its
+/// The strip's readings the build rests on (research/RE-options-gauge-scroll.md): its clipping, its
 /// desired count, its scroll bar, its slot, the size it was last given and its scroll range.
 void LogReadings(void* strip, const settings::Option& row) noexcept
 {

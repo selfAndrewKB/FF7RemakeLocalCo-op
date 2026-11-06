@@ -1,6 +1,6 @@
 #pragma once
 
-// The field root and what the modules read off it, in one place (research/RE-lifecycle-world.md §3 and §8,
+// The field root and what the modules read off it, in one place (research/RE-lifecycle-world.md,
 // RE-script-release.md): the game's field root object (facts::kEndGameRootGlobal), its state manager (the field
 // control lock's mask and counter live there, as do the on/off table and the owner of each id), the root's object
 // that holds the character registry and the field battle state, the battle system global (null outside battle), the

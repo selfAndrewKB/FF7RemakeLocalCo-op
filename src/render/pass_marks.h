@@ -9,7 +9,7 @@
 // leave the GPU idle between passes; a pass's own time stays exact (its commands sit between its two marks), the
 // view's total grows. It is turned on for a trace only (tools/perf/gputrace.ps1).
 //
-// How: each pass is one direct call in the scene renderer (FDeferredShadingSceneRenderer::Render 0x1421E64A0; 59
+// How: each pass is one direct call in the scene renderer (FDeferredShadingSceneRenderer::Render; 59
 // sites, research/.ida-mcp/pass-marks/_sites.tsv, byte-checked at install). While on, each call goes to a wrapper
 // (platform/call_redirect.h) that puts a node on the RHI command list before and after the original call; on the RHI
 // thread each node submits and begins or ends the pass's event on the queue (family_boundary::SubmitForMark,

@@ -1,8 +1,7 @@
 #pragma once
 
 // The battle sequence cameras (abilities, enemy specials, summons) on each player's own camera
-// (RE-seq-camera-two.md; Rebirth's player_two/attack_cameras, the same leak with a different state set; the seats
-// follow plan/seats.md step 3).
+// (research/RE-seq-camera-two.md).
 //
 // A battle camera sequence is one level-sequence actor with one camera actor; the request list keeps them, and
 // each field camera operator's tick evaluates every entry against its own leader (one operator per player) and
@@ -24,7 +23,7 @@
 //   - the cut raised in a seat's tick goes to the game's own primary-scoped cut (the seat's camera manager);
 //   - the tail's world writes follow "active on either camera": every operator that evaluates after the frame's
 //     first is seeded with the first's active camera, so the game's tail applies the first's and its own with the
-//     game's code (two players: the union; three: revisited when seat 2 is wired, plan/seats.md step 6), and each
+//     game's code (the union for two players; for three, the first's and its own, not all three), and each
 //     entry's active byte is the OR of every operator's once player 1's and every seat in play have ticked.
 // Not covered: sequence shakes start on player 1's camera manager only (the game has no path for the others, and the
 // mod does not recreate one), and the Command/LeaderChange flavors' own evaluation of the last active entry

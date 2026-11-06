@@ -1,6 +1,6 @@
 #pragma once
 
-// Where the title menu's Co-op row goes among its rows' kinds (research/RE-title-menu.md §3.2): directly below Options, so
+// Where the title menu's Co-op row goes among its rows' kinds (research/RE-title-menu.md): directly below Options, so
 // the rows through Options keep their places. Pure: tested on the host (tests/title_row_rules_test.cpp).
 
 #include <cstddef>

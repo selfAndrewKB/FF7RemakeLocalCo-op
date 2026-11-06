@@ -1,8 +1,7 @@
 #pragma once
 
-// Each seat's own battle target cursor: the game's cursor driver run again per seat (RE-target-cursor-two.md §6;
-// Rebirth's hud/target_views kept the per-view opacity hide, its cursor logic was re-implemented there; the seats
-// follow plan/seats.md step 3).
+// Each seat's own battle target cursor: the game's cursor driver run again per seat
+// (research/RE-target-cursor-two.md).
 //
 // The game has one battle target cursor, a widget whose pointer sits at `sys+0x10` of the battle system, outside the
 // target fields each seat already has a copy of (battle/targeting.h). One function, the cursor driver, creates,

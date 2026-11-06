@@ -3,7 +3,7 @@
 // GPU events around each player's view family, for GPU profilers (Nsight Graphics' GPU Trace, PIX): "LSS view 1",
 // "LSS view 2", ... on the D3D12 direct queue, so a trace splits the frame's GPU time by player view. The shipping
 // build compiles out the engine's own draw events, so without these a trace has no names at all
-// (research/RE-perf-3p-2026-11-02.md §5a).
+// (research/RE-perf-3p-2026-11-02.md).
 //
 // A dev switch, off at start (`view-marks on|off`): marking submits the open command list before the first family and
 // after the last (the reset already submits between families), so it costs a little GPU idle while on. It is turned on

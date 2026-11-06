@@ -1,9 +1,7 @@
 #pragma once
 
 // Every player walks where the story makes player 1 walk: left alone, in a forced walk player 1 and the AI walk but a
-// further player runs (research/RE-forced-walk-two.md; Rebirth's move_type_two was read: its
-// limits sit on the controller and are set through a setter, so its lever, the setter in the seat's scope, does not
-// carry).
+// further player runs (research/RE-forced-walk-two.md).
 //
 // Remake keeps a character's walk limits on the character itself (a move type and a dash type per layer), and each
 // player's controller reads only its own character's. The story's acts store the limit straight into the party leader's

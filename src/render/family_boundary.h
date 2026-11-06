@@ -1,8 +1,7 @@
 #pragma once
 
 // Between two players' view families, the game's own end-of-frame state reset, in RHI stream order; and, before each
-// family, which player's family the renderer draws next (render/family_now.h). RE-haze-occlusion.md Pass 10 I.1;
-// ported from Rebirth's renderer/family_boundary (its crash S-CRASH2), with this build's 4.18 layout.
+// family, which player's family the renderer draws next (render/family_now.h; research/RE-haze-occlusion.md).
 //
 // Why: the D3D12 state cache keeps raw, uncounted SRV pointers in fixed slots, and only
 // FD3D12CommandContext::ClearState empties it, once a frame in RHIEndFrame. Every scene render flushes pending
@@ -31,7 +30,7 @@
 // so the view's index is the node's function (one instance per index).
 // The exception to "only the game's code": the task's two-entry vtable, the node's function and the node append, which
 // the game inlines into every command and never exposes as a function. There is no game command that clears state
-// mid-frame; this is the least that issues one (Rebirth recorded the same exception).
+// mid-frame; this is the least that issues one.
 
 #include "render/family_boundary_list.h"
 #include "render/family_now.h"

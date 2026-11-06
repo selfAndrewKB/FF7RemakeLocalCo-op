@@ -7,8 +7,8 @@
 // The game has one field camera operator (a world actor, g_EndGameRoot+0x9B0) that follows the party leader
 // and writes the primary camera manager's pose slot 24 each tick; PartyManager+0 names the primary controller.
 // A seat's camera is the same operator class, spawned with the game's own spawn call and parameters, and run
-// with two globals swapped for the length of each of its calls (Remake/Documentation/research/RE-camera.md
-// §9.6, RE-impl-facts-v0.2.md):
+// with two globals swapped for the length of each of its calls (research/RE-camera.md,
+// RE-impl-facts-v0.2.md):
 //   - PartyManager+0 = the seat's controller, so the operator reads that controller's control rotation and
 //     writes that player's camera manager;
 //   - the root's operator weak pair = the seat's operator, so the game's own "the operator" lookups inside
@@ -47,7 +47,7 @@ void* Take(int seat) noexcept;
 
 /// Puts the game's input call back (unload). Install redirects it so that each seat's controller gets the game's
 /// input step right after player 1's, at the same point of the frame (the game ticks only the primary controller's
-/// input; RE-input-p2.md §1, RE-camera-jump-combo.md). One aligned block, so any thread may restore it.
+/// input; RE-input-p2.md, RE-camera-jump-combo.md). One aligned block, so any thread may restore it.
 void RemoveInputTick() noexcept;
 
 /// Test input (control scripts): while held, `user`'s stick record reads these values (LX, LY, RX, RY,

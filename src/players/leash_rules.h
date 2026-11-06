@@ -1,7 +1,7 @@
 #pragma once
 
 // Whether a live AutoWalk act leashes player 1 to a further player's member (players/lead_gate; research/
-// RE-lead-unlock.md §3, §5). Pure: no engine access, host-tested (tests/leash_rules_test.cpp).
+// RE-lead-unlock.md). Pure: no engine access, host-tested (tests/leash_rules_test.cpp).
 //
 // The level writes a leash on the default party leader as an AutoWalk act (Type 56) among a state's enter actions: while
 // the slot of object Str[0] holds state Str[1], the act measures the leader's distance to Str[2] (a character's tag or a

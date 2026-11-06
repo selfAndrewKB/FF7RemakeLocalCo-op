@@ -1,8 +1,7 @@
 #pragma once
 
 // The view columns: how many views the screen shows and whose each one is, read once per tick from the engine's
-// local-player list (plan/seats.md step 5; Rebirth's views/columns.h, the
-// Map taken as is). Pure, no game; host-tested (tests/columns_test.cpp).
+// local-player list. Pure, no game; host-tested (tests/columns_test.cpp).
 //
 // A column is one view slot of the engine's local player list, laid out by the engine: two players top and bottom
 // (one window) or side by side (the span), three as the engine's three-player entry or the mod's three equal columns
@@ -13,7 +12,7 @@
 // list index; a seat is a controller id; the two are never taken for each other. Where a column shows on screen is
 // the column order's (views/column_rules.h `column-order`).
 //
-// Unlike Rebirth's, Remake's mirrors take the lowest free controller id (the engine routes XInput user N to id N, so
+// The mirrors take the lowest free controller id (the engine routes XInput user N to id N, so
 // a mirror at a seat's id would swallow its pad while in; the session's join takes the mirrors out first), so a
 // mirror is not told by its id: the entry point names each place a seat, a mirror (mirror_player knows its places)
 // or unknown, and the Map is built from that.

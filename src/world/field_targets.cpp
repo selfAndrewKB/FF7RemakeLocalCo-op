@@ -53,7 +53,7 @@ constexpr int         kSeats   = players::scopes::kMaxPlayers;
 constexpr std::size_t kItems   = facts::kTargetsItems;
 constexpr std::size_t kPending = 16;  // chests a further player's press queued that have not begun yet
 
-/// What a target is, by the dispatch's own order (research/RE-chest-two.md §8.1, RE-talk-two.md §2.2): chests, ground
+/// What a target is, by the dispatch's own order (research/RE-chest-two.md, RE-talk-two.md): chests, ground
 /// items, NPCs, doors, curtains, grappling-hook points and the player's own swing are pressed for a further player.
 enum class Kind : std::uint8_t
 {
@@ -310,7 +310,7 @@ catch (...)
     return false;
 }
 
-/// What the target is, in the dispatch's order (§8.5).
+/// What the target is, in the dispatch's order.
 Kind Classify(std::uint64_t name, std::uint64_t state, const void* member) noexcept
 {
     if (name == 0)
@@ -453,7 +453,7 @@ private:
 };
 
 /// The seat can run now: in, with its member, and its copy at this manager (a new manager drops the old copy and the
-/// seat's icons; the manager is one object for the game's life, §8.3).
+/// seat's icons; the manager is one object for the game's life).
 bool Ready(int seat, SeatState& state, void* mgr) noexcept
 {
     if (g_broken || state.member == nullptr || state.localPlayer == nullptr || mgr == nullptr)

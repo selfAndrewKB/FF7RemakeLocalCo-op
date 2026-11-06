@@ -19,9 +19,9 @@ namespace lss::render::motion_history {
 
 namespace {
 
-// Facts read from the database (research/RE-velocity-per-family.md Q1, Q5).
-/// FScene's vtable (written by FScene__Ctor 0x14257F150 and its destructor); its GetRenderScene (slot 0x2D8, which the
-/// submission calls on the family's scene at 0x1425C979B) is `mov rax, rcx; ret`.
+// Facts read from the database (research/RE-velocity-per-family.md).
+/// FScene's vtable (written by FScene's constructor and destructor); its GetRenderScene (slot 0x2D8, which the
+/// submission calls on the family's scene) is `mov rax, rcx; ret`.
 constexpr std::uintptr_t kSceneVtable         = 0x144D63A58;
 constexpr std::uint32_t  kGetRenderSceneSlot  = 0x2D8;
 constexpr std::uintptr_t kGetRenderSceneSelf  = 0x14067ED80;

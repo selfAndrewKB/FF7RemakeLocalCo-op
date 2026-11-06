@@ -8,7 +8,7 @@
 // target, so each is fitted over the other. The compare is `cmp dword [GSystemResolution.WindowMode], 1` and the
 // compiler inlined it into the pass and each of its 320 pixel-shader setter permutations: 321 copies of one 7-byte
 // instruction, each followed (after at most two moves) by a `jnz` over the fit. There is no single site to redirect
-// (research/RE-view-size-fov.md §7.2, RE-multi-monitor-views.md §6.3), so every copy is patched.
+// (research/RE-view-size-fov.md, RE-multi-monitor-views.md), so every copy is patched.
 //
 // Upstream of the pass, with the 321 compares patched, a spanned window still shows one view over both monitors:
 // ULocalPlayer::CalcSceneView asks the viewport's window mode and, in mode 1, replaces each

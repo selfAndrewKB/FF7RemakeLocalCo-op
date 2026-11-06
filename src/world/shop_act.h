@@ -1,8 +1,8 @@
 #pragma once
 
 // A shop a further player opens is that player's: its camera zooms on the opener's view, the shopkeeper and the
-// opener's character face each other, and the opener's pad drives it (research/RE-shop-two.md §8; Rebirth's
-// player_two/shop_talk and shop camera skip were the model). Shopkeepers serve every player, and a shop pauses the
+// opener's character face each other, and the opener's pad drives it (research/RE-shop-two.md).
+// Shopkeepers serve every player, and a shop pauses the
 // whole game.
 //
 // A shopkeeper is an NPC (world/field_targets admits NPCs for further players). The press only fires the NPC's talk

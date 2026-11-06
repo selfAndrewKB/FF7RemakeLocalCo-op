@@ -1,5 +1,5 @@
 // Host-side tests for render/area_chains.h, run without the game: the per-view chains of area light settings over a
-// model of the game's setter (FScene__SetDirectLightControllerBlendData_RT 0x142583F10, as decompiled).
+// model of the game's setter (FScene__SetDirectLightControllerBlendData_RT, as decompiled).
 
 #include "render/area_chains.h"
 

@@ -32,7 +32,7 @@ bool Near(float value, float expected, float tolerance = 0.001f)
     return std::fabs(value - expected) <= tolerance;
 }
 
-/// A model of the game's EndUI__ContainScaleFor1920x1080 (Remake 0x1413A94A0; the same constants as Rebirth's), instruction for instruction,
+/// A model of the game's EndUI__ContainScaleFor1920x1080, instruction for instruction,
 /// for the host only (the mod calls the game's function): 1 for a size within 1e-8 of zero;
 /// width/1920 when width/height is below 16/9 or unordered; otherwise height/1080; at least 0.01.
 float ContainScaleFor1920x1080(float width, float height)

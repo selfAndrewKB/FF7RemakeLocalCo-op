@@ -37,7 +37,7 @@ IntRect VisibleBand(std::int32_t imageWidth, std::int32_t imageHeight, float vie
 
 namespace {
 
-// The game's constants: 1/1080 (the layout-scale multiply at 0x141509F0F) and 1/1920 (the contain leaf).
+// The game's constants: 1/1080 (the layout-scale multiply) and 1/1920 (the contain leaf).
 constexpr float kInv1920 = 1.0f / 1920.0f;
 constexpr float kInv1080 = 1.0f / 1080.0f;
 

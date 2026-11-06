@@ -1,8 +1,8 @@
 #pragma once
 
 // Each player's own grappling-hook search arrow: left alone, player 1's search arrow hides whenever another player's
-// appears (research/RE-hookshot-arrows.md; Rebirth's hud/search_pins kept one shared list and
-// hid by owner, which cannot work here: the game clears the whole list at every enter).
+// appears (research/RE-hookshot-arrows.md). One shared list hidden by owner cannot work: the game clears the whole
+// list at every enter.
 //
 // The game keeps the search compass and its arrows in one object (EndUISystem[55]): a hook area's enter and its
 // target-lost re-show first clear every arrow in it, its leave, focus and EndPlay fade every arrow out; the area actor
@@ -57,7 +57,7 @@ void TickForPass(int seat) noexcept;
 
 /// Game thread, from the overlay driver in a mirror's own HUD pass (hud/second_image.h), the column's host set in:
 /// player 1's arrows placed through `controller` (the mirror's camera) by the game's own per-arrow placement alone
-/// (EndUISlot55 PlaceArrow, its one controller lookup answered with the mirror's; RE-hookshot-arrows.md §8). It writes
+/// (EndUISlot55 PlaceArrow, its one controller lookup answered with the mirror's; RE-hookshot-arrows.md). It writes
 /// only each arrow's angle and place: player 1's slot tick, which steps the slot's state, is never run again.
 void PlaceForMirror(void* controller) noexcept;
 /// Game thread, after the further passes with player 1's host set back: player 1's arrows placed through their own

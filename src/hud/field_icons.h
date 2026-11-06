@@ -1,8 +1,8 @@
 #pragma once
 
 // The field objective and item icons (the diamond with its line, FieldQuestIcon_C) placed through each column's own
-// camera (RE-field-icon-placement.md §2, §5.1; Rebirth's hud/area_icons_two built a second icon manager, here one canvas
-// serves every view because the placement is one stateless call per icon).
+// camera (research/RE-field-icon-placement.md): one canvas
+// serves every view because the placement is one stateless call per icon.
 //
 // The slot-51 HUD tick places every icon once a frame with the first player controller (player 1's view), and every
 // HUD pass paints the one canvas, so a further column showed player 1's placement. The placement function
@@ -48,7 +48,7 @@ bool Enabled() noexcept;
 
 /// Game thread: the diamond of the navi icon `key` (its FName as 8 bytes) is seat `seat`'s own (hud/lead_mark): only
 /// that seat's column shows it; the tick's placement (player 1's view, the single view), the other columns and a
-/// mirror's place it transparent (its alpha held at 0, no step: RE-lead-marker.md §1.3). `seat` -1 gives it back to
+/// mirror's place it transparent (its alpha held at 0, no step: RE-lead-marker.md). `seat` -1 gives it back to
 /// every view. False when four keys are owned already. With the switch off the game's placement stands (every view).
 bool SetOwner(std::uint64_t key, int seat) noexcept;
 

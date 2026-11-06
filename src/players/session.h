@@ -9,7 +9,7 @@
 // player 3 joining with player 2 out takes column 1, and keeps it when player 2 joins after. The engine then lays
 // out the split screen by itself. Each view is filled (the game's main cameras ask for 16:9) with the stock setter
 // UCameraComponent::SetConstraintAspectRatio.
-// A further player exists only with a member to play (as in Rebirth): a join first asks the
+// A further player exists only with a member to play: a join first asks the
 // member test, and with the row's member not free nothing is created; the player waits outside the game and joins,
 // seating at once, when the member is free (the field steady, player 1 on a character; Ctrl+F8 stops the wait). A
 // second camera without a member would float alone over an empty view. A member in a walk its AI makes (a guide, a
@@ -42,7 +42,7 @@
 // objects (its controller, operator and member) are the registry's (players/seat_objects.h: the session binds the
 // controller at the join and forgets the seat at the leave), and the modules a seat drives own what they make (its
 // controller's scopes, its operator, its trigger, its member's seat). Every module the session tells of a leave is
-// per seat (plan/seats.md step 3).
+// per seat.
 
 #include "players/party_member.h"
 #include "players/seat_state.h"

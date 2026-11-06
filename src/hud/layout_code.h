@@ -1,51 +1,52 @@
 #pragma once
 
 // The machine code for the 16:9 assumptions in Square's HUD placement that misplace things in a split half's band
-// (RE-hud-overlay-pass.md §6.2, §6.3; Rebirth's hud/centered_frame_code.h and hud/arrow_edge_code.h, re-found here).
+// (research/RE-hud-overlay-pass.md).
 // Each is installed with platform::CodeRedirect inside one aligned 16-byte block. Pieces 1 to 3 replace ONE game instruction,
 // read a flag byte the HUD layout sets while the band applies (hud/overlay_layout.h), and with the flag clear do exactly what
 // the game does; piece 4 replaces two and needs no flag (below). No calls, no stack writes, rsp unchanged. Host-tested by
 // executing them (tests/layout_code_test.cpp).
 //
-// 1. The centred 1920x1080 frame. EndUI__GetCentered1920x1080Frame(FBox2D* out) (0x1413488A0, 14 callers: the
+// 1. The centred 1920x1080 frame. EndUI__GetCentered1920x1080Frame(FBox2D* out) (kFrameFunction, 14 callers: the
 //    off-screen search arrow, battle text, the item-get log...) returns a 1920x1080 box centred in the layout
 //    L = UI size / UI scale. For a 16:9 image (single player) that is the whole layout; in a 32:9 band it is a strip
 //    in the middle. While the band applies, the box is made the whole layout, as a 16:9 image makes it.
-//    Replaced: `movss [rbx+0Ch], xmm7` (Max.Y, 5 bytes at 0x141348924). There rbx = out, xmm2 = Min.X, xmm1 = Min.Y
+//    Replaced: `movss [rbx+0Ch], xmm7` (Max.Y, 5 bytes at kFrameSite). There rbx = out, xmm2 = Min.X, xmm1 = Min.Y
 //    (already stored), xmm3 = Max.X (stored by the function's last instruction, after this one), xmm7 = Max.Y
 //    (restored from the stack by the next instruction), rcx free (last read by the call before), rax = the return
 //    value (untouched). Flag set: Min = (0, 0), xmm3 += Min.X (= L.X), xmm7 += Min.Y (= L.Y); then the store.
 //
-// 2. The off-screen arrow's edge. EndUI__PlaceMarkerAtWorld_EdgeClamped60_120 (0x1414504B0) pins an arrow to a side
+// 2. The off-screen arrow's edge. EndUI__PlaceMarkerAtWorld_EdgeClamped60_120 pins an arrow to a side
 //    edge when its angle from the vertical is between 60° and 120°, else to the top or bottom: a 16:9 rectangle's
 //    corners. While the band applies, the edge is the one the ray from the centre really leaves by: a side edge
 //    exactly when the side edge's y (ySide, already computed) lies within [0, L.H - h], unless the ray is vertical.
-//    Replaced: `comiss xmm0, [60.0]` (7 bytes at 0x141450703). There xmm0 = |angle|, xmm7 = 0, xmm8 = L.H - h,
+//    Replaced: `comiss xmm0, [60.0]` (7 bytes at kArrowSite). There xmm0 = |angle|, xmm7 = 0, xmm8 = L.H - h,
 //    xmm10 = ySide; rcx is free (both branches set it before reading). The code also runs the three instructions
 //    that follow it in the game (two stack loads and an add, which leave the flags alone), then jumps to the side
-//    branch (0x141450726) or the top/bottom branch (0x14145075E). Flag clear: the game's own two compares, against
+//    branch (kArrowSide) or the top/bottom branch (kArrowTopBottom). Flag clear: the game's own two compares, against
 //    copies of its 60.0 and 120.0 (read from the game at install: the code pool may lie beyond rel32 reach of them).
 //
 // 3. The battle's off-screen enemy arrows, the same split in their own placement (EndUI_BattleOutsideIcon_
-//    PlaceEdgeClamped60_120 0x1413E3640; RE-outside-icons-per-view.md §5, §6): the same rule while the band applies.
-//    Replaced: `addss xmm12, [rsp+20h]` (7 bytes at 0x1413E3977), which makes ySide; the flags of the game's 60° compare
-//    are live across it. There xmm1 = |angle|, xmm6 = 0, xmm11 = L.H - h, [rsp+20h] = the centre's y; rcx is free (set
-//    by the atan2f call before, next written at 0x1413E39E1, read by neither branch). Flag set: the side branch
-//    (0x1413E3989) or the top/bottom branch (0x1413E39B9), each of which sets its own flags. Flag clear: the add, the
-//    60° compare again (the flag test destroyed its flags), and back to the game's own jbe and 120° compare.
+//    PlaceEdgeClamped60_120; research/RE-outside-icons-per-view.md): the same rule while the band applies.
+//    Replaced: `addss xmm12, [rsp+20h]` (7 bytes at kBattleArrowSite), which makes ySide; the flags of the game's 60°
+//    compare are live across it. There xmm1 = |angle|, xmm6 = 0, xmm11 = L.H - h, [rsp+20h] = the centre's y; rcx is
+//    free (set by the atan2f call before, next written at kBattleArrowSite + 0x6A, read by neither branch). Flag set:
+//    the side branch (kBattleArrowSide) or the top/bottom branch (kBattleArrowTopBottom), each of which sets its own
+//    flags. Flag clear: the add, the 60° compare again (the flag test destroyed its flags), then the game's own jbe
+//    and 120° compare.
 //
-// 4. The overlay's layout scale (RE-hud-overlay-pass.md §6.1; Rebirth's hud/layout/layout_scale_code.h). The render lays the
+// 4. The overlay's layout scale (research/RE-hud-overlay-pass.md). The render lays the
 //    overlay out at height/1080 of its rect, while every conversion from UI pixels to layout units uses the contain scale of
 //    the same rect, height/1080 for 16:9 and wider and width/1920 for narrower. The game only makes 16:9 images, where the two
 //    are equal. A view narrower than 16:9 lays out in a band narrower than 16:9 and the two part: world markers land off
 //    their objects, by the ratio of the two scales, and what the game keeps in its centred frame falls off the view. The
 //    scale becomes the contain rule, min(height/1080, width/1920), with the game's own constants; a rect of 16:9 or wider
 //    gets exactly the game's value (the stored 1/1920 rounds up and the stored 1/1080 down, so the width's term is never the
-//    smaller there), so there is no flag. The `mulss` (0x141509F0F) crosses a block, so the two instructions before it
+//    smaller there), so there is no flag. The `mulss` crosses a block, so the two instructions before it (kScaleSite)
 //    are replaced by themselves and the rule, resuming after it, its bytes left in place unrun. There edx = the rect's width,
-//    xmm2 = float(height), and xmm5 is free (next written at 0x14150A169, not read before). A thread stopped between the two
-//    replaced instructions would resume inside the jump, so this is installed from the game thread outside the render, the
-//    only thread that runs it.
+//    xmm2 = float(height), and xmm5 is free (next written at kScaleSite + 0x261, not read before). A thread stopped
+//    between the two replaced instructions would resume inside the jump, so this is installed from the game thread
+//    outside the render, the only thread that runs it.
 
 #include <array>
 #include <cstddef>
@@ -88,7 +89,7 @@ inline std::array<std::uint8_t, kFrameCodeSize> FrameCode(const std::uint8_t& ba
         0xC7, 0x03, 0x00, 0x00, 0x00, 0x00,        // 23: mov   dword [rbx], 0      Min.X = 0
         0xC7, 0x43, 0x04, 0x00, 0x00, 0x00, 0x00,  // 29: mov   dword [rbx+4], 0    Min.Y = 0
         0xF3, 0x0F, 0x11, 0x7B, 0x0C,              // 36: store: movss [rbx+0Ch], xmm7 (the replaced instruction)
-    };                                             // 41: (the jump back to 0x141348929 is appended here)
+    };                                             // 41: (the jump back to kFrameResume is appended here)
     const auto address = reinterpret_cast<std::uint64_t>(&band);
     std::memcpy(&code[2], &address, sizeof(address));
     return code;
@@ -103,7 +104,7 @@ inline constexpr std::uintptr_t kArrowTopBottom  = 0x14145075E;  // the top/bott
 inline constexpr std::uintptr_t kArrowSixty      = 0x144F92520;  // 60.0f
 inline constexpr std::uintptr_t kArrowOneTwenty  = 0x144F925D0;  // 120.0f
 
-/// 0x1414506C6 through 0x141450761: the atan2 and its scaling, the split, the side branch's start and the top/bottom
+/// From kArrowCheckStart: the atan2 and its scaling, the split, the side branch's start and the top/bottom
 /// branch's first instruction, as the research read them.
 inline constexpr std::uint8_t kArrowBytes[] = {
     0x41, 0x0F, 0x28, 0xCA, 0x41, 0x0F, 0x28, 0xC1, 0xE8, 0x9D, 0x39, 0x7C, 0x00, 0x0F, 0x28, 0xC8, 0xF3, 0x45, 0x0F,
@@ -179,7 +180,7 @@ inline constexpr std::uintptr_t kBattleArrowResume     = 0x1413E397E;  // the ga
 inline constexpr std::uintptr_t kBattleArrowSide       = 0x1413E3989;  // the side branch
 inline constexpr std::uintptr_t kBattleArrowTopBottom  = 0x1413E39B9;  // the top/bottom branch (checked through its first instruction)
 
-/// 0x1413E3938 through 0x1413E39BC: the atan2f call and its scaling, the 60° compare (against kArrowSixty), the site,
+/// From kBattleArrowCheckStart: the atan2f call and its scaling, the 60° compare (against kArrowSixty), the site,
 /// the 120° compare (kArrowOneTwenty), the side branch and the top/bottom branch's first instruction, as the research
 /// read them.
 inline constexpr std::uint8_t kBattleArrowBytes[] = {

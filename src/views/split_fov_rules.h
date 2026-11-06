@@ -5,11 +5,11 @@
 // The game's cameras give a horizontal FOV for a 16:9 image. With the constraint cleared, a view takes its whole part of
 // the window and the engine keeps that FOV as the view's horizontal one (MaintainXFOV), so a view as wide as the screen
 // and half as tall (two players in one window, the top view of three) shows the single-player width and half its height:
-// characters cut at the knees. Keeping the single-player height instead would make everything half size. Rebirth's rule
-// (views/view_shape.h SplitFov, chosen by eye) takes the geometric middle:
+// characters cut at the knees. Keeping the single-player height instead would make everything half size. The rule
+// (chosen by eye) takes the geometric middle:
 //     tan(vertical / 2) = tan(single-player vertical / 2) * heightRatio^weight      (weight 0.5)
-// with heightRatio the view's height over the single-player picture's. Remake improves on it in two ways
-// (research/RE-view-size-fov.md §4.4, §7 item 3): the single-player picture is the camera's image fitted into the
+// with heightRatio the view's height over the single-player picture's (research/RE-view-size-fov.md). The
+// single-player picture is the camera's image fitted into the
 // window (min(window height, window width / camera aspect)), so a window of another shape keeps the single-player
 // framing; and the rule applies only where it is needed: a view wider than the camera's image and shorter than the
 // single-player picture. A 16:9 quarter, a 16:9 monitor of a row and the single view all keep the engine's FOV unchanged.
@@ -19,12 +19,12 @@
 // A full-height view narrower than the game's image (two players side by side, the large view of three down one side) has
 // the opposite trade. Its height ratio is 1, so the formula above has nothing to weigh; the width does:
 //     tan(horizontal / 2) = tan(single-player horizontal / 2) * widthRatio^weight
-// with widthRatio the view's width over the single-player picture's. Weight 1 is Rebirth's rule: the single-player scale and
+// with widthRatio the view's width over the single-player picture's. Weight 1 keeps the single-player scale and
 // vertical FOV, the sides cropped (32.2 deg wide of a 60 deg camera at 8:9). Weight 0 is the whole single-player width in
-// those pixels, everything half size. Between them are Rebirth's own measured blends (48.7 deg at 0.35, 44.4 at 0.5, 40.4 at
-// 0.65; plan/topics/views.md in Rebirth), which Rebirth's rule leaves out, 1 being picked there by eye; here they are the
-// slider. A narrower view leaves any sideways camera offset a larger share of the screen, so ShoulderFactor softens that
-// offset by the view's width, no further than Rebirth's by-eye minimum (views/narrow_camera.h).
+// those pixels, everything half size. Between them are the measured blends (48.7 deg at 0.35, 44.4 at 0.5, 40.4 at
+// 0.65), offered by the slider; the default 1 is a by-eye choice.
+// A narrower view leaves any sideways camera offset a larger share of the screen, so ShoulderFactor softens that
+// offset by the view's width, no further than a by-eye minimum (views/narrow_camera.h).
 
 #include <algorithm>
 #include <cmath>
@@ -33,10 +33,10 @@
 
 namespace lss::views::split_fov_rules {
 
-/// The weight between keeping the single-player framing (0) and the single-player scale (1); Rebirth's by-eye middle.
+/// The weight between keeping the single-player framing (0) and the single-player scale (1); the middle, by eye.
 inline constexpr float kDefaultWeight = 0.5f;
 
-/// A narrow view's weight between the whole single-player width (0) and the single-player scale (1): Rebirth's by-eye 1.
+/// A narrow view's weight between the whole single-player width (0) and the single-player scale (1): 1, by eye.
 inline constexpr float kDefaultNarrowWeight = 1.0f;
 
 /// The weight a settings word stands for ("0.35", platform/settings.h kFovWeightWords); `fallback` for any other text.
@@ -157,7 +157,7 @@ inline float NarrowFov(float fovDegrees, float cameraAspect, const Shape& shape,
 /// The game's cameras ask for this image; the camera's sideways offset is only ever asked of them.
 inline constexpr float kImageAspect = 16.0f / 9.0f;
 
-/// How far a narrow view softens the camera's sideways offset: Rebirth's by-eye choice between 0.5, 0.7 and 0.8 at 8:9.
+/// How far a narrow view softens the camera's sideways offset: a by-eye choice between 0.5, 0.7 and 0.8 at 8:9.
 inline constexpr float kShoulderMinimum = 0.7f;
 
 /// The factor on the camera's sideways offset in this view: the view's width against the camera's (the ratio of the two

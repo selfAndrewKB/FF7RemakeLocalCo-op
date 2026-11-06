@@ -6,8 +6,7 @@
 // (players/single_view.h; views/column_source.h Why::WholeScreen): the menus, the cutscenes, the minigames the game's
 // own signals pick up, and the scripted talks and events that take the game's event camera (not
 // a free talk in the field camera or a field pickup, which hold the field control lock only; those play on every
-// view). Rebirth's views/whole_screen_reason.h gave the shape; the signals and their order are Remake's
-// (research/RE-lifecycle-world.md §8).
+// view). The signals and their order: research/RE-lifecycle-world.md.
 
 #include <cstdint>
 #include <string_view>
@@ -35,7 +34,7 @@ struct Signals
     bool skipping    = false;  // the cutscene manager's skip byte (the scene fast-forwards under black)
     bool black       = false;  // on/off 39, 40 or 53: a held black screen
     bool loading     = false;  // on/off 41: the loading screen
-    bool minigame    = false;  // on/off 36 MiniGamePlaying (an act's exclusion row or Fort Condor; research/RE-minigame-signal.md §1)
+    bool minigame    = false;  // on/off 36 MiniGamePlaying (an act's exclusion row or Fort Condor)
     std::uint64_t minigameAct = 0;  // who turned 36 on: the act's FName (0 while off), for the log
     bool bike        = false;  // a bike chase: the game's own test of its shared bike state
     bool title       = false;  // the field root's location is the title's
@@ -66,7 +65,7 @@ enum class Reason : std::uint8_t
     Title,
 };
 
-/// EGameState's pause states (research/RE-lifecycle-world.md §2.2).
+/// EGameState's pause states (research/RE-lifecycle-world.md).
 inline constexpr std::uint8_t kStateCinemaPause  = 7;
 inline constexpr std::uint8_t kStatePauseMenu    = 8;
 inline constexpr std::uint8_t kStateChapterPause = 10;
@@ -150,7 +149,7 @@ constexpr Reason ReasonOf(const Signals& s) noexcept
 
 /// How many ticks a minigame moment outlives on/off 36: a minigame segment runs as chained acts (the Reactor 5 lock
 /// segment's phases, seen live), and 36 is off for the one tick between an act's release (its step 10) and the
-/// next act's start (its step 2; research/RE-minigame-signal.md §1), which would flash the split for a frame. The
+/// next act's start (its step 2; research/RE-minigame-signal.md), which would flash the split for a frame. The
 /// mod's own bridge over the game's gap [ASSUMPTION: three ticks cover every chain; the gap seen was one tick].
 inline constexpr unsigned kMinigameGapTicks = 3;
 

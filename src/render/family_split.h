@@ -1,7 +1,7 @@
 #pragma once
 
 // One view family per player: the loop that hands a family of several views to the renderer one view at a time
-// (RE-haze-occlusion.md Pass 9 H.3; ported from Rebirth's renderer/one_family_per_view, without its +0x74 write).
+// (research/RE-haze-occlusion.md).
 //
 // Why: a view after the first in a family loses its volumetric fog after a late join (the blue haze), and the haze
 // follows the place in the family, not the player [CONFIRMED live by swapping the views' order]. As the first
@@ -9,7 +9,7 @@
 //
 // How: for view k, view k is swapped into slot 0 and the count set to 1; the families after the first set Square
 // Enix's frame-number skip (+0x70), so the scene's frame number steps once a frame. The renderer copies the family and
-// its views when a submission starts (0x1425C6A20), so one family object serves every submission. The views are
+// its views when a submission starts, so one family object serves every submission. The views are
 // swapped inside their own array, and the array, count and flag are put back exactly before returning: Draw deletes
 // its views through this list afterwards.
 //
@@ -45,7 +45,7 @@ int SubmitOnePerView(std::uint8_t* family, Submit&& submit, Before&& before)
         return 1;
     }
 
-    // A dword: the submit's gate reads it whole (`cmp dword [family+70h], 0`, Pass 10 listing of 0x1425C9770).
+    // A dword: the submit's gate reads it whole (`cmp dword [family+70h], 0`).
     std::int32_t skip = 0;
     std::memcpy(&skip, family + facts::kFamilySkipFrameStep, sizeof(skip));
     const std::int32_t one = 1;

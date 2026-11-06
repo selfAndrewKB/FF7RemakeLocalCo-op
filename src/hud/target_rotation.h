@@ -1,6 +1,6 @@
 #pragma once
 
-// Which UI target each view samples, with N columns (hud/ui_targets.h; plan/seats.md step 5). Pure, host-tested
+// Which UI target each view samples, with N columns (hud/ui_targets.h). Pure, host-tested
 // (tests/target_rotation_test.cpp): the render thread's bookkeeping without the engine calls.
 //
 // The game keeps ONE pooled UI target in a member of its scene targets. Each view's UI pass draws the HUD into

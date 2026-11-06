@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-// Enemies follow the human whose member stands when the game's leader is down (RE-enemy-leader-reads.md §2, §5.1).
+// Enemies follow the human whose member stands when the game's leader is down (research/RE-enemy-leader-reads.md).
 //
 // The game's leader is one character. Enemies whose battle-AI spec says "follow the leader" (TargetSelectType 10)
 // are re-targeted by the game's forced leader switch: when the leader is knocked out, the KO auto-switch picks the

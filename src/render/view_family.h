@@ -1,7 +1,7 @@
 #pragma once
 
 // A render-thread view's family, read with the game's own fields (FSceneView::Family; the family's Views array of
-// view pointers and its count), the way the game's stereo rule reads them (0x1425C4F10). A view counts as one only if
+// view pointers and its count), the way the game's stereo rule reads them. A view counts as one only if
 // its family lists it: a pointer that is not a live view of the frame yields no family, so a caller can fail open.
 
 #include "engine_facts.h"

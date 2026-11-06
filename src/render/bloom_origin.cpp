@@ -68,7 +68,7 @@ const wchar_t*         g_rhiName       = L"";
 std::atomic<bool> g_installed{false};
 std::atomic<bool> g_enabled{true};
 
-// The binders and the pipeline calls run on the render thread [ASSUMPTION, strong: RE-impl-facts-bloom-swap.md §7;
+// The binders and the pipeline calls run on the render thread [ASSUMPTION, strong: RE-impl-facts-bloom-swap.md;
 // the first swap logs its thread]. The state is atomic and the creation locked all the same, so a second thread
 // could at worst wait for the creation, never read a half-written shader pointer or create a second one.
 std::atomic<void*> g_fixedShader{nullptr};  // FRHIPixelShader*, our reference, held for the rest of the process

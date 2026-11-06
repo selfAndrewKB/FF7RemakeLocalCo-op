@@ -1,7 +1,7 @@
 #pragma once
 
 // The Co-op page itself: the mod's own instance of the game's Options screen, filled with the settings table's options,
-// and its value reads and commits (research/RE-game-widgets.md §10; the rows and texts: menu/coop_menu_rules.h; opened
+// and its value reads and commits (research/RE-game-widgets.md; the rows and texts: menu/coop_menu_rules.h; opened
 // and closed by menu/coop_page_open).
 //
 // The page is the mod's own (not the one System keeps), made at the first open and kept while alive. A closed page takes

@@ -1,6 +1,6 @@
 #pragma once
 
-// Where a further pad's key events go while the game's menus need them (RE-pause-menu-any-pad.md §2.2, §3.3).
+// Where a further pad's key events go while the game's menus need them (research/RE-pause-menu-any-pad.md).
 //
 // A further pad's events normally write that pad's own copy of the action tables (players/pad_buttons.h), so the
 // game's one pause poll and its menus never see them: only player 1 could pause, and only player 1 could move in a

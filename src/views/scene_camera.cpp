@@ -32,7 +32,7 @@ using CutFn          = std::int64_t (*)();
 constexpr std::uint32_t kSlots = facts::kCameraSlotCount;
 
 /// The blend slots (an on switch and a record; the manager's own UpdateCamera runs and ends them) and, among them,
-/// those seeded from the field camera's slot 24 (RE-cutscene-camera-two.md §3.1).
+/// those seeded from the field camera's slot 24 (RE-cutscene-camera-two.md).
 constexpr bool IsBlendSlot(std::uint32_t slot) noexcept
 {
     return (slot >= 2 && slot <= 7) || (slot >= 9 && slot <= 13) || slot == 16 || slot == 17 || slot == 22;

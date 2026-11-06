@@ -1,8 +1,7 @@
 #pragma once
 
-// Each seat's command controller ticked at the game's own spot, inside the seat's scopes (RE-battle.md §4,
-// RE-command-menu-two.md §7-§8, RE-battle-member-two.md §2.6; Rebirth's player_two/command_menu_tick, which stayed
-// single-seat; the seats follow plan/seats.md step 3).
+// Each seat's command controller ticked at the game's own spot, inside the seat's scopes (research/RE-battle.md,
+// RE-command-menu-two.md, RE-battle-member-two.md).
 //
 // The game ticks its one command controller once per frame from the field systems' tick (one call, crossing a
 // code block: it is redirected from the game thread, outside that function). The game's controller ticks as

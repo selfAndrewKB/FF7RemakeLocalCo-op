@@ -7,7 +7,7 @@
 // to it and reconciles possession (the PLAYER controller slot wins over the character's AI). Field movement is per
 // controller: each End controller's own tick moves its own LeaderCharacter. So a further player's controller, given
 // the game's party setup (InitPartyLevel, once per controller) and then SwitchLeaderInternal(PC, member), possesses
-// the member and moves it with no extra driver (RE-party-possession.md §4, §11; RE-impl-facts-v0.2.md §7). Which
+// the member and moves it with no extra driver (research/RE-party-possession.md; RE-impl-facts-v0.2.md). Which
 // member: players/party_member.h. The release is the same funnel with a null character.
 //
 // The game has one PlayerTrigger (a placed actor) and SwitchLeaderInternal needs one per controller: each further

@@ -1,5 +1,5 @@
 // Host-side tests for the listeners' decisions (audio/listener_rules.h) and the seqlock it reads its threads'
-// values through (platform/seqlock.h, taken from Rebirth with its tests). Run without the game.
+// values through (platform/seqlock.h). Run without the game.
 
 #include "audio/listener_rules.h"
 #include "platform/seqlock.h"

@@ -7,8 +7,8 @@
 // empty one, else the one tossed longest ago (a live enemy tosses at each decision, every few seconds; the oldest is
 // a gone enemy's). Two threads placing coins in the same slot at once leave one of them: the other tosses again at
 // its next question. Pure over its arrays with the clock passed in, so it is tested on the host
-// (tests/coin_table_test.cpp). Any thread. Taken from Rebirth's player_two/coin_table.h; the mark and the log line's
-// repeat rule (a toss saying the same within a second is counted, not written) are new.
+// (tests/coin_table_test.cpp). Any thread. In the log a toss that says the same as one within the last second is
+// counted, not written again.
 
 #include <atomic>
 #include <cstddef>

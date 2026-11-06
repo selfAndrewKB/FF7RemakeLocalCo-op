@@ -1,7 +1,6 @@
 #pragma once
 
-// Neither player switches onto a member the other human plays (RE-battle-switch.md §4-§5; Rebirth's
-// player_two/party_switch, with the turned filter its research proposed).
+// Neither player switches onto a member the other human plays (research/RE-battle-switch.md).
 //
 // The game's battle switch walks the deployed members from the leader, one step either way with wrap-around,
 // and takes the first whose character it can fetch by type, has its battle component and is not knocked out or

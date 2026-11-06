@@ -1,13 +1,12 @@
 #pragma once
 
-// Three columns through the engine's own layout table (plan/seats.md step 5; research/RE-three-views.md); on a span of
+// Three columns through the engine's own layout table (research/RE-three-views.md); on a span of
 // monitors of different widths each column is its own monitor's width.
 //
 // UGameViewportClient lays its local players out every redraw from its own layout table (SplitscreenInfo, filled by
 // its constructor): with three local players it takes the three-player entry the settings name, ThreePlayer_FavorTop
-// by default, whose records put player 1 on top and the other two in the quadrants below (research/RE-layout-fov.md
-// §2, RE-multi-monitor-views.md §7). UE 4.18 has no three-column entry (Rebirth's 4.26 has one, which Rebirth's
-// views/third_view selects by the setting). So while three columns are wanted on a
+// by default, whose records put player 1 on top and the other two in the quadrants below (research/RE-layout-fov.md,
+// RE-multi-monitor-views.md). UE 4.18 has no three-column entry. So while three columns are wanted on a
 // span of monitors, or asked for on the console, this module writes that entry's three records to columns;
 // in one window it writes the layout the setting `three-player-split` names (column_rules::ThreeSplitRecords: one
 // across the top and two below, the engine's own entry and the default, one across the bottom, or one down either side).
@@ -35,7 +34,7 @@
 // puts them (`1 2 3`, the default, and players 2 and 3 joined in that order) and the default layout the arrangement is the
 // stock entry, untouched in one window. Otherwise in one window the mod writes the arranged layout and holds the
 // three-player setting at FavorTop, as it does for the columns. Two views take the engine's two-player entries (top and bottom, side by side), both kept the
-// same way: the two players in the order's order (RE-layout-fov.md §9). The mod's columns stay the views' places in the
+// same way: the two players in the order's order (RE-layout-fov.md). The mod's columns stay the views' places in the
 // engine's list; only where they show moves.
 // Reading `column-layout.state`. Game thread only. Logged at Info on each write and restore and on an order change,
 // at Debug for the status.

@@ -2,7 +2,7 @@
 //
 // The cases: a desktop with an ultrawide primary above, holding the game (two equal 1440p
 // monitors below it: the row is not the game's; the pair 2 px apart, later above the ultrawide 15 px apart: the
-// off monitor is listed as a move to the row's top); Rebirth's three-monitor row (the game in it; a two-column span
+// off monitor is listed as a move to the row's top); a three-monitor row (the game in it; a two-column span
 // starting at the game's monitor and shifted left at the row's end; moves only for the span's columns); the row
 // broken by a monitor of another size, a top too far off (beyond the tolerance), a gap, or Windows scaling; the
 // game's monitor scaled with and without another row; one column always possible; bad inputs; rows of one height
@@ -217,7 +217,7 @@ std::vector<Monitor> UsersDesktop()
     return {At(0, 0, 3440, 1440), At(873, 1440), At(3433, 1440)};
 }
 
-/// Rebirth's row of three (the TV at 1440p at the left), the ultrawide above.
+/// A row of three (the TV at 1440p at the left), the ultrawide above.
 std::vector<Monitor> RowOfThree()
 {
     return {At(0, 0, 3440, 1440), At(-1971, 1440), At(589, 1440), At(3149, 1440)};

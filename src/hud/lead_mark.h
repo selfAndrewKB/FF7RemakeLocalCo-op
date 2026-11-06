@@ -1,6 +1,6 @@
 #pragma once
 
-// A further player's own marker for the move it keeps (players/lead_keep_rules.h; research/RE-lead-marker.md §1, §7):
+// A further player's own marker for the move it keeps (players/lead_keep_rules.h; research/RE-lead-marker.md):
 // the game's own main-objective diamond, placed in the world to guide that player.
 //
 // While a seat's member runs a move the lead gate judges KEEP (lead_gate::KeptMark), the move's point carries the

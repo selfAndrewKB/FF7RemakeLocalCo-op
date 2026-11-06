@@ -58,7 +58,7 @@ enum Kind : std::uint8_t
     kUnique          = 13,  // the base controller's route move
 };
 
-/// The field control lock bits (EndFieldExclusion, research/RE-script-release.md §3) that freeze only the character
+/// The field control lock bits (EndFieldExclusion, research/RE-script-release.md) that freeze only the character
 /// that interacts: opening a treasure or picking an item up (_Treasure) and a push-button action (_PushButtonAction:
 /// a switch, a lever, a terminal). The game hands only its leader for them, the interactor; an event's other actors
 /// are the ones it lists, which it puts in the cinema actor mode and moves on a script layer (both a member's own
@@ -79,7 +79,7 @@ constexpr bool InteractionLock(std::uint32_t mask) noexcept
 /// The kinds whose arrival signals the level, so a level step can wait on it: a LEAD and the run to a mark
 /// (engine_facts.h kArrivalHandlerNames names their handlers' fields; lead_gate.cpp asserts the two lists agree).
 /// FOLLOW_TARGET (3) and the route move (13) signal through the same path, PATROL (10) sends its own triggers at
-/// its points [CONFIRMED code, research/RE-fieldai-kinds.md §2]; their handlers' names are unread and none has been
+/// its points [CONFIRMED code, research/RE-fieldai-kinds.md]; their handlers' names are unread and none has been
 /// seen on a party member: free, the same latent stall [UNKNOWN].
 constexpr bool SignalsArrival(std::uint8_t kind) noexcept
 {
@@ -106,7 +106,7 @@ constexpr bool SameIgnoringCase(std::wstring_view a, std::wstring_view b) noexce
 }
 
 /// The level settings that move a member and signal its arrival: the four Status names
-/// StateMgr_OnActorSettingArrived_SendArg2Signal 0x14114E100 compares, without case [CONFIRMED code]. One such
+/// StateMgr_OnActorSettingArrived_SendArg2Signal compares, without case [CONFIRMED code]. One such
 /// move that ends in a stand is a placement (Barret's lead path on the Mako 5 save: Lead, then Stable); a further move
 /// ahead in the member's own chain before it stands is the level walking the member along a path, which a hold
 /// breaks at the first link (Aerith's guide home, Ch. 8, seen live: run, stay, run, ... with no Lead setting

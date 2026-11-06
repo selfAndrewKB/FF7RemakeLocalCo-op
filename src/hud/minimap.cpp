@@ -58,7 +58,7 @@ using AddRawFn      = void* (*)(void* list, void* handleOut, void* object, const
 using AcquireFn     = void* (*)(void* renderer, U64 pool);
 using FindOrAddFn   = void* (*)(void* slot, U64 name, const void* rect);
 using SubmitFn      = void (*)(void* renderer, U64 pool, void* slot);
-/// FLinearColor as UUserWidget::SetColorAndOpacity reads it: `movaps xmm0, [rdx]` (0x1428F1C3B), so 16-byte aligned.
+/// FLinearColor as UUserWidget::SetColorAndOpacity reads it: `movaps xmm0, [rdx]`, so 16-byte aligned.
 struct alignas(16) LinearColor
 {
     float r = 0.0f, g = 0.0f, b = 0.0f, a = 0.0f;
@@ -445,7 +445,7 @@ U64 FieldStart(void* m, U64 a2, U64 a3, U64 a4)
 U64 FieldEnd(void* m, U64 a2, U64 a3, U64 a4)
 {
     const U64 r = g.fieldEnd(m, a2, a3, a4);
-    ++g_iconResets;  // the field's end empties the icons (RE-lead-marker.md §1.2)
+    ++g_iconResets;  // the field's end empties the icons (RE-lead-marker.md)
     if (!IsSeatManager(m)) OnSeats(g.fieldEnd, a2, a3, a4);
     return r;
 }
@@ -552,7 +552,7 @@ bool Create(int seat) noexcept
         return false;
     }
     g_seats[seat].manager = memory;
-    // The banner fades, bound as EndUISystem's constructor binds the game's instance (0x1413B3367, 0x1413B33AC).
+    // The banner fades, bound as EndUISystem's constructor binds the game's instance.
     void* banners = nullptr;
     if (Read(g.slot35, banners) && banners != nullptr)
     {
@@ -675,7 +675,7 @@ void HideRoots(void* manager) noexcept
     SetAlpha(roots[1], 0.0f);
 }
 
-// --- Readings (`hud.minimap`, research §10's live checks) -------------------------------------------------------------
+// --- Readings (`hud.minimap`) ----------------------------------------------------------------------------------------
 std::wstring NameOf(void* object)
 {
     if (object == nullptr)

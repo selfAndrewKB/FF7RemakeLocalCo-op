@@ -2,7 +2,7 @@
 
 // The pieces of world/env_sets that need no game: a further player's EnvironmentSet as the mod keeps it (one per
 // seat), paced the way the game paces player 1's, and the edit of a player's hidden-actor list that removes only the
-// mod's own entries (research/RE-picture-variants.md §9, §10). Host-tested (tests/env_set_view_test.cpp).
+// mod's own entries (research/RE-picture-variants.md). Host-tested (tests/env_set_view_test.cpp).
 //
 // An entry is the game's own {FName actor, u32 Hidden} (12 bytes, the block's actor array).
 

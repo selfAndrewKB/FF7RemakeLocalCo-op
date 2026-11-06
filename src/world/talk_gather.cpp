@@ -312,7 +312,7 @@ void OnLeaderHanded() noexcept
                   npcNote);
     if (platform::Enabled(platform::Level::Debug))
     {
-        // The move ran inside the game's lock set (RE-talk-far.md §6): the lock and the channel's step after it.
+        // The move ran inside the game's lock set (RE-talk-far.md): the lock and the channel's step after it.
         const std::uint32_t lock = players::field_root::ControlLockMask();
         std::uint8_t        step = 0;
         Read(static_cast<const std::uint8_t*>(g_channel) + facts::kActChannelStep, step);

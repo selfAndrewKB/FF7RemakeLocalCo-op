@@ -1,7 +1,6 @@
 #pragma once
 
-// Taken from Rebirth's hud/overlay_band unchanged in substance (the arithmetic is the engine-independent part;
-// Remake's composite uses the same centred cover fit, RE-rdc-split-frame.md §3.4).
+// The composite fits the UI image to a view by a centred cover fit (research/RE-rdc-split-frame.md).
 //
 // Where Square's HUD must be laid out so that a split view shows all of it, and the host scale its
 // world markers must use there. Pure arithmetic, tested on the host (tests/overlay_band_test.cpp).
@@ -9,7 +8,7 @@
 // The HUD is one Slate overlay (SEndRootOverlay) rendered into one 16:9 UI image per frame, which
 // a post-process pass blends into every view. That pass fits the image to the view as a fixed 16:9
 // frame, centred, by cover: scale = max(viewW/imageW, viewH/imageH), so a view of another shape
-// shows only a band of the image (RE-p2-hud.md; the fit measured in game). Laying the
+// shows only a band of the image (the fit measured in game). Laying the
 // overlay out inside that band, instead of the whole image, shows the whole HUD, anchored as a
 // native screen of the view's shape would anchor it.
 //
@@ -76,7 +75,7 @@ void ApplyClipMap(float (&matrix)[16], const ClipMap& map) noexcept;
 /// The host scale that puts markers on their objects when the overlay is laid out in `band` of the
 /// image and the image is cover-fitted to the view: bandUiScale * coverScale. The marker factor is
 /// UIScale / host, and `bandUiScale` is the game's own UIScale of the band: its contain scale,
-/// EndUI__ContainScaleFor1920x1080 (0x1413A94A0), which the caller calls (the layout scale now
+/// EndUI__ContainScaleFor1920x1080, which the caller calls (the layout scale now
 /// equals it). 0 for unusable sizes.
 float MarkerHostScale(const IntRect& band, float bandUiScale, std::int32_t imageWidth, std::int32_t imageHeight,
                       float viewWidth, float viewHeight) noexcept;
@@ -84,7 +83,7 @@ float MarkerHostScale(const IntRect& band, float bandUiScale, std::int32_t image
 /// The x/y terms of the overlay entry's projection matrix (FEndMenuLayerEntry, row-major) that
 /// draw a layout of `band`'s size unstretched into `band` of an `imageWidth` x `imageHeight`
 /// target. The game builds this matrix from the rect's size alone, which stretches any rect over
-/// the whole target (FEndMenuLayerEntry__MakeRectMatrix 0x143A07AE0, RE-hud-split.md §1.2); for the whole image
+/// the whole target (FEndMenuLayerEntry__MakeRectMatrix, RE-hud-split.md); for the whole image
 /// these are exactly its terms. The z terms are the game's and are left alone.
 struct EntryPlacement
 {

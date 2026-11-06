@@ -230,7 +230,7 @@ void ForEachReady(Fn&& fn) noexcept
 
 /// Once per Setup of the seat's controller, whichever path ran it (the seat's own tick, the game's Setup repeated, a
 /// Setup the game deferred and finished in the controller's tick): the party panel the game rebuilt while the seat was
-/// out (a save load's new party) is caught up with the game's own refresh (Rebirth: right after the join Setup), then
+/// out (a save load's new party) is caught up with the game's own refresh, then
 /// the roots start transparent (they show only in the seat's own pass).
 void CatchUp(int seat, Seat& s) noexcept
 {
@@ -404,7 +404,7 @@ bool FindInto(const platform::GameImage& image, const platform::FunctionFact& fa
     return out != nullptr;
 }
 
-/// The bytes that gate each controller's input poll (RE-ko-leader-input.md §3.1): menu allowed (+0x3D5), input
+/// The bytes that gate each controller's input poll (research/RE-ko-leader-input.md): menu allowed (+0x3D5), input
 /// live (+0x420), the battle HUD mode (+0x348), the cached leader ordinal (+0x28); and the game state's pause counter.
 std::wstring GatesReading()
 {
@@ -651,7 +651,7 @@ void Tick(int seat, bool seatPlays) noexcept
     const std::uint8_t live    = Byte(ctrl1, facts::kCommandCtrlInputLive);
     if (Byte(s.ctrl, facts::kCommandCtrlMenuAllowed) != allowed)
     {
-        // Off closes both menus' polls (the game's own gate 4 of RE-ko-leader-input.md §3.1): a script or event
+        // Off closes both menus' polls (one of the game's own gates, research/RE-ko-leader-input.md): a script or event
         // that closes player 1's menu closes the seat's too, so each change is logged.
         platform::LogDebug(L"command menu: menu allowed {} on {}'s controller (copied from the game's)", allowed, name);
         platform::WriteGuarded(static_cast<std::uint8_t*>(s.ctrl) + facts::kCommandCtrlMenuAllowed, &allowed, 1);

@@ -1,8 +1,7 @@
 #pragma once
 
 // NPCs notice every further player as they notice player 1, player 1 first (research/RE-npc-reactions.md): an NPC
-// made to respond to player 1 walking by responds to any player, and to player 1 when several are near (the seats
-// follow plan/seats.md step 3).
+// made to respond to player 1 walking by responds to any player, and to player 1 when several are near.
 //
 // The turn an NPC makes toward a passer-by is Square Enix's own NPC model: its Curiosity look takes the most
 // interesting character it sees within 2 m and keeps it to the end. It picks any character, a further player's
@@ -19,8 +18,8 @@
 //      (every other candidate's "seen this update" timer set aside for that one call and put back exactly); if that
 //      pick finds nobody (player 1 out of the look's reach), the game's own pick runs as it would have. A look already
 //      running is never taken over. That pick has no effect when it finds nobody (read in IDA), so the second run is
-//      the game's single pick. The look runs in each NPC's own AI tick on worker threads (research/RE-npc-reactions.md
-//      §10.5): the players are a snapshot the game thread publishes, and only that NPC's own entries are touched.
+//      the game's single pick. The look runs in each NPC's own AI tick on worker threads (RE-npc-reactions.md):
+//      the players are a snapshot the game thread publishes, and only that NPC's own entries are touched.
 // Everything else (the senses, the interest, the look, the animation) is the game's.
 
 #include <string>

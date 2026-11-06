@@ -1,14 +1,13 @@
 #pragma once
 
-// Characters near any player animate as the game animates them near player 1 (research/RE-anim-two-views.md;
-// Rebirth's player_two/world/anim_two_views, single-seat; the seats follow plan/seats.md step 3).
+// Characters near any player animate as the game animates them near player 1 (research/RE-anim-two-views.md).
 //
 // Square Enix's animation budget judges every skeletal mesh once per frame from ONE camera snapshot, player 1's: a
 // character outside player 1's 60-degree cone and more than 5 m away gets reduced cloth and hair, beyond 20 m it stops
 // refreshing its bones, and its update rate and budget priority drop. So the world near a further player went stiff
 // or froze whenever player 1 looked away. The game has no input for a second camera (one snapshot, thresholds written
-// into the code, no list of extra measurements as Rebirth has), so the one recreated piece is the input: which camera
-// the game's judge reads for each mesh (documented in the plan's §2 and the research).
+// into the code, no list of extra measurements), so the one recreated piece is the input: which camera
+// the game's judge reads for each mesh (documented in the plan and the research).
 //
 // Two vtable slots of the judge are replaced. For each mesh the wrapper measures the owner's distance and angle to
 // player 1's camera and to each further player's with the judge's own thresholds (world/anim_choice.h: the best of

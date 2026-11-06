@@ -1,7 +1,7 @@
 #pragma once
 
 // Every player hears the sounds near them: each SEAD sound is measured from the nearest player's listener
-// (research/RE-audio-listener.md §5, plan/topics/audio.md; Rebirth's audio_listener_two, generalized to every seat).
+// (research/RE-audio-listener.md, plan/topics/audio.md).
 //
 // SEAD (Square Enix's audio middleware) measures every placed or moving sound from one listener object, which the SEAD
 // audio device sets each audio frame from the engine's listener [0], player 1's view; the engine itself keeps a

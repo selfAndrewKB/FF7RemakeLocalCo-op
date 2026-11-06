@@ -38,14 +38,14 @@ const Snapshot& Current() noexcept;
 /// The world the game mode names (AEndGameMode::GetWorld), or null. Game thread.
 void* World() noexcept;
 
-/// Whether a menu owns the game's input now (RE-pause-menu-any-pad.md §3.4): the game state is the cinema pause,
+/// Whether a menu owns the game's input now (research/RE-pause-menu-any-pad.md): the game state is the cinema pause,
 /// a menu or the chapter-start pause (7, 8, 10), a shop is up (its UI's own byte: shops run in the field state,
-/// RE-shop-two.md §3), or the game's own IsPauseMenuClosed says a pause-family menu is up (it also catches a
+/// RE-shop-two.md), or the game's own IsPauseMenuClosed says a pause-family menu is up (it also catches a
 /// Blueprint-opened pause menu and Libra opened from the main menu). Read live, not from the
 /// tick's values. False while neither can be read. Game thread.
 bool MenuOwnsInput() noexcept;
 
-/// The shop UI's own "a shop is up" byte (EndUISystem[44]+0x370, RE-shop-two.md §3): a shop runs in the field state.
+/// The shop UI's own "a shop is up" byte (EndUISystem[44]+0x370, RE-shop-two.md): a shop runs in the field state.
 /// False while unread. Game thread.
 bool ShopUp() noexcept;
 

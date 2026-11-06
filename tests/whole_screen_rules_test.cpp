@@ -1,5 +1,5 @@
 // Host-side tests for views/whole_screen_rules.h: which game signals take the whole screen (the one-window single
-// view's reasons), in their order. Rebirth's tests/whole_screen_test.cpp gave the shape; the signals are Remake's.
+// view's reasons), in their order.
 
 #include "views/whole_screen_rules.h"
 
