@@ -27,9 +27,10 @@
 // each move (Info), a near or failed case (Debug); reading `world.talk-gather`. Game thread.
 //
 // Two experimental options, each on by default (platform/settings.h; the Co-op page, the file, the console):
-//   - `talk-gather off`: player 1's character is not brought over; it stays where it stands. Every line still plays
-//     (no step from the press to the talk tests a distance); the talk's camera, which aims between its two named
-//     actors, may then frame the ground between them.
+//   - `talk-gather off`: player 1's character is not brought over; it stays where it stands. By the game's code no
+//     step from the press to the talk tests a distance, so the lines play; a talk that has a camera of its own aims
+//     it between its two named actors with no limit on their distance [what that looks like with the two far apart
+//     is not seen: ASSUMPTION until played].
 //   - `talk-follow off`: at a talk player 1 starts, the other players' characters stay with their players instead of
 //     going to their AI, whose follow would walk them over to player 1's character. The game stops every player's walk
 //     while a lock holds, so they stand where they are until the talk ends; every view shows the talk's lines either

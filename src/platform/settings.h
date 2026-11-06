@@ -248,11 +248,11 @@ inline constexpr Option kAreaLevels{  // world/area_levels
 inline constexpr Option kTalkGather{  // world/talk_gather
     L"Experimental", L"talk-gather", kOnOffWords, L"on",
     L"a talk another player starts more than 8 m from player 1's character: on (the default: player 1's character is "
-    L"brought beside that player, facing the one they talk to) or off (it stays where it stands; every line still plays, "
-    L"the talk's camera may frame the ground between the speakers)",
+    L"brought beside that player, facing the one they talk to) or off (it stays where it stands and the talk plays with "
+    L"it there)",
     true, L"Bring Player 1 to Others' Talks", kOnOffLabels,
     L"When another player talks to someone far from player 1's character. On: player 1's character is brought beside "
-    L"them. Off: it stays where it is; the talk's camera may then show the space between the speakers."};
+    L"them. Off: it stays where it is, and the talk plays with it far away."};
 inline constexpr Option kTalkFollow{  // world/talk_gather, players/session
     L"Experimental", L"talk-follow", kOnOffWords, L"on",
     L"a talk player 1 starts: on (the default: the other players' characters go to their AI for the talk and walk over to "
