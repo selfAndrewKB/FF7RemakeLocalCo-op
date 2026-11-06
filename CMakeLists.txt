@@ -140,6 +140,7 @@ add_library(LocalSplitScreen SHARED
     src/views/scene_camera.cpp
     src/views/whole_screen.cpp
     src/views/monitor_list.cpp
+    src/views/monitor_picks.cpp
     src/views/monitor_row.cpp
     src/views/window_span.cpp
     src/world/actor_place.cpp
@@ -205,6 +206,7 @@ add_executable(SetupApp WIN32
     setup/app.manifest
     src/views/display_move.cpp
     src/views/monitor_list.cpp
+    src/views/monitor_picks.cpp
     src/views/monitor_row.cpp
 )
 set_property(TARGET SetupApp PROPERTY OUTPUT_NAME "${LSS_SETUP_NAME}")
@@ -467,6 +469,15 @@ target_include_directories(MonitorRowTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/
 target_compile_features(MonitorRowTests PRIVATE cxx_std_20)
 add_test(NAME monitor_row COMMAND MonitorRowTests)
 
+add_executable(MonitorPicksTests
+    tests/monitor_picks_test.cpp
+    src/views/monitor_picks.cpp
+    src/views/monitor_row.cpp
+)
+target_include_directories(MonitorPicksTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(MonitorPicksTests PRIVATE cxx_std_20)
+add_test(NAME monitor_picks COMMAND MonitorPicksTests)
+
 add_executable(RowJournalTests
     tests/row_journal_test.cpp
 )
@@ -483,6 +494,7 @@ add_test(NAME title_row_rules COMMAND TitleRowRulesTests)
 
 add_executable(SetupRulesTests
     tests/setup_rules_test.cpp
+    src/views/monitor_picks.cpp
     src/views/monitor_row.cpp
 )
 target_include_directories(SetupRulesTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src" "${CMAKE_CURRENT_SOURCE_DIR}")

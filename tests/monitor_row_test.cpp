@@ -210,60 +210,6 @@ void MixedRows()
     CheckRow({At(0, 0, 1920, 1080), At(0, -1080, 1920, 1080), At(1920, -1080, 1280, 800)}, {2, 1}, 2);
 }
 
-/// A pick found again: the exact path first, then a monitor of the same identity, as a virtual monitor returns with a new path.
-void PicksFound()
-{
-    using lss::views::monitor_row::FindPicks;
-    using lss::views::monitor_row::IdentityKey;
-    using lss::views::monitor_row::NamesWord;
-    using lss::views::monitor_row::PickWord;
-
-    const std::wstring physical = L"\\\\?\\display#gsm774b#5&21434701&1&uid4353#{e6f07b5f-ee97-4a90-b076-33f57bf4eaa7}";
-    const std::wstring virtualOld = L"\\\\?\\display#smkd1ce#1&15ecd195&1&uid256#{e6f07b5f-ee97-4a90-b076-33f57bf4eaa7}";
-    const std::wstring virtualNew = L"\\\\?\\display#smkd1ce#1&15ecd195&1&uid257#{e6f07b5f-ee97-4a90-b076-33f57bf4eaa7}";
-    EXPECT(IdentityKey(physical, L"LG ULTRAGEAR") == L"gsm774b/lg_ultragear");
-    EXPECT(IdentityKey(virtualNew, L"H27T27       ") == L"smkd1ce/h27t27");
-    EXPECT(IdentityKey(L"\\\\.\\display3", L"x").empty());
-    EXPECT(IdentityKey(virtualNew, L"Deck|~;\u00e9") == L"smkd1ce/deck____");
-
-    const std::wstring oldKey = IdentityKey(virtualOld, L"Steam Deck"), lgKey = IdentityKey(physical, L"LG ULTRAGEAR");
-    const std::wstring word = NamesWord(std::vector<std::wstring>{PickWord(virtualOld, oldKey), PickWord(physical, lgKey)});
-
-    // The word's order is the row's, whatever order Windows lists them in; the virtual monitor found by its identity.
-    std::vector<std::wstring> ids{physical, L"\\\\?\\display#dela199#5&1&uid4355#{x}", virtualNew};
-    std::vector<std::wstring> keys{lgKey, L"dela199/dell_s2721d", IdentityKey(virtualNew, L"Steam Deck")};
-    auto picks = FindPicks(ids, keys, word);
-    EXPECT(picks.named == 2 && (picks.found == std::vector<std::size_t>{2, 0}));
-
-    // Not connected: named, not found; the mod waits for it.
-    ids.pop_back();
-    keys.pop_back();
-    picks = FindPicks(ids, keys, word);
-    EXPECT(picks.named == 2 && (picks.found == std::vector<std::size_t>{0}));
-
-    // Two of one model: the exact path wins even when listed second, and the other pick takes what is left.
-    const std::vector<std::wstring> twoIds{L"a#m#1#g", L"a#m#2#g"};
-    const std::vector<std::wstring> twoKeys{L"m/dell", L"m/dell"};
-    picks = FindPicks(twoIds, twoKeys, L"a#m#2#g~m/dell|a#m#9#g~m/dell");
-    EXPECT((picks.found == std::vector<std::size_t>{1, 0}));
-    // Each monitor is taken once.
-    picks = FindPicks(twoIds, twoKeys, L"a#m#8#g~m/dell|a#m#9#g~m/dell|a#m#7#g~m/dell");
-    EXPECT(picks.named == 3 && (picks.found == std::vector<std::size_t>{0, 1}));
-
-    // A monitor named twice is one monitor.
-    picks = FindPicks(twoIds, twoKeys, L"a#m#2#g|a#m#2#g");
-    EXPECT(picks.named == 2 && (picks.found == std::vector<std::size_t>{1}));
-
-    // A word without identities still finds exact paths; nothing named finds nothing.
-    picks = FindPicks(twoIds, twoKeys, L"a#m#2#g");
-    EXPECT((picks.found == std::vector<std::size_t>{1}));
-    picks = FindPicks(twoIds, twoKeys, L"");
-    EXPECT(picks.named == 0 && picks.found.empty());
-
-    EXPECT(NamesWord(std::vector<std::wstring>{}).empty());
-    EXPECT(PickWord(L"a", L"") == L"a");
-}
-
 /// The user's monitors on 2026-10-21 with the pair aligned: the ultrawide primary above (the game on it), the two
 /// 1440p monitors in a row below.
 std::vector<Monitor> UsersDesktop()
@@ -483,7 +429,6 @@ int main()
 {
     PickedRows();
     MixedRows();
-    PicksFound();
     TestRowBelowTheGame();
     TestUsersPairTwoPixelsOff();
     TestUsersPairAboveTheUltrawide();

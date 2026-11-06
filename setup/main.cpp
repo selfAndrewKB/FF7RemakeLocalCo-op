@@ -1,7 +1,7 @@
 // The setup app (its file is named in views/display_move.h): a small window, run once, that says which monitors the game spans. It shows the desktop as
 // Windows arranges it, lets the player click the monitors of the row in the order wanted, and writes LocalSplitScreen.ini beside
 // itself (or at the path given as its one argument). The game is then started from Steam as always: no launcher. Every name, word
-// and rule comes from the mod's own table and row code (platform/settings.h, views/monitor_row), so nothing here can drift from
+// and rule comes from the mod's own table and row code (platform/settings.h, views/monitor_picks), so nothing here can drift from
 // what the game does. Nothing is saved while the game runs: the mod keeps the file's values in memory and its Co-op page would
 // write them over the app's.
 //
@@ -42,6 +42,7 @@ namespace settings = lss::platform::settings;
 namespace rules    = lss::setup::rules;
 namespace view     = lss::setup::view;
 namespace row      = lss::views::monitor_row;
+namespace picked   = lss::views::monitor_picks;
 namespace listing  = lss::views::monitor_list;
 namespace move     = lss::views::display_move;
 
@@ -99,12 +100,7 @@ int Px(int value)
 
 std::vector<row::Monitor> PlainMonitors()
 {
-    std::vector<row::Monitor> list;
-    for (const listing::Listed& m : g_app.monitors)
-    {
-        list.push_back(m.monitor);
-    }
-    return list;
+    return listing::Plain(g_app.monitors);
 }
 
 std::size_t IndexOf(const settings::Option& option)
@@ -155,9 +151,9 @@ std::wstring PicksWord()
     std::vector<std::wstring> words;
     for (const std::size_t pick : g_app.picks)
     {
-        words.push_back(row::PickWord(g_app.monitors[pick].id, g_app.monitors[pick].key));
+        words.push_back(picked::PickWord(g_app.monitors[pick].id, g_app.monitors[pick].key));
     }
-    return row::NamesWord(words);
+    return picked::NamesWord(words);
 }
 
 /// Reads the connected monitors and finds the picks among them: the player's clicks, else the file's word.
@@ -166,7 +162,6 @@ void ReadMonitors()
     const std::wstring word = g_app.picksChanged ? PicksWord() : g_app.fileWord;
     g_app.monitors          = listing::List();
     g_app.primary           = 0;
-    std::vector<std::wstring> ids, keys;
     for (std::size_t i = 0; i < g_app.monitors.size(); ++i)
     {
         const row::Rect& rect = g_app.monitors[i].monitor.rect;
@@ -174,12 +169,10 @@ void ReadMonitors()
         {
             g_app.primary = i;
         }
-        ids.push_back(g_app.monitors[i].id);
-        keys.push_back(g_app.monitors[i].key);
     }
-    const row::Picks picks = row::FindPicks(ids, keys, word);
-    g_app.picks            = picks.found;
-    g_app.namedNotHere     = picks.named - static_cast<std::int32_t>(picks.found.size());
+    const picked::Picks picks = listing::PicksIn(g_app.monitors, word);
+    g_app.picks               = picks.found;
+    g_app.namedNotHere        = picks.away;
 }
 
 std::wstring RecordPath()

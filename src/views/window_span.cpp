@@ -8,9 +8,9 @@
 #include "platform/settings.h"
 #include "platform/verified_code.h"
 #include "players/game_state.h"
-#include "views/column_rules.h"
 #include "views/display_align.h"
 #include "views/monitor_list.h"
+#include "views/monitor_picks.h"
 #include "views/monitor_row.h"
 
 #ifndef WIN32_LEAN_AND_MEAN
@@ -53,7 +53,7 @@ constexpr std::uint32_t kReshapeSettleTicks     = 2;    // the window's rect is 
 constexpr std::uint32_t kReshapeRetryTicks      = 60;
 constexpr std::uint32_t kLineUpTicks            = 120;  // the desktop read as the row after a move; Windows may apply one after the call returns
 constexpr std::uint32_t kLineUpCheckTicks       = 6;    // that read is the display configuration: not every tick
-constexpr std::int32_t  kColumnsBuilt           = column_rules::kMaxColumns;  // one per monitor of the row, up to three
+constexpr std::int32_t  kColumnsBuilt           = monitor_picks::kMostInRow;  // one per monitor of the row
 constexpr std::uint8_t  kStatePlay              = 6;    // the game's play state (the title is one): the preset's hold waits for it
 
 /// The entry's and the leave's steps; each tick moves one on when the engine has done its part.
@@ -248,7 +248,7 @@ struct Monitors
     std::vector<monitor_row::Monitor> list;
     std::vector<std::wstring>         devices;
     std::size_t                       gameAt = 0;  // the game window's monitor; list.size() when it is not listed
-    monitor_row::Picks                picks;
+    monitor_picks::Picks              picks;
 };
 
 /// The desktop's shape: every monitor's rect, hashed, so a monitor coming, going or moving changes it, even one that leaves the
@@ -274,23 +274,20 @@ std::uint64_t DesktopShape() noexcept
 Monitors Collect(HWND game) noexcept
 try
 {
-    Monitors           monitors;
-    const auto         listed = monitor_list::List();
-    const HMONITOR     own    = MonitorFromWindow(game, MONITOR_DEFAULTTONEAREST);
-    std::vector<std::wstring> ids, keys;
-    monitors.gameAt = listed.size();
+    Monitors       monitors;
+    const auto     listed = monitor_list::List();
+    const HMONITOR own    = MonitorFromWindow(game, MONITOR_DEFAULTTONEAREST);
+    monitors.list         = monitor_list::Plain(listed);
+    monitors.gameAt       = listed.size();
     for (std::size_t i = 0; i < listed.size(); ++i)
     {
-        monitors.list.push_back(listed[i].monitor);
         monitors.devices.push_back(listed[i].device);
-        ids.push_back(listed[i].id);
-        keys.push_back(listed[i].key);
         if (listed[i].handle == own)
         {
             monitors.gameAt = i;
         }
     }
-    monitors.picks = monitor_row::FindPicks(ids, keys, platform::settings::Of(platform::settings::kMonitors).word);
+    monitors.picks = monitor_list::PicksIn(listed, platform::settings::Of(platform::settings::kMonitors).word);
     return monitors;
 }
 catch (...)
@@ -298,37 +295,10 @@ catch (...)
     return {};  // no monitors: the span is refused, with the row's reason in the log
 }
 
-/// The player picked monitors in the settings file, whether they are connected or not.
-bool HasPicks(const Monitors& monitors) noexcept
-{
-    return monitors.picks.named > 0;
-}
-
-/// The columns the player's connected picks give, up to what is built; 0 when fewer than two are connected.
-std::int32_t PickedColumns(const Monitors& monitors) noexcept
-{
-    const auto found = static_cast<std::int32_t>(monitors.picks.found.size());
-    return found < 2 ? 0 : std::min(found, kColumnsBuilt);
-}
-
-/// The row for `columns`: the player's picks, moved into a row, whatever they are or wherever they sit; with none picked, a row
-/// the desktop has. Picks that are not connected are waited for, never replaced by other monitors.
+/// The row of `columns` columns the settings file's monitors give on this desktop (monitor_picks::Row).
 monitor_row::Choice ChooseRow(const Monitors& monitors, std::int32_t columns)
 {
-    if (!HasPicks(monitors))
-    {
-        return monitor_row::Choose(monitors.list, monitors.gameAt, columns);
-    }
-    const auto& found = monitors.picks.found;
-    if (found.size() < 2)
-    {
-        monitor_row::Choice waiting;
-        waiting.why = std::format(L"{} of the {} monitors picked in the setup app are connected; the row waits for at least two",
-                                  found.size(), monitors.picks.named);
-        return waiting;
-    }
-    const auto count = std::min(found.size(), static_cast<std::size_t>(columns));
-    return monitor_row::Arrange(monitors.list, std::span(found).first(count));
+    return monitor_picks::Row(monitors.list, monitors.picks, monitors.gameAt, columns);
 }
 
 /// Every monitor as read: device, rect, DPI, the game's marked.
@@ -605,20 +575,16 @@ try
     }
 
     Monitors monitors = Collect(window->hwnd);
-    if (const std::int32_t picked = PickedColumns(monitors); picked > 0)
-    {
-        columns = std::min(columns, picked);
-    }
-    auto choice = ChooseRow(monitors, columns);
     // As many columns as the row has monitors, up to the number asked for: a two-monitor row spans two columns
     // when three are asked (the hold asks for every column built).
-    while (!choice.ok && !HasPicks(monitors) && columns > 2 && choice.rowMonitors >= 2)
+    const auto choice = monitor_picks::WidestRow(monitors.list, monitors.picks, monitors.gameAt, columns);
+    if (const auto given = static_cast<std::int32_t>(choice.widths.size()); choice.ok && given < columns)
     {
-        const std::int32_t fewer = std::min(columns - 1, choice.rowMonitors);
-        platform::Log(L"window span: the longest row has {} monitor(s); {} columns instead of {}", choice.rowMonitors, fewer,
-                      columns);
-        columns = fewer;
-        choice  = monitor_row::Choose(monitors.list, monitors.gameAt, columns);
+        if (monitors.picks.named == 0)
+        {
+            platform::Log(L"window span: the longest row has {} monitor(s); {} columns instead of {}", choice.rowMonitors, given, columns);
+        }
+        columns = given;
     }
     if (!choice.ok)
     {
@@ -827,7 +793,7 @@ try
 {
     g_rowShape = DesktopShape();
     Monitors         monitors = Collect(g_hwnd);
-    const auto       wanted   = PickedColumns(monitors);
+    const auto       wanted   = monitor_picks::PickedColumns(monitors.picks);
     const auto       choice   = ChooseRow(monitors, wanted > 0 ? wanted : g_columns);
     const bool       same     = choice.ok && choice.moves.empty() && choice.span == g_target && (wanted == 0 || wanted == g_columns);
     if (same)

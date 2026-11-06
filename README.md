@@ -462,6 +462,8 @@ src/
     monitor_list            The desktop's monitors as Windows has them now, for the mod's span (views/window_span) and
                             the setup app (setup/): each monitor's rect and effective DPI, its GDI device name, and an
                             id and a name from the display configuration
+    monitor_picks           The monitors the player picked for the row, as the settings file keeps them, and the row
+                            they give
     monitor_row             Which monitors a spanned game window covers: a row, one view per monitor
     narrow_camera           The camera in a view narrower than the game's image and spread across a window: two small
                             corrections beside the narrow view's FOV
@@ -554,5 +556,5 @@ src/
                             game
     title_row_rules.h       Where the title menu's Co-op row goes among its rows' kinds: directly below Options, so the
                             rows through Options keep their places
-tests/                      64 host-side test programs (ctest), one per pure header or code stub; run without the game
+tests/                      65 host-side test programs (ctest), one per pure header or code stub; run without the game
 ```

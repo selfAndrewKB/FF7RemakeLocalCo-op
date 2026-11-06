@@ -20,16 +20,12 @@
 //   - Arrange, the player's picks: any monitors, in the order picked, left to right, wherever they sit. The moves make the
 //     row for as long as the game holds it (views/display_align); Windows' own arrangement is never changed. Monitors not
 //     picked stay where they are unless the row needs the place or their only link to the desktop went with it.
-//
-// Picks are saved by identity, since a DISPLAYn number changes when Windows renumbers its outputs. A monitor's device path
-// names its port, and a streaming host's virtual monitor gets a new path each time it is made (a SudoVDA monitor: ...UID256, then
-// ...UID257 for the same monitor made again), so a pick also keeps the monitor's model and name to find it by.
+// Which of the two a settings file gets, and how its picks are found on the desktop, is views/monitor_picks.
 
 #include <cstddef>
 #include <cstdint>
 #include <span>
 #include <string>
-#include <string_view>
 #include <vector>
 
 namespace lss::views::monitor_row {
@@ -91,27 +87,5 @@ Choice Choose(std::span<const Monitor> monitors, std::size_t gameMonitor, std::i
 /// window takes; among the layouts that do, the one that moves the fewest monitors wins, so a row that is already there has
 /// no moves at all.
 Choice Arrange(std::span<const Monitor> monitors, std::span<const std::size_t> picks);
-
-/// What finds a monitor again after its path changed: its model (from the device path) and its own name, in characters a
-/// settings word can hold. Empty when the path has no model in it. `path` is lower-case, as monitor_list gives it.
-std::wstring IdentityKey(std::wstring_view path, std::wstring_view name);
-
-/// One monitor as the settings word keeps it.
-std::wstring PickWord(std::wstring_view id, std::wstring_view key);
-
-/// The settings word: pick words in the row's order, joined.
-std::wstring NamesWord(std::span<const std::wstring> pickWords);
-
-/// The picks a settings word finds on the desktop now, in the word's order. An exact path wins; then a connected monitor
-/// of the same identity that no other pick took, in list order, as two monitors of one identity are interchangeable.
-struct Picks
-{
-    std::int32_t             named = 0;  // the monitors the word names, connected or not
-    std::vector<std::size_t> found;      // indices into `ids` of those connected
-};
-
-/// `ids` and `keys` hold one lower-case path and one IdentityKey per monitor; the word is compared as the settings file
-/// reads it, lower-cased.
-Picks FindPicks(std::span<const std::wstring> ids, std::span<const std::wstring> keys, std::wstring_view word);
 
 }  // namespace lss::views::monitor_row

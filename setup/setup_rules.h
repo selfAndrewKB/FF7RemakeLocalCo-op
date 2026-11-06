@@ -1,9 +1,10 @@
 #pragma once
 
 // The setup app's rules: what the picture of the desktop shows and what a choice of monitors means. The row itself is the
-// mod's own rule (views/monitor_row), so the app never promises a row the game would refuse. Pure: tested on the host
-// (tests/setup_rules_test.cpp); the window is setup/main.cpp.
+// mod's own rule (views/monitor_picks, views/monitor_row), so the app never promises a row the game would refuse. Pure: tested
+// on the host (tests/setup_rules_test.cpp); the window is setup/main.cpp.
 
+#include "views/monitor_picks.h"
 #include "views/monitor_row.h"
 
 #include <algorithm>
@@ -22,7 +23,7 @@ namespace lss::setup::rules {
 namespace row = views::monitor_row;
 
 /// The most monitors a row takes: one per player.
-inline constexpr std::size_t kMostInRow = 3;
+inline constexpr std::size_t kMostInRow = static_cast<std::size_t>(views::monitor_picks::kMostInRow);
 
 /// What happens to the desktop while the game holds a row whose monitors do not already stand in it.
 inline constexpr const wchar_t* kMovesNote =
@@ -99,28 +100,17 @@ inline std::vector<std::size_t> ScreensOf(std::span<const row::Monitor> monitors
     return screens;
 }
 
-/// The row the mod would take from the whole desktop with `gameMonitor` holding the game: every column it can have, up to
-/// the most a row takes, as the span asks.
-inline row::Choice FindRow(std::span<const row::Monitor> monitors, std::size_t gameMonitor)
-{
-    auto columns = static_cast<std::int32_t>(std::min(monitors.size(), kMostInRow));
-    auto choice  = row::Choose(monitors, gameMonitor, std::max(columns, 2));
-    while (!choice.ok && columns > 2 && choice.rowMonitors >= 2)
-    {
-        columns = std::min(columns - 1, choice.rowMonitors);
-        choice  = row::Choose(monitors, gameMonitor, columns);
-    }
-    return choice;
-}
-
 /// What the choice gives: `picks` are the row's monitors that are connected, in order, left to right in the row; `gameMonitor`
 /// the monitor the game opens on (the primary); `notConnected` how many more the settings file names that are not connected.
-/// The game never puts another monitor in a named one's place, so a file whose monitors are all away gives no row: the game
-/// waits for them in one window.
+/// The row is the one the game takes when it is asked for every column (monitor_picks::WidestRow): it never puts another
+/// monitor in a named one's place, so a file whose monitors are all away gives no row and the game waits for them in one window.
 inline Look LookAt(std::span<const row::Monitor> monitors, std::span<const std::size_t> picks, std::size_t gameMonitor,
                    std::int32_t notConnected = 0)
 {
-    Look look;
+    namespace named = views::monitor_picks;
+    const named::Picks all{static_cast<std::int32_t>(picks.size()) + notConnected, notConnected, {picks.begin(), picks.end()}};
+    const auto         rowNow = [&] { return named::WidestRow(monitors, all, gameMonitor, named::kMostInRow); };
+    Look               look;
     if (picks.empty() && notConnected > 0)
     {
         look.picked = true;
@@ -132,7 +122,7 @@ inline Look LookAt(std::span<const row::Monitor> monitors, std::span<const std::
     }
     if (picks.empty())
     {
-        const row::Choice choice = FindRow(monitors, gameMonitor);
+        const row::Choice choice = rowNow();
         look.ok                  = choice.ok;
         if (!choice.ok)
         {
@@ -147,6 +137,7 @@ inline Look LookAt(std::span<const row::Monitor> monitors, std::span<const std::
         return look;
     }
     look.picked = true;
+    // One monitor is no row, in the game as here (monitor_picks::PickedColumns).
     if (picks.size() == 1)
     {
         look.waits  = true;
@@ -154,13 +145,15 @@ inline Look LookAt(std::span<const row::Monitor> monitors, std::span<const std::
         look.detail = L"Save waits until the clicked monitors make a row. Click this one again to take it out.";
         return look;
     }
+    // Only a click too many comes here, and the app saves no such choice. A settings word that names more, written by hand,
+    // reads as its first monitors (monitor_picks::FindPicks).
     if (picks.size() > kMostInRow)
     {
         look.text = std::format(L"A row takes at most {} monitors.", kMostInRow);
         look.tone = Tone::Warning;
         return look;
     }
-    const row::Choice choice = row::Arrange(monitors, picks);
+    const row::Choice choice = rowNow();
     look.ok                  = choice.ok;
     if (!choice.ok)
     {

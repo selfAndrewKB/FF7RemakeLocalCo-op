@@ -75,7 +75,7 @@ void PickedBadly()
 /// still find its monitor when its path has changed: a virtual monitor comes back with a new one, under its old name.
 void PickSurvivesTheSettingsFile()
 {
-    namespace row = lss::views::monitor_row;
+    namespace row = lss::views::monitor_picks;
     namespace settings = lss::platform::settings;
     const std::wstring before = L"\\\\?\\display#smkd1ce#1&15ecd195&1&uid256#{e6f07b5f-ee97-4a90-b076-33f57bf4eaa7}";
     const std::wstring after  = L"\\\\?\\display#smkd1ce#1&15ecd195&1&uid257#{e6f07b5f-ee97-4a90-b076-33f57bf4eaa7}";

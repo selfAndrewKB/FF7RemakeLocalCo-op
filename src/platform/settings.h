@@ -66,7 +66,7 @@ inline constexpr Option kMultiMonitor{  // views/window_span
     false, L"Multiple Monitors", kOnOffLabels,
     L"One full view per player across a row of monitors, each fitted to its monitor. On: always. Off: "
     L"every view in one window."};
-inline constexpr Option kMonitors{  // views/window_span, views/monitor_row FindPicks
+inline constexpr Option kMonitors{  // views/window_span, views/monitor_picks FindPicks
     L"Views", L"monitors", {}, L"",
     L"(read only) the monitors of the row, left to right, as the setup app wrote them; empty: any row the desktop has",
     false, L"Monitors in the Row", {},
