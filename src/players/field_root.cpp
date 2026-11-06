@@ -4,9 +4,9 @@
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
+#include "platform/name_text.h"
 #include "platform/verified_code.h"
 
-#include <Unreal/NameTypes.hpp>
 
 #include <string>
 
@@ -104,30 +104,14 @@ std::uint64_t OnOffOwner(std::uint32_t id) noexcept
     return id < facts::kOnOffCount && manager != nullptr && Read(manager + facts::kOnOffOwners + 8 * id, owner) ? owner : 0;
 }
 
-namespace {
-void OwnerText(std::int64_t bits, std::wstring* out) noexcept
-try
-{
-    *out = RC::Unreal::FName(bits).ToString();
-}
-catch (...)
-{
-    out->clear();
-}
-}  // namespace
-
 std::wstring OnOffOwnerText(std::uint64_t owner) noexcept
 {
     if (owner == 0)
     {
         return L"none";
     }
-    std::wstring text;
-    if (!platform::CallGuarded(&OwnerText, static_cast<std::int64_t>(owner), &text) || text.empty())
-    {
-        return L"?";
-    }
-    return text;
+    std::wstring text = platform::NameText(owner);
+    return text.empty() ? L"?" : text;
 }
 
 std::uint8_t* CharaOwner() noexcept

@@ -6,12 +6,11 @@
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
+#include "platform/name_text.h"
 #include "platform/verified_code.h"
 #include "render/family_now.h"
 #include "render/index_ranges.h"
 #include "render/view_places.h"
-
-#include <Unreal/NameTypes.hpp>
 
 #include <algorithm>
 #include <atomic>
@@ -110,17 +109,6 @@ Flags SceneFlags(const void* scene) noexcept
     return flags;
 }
 
-/// The name's text through UE4SS's FName (the game's own name pool), or empty. A free function for the guard.
-void NameText(std::int64_t bits, std::wstring* out) noexcept
-try
-{
-    *out = RC::Unreal::FName(bits).ToString();
-}
-catch (...)
-{
-    out->clear();
-}
-
 /// "index owner (resource)" of a scene object, for the log.
 std::wstring Describe(const void* scene, std::int32_t index)
 {
@@ -138,11 +126,11 @@ std::wstring Describe(const void* scene, std::int32_t index)
     {
         if (ReadAt(proxy, facts::kProxyOwnerName, owner))
         {
-            platform::CallGuarded(&NameText, owner, &ownerText);
+            ownerText = platform::NameText(static_cast<std::uint64_t>(owner));
         }
         if (ReadAt(proxy, facts::kProxyResourceName, res))
         {
-            platform::CallGuarded(&NameText, res, &resText);
+            resText = platform::NameText(static_cast<std::uint64_t>(res));
         }
     }
     return std::format(L"{} {} ({})", index, ownerText.empty() ? L"?" : ownerText, resText.empty() ? L"?" : resText);

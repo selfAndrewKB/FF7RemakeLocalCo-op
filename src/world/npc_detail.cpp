@@ -5,14 +5,13 @@
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
+#include "platform/name_text.h"
 #include "platform/verified_code.h"
 #include "players/field_root.h"
 #include "players/seats.h"
 #include "world/actor_place.h"
 #include "world/anim_choice.h"
 #include "world/charapop_rule.h"
-
-#include <Unreal/NameTypes.hpp>
 
 #include <array>
 #include <chrono>
@@ -84,20 +83,10 @@ int           g_needed = 0, g_coveredNow = 0;  // the last pass
 bool          g_fullLogged = false;
 std::chrono::steady_clock::time_point g_lastSummary = std::chrono::steady_clock::now();
 
-void NameText(std::int64_t bits, std::wstring* out) noexcept
-try
-{
-    *out = RC::Unreal::FName(bits).ToString();
-}
-catch (...)
-{
-    out->clear();
-}
-
 std::wstring Name(std::uint64_t bits) noexcept
 {
-    std::wstring text;
-    if (!platform::CallGuarded(&NameText, static_cast<std::int64_t>(bits), &text) || text.empty())
+    std::wstring text = platform::NameText(bits);
+    if (text.empty())
     {
         return std::format(L"name#{:x}", bits);
     }

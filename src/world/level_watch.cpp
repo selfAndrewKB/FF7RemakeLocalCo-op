@@ -7,12 +7,11 @@
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
+#include "platform/name_text.h"
 #include "platform/verified_code.h"
 #include "players/game_state.h"
 #include "players/seats.h"
 #include "world/env_sets.h"
-
-#include <Unreal/NameTypes.hpp>
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -68,16 +67,11 @@ std::chrono::steady_clock::time_point g_lastMemory{};
 std::uint64_t                    g_censusTicks  = 0;  // the census's own time since the last 10 s line (QPC ticks)
 std::uint32_t                    g_censusPasses = 0;
 
+/// The name's text; "?" when the engine cannot say.
 std::wstring NameText(std::uint64_t bits)
 {
-    try
-    {
-        return RC::Unreal::FName(static_cast<std::int64_t>(bits)).ToString();
-    }
-    catch (...)
-    {
-        return L"?";
-    }
+    std::wstring text = platform::NameText(bits);
+    return text.empty() ? L"?" : text;
 }
 
 /// A streaming level's name as the game's queue lines give it. Its PackageName, else its PackageNameToLoad, else the

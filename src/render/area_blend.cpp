@@ -5,9 +5,8 @@
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
+#include "platform/name_text.h"
 #include "players/weak_object.h"
-
-#include <Unreal/NameTypes.hpp>
 
 #include <cstdint>
 #include <format>
@@ -95,21 +94,11 @@ void Put(void* object, std::uint32_t offset, T value) noexcept
     platform::WriteGuarded(static_cast<std::uint8_t*>(object) + offset, &value, sizeof(value));
 }
 
-void NameText(std::int64_t bits, std::wstring* out) noexcept
-try
-{
-    *out = RC::Unreal::FName(bits).ToString();
-}
-catch (...)
-{
-    out->clear();
-}
-
 std::wstring Name(const void* object) noexcept
 {
     const auto   bits = Field<std::uint64_t>(object, facts::kObjectName);
-    std::wstring text;
-    if (!platform::CallGuarded(&NameText, static_cast<std::int64_t>(bits), &text) || text.empty())
+    std::wstring text = platform::NameText(bits);
+    if (text.empty())
     {
         return std::format(L"name#{:x}", bits);
     }

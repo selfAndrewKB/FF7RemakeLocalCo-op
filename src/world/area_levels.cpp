@@ -6,14 +6,13 @@
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
+#include "platform/name_text.h"
 #include "platform/settings.h"
 #include "platform/verified_code.h"
 #include "players/game_state.h"
 #include "players/seats.h"
 #include "world/area_levels_rules.h"
 #include "world/env_sets.h"
-
-#include <Unreal/NameTypes.hpp>
 
 #include <array>
 #include <atomic>
@@ -87,16 +86,11 @@ EngineArray<std::uint64_t> g_sentNames;
 EngineArray<std::uint8_t>  g_sentHidden;
 std::uint32_t g_gameRequests = 0, g_merged = 0, g_own = 0, g_held = 0, g_cuts = 0;
 
+/// The name's text; "?" when the engine cannot say.
 std::wstring NameText(std::uint64_t bits)
 {
-    try
-    {
-        return RC::Unreal::FName(static_cast<std::int64_t>(bits)).ToString();
-    }
-    catch (...)
-    {
-        return L"?";
-    }
+    std::wstring text = platform::NameText(bits);
+    return text.empty() ? L"?" : text;
 }
 
 std::wstring Marked(std::uint64_t name, std::uint8_t hidden)

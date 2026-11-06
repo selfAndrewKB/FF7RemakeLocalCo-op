@@ -8,6 +8,7 @@
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
+#include "platform/name_text.h"
 #include "platform/text.h"
 #include "platform/verified_code.h"
 #include "platform/vtable_entry.h"
@@ -20,8 +21,6 @@
 #include "world/target_icons.h"
 #include "world/talk_presses.h"
 #include "world/traversal_action.h"
-
-#include <Unreal/NameTypes.hpp>
 
 #include <array>
 #include <bitset>
@@ -162,24 +161,14 @@ bool                          g_pressSkipLogged = false;
 
 constexpr std::size_t kRangeVisited = 0;  // the copy's ranges (FreshCopy's order)
 
-void NameText(std::int64_t bits, std::wstring* out) noexcept
-try
-{
-    *out = RC::Unreal::FName(bits).ToString();
-}
-catch (...)
-{
-    out->clear();
-}
-
 std::wstring Name(std::uint64_t bits) noexcept
 {
     if (bits == 0)
     {
         return L"none";
     }
-    std::wstring text;
-    if (!platform::CallGuarded(&NameText, static_cast<std::int64_t>(bits), &text) || text.empty())
+    std::wstring text = platform::NameText(bits);
+    if (text.empty())
     {
         return std::format(L"name#{:x}", bits);
     }

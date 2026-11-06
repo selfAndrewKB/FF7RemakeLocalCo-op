@@ -5,6 +5,7 @@
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
+#include "platform/name_text.h"
 #include "platform/settings.h"
 #include "platform/sparse_array.h"
 #include "platform/verified_code.h"
@@ -138,25 +139,15 @@ Judgment& JudgmentOf(std::int64_t object) noexcept
     return *slot;
 }
 
-/// The name's text through UE4SS's FName (the game's own pool); a free function so a fault is caught by the guard.
-void NameText(std::int64_t bits, std::wstring* out) noexcept
-try
-{
-    *out = RC::Unreal::FName(bits).ToString();
-}
-catch (...)
-{
-    out->clear();
-}
-
+/// A name's text for the log: "None" for no name, its bits when the engine cannot say.
 std::wstring Name(std::int64_t bits) noexcept
 {
     if (bits == 0)
     {
         return L"None";
     }
-    std::wstring text;
-    if (!platform::CallGuarded(&NameText, bits, &text) || text.empty())
+    std::wstring text = platform::NameText(static_cast<std::uint64_t>(bits));
+    if (text.empty())
     {
         return std::format(L"name#{:x}", static_cast<std::uint64_t>(bits));
     }

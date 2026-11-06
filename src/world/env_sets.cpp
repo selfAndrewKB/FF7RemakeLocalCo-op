@@ -6,14 +6,13 @@
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
+#include "platform/name_text.h"
 #include "platform/verified_code.h"
 #include "players/seats.h"
 #include "views/scene_camera.h"
 #include "world/actor_place.h"
 #include "world/area_levels.h"
 #include "world/env_set_view.h"
-
-#include <Unreal/NameTypes.hpp>
 
 #include <algorithm>
 #include <array>
@@ -129,20 +128,10 @@ std::uint64_t Bits(Name name) noexcept
     return bits;
 }
 
-void NameText(std::int64_t bits, std::wstring* out) noexcept
-try
-{
-    *out = RC::Unreal::FName(bits).ToString();
-}
-catch (...)
-{
-    out->clear();
-}
-
 std::wstring Text(Name name)
 {
-    std::wstring text;
-    return platform::CallGuarded(&NameText, static_cast<std::int64_t>(Bits(name)), &text) && !text.empty() ? text : L"?";
+    std::wstring text = platform::NameText(Bits(name));
+    return text.empty() ? L"?" : text;
 }
 
 std::wstring IdsText(const Ids& ids)

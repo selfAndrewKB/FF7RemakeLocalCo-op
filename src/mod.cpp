@@ -66,7 +66,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.167.2-record-by-monitor";  // the one version string (the log, UE4SS and the setup app)
+constexpr const wchar_t* kVersion = L"0.168.0-shared-name-text";  // the one version string (the log, UE4SS and the setup app)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;

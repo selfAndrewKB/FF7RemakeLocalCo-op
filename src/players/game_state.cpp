@@ -3,11 +3,10 @@
 #include "control/registry.h"
 #include "engine_facts.h"
 #include "platform/guarded.h"
+#include "platform/name_text.h"
 #include "platform/verified_code.h"
 #include "platform/log.h"
 #include "players/field_root.h"
-
-#include <Unreal/NameTypes.hpp>
 
 #include <array>
 #include <cstdint>
@@ -22,18 +21,6 @@ void (*g_pauseMenuClosed)(void* context, void* frame, std::uint8_t* result) = nu
 const std::uint8_t* const* g_shopSlot = nullptr;  // EndUISystem[44], the shop UI (its "a shop is up" byte)
 Snapshot                   g_last;
 bool                       g_logged = false;
-
-/// The name's text through UE4SS's FName (the game's own name pool). A free function, so a fault inside the
-/// lookup is caught by the guard rather than ending the game.
-void NameText(std::int64_t bits, std::wstring* out) noexcept
-try
-{
-    *out = RC::Unreal::FName(bits).ToString();
-}
-catch (...)
-{
-    out->clear();
-}
 
 /// One guarded read of a value through a pointer chain.
 template <class T>
@@ -69,7 +56,7 @@ Snapshot Read() noexcept
         }
         else if (ReadAt(root, facts::kFieldRootLocation, name) && name != 0)
         {
-            platform::CallGuarded(&NameText, name, &now.location);
+            now.location = platform::NameText(static_cast<std::uint64_t>(name));
         }
     }
     return now;

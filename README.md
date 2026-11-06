@@ -180,6 +180,8 @@ src/
                             it back
     log                     The mod's log: one line per event, written to UE4SS.log with a "[LocalSplitScreen]" prefix
     module_pin              Keeps this DLL loaded until the process exits
+    name_text               The text of an engine name (FName), for log lines and readings: the lookup goes through
+                            UE4SS and is guarded, since a name read from memory the engine has let go can be anything
     seqlock.h               N floats one thread writes and others read (Boehm's seqlock): the writer bumps the version
                             to odd, stores the values, bumps it to even; a reader retries while it sees an odd version
                             or a version that changed under it

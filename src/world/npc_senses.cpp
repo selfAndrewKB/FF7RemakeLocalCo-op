@@ -6,6 +6,7 @@
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
+#include "platform/name_text.h"
 #include "platform/sparse_array.h"
 #include "platform/verified_code.h"
 #include "platform/vtable_entry.h"
@@ -14,8 +15,6 @@
 #include "players/seats.h"
 #include "world/actor_place.h"
 #include "world/npc_senses_code.h"
-
-#include <Unreal/NameTypes.hpp>
 
 #include <algorithm>
 #include <array>
@@ -104,26 +103,15 @@ std::atomic<std::uint64_t> g_bothSeen{0}, g_oneFirst{0}, g_gameAfter{0}, g_offTh
 std::wstring  g_summary = L"no summary yet";
 std::chrono::steady_clock::time_point g_lastSummary = std::chrono::steady_clock::now();
 
-void NameText(std::int64_t bits, std::wstring* out) noexcept
-try
-{
-    *out = RC::Unreal::FName(bits).ToString();
-}
-catch (...)
-{
-    out->clear();
-}
-
 std::wstring ObjectName(const void* object) noexcept
 {
-    std::int64_t bits = 0;
-    std::wstring text;
-    if (!Read(static_cast<const std::uint8_t*>(object) + facts::kObjectName, bits) ||
-        !platform::CallGuarded(&NameText, bits, &text) || text.empty())
+    std::uint64_t bits = 0;
+    if (!Read(static_cast<const std::uint8_t*>(object) + facts::kObjectName, bits))
     {
         return L"?";
     }
-    return text;
+    std::wstring text = platform::NameText(bits);
+    return text.empty() ? L"?" : text;
 }
 
 bool Location(void* character, float (&out)[3]) noexcept

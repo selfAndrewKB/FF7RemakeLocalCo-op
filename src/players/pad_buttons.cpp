@@ -7,6 +7,7 @@
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
+#include "platform/name_text.h"
 #include "platform/verified_code.h"
 #include "platform/vtable_entry.h"
 #include "players/action_tables.h"
@@ -20,8 +21,6 @@
 #include <span>
 #include <string>
 #include <vector>
-
-#include <Unreal/NameTypes.hpp>
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -157,24 +156,13 @@ void SwapBack(unsigned user) noexcept
     g_inScope = false;
 }
 
-void NameText(std::int64_t bits, std::wstring* out) noexcept
-try
-{
-    *out = RC::Unreal::FName(bits).ToString();
-}
-catch (...)
-{
-    out->clear();
-}
-
 std::wstring Names(std::span<const std::uint64_t> names) noexcept
 try
 {
     std::wstring text;
     for (const std::uint64_t name : names)
     {
-        std::wstring one;
-        platform::CallGuarded(&NameText, static_cast<std::int64_t>(name), &one);
+        const std::wstring one = platform::NameText(name);
         text += std::format(L"{}{}", text.empty() ? L"" : L", ", one.empty() ? std::format(L"{:#x}", name) : one);
     }
     return text;
