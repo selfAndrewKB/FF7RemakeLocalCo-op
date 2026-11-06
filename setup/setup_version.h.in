@@ -1,0 +1,8 @@
+// Written by CMake from the mod's one version string (src/mod.cpp kVersion), for the app's window and its file properties.
+#pragma once
+
+#define LSS_VERSION_TEXT  "@LSS_VERSION@"
+#define LSS_VERSION_SHORT "@LSS_VERSION_MAJOR@.@LSS_VERSION_MINOR@.@LSS_VERSION_PATCH@"
+#define LSS_VERSION_MAJOR @LSS_VERSION_MAJOR@
+#define LSS_VERSION_MINOR @LSS_VERSION_MINOR@
+#define LSS_VERSION_PATCH @LSS_VERSION_PATCH@

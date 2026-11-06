@@ -21,6 +21,9 @@
 
 namespace lss::views::display_move {
 
+/// The record's file name, beside the settings file: the mod writes it there and the guard takes no other.
+inline constexpr const wchar_t* kRecordName = L"LocalSplitScreen.desktop";
+
 /// Every active monitor's position now; empty if it could not be read.
 std::vector<row_journal::Seen> Read() noexcept;
 

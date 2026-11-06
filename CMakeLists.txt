@@ -174,16 +174,37 @@ target_link_libraries(LocalSplitScreen PUBLIC UE4SS)
 # ------------------------------------------------------------------------------------------------
 # The setup app: picks the monitors and writes LocalSplitScreen.ini; shares the mod's row rules and settings table
 # ------------------------------------------------------------------------------------------------
+enable_language(RC)
+
+# The app's version is the mod's: read from the one version string, and read again whenever that file changes.
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS src/mod.cpp)
+file(STRINGS src/mod.cpp LSS_VERSION_LINE REGEX "kVersion = L\"" LIMIT_COUNT 1)
+# Plain numbers, none starting with a zero: the resource compiler reads a leading zero as octal.
+if(NOT LSS_VERSION_LINE MATCHES "L\"((0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)[^\"]*)\"")
+    message(FATAL_ERROR "src/mod.cpp: kVersion not found as L\"major.minor.patch...\"")
+endif()
+set(LSS_VERSION "${CMAKE_MATCH_1}")
+set(LSS_VERSION_MAJOR "${CMAKE_MATCH_2}")
+set(LSS_VERSION_MINOR "${CMAKE_MATCH_3}")
+set(LSS_VERSION_PATCH "${CMAKE_MATCH_4}")
+configure_file(setup/setup_version.h.in "${CMAKE_CURRENT_BINARY_DIR}/generated/setup_version.h" @ONLY)
+
 add_executable(LocalSplitScreenSetup WIN32
     setup/main.cpp
+    setup/guard.cpp
+    setup/view.cpp
+    setup/app.rc
+    setup/app.manifest
     src/views/display_move.cpp
     src/views/monitor_list.cpp
     src/views/monitor_row.cpp
 )
-target_include_directories(LocalSplitScreenSetup PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src" "${CMAKE_CURRENT_SOURCE_DIR}")
+target_include_directories(LocalSplitScreenSetup PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src" "${CMAKE_CURRENT_SOURCE_DIR}"
+                                                         "${CMAKE_CURRENT_BINARY_DIR}/generated")
 target_compile_features(LocalSplitScreenSetup PRIVATE cxx_std_20)
 target_compile_definitions(LocalSplitScreenSetup PRIVATE NOMINMAX)
-target_link_libraries(LocalSplitScreenSetup PRIVATE user32 gdi32 comctl32 shell32)
+target_link_libraries(LocalSplitScreenSetup PRIVATE user32 gdi32 msimg32 comctl32 shell32 dwmapi uxtheme)
+set_source_files_properties(setup/app.rc PROPERTIES OBJECT_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/setup/app.ico")  # a new icon rebuilds it
 set_property(TARGET LocalSplitScreenSetup PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")  # one file: no runtime to install
 
 # ------------------------------------------------------------------------------------------------

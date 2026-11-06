@@ -3,20 +3,28 @@
 // itself (or at the path given as its one argument). The game is then started from Steam as always: no launcher. Every name, word
 // and rule comes from the mod's own table and row code (platform/settings.h, views/monitor_row), so nothing here can drift from
 // what the game does. Nothing is saved while the game runs: the mod keeps the file's values in memory and its Co-op page would
-// write them back over the app's.
+// write them over the app's.
 //
-// The same exe is the mod's guard, started by the mod with `--guard <handle> <record>` before it moves any monitor
-// (views/display_align): no window, one wait on the game, the monitors put back if the record is still there when the game ends,
-// and gone. It runs only while the game does. It leaves one line in `<record>.log` saying what it found.
+// The window is one surface the app draws itself (setup/view), laid out by setup/setup_rules.h: no child controls. The mouse and
+// the keyboard both reach every part: Tab and the arrow keys move, Left and Right change an option, Space or Enter presses,
+// Enter alone saves, Escape closes.
+//
+// The same exe is the mod's guard (setup/guard).
 
 #include "platform/settings_write.h"
+#include "setup/guard.h"
 #include "setup/setup_rules.h"
+#include "setup/theme.h"
+#include "setup/view.h"
+#include "setup_version.h"
 #include "views/display_move.h"
 #include "views/monitor_list.h"
 
 #include <CommCtrl.h>
 #include <TlHelp32.h>
+#include <dwmapi.h>
 #include <shellapi.h>
+#include <uxtheme.h>
 
 #include <algorithm>
 #include <array>
@@ -25,45 +33,61 @@
 #include <string>
 #include <vector>
 
-#pragma comment(linker, "/manifestdependency:\"type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' "      \
-                        "processorArchitecture='amd64' publicKeyToken='6595b64144ccf1df' language='*'\"")
+#define LSS_WIDE_(text) L##text
+#define LSS_WIDE(text)  LSS_WIDE_(text)
 
 namespace {
 
 namespace settings = lss::platform::settings;
 namespace rules    = lss::setup::rules;
+namespace view     = lss::setup::view;
 namespace row      = lss::views::monitor_row;
 namespace listing  = lss::views::monitor_list;
+namespace move     = lss::views::display_move;
 
-constexpr const wchar_t* kFileName   = L"LocalSplitScreen.ini";
-constexpr const wchar_t* kGameExe    = L"ff7remake_.exe";
-constexpr int            kIdMulti    = 101;
-constexpr int            kIdOrder    = 102;
-constexpr int            kIdSave     = 103;
-constexpr int            kIdClose    = 104;
-constexpr int            kIdBack     = 105;
-constexpr const wchar_t* kRecordName = L"LocalSplitScreen.desktop";
-constexpr int            kGuardTries = 30;    // about a minute of asking, with the waits inside each try
-constexpr DWORD          kGuardPause = 1000;
-constexpr UINT_PTR       kGameTimer  = 1;
+constexpr const wchar_t* kTitle     = L"FF7 Remake Split-Screen Setup";
+constexpr const wchar_t* kFileName  = L"LocalSplitScreen.ini";
+constexpr const wchar_t* kModFolder = L"dlls";  // stands beside the settings file where the mod reads it
+constexpr const wchar_t* kGameExe   = L"ff7remake_.exe";
+constexpr UINT_PTR       kGameTimer = 1;
+constexpr int            kWidth     = 880;  // the client area the window opens with, at 96 dpi
+constexpr int            kHeight    = 640;
+
+// The parts with a longer explanation on hover.
+constexpr UINT_PTR kTipMulti   = 1;
+constexpr UINT_PTR kTipOrder   = 2;
+constexpr UINT_PTR kTipStrip   = 3;
+constexpr UINT_PTR kTipStatus  = 4;
+constexpr UINT_PTR kTipRestore = 5;
+constexpr const wchar_t* kRestoreHelp =
+    L"Puts your monitors back as Windows has them saved, in case a game ended without doing so.";
 
 struct App
 {
-    HWND         window = nullptr, multi = nullptr, order = nullptr, save = nullptr, close = nullptr, back = nullptr;
-    HWND         multiLabel = nullptr, orderLabel = nullptr, status = nullptr;
-    HFONT        font = nullptr, smallFont = nullptr;
+    HWND         window = nullptr;
+    HWND         tips   = nullptr;
+    view::Fonts  fonts;
     UINT         dpi = 96;
-    RECT         picture{}, strip{};
     std::wstring path;
+    bool         inModFolder = true;
     std::array<settings::Reading, settings::kOptions.size()> readings;
     std::vector<listing::Listed> monitors;
     std::vector<std::size_t>     picks;   // the monitors of the row, in the order clicked: left to right
     bool                         picksChanged = false;  // the player clicked a monitor: the file's own names stay otherwise
     std::int32_t                 namedNotHere = 0;      // monitors the file names that are not connected now
     std::size_t                  primary = 0;
-    bool                         gameRunning = false;
-    std::wstring                 savedNote;
     std::wstring                 fileWord;  // the picks as the file has them: monitors not connected now stay named until a click
+    bool                         gameRunning = false;
+    std::wstring                 note;      // what the last action did, until the choice changes
+    rules::Tone                  noteTone = rules::Tone::Good;
+    // Worked out by Refresh from the above, for the paint, the mouse and the keyboard.
+    rules::Look   look;
+    rules::Status status;
+    bool          canSave    = false;
+    bool          canRestore = false;
+    rules::Hit    hover, pressed, focus;
+    bool          showFocus = false;  // the keyboard was used last: the chosen part is marked
+    bool          tracking  = false;  // the mouse's leaving is asked for
 };
 App g_app;
 
@@ -82,14 +106,28 @@ std::vector<row::Monitor> PlainMonitors()
     return list;
 }
 
-rules::Look CurrentLook()
-{
-    return rules::LookAt(PlainMonitors(), g_app.picks, g_app.primary);
-}
-
 std::size_t IndexOf(const settings::Option& option)
 {
     return static_cast<std::size_t>(std::find(settings::kOptions.begin(), settings::kOptions.end(), &option) - settings::kOptions.begin());
+}
+
+const std::wstring& WordOf(const settings::Option& option)
+{
+    return g_app.readings[IndexOf(option)].word;
+}
+
+/// The option's value as the Co-op page names it.
+std::wstring LabelOf(const settings::Option& option)
+{
+    const std::wstring& word = WordOf(option);
+    for (std::size_t i = 0; i < option.words.size() && i < option.wordLabels.size(); ++i)
+    {
+        if (word == option.words[i])
+        {
+            return option.wordLabels[i];
+        }
+    }
+    return word;
 }
 
 bool GameIsRunning()
@@ -121,12 +159,12 @@ std::wstring PicksWord()
     return row::NamesWord(words);
 }
 
-/// The monitors now, with the picks found among them: the player's clicks, else the file's word.
+/// Reads the connected monitors and finds the picks among them: the player's clicks, else the file's word.
 void ReadMonitors()
 {
     const std::wstring word = g_app.picksChanged ? PicksWord() : g_app.fileWord;
     g_app.monitors          = listing::List();
-    g_app.primary  = 0;
+    g_app.primary           = 0;
     std::vector<std::wstring> ids, keys;
     for (std::size_t i = 0; i < g_app.monitors.size(); ++i)
     {
@@ -145,184 +183,211 @@ void ReadMonitors()
 
 std::wstring RecordPath()
 {
-    return (std::filesystem::path(g_app.path).parent_path() / kRecordName).wstring();
+    return (std::filesystem::path(g_app.path).parent_path() / move::kRecordName).wstring();
 }
 
-const std::wstring& OrderWord()
+rules::Frame FrameNow()
 {
-    return g_app.readings[IndexOf(settings::kColumnOrder)].word;
+    RECT client{};
+    GetClientRect(g_app.window, &client);
+    return rules::Arrange(client.right, client.bottom, g_app.dpi);
 }
 
+std::vector<row::Rect> TilesIn(const rules::Frame& frame)
+{
+    return rules::Tiles(PlainMonitors(), frame.picture, Px(10), Px(4));
+}
+
+void Say(std::wstring note, rules::Tone tone)
+{
+    g_app.note     = std::move(note);
+    g_app.noteTone = tone;
+}
+
+RECT ToRect(const row::Rect& rect)
+{
+    return {rect.left, rect.top, rect.right, rect.bottom};
+}
+
+/// A part's place and words for the hover text. An empty text shows nothing.
+void PlaceTip(UINT_PTR id, const row::Rect& at, const std::wstring& text)
+{
+    TTTOOLINFOW tool{};
+    tool.cbSize   = sizeof(tool);
+    tool.hwnd     = g_app.window;
+    tool.uId      = id;
+    tool.rect     = ToRect(at);
+    tool.lpszText = const_cast<wchar_t*>(text.c_str());  // copied by the control
+    SendMessageW(g_app.tips, TTM_NEWTOOLRECTW, 0, reinterpret_cast<LPARAM>(&tool));
+    SendMessageW(g_app.tips, TTM_UPDATETIPTEXTW, 0, reinterpret_cast<LPARAM>(&tool));
+}
+
+void PlaceTips()
+{
+    if (g_app.tips == nullptr)
+    {
+        return;
+    }
+    const rules::Frame frame = FrameNow();
+    PlaceTip(kTipMulti, frame.multi, settings::kMultiMonitor.menuHelp);
+    PlaceTip(kTipOrder, frame.order, settings::kColumnOrder.menuHelp);
+    PlaceTip(kTipStrip, frame.strip, g_app.look.screens.empty() ? L"" : rules::kMovesNote);
+    PlaceTip(kTipStatus, frame.status, g_app.status.detail);
+    PlaceTip(kTipRestore, g_app.canRestore ? frame.restore : row::Rect{}, kRestoreHelp);
+}
+
+/// The hover text in the window's own colours and font, at the window's dpi.
+void StyleTips()
+{
+    if (g_app.tips == nullptr)
+    {
+        return;
+    }
+    RECT margin{Px(10), Px(7), Px(10), Px(7)};
+    SendMessageW(g_app.tips, TTM_SETTIPBKCOLOR, lss::setup::theme::kPanel.bottom, 0);
+    SendMessageW(g_app.tips, TTM_SETTIPTEXTCOLOR, lss::setup::theme::kText, 0);
+    SendMessageW(g_app.tips, TTM_SETMARGIN, 0, reinterpret_cast<LPARAM>(&margin));
+    SendMessageW(g_app.tips, TTM_SETMAXTIPWIDTH, 0, Px(380));
+    SendMessageW(g_app.tips, WM_SETFONT, reinterpret_cast<WPARAM>(g_app.fonts.minor), TRUE);
+}
+
+void MakeTips()
+{
+    g_app.tips = CreateWindowExW(WS_EX_TOPMOST, TOOLTIPS_CLASSW, nullptr, WS_POPUP | TTS_NOPREFIX | TTS_ALWAYSTIP, CW_USEDEFAULT,
+                                 CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, g_app.window, nullptr, GetModuleHandleW(nullptr), nullptr);
+    if (g_app.tips == nullptr)
+    {
+        return;
+    }
+    SetWindowTheme(g_app.tips, L"", L"");  // the system's look off: the control then takes the colours it is given
+    StyleTips();
+    SendMessageW(g_app.tips, TTM_SETDELAYTIME, TTDT_AUTOPOP, 15000);
+    for (const UINT_PTR id : {kTipMulti, kTipOrder, kTipStrip, kTipStatus, kTipRestore})
+    {
+        wchar_t     none[] = L"";
+        TTTOOLINFOW tool{};
+        tool.cbSize   = sizeof(tool);
+        tool.uFlags   = TTF_SUBCLASS;
+        tool.hwnd     = g_app.window;
+        tool.uId      = id;
+        tool.lpszText = none;
+        SendMessageW(g_app.tips, TTM_ADDTOOLW, 0, reinterpret_cast<LPARAM>(&tool));
+    }
+}
+
+/// The part at a point of the client area; a button that cannot be pressed is no part.
+rules::Hit HitAt(int x, int y)
+{
+    const rules::Frame frame = FrameNow();
+    const auto         tiles = TilesIn(frame);
+    rules::Hit         hit   = rules::HitTest(frame, tiles, g_app.dpi, x, y);
+    if ((hit.part == rules::Part::Save && !g_app.canSave) || (hit.part == rules::Part::Restore && !g_app.canRestore))
+    {
+        hit = {};
+    }
+    return hit;
+}
+
+/// Works out what the window shows from what changed, and asks for a repaint.
 void Refresh()
 {
-    const rules::Look look = CurrentLook();
-    std::wstring      text = look.text;
-    if (g_app.gameRunning)
-    {
-        text = L"Close the game to save a change: while it runs it would write its own values over this file.\r\n" + text;
-    }
-    else if (!g_app.savedNote.empty())
-    {
-        text = g_app.savedNote + L"\r\n" + text;
-    }
-    if (g_app.namedNotHere > 0 && !g_app.picksChanged)
-    {
-        text = std::format(L"{} of the monitors saved before not connected now: the game waits for them, and Save keeps them unless you click a monitor.\r\n", g_app.namedNotHere) + text;
-    }
-    SetWindowTextW(g_app.status, text.c_str());
-    // No pick at all can always be saved: a desktop with no row still has its other choices.
-    EnableWindow(g_app.save, (look.ok || !look.picked) && !g_app.gameRunning);
+    g_app.look = rules::LookAt(PlainMonitors(), g_app.picks, g_app.primary);
+    rules::Notes notes;
+    notes.gameRunning  = g_app.gameRunning;
+    notes.inModFolder  = g_app.inModFolder;
+    notes.spanOn       = WordOf(settings::kMultiMonitor) == L"on";
+    notes.picksChanged = g_app.picksChanged;
+    notes.notConnected = g_app.picksChanged ? 0 : g_app.namedNotHere;
+    notes.note         = g_app.note;
+    notes.noteTone     = g_app.noteTone;
+    g_app.status       = rules::StatusLine(g_app.look, notes);
+    g_app.canSave      = rules::CanSave(g_app.look, notes);
     // Offered only when there is something to put back: a desktop that differs from what Windows has saved, with no game to hold it.
-    EnableWindow(g_app.back, !g_app.gameRunning && !lss::views::display_move::IsSavedLayout());
-    InvalidateRect(g_app.window, &g_app.picture, FALSE);
-    InvalidateRect(g_app.window, &g_app.strip, FALSE);
+    g_app.canRestore = !g_app.gameRunning && !move::IsSavedLayout();
+    if (g_app.focus.part == rules::Part::Tile && g_app.focus.tile >= g_app.monitors.size())
+    {
+        g_app.focus = {};
+    }
+    // What stands under the mouse may have changed with the rest: a button that came or went, another monitor's tile.
+    if (g_app.tracking)
+    {
+        POINT at{};
+        GetCursorPos(&at);
+        ScreenToClient(g_app.window, &at);
+        g_app.hover = HitAt(at.x, at.y);
+    }
+    PlaceTips();
+    InvalidateRect(g_app.window, nullptr, FALSE);
 }
 
-void PaintPicture(HDC dc)
+view::Scene SceneNow()
 {
-    const int width  = g_app.picture.right - g_app.picture.left;
-    const int height = g_app.picture.bottom - g_app.picture.top;
-    if (width <= 0 || height <= 0)
+    view::Scene scene;
+    scene.frame      = FrameNow();
+    scene.version    = L"v" LSS_WIDE(LSS_VERSION_SHORT);
+    scene.multiLabel = settings::kMultiMonitor.label;
+    scene.multiValue = LabelOf(settings::kMultiMonitor);
+    scene.orderLabel = settings::kColumnOrder.label;
+    scene.orderValue = LabelOf(settings::kColumnOrder);
+    scene.rowLive    = g_app.look.ok && WordOf(settings::kMultiMonitor) == L"on";
+    scene.status     = g_app.status;
+    scene.canSave    = g_app.canSave;
+    scene.canRestore = g_app.canRestore;
+    scene.hover      = g_app.hover;
+    scene.pressed    = g_app.pressed;
+    scene.focus      = g_app.focus;
+    scene.showFocus  = g_app.showFocus;
+
+    const std::wstring&      order   = WordOf(settings::kColumnOrder);
+    const auto&              screens = g_app.look.screens;
+    const auto               tiles   = TilesIn(scene.frame);
+    const bool               noRow   = g_app.look.picked && !g_app.look.ok && g_app.picks.size() != 1;
+    for (std::size_t i = 0; i < tiles.size() && i < g_app.monitors.size(); ++i)
+    {
+        const listing::Listed& monitor = g_app.monitors[i];
+        view::Tile             tile;
+        tile.rect   = tiles[i];
+        tile.name   = monitor.name;
+        tile.width  = monitor.monitor.rect.Width();
+        tile.height = monitor.monitor.rect.Height();
+        if (const auto pick = std::find(g_app.picks.begin(), g_app.picks.end(), i); pick != g_app.picks.end())
+        {
+            tile.pick    = static_cast<int>(pick - g_app.picks.begin()) + 1;
+            tile.problem = noRow;
+        }
+        if (const auto screen = std::find(screens.begin(), screens.end(), i); screen != screens.end())
+        {
+            tile.inRow  = true;
+            tile.player = rules::PlayerOnScreen(order, screens.size(), static_cast<std::size_t>(screen - screens.begin())).value_or(0);
+        }
+        scene.tiles.push_back(std::move(tile));
+    }
+    for (std::size_t at = 0; at < screens.size(); ++at)
+    {
+        const listing::Listed& monitor = g_app.monitors[screens[at]];
+        scene.strip.push_back({monitor.name, monitor.monitor.rect.Width(), monitor.monitor.rect.Height(),
+                               rules::PlayerOnScreen(order, screens.size(), at).value_or(0)});
+    }
+    return scene;
+}
+
+void ClickTile(std::size_t tile)
+{
+    if (tile >= g_app.monitors.size())
     {
         return;
     }
-    const HDC     memory = CreateCompatibleDC(dc);
-    const HBITMAP bitmap = CreateCompatibleBitmap(dc, width, height);
-    const auto    oldBmp = SelectObject(memory, bitmap);
-    const RECT    all{0, 0, width, height};
-    FillRect(memory, &all, GetSysColorBrush(COLOR_BTNFACE));
-    SetBkMode(memory, TRANSPARENT);
-    const auto oldFont = SelectObject(memory, g_app.smallFont);
-
-    const auto        plain   = PlainMonitors();
-    const auto        placed  = rules::Fit(plain, width, height, Px(6));
-    const rules::Look look    = CurrentLook();
-    const bool        spanOn  = g_app.readings[IndexOf(settings::kMultiMonitor)].word == L"on";
-    for (std::size_t i = 0; i < placed.size(); ++i)
+    if (const auto at = std::find(g_app.picks.begin(), g_app.picks.end(), tile); at != g_app.picks.end())
     {
-        const auto  screen  = std::find(look.screens.begin(), look.screens.end(), i);
-        const bool  inRow   = screen != look.screens.end();
-        const auto  pickAt  = std::find(g_app.picks.begin(), g_app.picks.end(), i);
-        const bool  ticked  = pickAt != g_app.picks.end();
-        const COLORREF fill = inRow && spanOn ? RGB(0, 90, 170) : ticked ? RGB(150, 60, 60) : RGB(70, 70, 70);
-        const HBRUSH   brush = CreateSolidBrush(fill);
-        const HPEN     pen   = CreatePen(PS_SOLID, Px(ticked ? 3 : 1), ticked ? RGB(255, 255, 255) : RGB(30, 30, 30));
-        const auto     oldBrush = SelectObject(memory, brush);
-        const auto     oldPen   = SelectObject(memory, pen);
-        const RECT     rect{placed[i].left, placed[i].top, placed[i].right - Px(2), placed[i].bottom - Px(2)};
-        Rectangle(memory, rect.left, rect.top, rect.right, rect.bottom);
-        SelectObject(memory, oldBrush);
-        SelectObject(memory, oldPen);
-        DeleteObject(brush);
-        DeleteObject(pen);
-
-        const row::Rect& real = plain[i].rect;
-        std::wstring     text = std::format(L"{}\n{} x {}", g_app.monitors[i].name, real.Width(), real.Height());
-        if (ticked)
-        {
-            text += std::format(L"\nPick {}", static_cast<std::size_t>(pickAt - g_app.picks.begin()) + 1);
-        }
-        else if (inRow && spanOn)
-        {
-            const auto at = static_cast<std::size_t>(screen - look.screens.begin());
-            if (const auto player = rules::PlayerOnScreen(OrderWord(), look.screens.size(), at))
-            {
-                text += std::format(L"\nPlayer {}", *player);
-            }
-        }
-        SetTextColor(memory, RGB(255, 255, 255));
-        RECT inner{rect.left + Px(6), rect.top + Px(6), rect.right - Px(6), rect.bottom - Px(6)};
-        DrawTextW(memory, text.c_str(), -1, &inner, DT_CENTER | DT_WORDBREAK | DT_NOPREFIX | DT_END_ELLIPSIS);
+        g_app.picks.erase(at);
     }
-    BitBlt(dc, g_app.picture.left, g_app.picture.top, width, height, memory, 0, 0, SRCCOPY);
-    SelectObject(memory, oldFont);
-    SelectObject(memory, oldBmp);
-    DeleteObject(bitmap);
-    DeleteDC(memory);
-}
-
-/// The row as it will stand while the game holds it: each monitor as wide as it is, left to right, with its player.
-void PaintStrip(HDC dc)
-{
-    const int width = g_app.strip.right - g_app.strip.left, height = g_app.strip.bottom - g_app.strip.top;
-    if (width <= 0 || height <= 0)
+    else
     {
-        return;
+        g_app.picks.push_back(tile);
     }
-    const HDC     memory = CreateCompatibleDC(dc);
-    const HBITMAP bitmap = CreateCompatibleBitmap(dc, width, height);
-    const auto    oldBmp = SelectObject(memory, bitmap);
-    const RECT    all{0, 0, width, height};
-    FillRect(memory, &all, GetSysColorBrush(COLOR_BTNFACE));
-    SetBkMode(memory, TRANSPARENT);
-    const auto oldFont = SelectObject(memory, g_app.smallFont);
-
-    const rules::Look look  = CurrentLook();
-    const bool        spanOn = g_app.readings[IndexOf(settings::kMultiMonitor)].word == L"on";
-    std::int64_t      total  = 0;
-    std::int32_t      tallest = 1;
-    for (const std::size_t screen : look.screens)
-    {
-        total += g_app.monitors[screen].monitor.rect.Width();
-        tallest = std::max(tallest, g_app.monitors[screen].monitor.rect.Height());
-    }
-    const int caption = Px(92);
-    RECT      label{0, 0, caption, height};
-    SetTextColor(memory, GetSysColor(COLOR_BTNTEXT));
-    DrawTextW(memory, L"While the game runs:", -1, &label, DT_WORDBREAK | DT_VCENTER | DT_NOPREFIX);
-    int x = caption;
-    const int room = width - caption;
-    for (std::size_t at = 0; at < look.screens.size() && total > 0; ++at)
-    {
-        const listing::Listed& m = g_app.monitors[look.screens[at]];
-        const int     w     = static_cast<int>(room * m.monitor.rect.Width() / total);
-        const HBRUSH  brush = CreateSolidBrush(look.ok && spanOn ? RGB(0, 90, 170) : RGB(70, 70, 70));
-        // Top-aligned, as the row stands, and never too short for its two lines: who plays on it matters more than its exact shape.
-        const RECT    rect{x, 0, x + w - Px(2), std::max(MulDiv(height, m.monitor.rect.Height(), tallest), Px(36))};
-        FillRect(memory, &rect, brush);
-        DeleteObject(brush);
-        std::wstring text = m.name;
-        if (const auto player = rules::PlayerOnScreen(OrderWord(), look.screens.size(), at))
-        {
-            text += std::format(L"\nPlayer {}", *player);
-        }
-        RECT inner{rect.left + Px(4), rect.top + Px(4), rect.right - Px(4), rect.bottom - Px(2)};
-        SetTextColor(memory, RGB(255, 255, 255));
-        DrawTextW(memory, text.c_str(), -1, &inner, DT_CENTER | DT_WORDBREAK | DT_NOPREFIX | DT_END_ELLIPSIS);
-        x += w;
-    }
-    BitBlt(dc, g_app.strip.left, g_app.strip.top, width, height, memory, 0, 0, SRCCOPY);
-    SelectObject(memory, oldFont);
-    SelectObject(memory, oldBmp);
-    DeleteObject(bitmap);
-    DeleteDC(memory);
-}
-
-void ClickPicture(int x, int y)
-{
-    const int  width  = g_app.picture.right - g_app.picture.left;
-    const int  height = g_app.picture.bottom - g_app.picture.top;
-    const auto plain  = PlainMonitors();
-    const auto placed = rules::Fit(plain, width, height, Px(6));
-    const int  localX = x - g_app.picture.left, localY = y - g_app.picture.top;
-    for (std::size_t i = 0; i < placed.size(); ++i)
-    {
-        if (localX >= placed[i].left && localX < placed[i].right && localY >= placed[i].top && localY < placed[i].bottom)
-        {
-            if (const auto at = std::find(g_app.picks.begin(), g_app.picks.end(), i); at != g_app.picks.end())
-            {
-                g_app.picks.erase(at);
-            }
-            else
-            {
-                g_app.picks.push_back(i);
-            }
-            g_app.picksChanged = true;
-            g_app.savedNote.clear();
-            Refresh();
-            return;
-        }
-    }
+    g_app.picksChanged = true;
+    g_app.note.clear();
+    Refresh();
 }
 
 void Save()
@@ -341,15 +406,15 @@ void Save()
     bool written = false;
     if (const unsigned long error = settings::WriteFromTable(g_app.path, next, &written); error != 0)
     {
-        g_app.savedNote = std::format(L"Could not write {} (Windows error {}).", g_app.path, error);
+        Say(std::format(L"Couldn't save (Windows error {}).", error), rules::Tone::Problem);
     }
     else
     {
         g_app.readings     = next;
-        g_app.savedNote    = L"Saved. Start the game from Steam as always.";
         g_app.namedNotHere = g_app.picksChanged ? 0 : g_app.namedNotHere;
         g_app.fileWord     = next[IndexOf(settings::kMonitors)].word;
         g_app.picksChanged = false;
+        Say(L"Saved.", rules::Tone::Good);
     }
     Refresh();
 }
@@ -357,120 +422,217 @@ void Save()
 /// The button: the record's old places when it has them, else Windows' saved arrangement.
 void PutMonitorsBack()
 {
-    namespace move = lss::views::display_move;
     if (GameIsRunning())
     {
         g_app.gameRunning = true;
         Refresh();
         return;
     }
-    const move::Healed healed = move::Heal(RecordPath(), 0);
+    move::Heal(RecordPath(), 0);
     if (!move::IsSavedLayout())
     {
-        const long result = move::BackToSaved();
-        g_app.savedNote   = result == ERROR_SUCCESS ? L"Your monitors are back as Windows has them saved."
-                                                    : std::format(L"Windows would not put them back (error {}).", result);
+        if (const long result = move::BackToSaved(); result == ERROR_SUCCESS)
+        {
+            Say(L"Monitors restored.", rules::Tone::Good);
+        }
+        else
+        {
+            Say(std::format(L"Windows couldn't restore them (error {}).", result), rules::Tone::Problem);
+        }
     }
     else
     {
-        g_app.savedNote = healed == move::Healed::NoRecord ? L"Your monitors are already as Windows has them saved." : L"Your monitors are back.";
+        Say(L"Monitors restored.", rules::Tone::Good);
     }
     ReadMonitors();
     Refresh();
 }
 
-void SetChoice(const settings::Option& option, HWND combo)
+/// The option's value moved `steps` places along its list.
+void Step(const settings::Option& option, int steps)
 {
-    const auto picked = SendMessageW(combo, CB_GETCURSEL, 0, 0);
-    if (picked >= 0 && static_cast<std::size_t>(picked) < option.words.size())
+    g_app.readings[IndexOf(option)] = settings::Judge(option, rules::Stepped(option.words, WordOf(option), steps));
+    g_app.note.clear();
+    Refresh();
+}
+
+/// A press on a part, from the mouse or the keyboard.
+void Press(const rules::Hit& hit)
+{
+    switch (hit.part)
     {
-        g_app.readings[IndexOf(option)] = settings::Judge(option, option.words[static_cast<std::size_t>(picked)]);
-        g_app.savedNote.clear();
-        Refresh();
+        case rules::Part::Multi:
+            Step(settings::kMultiMonitor, hit.step < 0 ? -1 : 1);
+            break;
+        case rules::Part::Order:
+            Step(settings::kColumnOrder, hit.step < 0 ? -1 : 1);
+            break;
+        case rules::Part::Tile:
+            ClickTile(hit.tile);
+            break;
+        case rules::Part::Restore:
+            if (g_app.canRestore)
+            {
+                PutMonitorsBack();
+            }
+            break;
+        case rules::Part::Save:
+            if (g_app.canSave)
+            {
+                Save();
+            }
+            break;
+        case rules::Part::Close:
+            DestroyWindow(g_app.window);
+            break;
+        case rules::Part::None:
+            break;
     }
 }
 
-void FillCombo(HWND combo, const settings::Option& option)
+rules::Hit HitAt(LPARAM param)
 {
-    const std::wstring& word = g_app.readings[IndexOf(option)].word;
-    for (std::size_t i = 0; i < option.wordLabels.size(); ++i)
+    return HitAt(static_cast<short>(LOWORD(param)), static_cast<short>(HIWORD(param)));
+}
+
+/// The parts the keyboard walks, in reading order: the options, the monitors left to right, the buttons.
+std::vector<rules::Hit> Stops()
+{
+    std::vector<rules::Hit> stops{{rules::Part::Multi}, {rules::Part::Order}};
+    std::vector<std::size_t> tiles(g_app.monitors.size());
+    for (std::size_t i = 0; i < tiles.size(); ++i)
     {
-        SendMessageW(combo, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(option.wordLabels[i]));
-        if (word == option.words[i])
-        {
-            SendMessageW(combo, CB_SETCURSEL, i, 0);
-        }
+        tiles[i] = i;
+    }
+    std::sort(tiles.begin(), tiles.end(), [](std::size_t a, std::size_t b) {
+        const row::Rect& first  = g_app.monitors[a].monitor.rect;
+        const row::Rect& second = g_app.monitors[b].monitor.rect;
+        return first.left != second.left ? first.left < second.left : first.top < second.top;
+    });
+    for (const std::size_t tile : tiles)
+    {
+        stops.push_back({rules::Part::Tile, tile});
+    }
+    if (g_app.canRestore)
+    {
+        stops.push_back({rules::Part::Restore});
+    }
+    if (g_app.canSave)
+    {
+        stops.push_back({rules::Part::Save});
+    }
+    stops.push_back({rules::Part::Close});
+    return stops;
+}
+
+void MoveFocus(int by)
+{
+    const auto stops = Stops();
+    const auto same  = [](const rules::Hit& stop) { return stop.part == g_app.focus.part && stop.tile == g_app.focus.tile; };
+    const auto at    = std::find_if(stops.begin(), stops.end(), same);
+    const auto count = static_cast<int>(stops.size());
+    const int  next  = at == stops.end() ? (by > 0 ? 0 : count - 1) : ((static_cast<int>(at - stops.begin()) + by) % count + count) % count;
+    g_app.focus      = stops[static_cast<std::size_t>(next)];
+}
+
+/// `held` is true for the repeats of a key kept down: they move from part to part, but never press or step an option, so a
+/// held Enter saves once.
+void OnKey(WPARAM key, bool held)
+{
+    const bool onOption = g_app.showFocus && (g_app.focus.part == rules::Part::Multi || g_app.focus.part == rules::Part::Order);
+    if (held && (key == VK_SPACE || key == VK_RETURN || key == VK_ESCAPE))
+    {
+        return;
+    }
+    switch (key)
+    {
+        case VK_ESCAPE:
+            DestroyWindow(g_app.window);
+            return;
+        case VK_TAB:
+            MoveFocus(GetKeyState(VK_SHIFT) < 0 ? -1 : 1);
+            break;
+        case VK_DOWN:
+            MoveFocus(1);
+            break;
+        case VK_UP:
+            MoveFocus(-1);
+            break;
+        case VK_LEFT:
+        case VK_RIGHT:
+            if (onOption)
+            {
+                if (held)
+                {
+                    return;  // one step for one press: a held key would spin through the values
+                }
+                Press({g_app.focus.part, 0, key == VK_LEFT ? -1 : 1});
+            }
+            else
+            {
+                MoveFocus(key == VK_LEFT ? -1 : 1);
+            }
+            break;
+        case VK_SPACE:
+        case VK_RETURN:
+            if (g_app.showFocus && g_app.focus.part != rules::Part::None)
+            {
+                Press({g_app.focus.part, g_app.focus.tile, 1});
+            }
+            else if (key == VK_RETURN)
+            {
+                Press({rules::Part::Save});
+            }
+            break;
+        default:
+            return;
+    }
+    if (IsWindow(g_app.window))
+    {
+        g_app.showFocus = true;
+        InvalidateRect(g_app.window, nullptr, FALSE);
     }
 }
 
-void MakeFonts()
+/// The title bar in the window's own colours, where Windows offers it.
+void DarkTitleBar(HWND window)
 {
-    if (g_app.font != nullptr)
-    {
-        DeleteObject(g_app.font);
-        DeleteObject(g_app.smallFont);
-    }
-    NONCLIENTMETRICSW metrics{};
-    metrics.cbSize = sizeof(metrics);
-    SystemParametersInfoForDpi(SPI_GETNONCLIENTMETRICS, sizeof(metrics), &metrics, 0, g_app.dpi);
-    g_app.font = CreateFontIndirectW(&metrics.lfMessageFont);
-    metrics.lfMessageFont.lfHeight = metrics.lfMessageFont.lfHeight * 9 / 10;
-    g_app.smallFont = CreateFontIndirectW(&metrics.lfMessageFont);
-    for (const HWND control : {g_app.multi, g_app.order, g_app.save, g_app.close, g_app.back, g_app.multiLabel, g_app.orderLabel, g_app.status})
-    {
-        SendMessageW(control, WM_SETFONT, reinterpret_cast<WPARAM>(g_app.font), TRUE);
-    }
+    const BOOL dark = TRUE;
+    DwmSetWindowAttribute(window, DWMWA_USE_IMMERSIVE_DARK_MODE, &dark, sizeof(dark));
+    const COLORREF bar = lss::setup::theme::kWindow.top;
+    DwmSetWindowAttribute(window, DWMWA_CAPTION_COLOR, &bar, sizeof(bar));
 }
 
-void Layout()
+SIZE WindowSizeFor(int clientWidth, int clientHeight, UINT dpi)
 {
-    RECT client{};
-    GetClientRect(g_app.window, &client);
-    const int margin = Px(12), line = Px(24), label = Px(150), combo = Px(220);
-    const int right  = client.right - margin;
-    int       y      = margin;
-    MoveWindow(g_app.multiLabel, margin, y + Px(3), label, line, TRUE);
-    MoveWindow(g_app.multi, margin + label, y, combo, Px(200), TRUE);
-    MoveWindow(g_app.orderLabel, margin + label + combo + margin, y + Px(3), label, line, TRUE);
-    MoveWindow(g_app.order, margin + 2 * label + combo + margin, y, Px(100), Px(200), TRUE);
-    y += line + margin;
-    const int statusHeight = Px(80), buttonHeight = Px(28), stripHeight = Px(46);
-    const int bottom       = client.bottom - margin - buttonHeight;
-    const int stripTop     = bottom - statusHeight - margin - stripHeight;
-    g_app.picture          = {margin, y, right, stripTop - margin / 2};
-    g_app.strip            = {margin, stripTop, right, stripTop + stripHeight};
-    MoveWindow(g_app.status, margin, g_app.strip.bottom + margin / 2, right - margin, statusHeight, TRUE);
-    MoveWindow(g_app.back, margin, bottom, Px(170), buttonHeight, TRUE);
-    MoveWindow(g_app.close, right - Px(90), bottom, Px(90), buttonHeight, TRUE);
-    MoveWindow(g_app.save, right - Px(190), bottom, Px(90), buttonHeight, TRUE);
-    InvalidateRect(g_app.window, nullptr, TRUE);
+    RECT rect{0, 0, MulDiv(clientWidth, static_cast<int>(dpi), 96), MulDiv(clientHeight, static_cast<int>(dpi), 96)};
+    AdjustWindowRectExForDpi(&rect, WS_OVERLAPPEDWINDOW, FALSE, 0, dpi);
+    return {rect.right - rect.left, rect.bottom - rect.top};
 }
 
-HWND MakeControl(const wchar_t* type, const wchar_t* text, DWORD style, int id)
+/// One paint of the window, ended however the drawing leaves.
+struct Paint
 {
-    return CreateWindowExW(0, type, text, WS_CHILD | WS_VISIBLE | style, 0, 0, 0, 0, g_app.window,
-                           reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)), GetModuleHandleW(nullptr), nullptr);
-}
+    HWND        window;
+    PAINTSTRUCT paint{};
+    HDC         dc;
 
-LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wide, LPARAM param)
+    explicit Paint(HWND target) noexcept : window(target), dc(BeginPaint(target, &paint)) {}
+    ~Paint() { EndPaint(window, &paint); }
+    Paint(const Paint&)            = delete;
+    Paint& operator=(const Paint&) = delete;
+};
+
+LRESULT Handle(HWND window, UINT message, WPARAM wide, LPARAM param)
 {
     switch (message)
     {
         case WM_CREATE:
-            g_app.window     = window;
-            g_app.dpi        = GetDpiForWindow(window);
-            g_app.multiLabel = MakeControl(L"STATIC", settings::kMultiMonitor.label, SS_LEFT, 0);
-            g_app.multi      = MakeControl(WC_COMBOBOXW, L"", CBS_DROPDOWNLIST | WS_TABSTOP | WS_VSCROLL, kIdMulti);
-            g_app.orderLabel = MakeControl(L"STATIC", settings::kColumnOrder.label, SS_LEFT, 0);
-            g_app.order      = MakeControl(WC_COMBOBOXW, L"", CBS_DROPDOWNLIST | WS_TABSTOP | WS_VSCROLL, kIdOrder);
-            g_app.status     = MakeControl(L"STATIC", L"", SS_LEFT, 0);
-            g_app.save       = MakeControl(WC_BUTTONW, L"Save", BS_DEFPUSHBUTTON | WS_TABSTOP, kIdSave);
-            g_app.close      = MakeControl(WC_BUTTONW, L"Close", WS_TABSTOP, kIdClose);
-            g_app.back       = MakeControl(WC_BUTTONW, L"Put my monitors back", WS_TABSTOP, kIdBack);
-            FillCombo(g_app.multi, settings::kMultiMonitor);
-            FillCombo(g_app.order, settings::kColumnOrder);
-            MakeFonts();
-            Layout();
+            g_app.window = window;
+            g_app.dpi    = GetDpiForWindow(window);
+            g_app.fonts  = view::MakeFonts(g_app.dpi);
+            DarkTitleBar(window);
+            MakeTips();
             g_app.gameRunning = GameIsRunning();
             SetTimer(window, kGameTimer, 2000, nullptr);
             Refresh();
@@ -478,83 +640,143 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wide, LPARAM param
         case WM_TIMER:
             if (wide == kGameTimer)
             {
-                if (const bool running = GameIsRunning(); running != g_app.gameRunning)
+                const bool running = GameIsRunning();
+                if (running != g_app.gameRunning)
                 {
                     g_app.gameRunning = running;
                     ReadMonitors();  // the game's end may have put monitors back
                     Refresh();
                 }
-                else
+                else if (const bool restore = !running && !move::IsSavedLayout(); restore != g_app.canRestore)
                 {
-                    EnableWindow(g_app.back, !g_app.gameRunning && !lss::views::display_move::IsSavedLayout());
+                    Refresh();
                 }
             }
             return 0;
         case WM_DPICHANGED:
         {
-            g_app.dpi        = HIWORD(wide);
-            const RECT* size = reinterpret_cast<const RECT*>(param);
+            const RECT*       size  = reinterpret_cast<const RECT*>(param);
+            const view::Fonts fresh = view::MakeFonts(HIWORD(wide));
+            view::Fonts       old   = g_app.fonts;
+            g_app.fonts             = fresh;
+            g_app.dpi               = HIWORD(wide);
+            StyleTips();  // the hover text takes its new font before the one it holds goes
+            view::Free(old);
             SetWindowPos(window, nullptr, size->left, size->top, size->right - size->left, size->bottom - size->top,
                          SWP_NOZORDER | SWP_NOACTIVATE);
-            MakeFonts();
-            Layout();
+            Refresh();
             return 0;
         }
         case WM_DISPLAYCHANGE:
+            if (g_app.focus.part == rules::Part::Tile)
+            {
+                g_app.focus = {};  // the list is read anew: the same place in it may be another monitor
+            }
             ReadMonitors();
             Refresh();
             return 0;
-        case WM_COMMAND:
-            switch (LOWORD(wide))
+        case WM_SIZE:
+            PlaceTips();
+            InvalidateRect(window, nullptr, FALSE);
+            return 0;
+        case WM_GETMINMAXINFO:
+        {
+            const SIZE least = WindowSizeFor(rules::kMinWidth, rules::kMinHeight, GetDpiForWindow(window));
+            reinterpret_cast<MINMAXINFO*>(param)->ptMinTrackSize = {least.cx, least.cy};
+            return 0;
+        }
+        case WM_MOUSEMOVE:
+        {
+            if (!g_app.tracking)
             {
-                case kIdSave:
-                    Save();
-                    return 0;
-                case kIdClose:
-                    DestroyWindow(window);
-                    return 0;
-                case kIdBack:
-                    PutMonitorsBack();
-                    return 0;
-                case kIdMulti:
-                    if (HIWORD(wide) == CBN_SELCHANGE)
-                    {
-                        SetChoice(settings::kMultiMonitor, g_app.multi);
-                    }
-                    return 0;
-                case kIdOrder:
-                    if (HIWORD(wide) == CBN_SELCHANGE)
-                    {
-                        SetChoice(settings::kColumnOrder, g_app.order);
-                    }
-                    return 0;
-                default:
-                    break;
+                TRACKMOUSEEVENT track{sizeof(track), TME_LEAVE, window, 0};
+                g_app.tracking = TrackMouseEvent(&track) != FALSE;
+            }
+            if (const rules::Hit hit = HitAt(param); hit != g_app.hover)
+            {
+                g_app.hover = hit;
+                InvalidateRect(window, nullptr, FALSE);
+            }
+            return 0;
+        }
+        case WM_MOUSELEAVE:
+            g_app.tracking = false;
+            g_app.hover    = {};
+            InvalidateRect(window, nullptr, FALSE);
+            return 0;
+        case WM_LBUTTONDOWN:
+            SetCapture(window);
+            g_app.pressed   = HitAt(param);
+            g_app.hover     = g_app.pressed;
+            g_app.showFocus = false;
+            InvalidateRect(window, nullptr, FALSE);
+            return 0;
+        case WM_LBUTTONUP:
+        {
+            const rules::Hit held = g_app.pressed;  // read first: giving the mouse up clears it
+            if (GetCapture() == window)
+            {
+                ReleaseCapture();
+            }
+            g_app.pressed = {};
+            InvalidateRect(window, nullptr, FALSE);
+            // A press counts when it ends on the part it began on.
+            if (const rules::Hit hit = HitAt(param); hit == held && hit.part != rules::Part::None)
+            {
+                Press(hit);
+            }
+            return 0;
+        }
+        case WM_CAPTURECHANGED:
+            g_app.pressed = {};
+            InvalidateRect(window, nullptr, FALSE);
+            return 0;
+        case WM_SETCURSOR:
+            if (LOWORD(param) == HTCLIENT && g_app.hover.part != rules::Part::None)
+            {
+                SetCursor(LoadCursorW(nullptr, MAKEINTRESOURCEW(32649)));  // IDC_HAND, as the wide call takes it
+                return TRUE;
             }
             break;
-        case WM_LBUTTONDOWN:
-            ClickPicture(static_cast<short>(LOWORD(param)), static_cast<short>(HIWORD(param)));
+        case WM_KEYDOWN:
+            OnKey(wide, (param & (1 << 30)) != 0);
             return 0;
-        case WM_CTLCOLORSTATIC:
-            SetBkMode(reinterpret_cast<HDC>(wide), TRANSPARENT);
-            return reinterpret_cast<LRESULT>(GetSysColorBrush(COLOR_BTNFACE));
+        case WM_ERASEBKGND:
+            return 1;  // the paint covers everything
         case WM_PAINT:
         {
-            PAINTSTRUCT paint{};
-            const HDC   dc = BeginPaint(window, &paint);
-            PaintPicture(dc);
-            PaintStrip(dc);
-            EndPaint(window, &paint);
+            const Paint paint(window);
+            RECT        client{};
+            GetClientRect(window, &client);
+            view::Draw(paint.dc, client, SceneNow(), g_app.fonts, g_app.dpi);
             return 0;
         }
         case WM_DESTROY:
             KillTimer(window, kGameTimer);
+            if (g_app.tips != nullptr)
+            {
+                DestroyWindow(g_app.tips);  // before the font it holds
+                g_app.tips = nullptr;
+            }
+            view::Free(g_app.fonts);
             PostQuitMessage(0);
             return 0;
         default:
             break;
     }
     return DefWindowProcW(window, message, wide, param);
+}
+
+/// Nothing thrown may pass into Windows' own code. A message that ran out of memory is dropped and the window lives on; a
+/// window that cannot even be made says so by failing its creation.
+LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wide, LPARAM param) noexcept
+try
+{
+    return Handle(window, message, wide, param);
+}
+catch (...)
+{
+    return message == WM_CREATE ? -1 : 0;
 }
 
 /// The settings file: the path given, else beside this exe, where the mod keeps it.
@@ -576,120 +798,92 @@ std::wstring FindFile()
     return (std::filesystem::path(self).parent_path() / kFileName).wstring();
 }
 
-/// The guard: waits for the game, puts the monitors back if that game's record is still there, says so in one line, and goes.
-/// The game's handle is inherited, so a process number used again cannot fool it. True when the arguments asked for a guard;
-/// anything but what the mod passes changes nothing and is gone at once.
-bool RunGuard(int& exitCode)
+/// The settings file stands where the mod reads it: beside the mod's own folder of code.
+bool InModFolder(const std::wstring& file)
 {
-    int        count = 0;
-    wchar_t**  args  = CommandLineToArgvW(GetCommandLineW(), &count);
-    const bool asked = args != nullptr && count >= 2 && wcscmp(args[1], L"--guard") == 0;
-    if (!asked)
+    std::error_code error;
+    return std::filesystem::is_directory(std::filesystem::path(file).parent_path() / kModFolder, error);
+}
+
+int Fail(const wchar_t* what)
+{
+    const DWORD        error = GetLastError();  // none when the app's own start failed
+    const std::wstring text  = error != 0 ? std::format(L"{} (Windows error {}).", what, error) : std::format(L"{}.", what);
+    MessageBoxW(nullptr, text.c_str(), kTitle, MB_OK | MB_ICONERROR);
+    return 1;
+}
+
+int ShowWindowAndRun(HINSTANCE instance, int show)
+{
+    g_app.path        = FindFile();
+    g_app.inModFolder = InModFolder(g_app.path);
+    g_app.readings    = settings::ReadFile(g_app.path);
+    // A record with no game running: the game died and so did its guard.
+    if (!GameIsRunning())
     {
-        if (args != nullptr)
+        if (const auto healed = move::Heal(RecordPath(), 0); healed != move::Healed::NoRecord)
         {
-            LocalFree(args);
+            Say(std::format(L"From the last game: {}.", move::Name(healed)), healed == move::Healed::Failed ? rules::Tone::Problem : rules::Tone::Good);
         }
-        return false;
     }
-    exitCode = 2;
-    if (count != 4)
+    g_app.fileWord = g_app.readings[IndexOf(settings::kMonitors)].word;
+    ReadMonitors();
+
+    INITCOMMONCONTROLSEX controls{sizeof(controls), ICC_STANDARD_CLASSES | ICC_TAB_CLASSES};
+    InitCommonControlsEx(&controls);
+    WNDCLASSEXW type{};
+    type.cbSize        = sizeof(type);
+    type.style         = CS_HREDRAW | CS_VREDRAW;
+    type.lpfnWndProc   = WindowProc;
+    type.hInstance     = instance;
+    type.hIcon         = LoadIconW(instance, MAKEINTRESOURCEW(1));
+    type.hCursor       = LoadCursorW(nullptr, MAKEINTRESOURCEW(32512));  // IDC_ARROW, as the wide call takes it
+    type.lpszClassName = L"LocalSplitScreenSetup";
+    if (RegisterClassExW(&type) == 0)
     {
-        LocalFree(args);
-        return true;
+        return Fail(L"The window could not be set up");
     }
-    wchar_t*           end    = nullptr;
-    const auto         value  = wcstoull(args[2], &end, 16);
-    const bool         number = end != args[2] && *end == L'\0';
-    const std::wstring record = args[3];
-    LocalFree(args);
-    const auto  game = reinterpret_cast<HANDLE>(static_cast<std::uintptr_t>(value));
-    const DWORD pid  = number ? GetProcessId(game) : 0;  // zero for anything that is not a process
-    namespace fs     = std::filesystem;
-    if (pid == 0 || fs::path(record).filename() != kRecordName)
+    const SIZE size   = WindowSizeFor(kWidth, kHeight, GetDpiForSystem());
+    const HWND window = CreateWindowExW(0, type.lpszClassName, kTitle, WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, size.cx, size.cy,
+                                        nullptr, nullptr, instance, nullptr);
+    if (window == nullptr)
     {
-        return true;
+        return Fail(L"The window could not be opened");
     }
-    if (WaitForSingleObject(game, INFINITE) != WAIT_OBJECT_0)
+    ShowWindow(window, show);
+    MSG message{};
+    while (GetMessageW(&message, nullptr, 0, 0) > 0)
     {
-        return true;
+        TranslateMessage(&message);
+        DispatchMessageW(&message);
     }
-    namespace move            = lss::views::display_move;
-    // A desktop that cannot be read now usually can in a moment, and the guard has nothing else to do.
-    move::Healed healed = move::Heal(record, pid);
-    for (int tries = 0; healed == move::Healed::Kept && tries < kGuardTries; ++tries)
-    {
-        Sleep(kGuardPause);
-        healed = move::Heal(record, pid);
-    }
-    SYSTEMTIME now{};
-    GetLocalTime(&now);
-    const std::wstring line = std::format(L"{:04}-{:02}-{:02} {:02}:{:02}:{:02} the game ended: {}\r\n", now.wYear, now.wMonth, now.wDay, now.wHour, now.wMinute,
-                                          now.wSecond, move::Name(healed));
-    const std::wstring logPath = record + L".log";
-    if (const HANDLE log = CreateFileW(logPath.c_str(), GENERIC_WRITE, FILE_SHARE_READ, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-        log != INVALID_HANDLE_VALUE)
-    {
-        DWORD written = 0;
-        WriteFile(log, line.data(), static_cast<DWORD>(line.size() * sizeof(wchar_t)), &written, nullptr);
-        CloseHandle(log);
-    }
-    exitCode = healed == move::Healed::Failed ? 1 : 0;
-    return true;
+    return static_cast<int>(message.wParam);
 }
 
 }  // namespace
 
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show)
 {
-    // Before any window or monitor read: the rects and DPIs must be the real ones the game sees.
-    SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
-    if (int guardExit = 0; RunGuard(guardExit))
+    // The guard has no window and nobody watching: a fault there ends it quietly, its exit code saying the monitors may not
+    // have been put back.
+    try
     {
-        return guardExit;
-    }
-    g_app.path     = FindFile();
-    g_app.readings = settings::ReadFile(g_app.path);
-    // A record with no game running: the game died and so did its guard.
-    if (!GameIsRunning())
-    {
-        if (const auto healed = lss::views::display_move::Heal(RecordPath(), 0); healed != lss::views::display_move::Healed::NoRecord)
+        if (int guardExit = 0; lss::setup::guard::Run(guardExit))
         {
-            g_app.savedNote = std::format(L"From the last game: {}.", lss::views::display_move::Name(healed));
+            return guardExit;
         }
     }
-    g_app.fileWord = g_app.readings[IndexOf(settings::kMonitors)].word;
-    ReadMonitors();
-
-    INITCOMMONCONTROLSEX controls{sizeof(controls), ICC_STANDARD_CLASSES};
-    InitCommonControlsEx(&controls);
-    WNDCLASSEXW type{};
-    type.cbSize        = sizeof(type);
-    type.lpfnWndProc   = WindowProc;
-    type.hInstance     = instance;
-    type.hCursor       = LoadCursorW(nullptr, MAKEINTRESOURCEW(32512));  // IDC_ARROW, as the wide call takes it
-    type.hbrBackground = GetSysColorBrush(COLOR_BTNFACE);
-    type.lpszClassName = L"LocalSplitScreenSetup";
-    RegisterClassExW(&type);
-
-    const UINT dpi = GetDpiForSystem();
-    const HWND window = CreateWindowExW(0, type.lpszClassName, L"FF7 Remake Split-Screen: Monitors",
-                                        WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, CW_USEDEFAULT, CW_USEDEFAULT,
-                                        MulDiv(860, static_cast<int>(dpi), 96), MulDiv(640, static_cast<int>(dpi), 96), nullptr, nullptr,
-                                        instance, nullptr);
-    if (window == nullptr)
+    catch (...)
     {
         return 1;
     }
-    ShowWindow(window, show);
-    MSG message{};
-    while (GetMessageW(&message, nullptr, 0, 0) > 0)
+    try
     {
-        if (!IsDialogMessageW(window, &message))
-        {
-            TranslateMessage(&message);
-            DispatchMessageW(&message);
-        }
+        return ShowWindowAndRun(instance, show);
     }
-    return static_cast<int>(message.wParam);
+    catch (...)
+    {
+        MessageBoxW(nullptr, L"The app ran into a problem it could not recover from and has to close.", kTitle, MB_OK | MB_ICONERROR);
+        return 1;
+    }
 }

@@ -14,6 +14,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace lss::setup::rules {
@@ -22,6 +23,11 @@ namespace row = views::monitor_row;
 
 /// The most monitors a row takes: one per player.
 inline constexpr std::size_t kMostInRow = 3;
+
+/// What happens to the desktop while the game holds a row whose monitors do not already stand in it.
+inline constexpr const wchar_t* kMovesNote =
+    L"While the game runs, your monitors move into this order. They go back afterwards, even after a crash, and Windows' own "
+    L"arrangement is never changed.";
 
 /// `monitors` fitted into a box of `width` x `height` with `margin` all round, keeping the desktop's arrangement and shape.
 inline std::vector<row::Rect> Fit(std::span<const row::Monitor> monitors, std::int32_t width, std::int32_t height, std::int32_t margin)
@@ -53,13 +59,24 @@ inline std::vector<row::Rect> Fit(std::span<const row::Monitor> monitors, std::i
     return placed;
 }
 
+/// How a line of the status reads: its colour in the window.
+enum class Tone : std::uint8_t
+{
+    Good,     // done, or a row the game takes
+    Plain,    // a next step
+    Warning,  // works, with something to know
+    Problem,  // does not work as it stands
+};
+
 /// What the current choice gives.
 struct Look
 {
     bool                     ok = false;       // a row the mod would take, or no pick and a row it would find itself
     bool                     picked = false;   // the player picked monitors; else any row serves
     std::vector<std::size_t> screens;          // the row's monitors, left to right
-    std::wstring             text;             // one or two sentences for the status line
+    std::wstring             text;             // a few words for the status line
+    std::wstring             detail;           // the longer explanation, shown on hover; may be empty
+    Tone                     tone = Tone::Plain;
 };
 
 /// The monitors a choice's span covers, left to right.
@@ -106,49 +123,119 @@ inline Look LookAt(std::span<const row::Monitor> monitors, std::span<const std::
         look.ok                  = choice.ok;
         if (!choice.ok)
         {
-            look.text = L"None picked, and no monitors make a row as Windows has them. Click two or three monitors, in the order you want them.";
+            look.text = std::format(L"No row found. Click 2 to {} monitors, left to right.", kMostInRow);
+            look.tone = Tone::Warning;
             return look;
         }
         look.screens = ScreensOf(monitors, choice);
-        look.text    = std::format(L"None picked: the game takes the longest row it finds, these {} monitors ({} x {}). Click monitors, in "
-                                   L"order, to choose your own.",
-                                   look.screens.size(), choice.span.Width(), choice.span.Height());
+        look.text    = std::format(L"Automatic: the longest row, {} monitors.", look.screens.size());
+        look.detail  = L"No monitors are picked, so the game takes the longest row it finds. Click monitors, in order, to choose your own.";
+        look.tone    = Tone::Good;
         return look;
     }
     look.picked = true;
     if (picks.size() == 1)
     {
-        look.text = L"Click one or two more, in the order you want them, left to right. Click a monitor again to take it out.";
+        look.text   = std::format(L"A row needs 2 or more: click up to {} more, left to right.", kMostInRow - 1);
+        look.detail = L"Save waits until the clicked monitors make a row. Click this one again to take it out.";
         return look;
     }
     if (picks.size() > kMostInRow)
     {
-        look.text = std::format(L"A row takes up to {} monitors, one per player.", kMostInRow);
+        look.text = std::format(L"A row takes at most {} monitors.", kMostInRow);
+        look.tone = Tone::Warning;
         return look;
     }
     const row::Choice choice = row::Arrange(monitors, picks);
     look.ok                  = choice.ok;
     if (!choice.ok)
     {
-        look.text = L"These monitors cannot make a row: " + choice.why + L".";
+        look.text = L"Can't make a row: " + choice.why + L".";
+        look.tone = Tone::Problem;
         return look;
     }
     look.screens.assign(picks.begin(), picks.end());
-    look.text = std::format(L"A row of {} monitors: one view on each, fitted to its monitor.", picks.size());
+    look.text = std::format(L"Row of {} monitors.", picks.size());
+    look.tone = Tone::Good;
     if (std::any_of(choice.widths.begin(), choice.widths.end(), [](std::int32_t width) { return width > row::kWidestCleanView; }))
     {
-        look.text += std::format(L" A view wider than {} px shows a band of wrong colours at its right side.", row::kWidestCleanView);
+        look.text += std::format(L" A view over {} px wide shows a band of wrong colours.", row::kWidestCleanView);
+        look.tone = Tone::Warning;
     }
     if (!choice.moves.empty())
     {
-        look.text += L" While the game holds the row your monitors move into this order; they go back afterwards, even after a crash. Windows' own "
-                     L"arrangement is never changed.";
+        look.detail = kMovesNote;
     }
     return look;
 }
 
-/// The player a screen of the row shows, by the Screen Order word ("213": player 2 on the first screen); a row of two screens
-/// skips the player beyond them. None past the screens.
+/// What else the window knows beside the choice.
+struct Notes
+{
+    bool             gameRunning = false;   // the game is running: nothing can be saved
+    bool             inModFolder = true;    // the settings file sits where the mod reads it
+    bool             spanOn = true;         // Multiple Monitors is on
+    bool             picksChanged = false;  // the player clicked a monitor: a save writes the clicked monitors over the file's
+    std::int32_t     notConnected = 0;      // monitors the file names that are not connected; 0 once the player clicks a monitor
+    std::wstring_view note;                 // what the last action did; empty once a choice is changed after it
+    Tone             noteTone = Tone::Good;
+};
+
+/// Whether Save has something it can write. The file's own monitors, untouched, can always be kept beside a change to another
+/// option, connected or not; clicked monitors are written only when they make a row, or when every one was taken out.
+inline bool CanSave(const Look& look, const Notes& notes) noexcept
+{
+    return !notes.gameRunning && (!notes.picksChanged || look.ok || !look.picked);
+}
+
+/// The window's one status line.
+struct Status
+{
+    std::wstring text;
+    std::wstring detail;  // shown on hover; may be empty
+    Tone         tone = Tone::Plain;
+};
+
+/// The one thing to say, the most pressing first: what stops a save, an action that failed, a file the game will not read
+/// (with what the last action did, so a save is still answered), what the last action did, then the choice.
+inline Status StatusLine(const Look& look, const Notes& notes)
+{
+    if (notes.gameRunning)
+    {
+        return {L"Close the game to save changes.", L"While the game runs it keeps its own values and would write them over this file.",
+                Tone::Warning};
+    }
+    if (!notes.note.empty() && notes.noteTone == Tone::Problem)
+    {
+        return {std::wstring(notes.note), look.detail, Tone::Problem};
+    }
+    if (!notes.inModFolder)
+    {
+        return {(notes.note.empty() ? std::wstring() : std::wstring(notes.note) + L" ") + L"Not in the mod's folder: the game won't read this file.",
+                L"Put this app beside the mod's settings file, in the game's ue4ss\\Mods\\LocalSplitScreen folder.", Tone::Problem};
+    }
+    if (!notes.note.empty())
+    {
+        return {std::wstring(notes.note), look.detail, notes.noteTone};
+    }
+    if (notes.notConnected > 0)
+    {
+        return {notes.notConnected == 1 ? std::wstring(L"1 saved monitor is not connected.")
+                                        : std::format(L"{} saved monitors are not connected.", notes.notConnected),
+                L"The game makes its row from the saved monitors that are connected and takes the others in when they arrive. Save keeps "
+                L"them unless you click a monitor.",
+                Tone::Warning};
+    }
+    // Clicked monitors that make no row stop a save whatever the option says: that comes first.
+    if (!notes.spanOn && (look.ok || !look.picked))
+    {
+        return {L"Multiple Monitors is off: the game stays in one window.", look.detail, Tone::Plain};
+    }
+    return {look.text, look.detail, look.tone};
+}
+
+/// The player a screen of the row shows, by the Screen Order word: its digits are the players, the first screen's first. A row
+/// of two screens skips the player beyond them. None past the screens.
 inline std::optional<int> PlayerOnScreen(std::wstring_view order, std::size_t screens, std::size_t screen)
 {
     std::size_t at = 0;
@@ -165,6 +252,164 @@ inline std::optional<int> PlayerOnScreen(std::wstring_view order, std::size_t sc
         }
     }
     return std::nullopt;
+}
+
+// --- the window's layout -------------------------------------------------------------------------------------------------------
+// Sizes are written for a 96 dpi screen and scaled by the window's dpi; every rectangle is in the window's client pixels.
+
+/// The smallest client area the layout is drawn for, at 96 dpi.
+inline constexpr std::int32_t kMinWidth  = 720;
+inline constexpr std::int32_t kMinHeight = 520;
+
+constexpr std::int32_t Scaled(std::int32_t units, std::uint32_t dpi) noexcept
+{
+    return static_cast<std::int32_t>(units * static_cast<std::int64_t>(dpi) / 96);
+}
+
+/// Where each part of the window stands.
+struct Frame
+{
+    row::Rect title;         // the heading and the version
+    row::Rect multi, order;  // the two options, side by side
+    row::Rect caption;       // the line over the desktop's picture
+    row::Rect picture;       // the desktop, a tile per monitor
+    row::Rect stripCaption;  // the line over the row
+    row::Rect strip;         // the row as it stands while the game runs
+    row::Rect status;        // the one status line
+    row::Rect restore, save, close;  // the buttons
+};
+
+/// The parts of a client area of `width` x `height`: the options on top, the buttons at the bottom, the picture taking what
+/// is left between them.
+inline Frame Arrange(std::int32_t width, std::int32_t height, std::uint32_t dpi) noexcept
+{
+    const auto         px     = [dpi](std::int32_t units) { return Scaled(units, dpi); };
+    const std::int32_t left   = px(20);
+    const std::int32_t right  = width - px(20);
+    const std::int32_t middle = width / 2;
+    const std::int32_t button = height - px(18) - px(34);
+    Frame              frame;
+    frame.title        = {left, px(14), right, px(42)};
+    frame.multi        = {left, px(56), middle - px(6), px(98)};
+    frame.order        = {middle + px(6), px(56), right, px(98)};
+    frame.caption      = {left, px(112), right, px(132)};
+    frame.restore      = {left, button, left + px(180), button + px(34)};
+    frame.close        = {right - px(104), button, right, button + px(34)};
+    frame.save         = {frame.close.left - px(130), button, frame.close.left - px(10), button + px(34)};
+    frame.status       = {left, button - px(38), right, button - px(14)};
+    frame.strip        = {left, frame.status.top - px(72), right, frame.status.top - px(12)};
+    frame.stripCaption = {left, frame.strip.top - px(22), right, frame.strip.top - px(4)};
+    frame.picture      = {left, frame.caption.bottom + px(4), right, frame.stripCaption.top - px(10)};
+    return frame;
+}
+
+/// An option's cell: its name on the left, then the arrow to the value before, the value, and the arrow to the value after.
+struct OptionParts
+{
+    row::Rect previous, value, next;
+};
+
+inline OptionParts PartsOf(const row::Rect& cell, std::uint32_t dpi) noexcept
+{
+    const std::int32_t arrow = Scaled(34, dpi);
+    const std::int32_t pad   = Scaled(6, dpi);
+    const std::int32_t value = std::min(Scaled(130, dpi), std::max((cell.Width() - 2 * arrow - 2 * pad) / 2, 0));
+    OptionParts        parts;
+    parts.next     = {cell.right - pad - arrow, cell.top, cell.right - pad, cell.bottom};
+    parts.value    = {parts.next.left - value, cell.top, parts.next.left, cell.bottom};
+    parts.previous = {parts.value.left - arrow, cell.top, parts.value.left, cell.bottom};
+    return parts;
+}
+
+/// The desktop's tiles inside `picture`, one per monitor in the list's order, with `gap` between neighbours.
+inline std::vector<row::Rect> Tiles(std::span<const row::Monitor> monitors, const row::Rect& picture, std::int32_t margin, std::int32_t gap)
+{
+    std::vector<row::Rect> tiles = Fit(monitors, picture.Width(), picture.Height(), margin);
+    for (row::Rect& tile : tiles)
+    {
+        tile.left   += picture.left;
+        tile.right  += picture.left - gap;
+        tile.top    += picture.top;
+        tile.bottom += picture.top - gap;
+    }
+    return tiles;
+}
+
+/// A part of the window that takes a click or the keyboard.
+enum class Part : std::uint8_t
+{
+    None,
+    Multi,    // the Multiple Monitors option
+    Order,    // the Screen Order option
+    Tile,     // a monitor of the desktop's picture
+    Restore,
+    Save,
+    Close,
+};
+
+struct Hit
+{
+    Part        part = Part::None;
+    std::size_t tile = 0;  // a Tile: the monitor's index
+    int         step = 0;  // an option under the mouse: -1 on the arrow to the value before, +1 on the value and the arrow after
+
+    bool operator==(const Hit&) const = default;
+};
+
+constexpr bool Inside(const row::Rect& rect, std::int32_t x, std::int32_t y) noexcept
+{
+    return x >= rect.left && x < rect.right && y >= rect.top && y < rect.bottom;
+}
+
+/// What stands at (x, y). An option answers on its arrows and its value only, never on its name.
+inline Hit HitTest(const Frame& frame, std::span<const row::Rect> tiles, std::uint32_t dpi, std::int32_t x, std::int32_t y) noexcept
+{
+    for (const auto& [cell, part] : {std::pair{frame.multi, Part::Multi}, std::pair{frame.order, Part::Order}})
+    {
+        const OptionParts parts = PartsOf(cell, dpi);
+        if (Inside(parts.previous, x, y))
+        {
+            return {part, 0, -1};
+        }
+        if (Inside(parts.value, x, y) || Inside(parts.next, x, y))
+        {
+            return {part, 0, 1};
+        }
+    }
+    for (std::size_t i = 0; i < tiles.size(); ++i)
+    {
+        if (Inside(tiles[i], x, y))
+        {
+            return {Part::Tile, i, 0};
+        }
+    }
+    for (const auto& [rect, part] : {std::pair{frame.restore, Part::Restore}, std::pair{frame.save, Part::Save}, std::pair{frame.close, Part::Close}})
+    {
+        if (Inside(rect, x, y))
+        {
+            return {part, 0, 0};
+        }
+    }
+    return {};
+}
+
+/// The word `steps` places on from `word` in an option's list, going round at either end; the first word when `word` is not
+/// in the list.
+inline const wchar_t* Stepped(std::span<const wchar_t* const> words, std::wstring_view word, int steps) noexcept
+{
+    if (words.empty())
+    {
+        return L"";
+    }
+    const auto count = static_cast<int>(words.size());
+    for (int i = 0; i < count; ++i)
+    {
+        if (word == words[static_cast<std::size_t>(i)])
+        {
+            return words[static_cast<std::size_t>(((i + steps) % count + count) % count)];
+        }
+    }
+    return words.front();
 }
 
 }  // namespace lss::setup::rules

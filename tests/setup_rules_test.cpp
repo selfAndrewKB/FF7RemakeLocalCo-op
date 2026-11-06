@@ -5,6 +5,9 @@
 #include "setup/setup_rules.h"
 
 #include <cstdio>
+#include <iterator>
+#include <string_view>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -50,12 +53,13 @@ void PickedPair()
     Look look = LookOf(kDesktop, {0, 1});
     EXPECT(look.ok && look.picked);
     EXPECT((look.screens == std::vector<std::size_t>{0, 1}));
-    EXPECT(look.text.find(L"move") == std::wstring::npos);  // already a row: nothing to say about moving
+    EXPECT(look.tone == Tone::Good && look.detail.empty());  // already a row: nothing to say about moving
 
     // Any monitors, in the order clicked: a gap between them, one above the other, the order reversed.
     look = LookOf(kDesktop, {1, 2});
     EXPECT(look.ok && (look.screens == std::vector<std::size_t>{1, 2}));
-    EXPECT(look.text.find(L"go back afterwards") != std::wstring::npos);
+    EXPECT(look.detail.find(L"go back afterwards") != std::wstring::npos);  // said on hover, the line itself stays short
+    EXPECT(look.text.find(L"go back") == std::wstring::npos);
     EXPECT(LookOf(kDesktop, {0, 3}).ok);
     look = LookOf(kDesktop, {1, 0, 2});
     EXPECT(look.ok && (look.screens == std::vector<std::size_t>{1, 0, 2}));
@@ -97,7 +101,155 @@ void AnyMonitors()
     EXPECT(look.text.find(L"wrong colours") == std::wstring::npos);
     EXPECT(LookOf(mixed, {2, 0}).ok);
     look = LookOf(mixed, {0, 3});
-    EXPECT(look.ok && look.text.find(L"wrong colours") != std::wstring::npos);
+    EXPECT(look.ok && look.text.find(L"wrong colours") != std::wstring::npos && look.tone == Tone::Warning);
+}
+
+/// One line, the most pressing thing first: what stops a save, what the last action did, then the choice itself.
+void OneStatusLine()
+{
+    const Look row  = LookOf(kDesktop, {1, 2});
+    const Look none = LookOf(kDesktop, {0});
+    EXPECT(StatusLine(row, {}).text == row.text && StatusLine(row, {}).detail == row.detail && StatusLine(row, {}).tone == Tone::Good);
+    EXPECT(StatusLine(none, {}).tone == Tone::Plain);
+
+    Notes notes;
+    notes.note = L"Saved.";
+    EXPECT(StatusLine(row, notes).text == L"Saved." && StatusLine(row, notes).tone == Tone::Good);
+    notes.notConnected = 2;  // the last action still comes first
+    EXPECT(StatusLine(row, notes).text == L"Saved.");
+    notes.note = {};
+    EXPECT(StatusLine(row, notes).text.find(L"2 saved monitors are not connected") == 0 && StatusLine(row, notes).tone == Tone::Warning);
+    notes.notConnected = 1;
+    EXPECT(StatusLine(row, notes).text.find(L"1 saved monitor is not connected") == 0);
+    notes.notConnected = 0;
+    notes.spanOn       = false;
+    EXPECT(StatusLine(row, notes).text.find(L"Multiple Monitors is off") == 0 && StatusLine(row, notes).tone == Tone::Plain);
+
+    // Clicked monitors that make no row are said before the option being off: they are what stops the save.
+    notes.picksChanged = true;
+    EXPECT(StatusLine(none, notes).text == none.text);
+    notes.picksChanged = false;
+
+    notes.note        = L"Saved.";
+    notes.inModFolder = false;  // a file the game will not read is said with what was just done to it, never instead of it
+    EXPECT(StatusLine(row, notes).text.find(L"Saved. Not in the mod's folder") == 0 && StatusLine(row, notes).tone == Tone::Problem);
+    notes.note = {};
+    EXPECT(StatusLine(row, notes).text.find(L"Not in the mod's folder") == 0);
+    notes.note     = L"Couldn't save (Windows error 5).";
+    notes.noteTone = Tone::Problem;  // a failure is said alone
+    EXPECT(StatusLine(row, notes).text == notes.note);
+    notes.gameRunning = true;
+    EXPECT(StatusLine(row, notes).text.find(L"Close the game") == 0);
+
+    // Every line is short enough for one line of the window.
+    for (const Look& look : {row, none, LookOf(kDesktop, {}), LookOf(kDesktop, {0, 1, 2, 3})})
+    {
+        EXPECT(!look.text.empty() && look.text.size() <= 70);
+    }
+}
+
+/// Save writes what it can stand behind: the file's own monitors untouched, a row, or no monitors at all.
+void WhatCanBeSaved()
+{
+    const Look row  = LookOf(kDesktop, {1, 2});
+    const Look one  = LookOf(kDesktop, {0});
+    const Look many = LookOf(kDesktop, {0, 1, 2, 3});
+    const Look auto_ = LookOf(kDesktop, {});
+    Notes      notes;
+    // The file names two monitors and one is connected: nothing was clicked, so another option can still be changed and saved.
+    EXPECT(CanSave(one, notes));
+    EXPECT(CanSave(row, notes) && CanSave(auto_, notes));
+    notes.picksChanged = true;
+    EXPECT(CanSave(row, notes));     // a row
+    EXPECT(CanSave(auto_, notes));   // every monitor taken out
+    EXPECT(!CanSave(one, notes));    // one clicked monitor is no row
+    EXPECT(!CanSave(many, notes));
+    notes.spanOn = false;            // the option off does not make a bad choice a good one
+    EXPECT(!CanSave(one, notes));
+    notes.picksChanged = false;
+    notes.gameRunning  = true;       // never while the game runs
+    EXPECT(!CanSave(row, notes) && !CanSave(one, notes));
+}
+
+bool Within(const Rect& inner, const Rect& outer)
+{
+    return inner.left >= outer.left && inner.top >= outer.top && inner.right <= outer.right && inner.bottom <= outer.bottom &&
+           inner.Width() > 0 && inner.Height() > 0;
+}
+
+bool Apart(const Rect& a, const Rect& b)
+{
+    return a.right <= b.left || b.right <= a.left || a.bottom <= b.top || b.bottom <= a.top;
+}
+
+/// Every part inside the window and clear of the others, at the smallest size and scaled.
+void WindowLayout()
+{
+    for (const std::uint32_t dpi : {96u, 144u, 192u})
+    {
+        for (const auto& [width, height] : {std::pair{kMinWidth, kMinHeight}, std::pair{880, 640}, std::pair{1600, 1000}})
+        {
+            const std::int32_t w = Scaled(width, dpi), h = Scaled(height, dpi);
+            const Frame        frame = Arrange(w, h, dpi);
+            const Rect         client{0, 0, w, h};
+            const Rect         parts[]{frame.title, frame.multi, frame.order, frame.caption, frame.picture, frame.stripCaption,
+                                       frame.strip, frame.status, frame.restore, frame.save, frame.close};
+            for (std::size_t i = 0; i < std::size(parts); ++i)
+            {
+                EXPECT(Within(parts[i], client));
+                for (std::size_t j = i + 1; j < std::size(parts); ++j)
+                {
+                    EXPECT(Apart(parts[i], parts[j]));
+                }
+            }
+            EXPECT(frame.picture.Height() >= Scaled(120, dpi));  // room for the desktop at the smallest size
+            const OptionParts option = PartsOf(frame.multi, dpi);
+            EXPECT(Within(option.previous, frame.multi) && Within(option.value, frame.multi) && Within(option.next, frame.multi));
+            EXPECT(option.previous.right == option.value.left && option.value.right == option.next.left);
+            EXPECT(option.previous.left - frame.multi.left >= Scaled(120, dpi));  // room for the option's name
+        }
+    }
+}
+
+/// A click lands on the part drawn there; an option answers on its arrows and value only.
+void Clicks()
+{
+    const std::uint32_t dpi   = 96;
+    const Frame         frame = Arrange(880, 640, dpi);
+    const auto          tiles = Tiles(kDesktop, frame.picture, 10, 4);
+    EXPECT(tiles.size() == kDesktop.size());
+    for (const Rect& tile : tiles)
+    {
+        EXPECT(Within(tile, frame.picture));
+    }
+    const auto at     = [&](const Rect& rect) { return HitTest(frame, tiles, dpi, (rect.left + rect.right) / 2, (rect.top + rect.bottom) / 2); };
+    const auto option = PartsOf(frame.order, dpi);
+    EXPECT((at(option.previous) == Hit{Part::Order, 0, -1}));
+    EXPECT((at(option.value) == Hit{Part::Order, 0, 1}));
+    EXPECT((at(option.next) == Hit{Part::Order, 0, 1}));
+    EXPECT(HitTest(frame, tiles, dpi, frame.order.left + 10, frame.order.top + 10).part == Part::None);  // its name
+    EXPECT(at(PartsOf(frame.multi, dpi).next).part == Part::Multi);
+    for (std::size_t i = 0; i < tiles.size(); ++i)
+    {
+        EXPECT((at(tiles[i]) == Hit{Part::Tile, i, 0}));
+    }
+    EXPECT(at(frame.save).part == Part::Save && at(frame.close).part == Part::Close && at(frame.restore).part == Part::Restore);
+    EXPECT(at(frame.status).part == Part::None && at(frame.strip).part == Part::None);
+    EXPECT(HitTest(frame, tiles, dpi, -5, -5).part == Part::None);
+}
+
+/// An option's values go round in both directions; a word the list lacks starts at the first.
+void OptionSteps()
+{
+    namespace settings = lss::platform::settings;
+    const auto words   = settings::kColumnOrder.words;
+    EXPECT(std::wstring_view(Stepped(words, L"123", 1)) == L"132");
+    EXPECT(std::wstring_view(Stepped(words, L"123", -1)) == L"321");
+    EXPECT(std::wstring_view(Stepped(words, L"321", 1)) == L"123");
+    EXPECT(std::wstring_view(Stepped(words, L"nonsense", 1)) == L"123");
+    EXPECT(std::wstring_view(Stepped(settings::kMultiMonitor.words, L"on", 1)) == L"off");
+    EXPECT(std::wstring_view(Stepped(settings::kMultiMonitor.words, L"on", -1)) == L"off");
+    EXPECT(std::wstring_view(Stepped({}, L"on", 1)).empty());
 }
 
 void PlayersOnScreens()
@@ -130,6 +282,11 @@ int main()
     PickedBadly();
     PickSurvivesTheSettingsFile();
     AnyMonitors();
+    OneStatusLine();
+    WhatCanBeSaved();
+    WindowLayout();
+    Clicks();
+    OptionSteps();
     PlayersOnScreens();
     PictureKeepsTheArrangement();
     std::printf(g_failures == 0 ? "setup rules: all passed\n" : "setup rules: %d failed\n", g_failures);

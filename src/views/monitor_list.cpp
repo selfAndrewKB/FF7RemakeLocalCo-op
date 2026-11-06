@@ -115,6 +115,8 @@ std::vector<Listed> List()
         listed.id        = Lower(known && !found->second.path.empty() ? found->second.path : listed.device);
         listed.name      = known && !found->second.name.empty() ? found->second.name : listed.device;
         listed.key       = known ? monitor_row::IdentityKey(listed.id, found->second.name) : std::wstring();
+        // Shown to the player: a monitor may pad the name it reports with spaces.
+        listed.name.erase(listed.name.find_last_not_of(L" \t\r\n") + 1);
     }
     return list;
 }

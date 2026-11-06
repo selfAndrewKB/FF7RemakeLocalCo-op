@@ -127,17 +127,25 @@ of the file, so none can go stale.
 
 **Choosing the monitors.** Copy `build/Game__Shipping__Win64/LocalSplitScreenSetup.exe` next to `LocalSplitScreen.ini` and
 run it with the game closed: it shows the desktop as Windows arranges it, you click two or three monitors in the order you want
-them, left to right, and it saves them with Multiple Monitors and Screen Order. With none picked the game takes the longest row
-it finds. The game is then started from Steam as always.
+them, left to right, and **Save** keeps them with Multiple Monitors and Screen Order. The row below the picture shows who plays
+on which monitor. With none picked the game takes the longest row it finds. The game is then started from Steam as always; the
+app need not stay open. Everything works by keyboard too: Tab and the arrow keys move, Left and Right change an option, Space
+or Enter presses, Enter alone saves, Escape closes. Run from another folder, the app says the game will not read its file.
 
 The monitors need not be next to each other in Windows. While the game holds the row they are moved into it, and afterwards they
 go back: Windows' own saved arrangement is never changed, so a restart returns your layout whatever happens. If the game crashes
-or is killed, the same exe, which the mod keeps running in the background as a guard, puts them back; if that fails too, the next
-start of the game or the app does, and the app has a **Put my monitors back** button.
+or is killed, the same exe, which the mod keeps running in the background as a guard, puts them back (its one line of result is
+in `LocalSplitScreen.desktop.log`); if that fails too, the next start of the game or the app does, and the app shows a
+**Restore Monitors** button whenever the desktop differs from Windows' saved arrangement. The exe must keep its name and its
+place beside the settings file: the mod starts the guard from there.
 
-A picked monitor that is not connected is waited for, not replaced: the row forms when it arrives, drops back to one window if it
-leaves, and forms again when it returns. A streaming host's virtual monitor (Apollo, Vibepollo, SudoVDA) works like any other and
-is recognised by its name, so give each client a name of its own.
+A picked monitor that is not connected is not replaced by another. With two of three picks connected the row is made of those
+two; with fewer than two the game stays in one window. The row grows or forms when a monitor arrives and shrinks or ends when
+one leaves. A streaming host's virtual monitor (Apollo, Vibepollo, SudoVDA) works like any other and is recognised by its name,
+so give each client a name of its own.
+
+The app's look is drawn by its own code (`setup/view.cpp`, colours in `setup/theme.h`); its icon, `setup/app.ico`, is drawn by
+`../tools/make_setup_icon.py`. Its version is the mod's, read by CMake from `src/mod.cpp`.
 
 Picked monitors may differ in size and Windows scaling: each view fits its own monitor, top-aligned, and the window's part below a
 shorter monitor is simply not seen. A view wider than about 4096 px (a 32:9 monitor) shows a band of wrong colours at its right
@@ -458,7 +466,7 @@ src/
                             corrections beside the narrow view's FOV
     row_journal.h           The record of a desktop the mod has moved, on disk from just before the move until the
                             monitors are back, so whoever finds it can undo the move: the guard process when the game
-                            dies (setup/main.cpp), the next start of the game or …
+                            dies (setup/guard.cpp), the next start of the game …
     scene_camera            The scene camera on every further player's view: a cutscene, a talk scene or an event camera
                             plays on each further player's view as it does on player 1's
     split_fov               A view wider than the game's 16:9 image (two players top and bottom, the top view of three)

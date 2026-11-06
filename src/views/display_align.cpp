@@ -23,8 +23,9 @@ namespace {
 using row_journal::Entry;
 using row_journal::Seen;
 
-constexpr const wchar_t* kRecordName = L"LocalSplitScreen.desktop";
-constexpr const wchar_t* kGuardName  = L"LocalSplitScreenSetup.exe";
+using display_move::kRecordName;
+
+constexpr const wchar_t* kGuardName = L"LocalSplitScreenSetup.exe";
 
 std::vector<Entry> g_entries;       // the record while the monitors are moved; only those that moved say where to
 HANDLE             g_guard = nullptr;  // the guard process, once started

@@ -1,7 +1,7 @@
 #pragma once
 
 // The record of a desktop the mod has moved, on disk from just before the move until the monitors are back, so whoever finds
-// it can undo the move: the guard process when the game dies (setup/main.cpp), the next start of the game or the app when the
+// it can undo the move: the guard process when the game dies (setup/guard.cpp), the next start of the game or the app when the
 // guard died too. Pure rules, tested on the host (tests/row_journal_test.cpp); the file and the display calls are
 // views/display_move.
 //

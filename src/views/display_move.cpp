@@ -10,6 +10,8 @@
 
 #include <algorithm>
 #include <optional>
+#include <tuple>
+#include <utility>
 
 namespace lss::views::display_move {
 
@@ -70,7 +72,7 @@ std::wstring SourceName(const DISPLAYCONFIG_PATH_INFO& path)
     return DisplayConfigGetDeviceInfo(&name.header) == ERROR_SUCCESS ? std::wstring(name.viewGdiDeviceName) : std::wstring();
 }
 
-DISPLAYCONFIG_SOURCE_MODE* SourceMode(Config& config, const DISPLAYCONFIG_PATH_INFO& path) noexcept
+const DISPLAYCONFIG_SOURCE_MODE* SourceMode(const Config& config, const DISPLAYCONFIG_PATH_INFO& path) noexcept
 {
     const auto index = path.sourceInfo.modeInfoIdx;
     if (index == DISPLAYCONFIG_PATH_MODE_IDX_INVALID || index >= config.modes.size() ||
@@ -79,6 +81,11 @@ DISPLAYCONFIG_SOURCE_MODE* SourceMode(Config& config, const DISPLAYCONFIG_PATH_I
         return nullptr;
     }
     return &config.modes[index].sourceMode;
+}
+
+DISPLAYCONFIG_SOURCE_MODE* SourceMode(Config& config, const DISPLAYCONFIG_PATH_INFO& path) noexcept
+{
+    return const_cast<DISPLAYCONFIG_SOURCE_MODE*>(SourceMode(std::as_const(config), path));
 }
 
 /// A cloned output's paths share a source: it is listed once.
@@ -96,6 +103,26 @@ std::vector<Seen> Positions(Config& config)
         }
     }
     return seen;
+}
+
+/// Each monitor's place by the connector it hangs on (the adapter and its output), in one order. Two arrangements are
+/// compared by these: Windows numbers the sources of its saved arrangement apart from the live ones, so a source's name
+/// can stand for another monitor there, while a connector is the same in both.
+using ConnectorPlace = std::tuple<DWORD, LONG, UINT32, LONG, LONG>;
+
+std::vector<ConnectorPlace> PlacesByConnector(const Config& config)
+{
+    std::vector<ConnectorPlace> places;
+    for (const auto& path : config.paths)
+    {
+        if (const DISPLAYCONFIG_SOURCE_MODE* mode = SourceMode(config, path); mode != nullptr)
+        {
+            places.emplace_back(path.targetInfo.adapterId.LowPart, path.targetInfo.adapterId.HighPart, path.targetInfo.id, mode->position.x,
+                                mode->position.y);
+        }
+    }
+    std::sort(places.begin(), places.end());
+    return places;
 }
 
 }  // namespace
@@ -162,16 +189,9 @@ try
     {
         return true;
     }
-    auto       a    = Positions(*saved);
-    auto       b    = Positions(*now);
-    if (a.empty() || b.empty())
-    {
-        return true;
-    }
-    const auto byDevice = [](const Seen& x, const Seen& y) { return x.device < y.device; };
-    std::sort(a.begin(), a.end(), byDevice);
-    std::sort(b.begin(), b.end(), byDevice);
-    return a == b;
+    const auto a = PlacesByConnector(*saved);
+    const auto b = PlacesByConnector(*now);
+    return a.empty() || b.empty() || a == b;
 }
 catch (...)
 {
