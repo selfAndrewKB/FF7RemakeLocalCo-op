@@ -6,6 +6,7 @@
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
+#include "platform/settings.h"
 #include "platform/verified_code.h"
 #include "players/field_root.h"
 #include "players/scopes.h"
@@ -21,6 +22,8 @@
 #include <cstring>
 #include <format>
 #include <string>
+
+#include <Windows.h>
 
 namespace lss::world::talk_gather {
 
@@ -48,7 +51,11 @@ std::array<platform::CallRedirect, facts::kActTickCalls.size()> g_tickCalls;
 
 // Game thread.
 void*         g_channel = nullptr;  // the act channel ticking now
-std::uint32_t g_moved = 0, g_near = 0, g_noPoint = 0, g_inScope = 0, g_shops = 0, g_busy = 0, g_again = 0;
+std::uint32_t g_moved = 0, g_near = 0, g_noPoint = 0, g_inScope = 0, g_shops = 0, g_busy = 0, g_again = 0, g_left = 0;
+std::uint32_t g_ownTalks = 0;   // player 1's own talks that left the party where it stood
+std::uint64_t g_keptObject = 0, g_keptAt = 0;  // the last such talk's object and the time (ms) its lock was last seen
+bool          g_gather = true;  // the option `talk-gather`: player 1's character brought to another player's talk
+bool          g_follow = true;  // the option `talk-follow`: the party goes to its AI at player 1's own talk
 
 void* TickSteps(void* channel, float dt, std::uint8_t* out)
 {
@@ -59,15 +66,23 @@ void* TickSteps(void* channel, float dt, std::uint8_t* out)
     return result;
 }
 
-/// The channel's act is the show-menu act (a shop: the opener's alone, world/shop_act.h); false when unread.
-bool ShowMenuAct(const void* channel) noexcept
+/// The type of the channel's act (its action row's), or -1 when unread.
+std::int32_t ActType(const void* channel) noexcept
 {
     std::uint64_t act  = 0;
     void*         row  = nullptr;
     std::int32_t  type = -1;
     return Read(static_cast<const std::uint8_t*>(channel) + facts::kActChannelAct, act) && act != 0 &&
-           platform::CallGuarded(g_findRow, row, reinterpret_cast<const void*>(g_actions), act) && row != nullptr &&
-           Read(static_cast<const std::uint8_t*>(row) + facts::kActionRowType, type) && type == facts::kActionTypeShowMenu;
+                   platform::CallGuarded(g_findRow, row, reinterpret_cast<const void*>(g_actions), act) && row != nullptr &&
+                   Read(static_cast<const std::uint8_t*>(row) + facts::kActionRowType, type)
+               ? type
+               : -1;
+}
+
+/// The channel's act is the show-menu act (a shop: the opener's alone, world/shop_act.h); false when unread.
+bool ShowMenuAct(const void* channel) noexcept
+{
+    return ActType(channel) == facts::kActionTypeShowMenu;
 }
 
 /// The talked-to NPC, found by name as the game's own field-target dispatch finds it; null when not found (or the
@@ -85,11 +100,13 @@ void* FindNpc(std::uint64_t name) noexcept
 
 std::wstring Report()
 {
-    return std::format(L"{}; player 1's character brought to a further player's talk {}, already near {}, no navmesh point {}, "
-                       L"in a field action {}, a shop (not moved) {}, already decided for that press {}, skipped inside a "
-                       L"player's scope {}",
-                       g_tickCalls[0].IsInstalled() ? L"on" : L"off", g_moved, g_near, g_noPoint, g_busy, g_shops, g_again,
-                       g_inScope);
+    return std::format(L"{}; talk-gather {}, talk-follow {}; player 1's character brought to another player's talk {}, already "
+                       L"near {}, no navmesh point {}, in a field action {}, a shop (not moved) {}, already decided for that press "
+                       L"{}, skipped inside a player's scope {}, left where it stood (talk-gather off) {}; player 1's own talks "
+                       L"that left the party where it stood (talk-follow off) {}",
+                       g_tickCalls[0].IsInstalled() ? L"installed" : L"not installed", g_gather ? L"on" : L"off",
+                       g_follow ? L"on" : L"off", g_moved, g_near, g_noPoint, g_busy, g_shops, g_again, g_inScope, g_left,
+                       g_ownTalks);
 }
 
 }  // namespace
@@ -133,12 +150,41 @@ bool Install(const platform::GameImage& image) noexcept
             return false;
         }
     }
-    control::Register({.name  = L"talk-gather",
+    control::Register({.name  = L"world.talk-gather",
                        .shape = control::Shape::Text,
-                       .help  = L"player 1's character brought to further players' talks: moved, already near, no navmesh point",
+                       .help  = L"(read only) talks and who is moved for them: the two options, player 1's character brought to "
+                                L"other players' talks (moved, already near, no navmesh point, left where it stood), and "
+                                L"player 1's own talks that left the party where it stood",
                        .get   = [] { return control::Value{Report()}; }});
-    platform::Log(L"talk gather: installed; player 1's character is brought to a talk another player starts when more than "
-                  L"8 m away");
+    // The two experimental options (platform/settings.h kTalkGather, kTalkFollow): the file, the console and the Co-op
+    // page set each through its one setter.
+    namespace settings = platform::settings;
+    g_gather = settings::Of(settings::kTalkGather).word == L"on";
+    g_follow = settings::Of(settings::kTalkFollow).word == L"on";
+    control::RegisterOption(
+        settings::kTalkGather,
+        [](const std::wstring& word) {
+            g_gather = word == L"on";
+            platform::Log(L"talk gather: talk-gather {}: player 1's character {} a talk another player starts far from it", word,
+                          g_gather ? L"is brought to" : L"stays where it stands at");
+            return control::Outcome{};
+        },
+        [] { return std::wstring(g_gather ? L"on" : L"off"); });
+    control::RegisterOption(
+        settings::kTalkFollow,
+        [](const std::wstring& word) {
+            g_follow = word == L"on";
+            platform::Log(L"talk gather: talk-follow {}: at a talk player 1 starts the other players' characters {}", word,
+                          g_follow ? L"go to their AI and walk over" : L"stay with their players, standing where they are");
+            return control::Outcome{};
+        },
+        [] { return std::wstring(g_follow ? L"on" : L"off"); });
+    platform::Log(L"talk gather: installed; a talk another player starts more than 8 m from player 1's character {} "
+                  L"(talk-gather {}, from {}); at a talk player 1 starts the other players' characters {} (talk-follow {}, from {})",
+                  g_gather ? L"brings it beside them" : L"leaves it where it stands", g_gather ? L"on" : L"off",
+                  settings::Why(settings::kTalkGather),
+                  g_follow ? L"go to their AI and walk over" : L"stay with their players, standing where they are",
+                  g_follow ? L"on" : L"off", settings::Why(settings::kTalkFollow));
     return true;
 }
 
@@ -149,6 +195,61 @@ void Remove() noexcept
         call.Restore();
     }
     g_channel = nullptr;
+}
+
+bool PlayerOneTalkKeepsParty() noexcept
+{
+    std::uint64_t object = 0, pressed = 0, pressedAt = 0;
+    if (g_follow || g_channel == nullptr || !Read(g_channel, object) || object == 0 ||
+        !field_targets::PlayerOnePress(pressed, pressedAt))
+    {
+        return false;
+    }
+    if (field_targets::PeekTalkPress(object) != 0 || field_targets::TalkJudged(object))
+    {
+        return false;  // another player pressed it since: the talk is theirs (OnLeaderHanded judges it)
+    }
+    // A talk's acts: the planner events, and the shop a shopkeeper's talk opens (the show-menu act on the same channel).
+    static_assert(talk_gather_rules::kActPlanEvent == facts::kActionTypePlanEvent &&
+                      talk_gather_rules::kActPlanEventAlt == facts::kActionTypePlanEventAlt &&
+                      talk_gather_rules::kActShowMenu == facts::kActionTypeShowMenu,
+                  "the rule's act types are the game's action row types");
+    const std::int32_t  type    = ActType(g_channel);
+    const bool          talkAct = talk_gather_rules::TalkAct(type);
+    const std::uint64_t now     = GetTickCount64();
+    if (!talk_gather_rules::PlayerOneTalk(pressed, pressedAt, object, now, talkAct))
+    {
+        if (pressed == object)
+        {
+            platform::LogDebug(L"talk gather: player 1's press of {} took the field lock with an act of type {}, not a talk's, or "
+                               L"too long after the press: the party goes with player 1's character as in any scene",
+                               field_targets::NameOf(object), type);
+        }
+        return false;
+    }
+    // One talk takes the lock several times (a greeting, the talk, a shop, the goodbye): said once at Info, each further
+    // time at Debug.
+    const bool again = object == g_keptObject && now - g_keptAt <= talk_gather_rules::kPressFreshMs;
+    g_keptObject     = object;
+    g_keptAt         = now;
+    if (again)
+    {
+        platform::LogDebug(L"talk gather: player 1's talk with {} takes the field lock again (an act of type {}); the other "
+                           L"players' characters stay with their players",
+                           field_targets::NameOf(object), type);
+        return true;
+    }
+    ++g_ownTalks;
+    platform::Log(L"talk gather: player 1 started a talk with {}; talk-follow is off: the other players' characters stay with "
+                  L"their players, standing where they are, unless the talk itself takes one",
+                  field_targets::NameOf(object));
+    return true;
+}
+
+void OnKeptTalkEnded() noexcept
+{
+    field_targets::RefreshPlayerOnePress();
+    g_keptAt = GetTickCount64();  // the talk's next act counts from its last lock's end
 }
 
 void OnLeaderHanded() noexcept
@@ -166,6 +267,14 @@ void OnLeaderHanded() noexcept
     if (field_targets::TalkJudged(object))
     {
         ++g_again;  // a later act of the same talk (or its follow-up): decided once per press
+        return;
+    }
+    if (!g_gather)
+    {
+        ++g_left;
+        field_targets::MarkTalkJudged(object);
+        platform::LogDebug(L"talk gather: {} started a talk with {}; talk-gather is off: player 1's character is not moved",
+                           SeatName(seat), field_targets::NameOf(object));
         return;
     }
     if (ShowMenuAct(g_channel))

@@ -71,6 +71,12 @@ std::wstring Reading() noexcept;
 /// Claim takes every note of that object. Game thread.
 int PeekTalkPress(std::uint64_t object) noexcept;
 int ClaimTalkPress(std::uint64_t object) noexcept;
+/// Player 1's last press of a field target (the game's own record of the pressed name) and its time (GetTickCount64);
+/// false when none since the world changed. Game thread.
+bool PlayerOnePress(std::uint64_t& name, std::uint64_t& atMs) noexcept;
+/// That press's time starts over (its talk held the field lock until this moment, as a further player's waiting press
+/// does not age while a lock holds). Game thread.
+void RefreshPlayerOnePress() noexcept;
 /// Whether to bring player 1's character to the talk of this press was decided (once per press: world/talk_gather.h).
 bool TalkJudged(std::uint64_t object) noexcept;
 void MarkTalkJudged(std::uint64_t object) noexcept;

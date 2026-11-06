@@ -54,7 +54,11 @@ readings are `<switch>.<what>`, and an area's readings `<area>.<what>`. Today:
   not only player 1's), `forced-walk`, `overlap-fade`, `search-arrows`, `anim`, each with its reading `world.<switch>`;
   `level-watch` (reading `world.levels`); `world.fade`, `lead.gate` (the last guide judgment: a LEAD or a run
   ahead on a further player's member), `lead.path <state>` (prints a state's chain), `nav-area`, `camera-override`,
-  `shop-act`, `talk-gather`, `traversal.action`, `traversal.walkup`.
+  `shop-act`, `traversal.action`, `traversal.walkup`; `party-warp 2|3` (brings that player's character back beside
+  player 1's, as their double click of L3 in the field does; reading `world.party-warp`); the two experimental talk options
+  `talk-gather on|off` (player 1's character brought to a talk another player starts far from it) and `talk-follow on|off`
+  (at player 1's own talk the other players' characters walk over on their AI, or stay standing with their players), with
+  the reading `world.talk-gather`.
 - **Pads:** `pad-buttons`, `pad-menus`; readings `pad.events`, `pad.to-game` (each further pad's counts),
   `pad.menu-opens`.
 - **Battle:** `command-menu`, `command-camera`, `targeting`, `member-rates`, `enemy-coin`, `enemy-stall`, `member-area`; readings

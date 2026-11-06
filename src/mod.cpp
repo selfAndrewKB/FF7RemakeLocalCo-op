@@ -67,7 +67,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.171.0-party-warp";  // the one version string (the log, UE4SS and the setup app)
+constexpr const wchar_t* kVersion = L"0.172.0-talk-options";  // the one version string (the log, UE4SS and the setup app)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;

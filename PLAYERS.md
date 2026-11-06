@@ -40,6 +40,9 @@ The folder carries its own `enabled.txt`, so UE4SS's `mods.txt` needs no line fo
   player, and the split returns when they end. A character the story takes over is handed back afterwards.
 - **In battle** a knocked-out player stays on their character until revived, and enemies divide their attention among
   the players.
+- **Left behind?** Players 2 and 3 can click the left stick (L3) twice. Outside a battle it brings their character back
+  beside player 1's; in a battle it brings a character that was shut out of the fight's area back into it. It does
+  nothing during a scene or a talk, on a ladder or in a crawl, or when the character is already beside player 1's.
 
 ## The Co-op page
 

@@ -147,6 +147,15 @@ bool InFormation(std::uint8_t type) noexcept;
 std::uint32_t ControlLockMask() noexcept;
 bool          PushButtonLocked() noexcept;
 
+/// The talk that took the field lock is player 1's own prompt talk and the `talk-follow` option leaves the other
+/// players' characters with their players (world/talk_gather judges it at the game's hand of its leader; the session
+/// sets it there and clears it at the leader's return). While set, the talk's lock bit holds no member by itself.
+void SetTalkKept(bool kept) noexcept;
+bool TalkKept() noexcept;
+/// Whether the lock `mask` leaves a further player's member with its player (field_hold::KeepsMembers): a treasure or
+/// push-button lock, or the talk's lock while the talk is kept. The member is then judged by its own state.
+bool LockKeepsMembers(std::uint32_t mask) noexcept;
+
 /// The game's own leader is with a player controller (its PLAYER slot filled): the game has not handed it to its
 /// AI, or has returned it. False while handed, and when the leader cannot be read.
 bool LeaderWithPlayer() noexcept;

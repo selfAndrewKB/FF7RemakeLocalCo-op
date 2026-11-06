@@ -245,10 +245,29 @@ inline constexpr Option kAreaLevels{  // world/area_levels
     L"Only Player 1: the world loads only around player 1's immediate area. All Players: the world loads around every player's "
     L"position, preventing the world from unloading when no longer around player 1. Uses more memory."};
 
+inline constexpr Option kTalkGather{  // world/talk_gather
+    L"Experimental", L"talk-gather", kOnOffWords, L"on",
+    L"a talk another player starts more than 8 m from player 1's character: on (the default: player 1's character is "
+    L"brought beside that player, facing the one they talk to) or off (it stays where it stands; every line still plays, "
+    L"the talk's camera may frame the ground between the speakers)",
+    true, L"Bring Player 1 to Others' Talks", kOnOffLabels,
+    L"When another player talks to someone far from player 1's character. On: player 1's character is brought beside "
+    L"them. Off: it stays where it is; the talk's camera may then show the space between the speakers."};
+inline constexpr Option kTalkFollow{  // world/talk_gather, players/session
+    L"Experimental", L"talk-follow", kOnOffWords, L"on",
+    L"a talk player 1 starts: on (the default: the other players' characters go to their AI for the talk and walk over to "
+    L"player 1's, as companions do in single player) or off (they stay with their players and stand where they are until "
+    L"the talk ends; one the talk itself uses is taken for its lines and comes back where it stood); either way every "
+    L"view shows the talk's lines, and its camera when it has one",
+    true, L"Party Gathers at Player 1's Talks", kOnOffLabels,
+    L"When player 1 talks to someone. On: the other players' characters walk over on their own, as in single player. "
+    L"Off: they stay where they stand until the talk ends. Either way every player sees the talk."};
+
 /// Every option, in the order the settings file lists them.
 inline constexpr std::array kOptions{&kMultiMonitor, &kMonitors,    &kColumnOrder,  &kTwoPlayerSplit, &kThreePlayerSplit, &kHorizontalFov,
                                      &kVerticalFov,  &kMenuSlow,    &kBattleWarps,  &kEnemyDamage,    &kEnemyHp,          &kBossHp,
-                                     &kEnemyStagger, &kExpGain,     &kApGain,       &kLeadHolder,     &kAreaLevels};
+                                     &kEnemyStagger, &kExpGain,     &kApGain,       &kLeadHolder,     &kAreaLevels,       &kTalkGather,
+                                     &kTalkFollow};
 
 /// The option is a row of the table (Of and Why answer by the row).
 consteval bool Listed(const Option& option)
@@ -261,7 +280,8 @@ consteval bool Listed(const Option& option)
 }
 static_assert(Listed(kMultiMonitor) && Listed(kMonitors) && Listed(kColumnOrder) && Listed(kTwoPlayerSplit) && Listed(kThreePlayerSplit) &&
                   Listed(kHorizontalFov) && Listed(kVerticalFov) && Listed(kMenuSlow) && Listed(kBattleWarps) && Listed(kEnemyDamage) && Listed(kEnemyHp) && Listed(kBossHp) &&
-                  Listed(kEnemyStagger) && Listed(kExpGain) && Listed(kApGain) && Listed(kLeadHolder) && Listed(kAreaLevels),
+                  Listed(kEnemyStagger) && Listed(kExpGain) && Listed(kApGain) && Listed(kLeadHolder) && Listed(kAreaLevels) &&
+                  Listed(kTalkGather) && Listed(kTalkFollow),
               "every option is a row of kOptions");
 
 /// Where an option's word came from.

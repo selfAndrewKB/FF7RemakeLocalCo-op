@@ -195,6 +195,7 @@ void Session::Remove() noexcept
         party_events::Remove();
         eventsInstalled_ = false;
     }
+    party_member::SetTalkKept(false);  // no hand or return is heard from here on
 }
 
 int Session::Count() const noexcept
@@ -303,6 +304,16 @@ try
     if (steady)
     {
         worldChangeStuck_ = false;
+    }
+    // A kept talk whose end was not heard at the leader's return (a world change or a retry inside it), with or without
+    // a further player in: over once the field is gone (unread, or no field root) or leaving (not running, or past the
+    // steady step), or the lock is free with the game's leader on its player.
+    const bool fieldLeaving = !game.valid || !game.hasRoot || !game.running || game.step > kStepSteady;
+    if (party_member::TalkKept() &&
+        (fieldLeaving || (ticks_ % kFollowSlotTicks == 0 && party_member::ControlLockMask() == 0 && party_member::LeaderWithPlayer())))
+    {
+        party_member::SetTalkKept(false);
+        platform::LogDebug(L"player 1's kept talk is over (its end was not heard at the leader's return)");
     }
     auto* players = LocalPlayers(gameInstance_);  // one lookup a tick, for every seat
     // Player 1 home (the game's leader is the field leader): no stand-in can hold, whatever event was missed (a retry,
@@ -1031,15 +1042,20 @@ try
         // A treasure or push-button lock, read now: the member goes back to its player unless the event took it (its
         // cinema mode), cut to its own shot, or its own state holds it; the game's leader stays with its AI for the
         // interaction.
-        const std::uint32_t lock = party_member::ControlLockMask();
-        if (!party_member::LeaderWithPlayer() && field_hold::InteractionLock(lock) && !views::scene_camera::EventShot())
+        // Player 1's own talk with the party left where it stands is the same case (its shot is expected: no test of it).
+        const std::uint32_t lock      = party_member::ControlLockMask();
+        const bool          ownEvent  = field_hold::InteractionLock(lock) && !views::scene_camera::EventShot();
+        const bool          keptTalk  = party_member::TalkKept() && party_member::LockKeepsMembers(lock) &&
+                                        !field_hold::InteractionLock(lock);  // the interaction rule keeps its own shot test
+        if (!party_member::LeaderWithPlayer() && (ownEvent || keptTalk))
         {
             if (const wchar_t* why = party_member::WhyHeldByScript(member))
             {
                 if (!seat.returnWaitLogged)
                 {
                     seat.returnWaitLogged = true;
-                    platform::Log(L"{}'s member stays with its AI through the interaction lock ({:#x}): {}", seat.Name(), lock, why);
+                    platform::Log(L"{}'s member stays with its AI through the {} ({:#x}): {}", seat.Name(),
+                                  keptTalk ? L"talk's lock" : L"interaction lock", lock, why);
                 }
                 return;
             }
@@ -1048,9 +1064,11 @@ try
             seat.handedToAi       = !back;
             seat.keptThroughLock  = back;
             seat.returnWaitLogged = false;
-            platform::LogDebug(L"{}'s member back on its controller: the lock ({:#x}) is the interacting character's own (a "
-                               L"treasure, a pickup, a switch or a terminal), and the event does not use it: {}",
-                               seat.Name(), lock, back ? L"yes" : L"NO");
+            platform::LogDebug(L"{}'s member back on its controller: the lock ({:#x}) is {}, and the event does not use it: {}",
+                               seat.Name(), lock,
+                               keptTalk ? L"player 1's own talk's"
+                                        : L"the interacting character's own (a treasure, a pickup, a switch or a terminal)",
+                               back ? L"yes" : L"NO");
             return;
         }
         // The game's own state decides the return (RE-script-release.md: the event bit alone would undo a keep-group
@@ -1088,7 +1106,7 @@ try
         }
         else if (seat.keptThroughLock)
         {
-            platform::Log(L"the lock grew beyond the interacting character's own ({:#x}): {}'s member goes to its AI with the game's "
+            platform::Log(L"the lock grew beyond the one the member stayed through ({:#x}): {}'s member goes to its AI with the game's "
                           L"leader",
                           party_member::ControlLockMask(), seat.Name());
             seat.keptThroughLock = false;
@@ -1181,6 +1199,21 @@ void Session::OnLeaderHandedToAi(void* self) noexcept
 {
     auto* session = static_cast<Session*>(self);
     world::talk_gather::OnLeaderHanded();  // a further player's talk: player 1's character brought over when far
+    // Player 1's own talk with the party left where it stands: its lock holds no member by itself until the leader's
+    // return. Judged afresh at a lock's first hand (the mask still 0); a later hand inside the same lock (another act of
+    // the talk) never ends the keep, and is not judged again.
+    if (party_member::ControlLockMask() == 0)
+    {
+        if (party_member::TalkKept())
+        {
+            world::talk_gather::OnKeptTalkEnded();  // its lock ended without a return heard: the next act of the talk still counts
+        }
+        party_member::SetTalkKept(false);
+    }
+    if (!party_member::TalkKept() && world::talk_gather::PlayerOneTalkKeepsParty())
+    {
+        party_member::SetTalkKept(true);
+    }
     for (int index = 1; index <= kSeatsBuilt; ++index)
     {
         session->HandWithLeader(session->seats_[index]);
@@ -1225,6 +1258,18 @@ void Session::HandWithLeader(Seat& seat) noexcept
                            seat.Name(), lock);
         return;
     }
+    // Player 1's own talk with the party left where it stands (the hand runs before the talk's bit is set: a mask still
+    // 0 is the talk's first lock; a lock with other bits is a scene's, and the member goes). The talk's own shot is
+    // expected: it shows on every view, the member kept or not.
+    if (party_member::TalkKept() && (lock == 0 || party_member::LockKeepsMembers(lock)) &&
+        party_member::WhyHeldByScript(member) == nullptr)
+    {
+        seat.keptThroughLock = true;
+        platform::LogDebug(L"{}'s member stays theirs through player 1's talk (lock {:#x}): it stands where it is until the talk "
+                           L"ends",
+                           seat.Name(), lock);
+        return;
+    }
     seat.handedToAi       = party_member::HandToAi(member);
     seat.returnWaitLogged = false;
     platform::LogDebug(L"{}'s member handed to its AI with the game's leader (lock {:#x}): {}; the member: {}", seat.Name(),
@@ -1234,6 +1279,13 @@ void Session::HandWithLeader(Seat& seat) noexcept
 void Session::OnLeaderReturned(void* self) noexcept
 {
     auto* session = static_cast<Session*>(self);
+    if (party_member::TalkKept())
+    {
+        // The talk's lock is over with the leader's return; a follow-up act of the same talk that takes the lock again
+        // soon after still counts as player 1's (the press's age starts over).
+        party_member::SetTalkKept(false);
+        world::talk_gather::OnKeptTalkEnded();
+    }
     for (int index = 1; index <= kSeatsBuilt; ++index)
     {
         session->seats_[index].keptThroughLock  = false;

@@ -187,6 +187,23 @@ void InteractionLocksFreezeTheInteractor()
     EXPECT(!fh::InteractionLock(0x80004));
 }
 
+void AKeptTalkHoldsNoMemberByItself()
+{
+    // Without a kept talk the rule is the interaction lock's.
+    EXPECT(fh::KeepsMembers(0x4, false) && fh::KeepsMembers(0x100000, false));
+    EXPECT(!fh::KeepsMembers(0x1, false));
+    EXPECT(!fh::KeepsMembers(0, false));
+    // A kept talk: its bit alone, or with a chest or switch player 1 works meanwhile.
+    EXPECT(fh::KeepsMembers(fh::kLockTalk, true));
+    EXPECT(fh::KeepsMembers(fh::kLockTalk | 0x4, true));
+    EXPECT(fh::KeepsMembers(0x100000, true));
+    // No lock keeps nothing; any other bit beside the talk's is a scene's: the member goes.
+    EXPECT(!fh::KeepsMembers(0, true));
+    EXPECT(!fh::KeepsMembers(fh::kLockTalk | 0x2, true));
+    EXPECT(!fh::KeepsMembers(0x2, true));
+    EXPECT(!fh::KeepsMembers(fh::kLockTalk | 0x40000, true));
+}
+
 int main()
 {
     LevelStagingIsFree();
@@ -201,6 +218,7 @@ int main()
     AnInterestIsJudgedBeneathIt();
     NamesCoverTheEnum();
     InteractionLocksFreezeTheInteractor();
+    AKeptTalkHoldsNoMemberByItself();
     if (g_failures == 0)
     {
         std::printf("field_hold: all passed\n");

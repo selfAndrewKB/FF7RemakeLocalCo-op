@@ -2969,6 +2969,9 @@ inline constexpr std::uint32_t  kActChannelAct         = 0x10;
 inline constexpr std::uint32_t  kActChannelStep        = 0x135;  // the channel's step byte (2: the lock taken)
 inline constexpr std::uint32_t  kActionRowType         = 0xC;
 inline constexpr std::int32_t   kActionTypeShowMenu    = 43;
+/// The planner event acts (a talk, a staged conversation: both types build the planner event runner, RE-talk-far.md);
+/// type 0 is a cutscene act.
+inline constexpr std::int32_t   kActionTypePlanEvent   = 1, kActionTypePlanEventAlt = 16;
 /// The field-action component's "an action runs" byte (component +0x15C, RE-shop-two.md §2.1, RE-talk-far.md §6).
 inline constexpr std::uint32_t  kFieldActionRunning    = 0x15C;
 inline constexpr std::uintptr_t kNavAgentDefault       = 0x1453ABA90;

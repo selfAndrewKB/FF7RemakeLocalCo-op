@@ -177,7 +177,7 @@ private:
         party_member::Wait   hold           = party_member::Wait::None;  // that hold, for the reading
         bool                 joinedInHold   = false;    // seated inside that walk at its join: a retried hand is still a join's
         bool                 returnWaitLogged = false;  // the game took its leader back while a script still held the member
-        bool                 keptThroughLock = false;   // the game's leader is with its AI for an interaction lock; the member stayed
+        bool                 keptThroughLock = false;   // the game's leader is with its AI for an interaction lock or a kept talk; the member stayed
         std::int32_t         memberWeak[2]  = {-1, 0};  // the seated member, to notice it destroyed
         std::uint32_t        waitLogged     = 0;        // the wait last logged (type, reason, ordinal), 0 none
         party_member::Wait   lastWait       = party_member::Wait::None;  // the reason of the last wait (WaitReason)

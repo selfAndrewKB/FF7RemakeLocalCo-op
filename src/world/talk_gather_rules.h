@@ -13,6 +13,7 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 
 namespace lss::world::talk_gather_rules {
 
@@ -64,6 +65,28 @@ inline Beside BesideSpot(const Vec3& presser, const Vec3& cloud, const Vec3* npc
 inline float FacingYaw(const Vec3& at, const Vec3& toward) noexcept
 {
     return std::atan2(toward.y - at.y, toward.x - at.x) * 180.0f / kPi;
+}
+
+/// How long player 1's press of a target counts as the start of the talk that then takes the field lock: the game
+/// queues the talk's act a tick or two after the press, and an act waits while another holds its lock bits.
+constexpr std::uint64_t kPressFreshMs = 10000;
+
+/// The action row types that are a talk's acts: the two planner events (a line exchange, a staged conversation) and
+/// the show-menu act (the shop a shopkeeper's talk opens). Type 0 is a cutscene act; -1 an unread row.
+inline constexpr std::int32_t kActPlanEvent = 1, kActPlanEventAlt = 16, kActShowMenu = 43;
+constexpr bool TalkAct(std::int32_t type) noexcept
+{
+    return type == kActPlanEvent || type == kActPlanEventAlt || type == kActShowMenu;
+}
+
+/// Whether the act that took the field lock is player 1's own prompt talk: one of a talk's acts (`talkAct`: TalkAct of
+/// its type) on the channel of the object player 1 pressed (`pressed` at `pressedAt`, 0: no press), within
+/// kPressFreshMs. A talk whose data runs it on another object's channel is not recognised; it then plays as any scene
+/// does.
+constexpr bool PlayerOneTalk(std::uint64_t pressed, std::uint64_t pressedAt, std::uint64_t object, std::uint64_t now,
+                             bool talkAct) noexcept
+{
+    return talkAct && object != 0 && pressed == object && now >= pressedAt && now - pressedAt <= kPressFreshMs;
 }
 
 /// The try's name for the log line.

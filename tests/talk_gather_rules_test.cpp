@@ -4,6 +4,7 @@
 #include "world/talk_gather_rules.h"
 
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <cwchar>
 
@@ -96,10 +97,28 @@ void YawAndNames()
     EXPECT(std::wcscmp(SpotName(true, 3), L"nowhere") == 0);
 }
 
+/// Player 1's own talk: a planner event on the pressed object's channel, soon after the press.
+void PlayerOnesTalk()
+{
+    const std::uint64_t npc = 0x1234, other = 0x9999, at = 50000;
+    EXPECT(PlayerOneTalk(npc, at, npc, at, true));
+    EXPECT(PlayerOneTalk(npc, at, npc, at + kPressFreshMs, true));
+    EXPECT(!PlayerOneTalk(npc, at, npc, at + kPressFreshMs + 1, true));  // too long after the press
+    EXPECT(!PlayerOneTalk(npc, at, other, at + 10, true));               // another object's channel took the lock
+    EXPECT(!PlayerOneTalk(npc, at, npc, at + 10, false));                // a cutscene act, not a talk's
+    // A talk's acts: the two planner events and the shop a shopkeeper's talk opens; a cutscene act and an unread row not.
+    EXPECT(TalkAct(1) && TalkAct(16) && TalkAct(43));
+    EXPECT(!TalkAct(0) && !TalkAct(-1) && !TalkAct(56) && !TalkAct(4));
+    EXPECT(!PlayerOneTalk(0, 0, 0, 10, true));                           // no press, no object
+    EXPECT(!PlayerOneTalk(0, 0, npc, 10, true));                         // no press
+    EXPECT(!PlayerOneTalk(npc, at, npc, at - 1, true));                  // a clock that ran back
+}
+
 }  // namespace
 
 int main()
 {
+    PlayerOnesTalk();
     WithoutNpc();
     WithNpc();
     NpcOutOfRange();

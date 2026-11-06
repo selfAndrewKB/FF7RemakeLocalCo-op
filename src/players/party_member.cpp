@@ -137,6 +137,9 @@ FreeRows FreeRowsOf(const Party& party) noexcept
 /// Each seat's rank (party_rank_rules.h); [0] unused. Game thread.
 std::array<int, kSeatSlots> g_rank{0, 1, 2};
 
+/// The talk that holds the field lock is player 1's own and leaves the party where it stands (SetTalkKept). Game thread.
+bool g_talkKept = false;
+
 /// The field take tests (research/RE-slot-member.md) with the hold rule of field_hold.h, as a wait reason; None when
 /// the member is free.
 Wait FieldWait(void* member) noexcept
@@ -150,9 +153,12 @@ Wait FieldWait(void* member) noexcept
     {
         return Wait::None;  // the battle AI never runs a player-held member; the cycle's own tests are player 1's
     }
-    // A treasure or push-button lock freezes only the interacting character (field_hold::InteractionLock): the member
-    // is judged by its own state below (an event's listed actor is already in the cinema mode above).
-    if (!field_hold::InteractionLock(ControlLockMask()))
+    // A treasure or push-button lock freezes only the interacting character, and a kept talk's lock is player 1's own
+    // (LockKeepsMembers): the member is judged by its own state below (an event's listed actor is already in the cinema
+    // mode above; a talk's own speaker or listener is held on a script layer). A kept talk's first hand runs before the
+    // lock's bit is set: the mask still 0 with the talk kept is that moment, judged the same way.
+    const std::uint32_t lock = ControlLockMask();
+    if (!LockKeepsMembers(lock) && !(g_talkKept && lock == 0))
     {
         if (PushButtonLocked())
         {
@@ -493,6 +499,21 @@ static_assert(field_hold::kLockPushButton == facts::kControlLockPushButton && fi
 bool PushButtonLocked() noexcept
 {
     return (ControlLockMask() & facts::kControlLockPushButton) != 0;
+}
+
+void SetTalkKept(bool kept) noexcept
+{
+    g_talkKept = kept;
+}
+
+bool TalkKept() noexcept
+{
+    return g_talkKept;
+}
+
+bool LockKeepsMembers(std::uint32_t mask) noexcept
+{
+    return field_hold::KeepsMembers(mask, g_talkKept);
 }
 
 bool LeaderWithPlayer() noexcept

@@ -154,6 +154,7 @@ std::array<Pending, kPending> g_pending{};
 talk_presses::Table           g_talkPresses;  // the further players' NPC presses, the rules in world/talk_presses.h
 std::uint32_t                 g_talkClaims = 0, g_talkLapsed = 0, g_talkDropped = 0;
 std::uint64_t                 g_playerOnePressed = 0;  // player 1's press in this Press call (the seats' runs follow it)
+std::uint64_t                 g_playerOneLast = 0, g_playerOneLastAt = 0;  // player 1's last press and its time (ms)
 void*                         g_notesManager     = nullptr;  // the target manager the notes were made under
 int                           g_pickSeat = 0;  // the seat whose pick runs now (the screen test answers with its player)
 std::uint32_t                 g_playerOneOpens = 0;
@@ -580,7 +581,9 @@ void DropTalkPressesAtWorldChange(void* targets) noexcept
         talk_presses::Dropped dropped;
         g_talkPresses.DropAll(dropped);
         LogDropped(dropped, L"the world changed");
-        g_notesManager = targets;
+        g_notesManager    = targets;
+        g_playerOneLast   = 0;
+        g_playerOneLastAt = 0;
     }
 }
 
@@ -799,6 +802,8 @@ void Press(void* mgr, float dt)
     {
         DropTalkPresses(pressed);
         g_playerOnePressed = pressed;
+        g_playerOneLast    = pressed;
+        g_playerOneLastAt  = GetTickCount64();
     }
     for (int seat = 1; seat <= players::kSeatsBuilt; ++seat)
     {
@@ -1057,6 +1062,25 @@ void Remove() noexcept
 int PeekTalkPress(std::uint64_t object) noexcept
 {
     return g_talkPresses.Peek(object);
+}
+
+bool PlayerOnePress(std::uint64_t& name, std::uint64_t& atMs) noexcept
+{
+    if (g_playerOneLast == 0)
+    {
+        return false;
+    }
+    name = g_playerOneLast;
+    atMs = g_playerOneLastAt;
+    return true;
+}
+
+void RefreshPlayerOnePress() noexcept
+{
+    if (g_playerOneLast != 0)
+    {
+        g_playerOneLastAt = GetTickCount64();
+    }
 }
 
 bool TalkJudged(std::uint64_t object) noexcept

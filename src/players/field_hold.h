@@ -76,6 +76,20 @@ constexpr bool InteractionLock(std::uint32_t mask) noexcept
     return mask != 0 && (mask & ~kInteractionLocks) == 0;
 }
 
+/// The lock bit of a planner event (EndFieldExclusion's talk rows: a prompt talk, a staged conversation). It takes the
+/// game's leader as every lock does; whether the other players' characters go with it is the session's choice
+/// (KeepsMembers).
+inline constexpr std::uint32_t kLockTalk = 0x1;
+
+/// Whether the lock `mask` leaves another player's member with its player: interaction bits alone, or, while
+/// `talkKept` (the talk that took the lock is player 1's own and the option leaves the party where it stands), the
+/// talk's bit with or without them. Any other bit is a scene or a story beat: the member goes with the game's leader.
+constexpr bool KeepsMembers(std::uint32_t mask, bool talkKept) noexcept
+{
+    const std::uint32_t kept = kInteractionLocks | (talkKept ? kLockTalk : 0u);
+    return mask != 0 && (mask & ~kept) == 0;
+}
+
 /// The kinds whose arrival signals the level, so a level step can wait on it: a LEAD and the run to a mark
 /// (engine_facts.h kArrivalHandlerNames names their handlers' fields; lead_gate.cpp asserts the two lists agree).
 /// FOLLOW_TARGET (3) and the route move (13) signal through the same path, PATROL (10) sends its own triggers at

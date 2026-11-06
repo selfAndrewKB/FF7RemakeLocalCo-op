@@ -77,9 +77,17 @@ void TableConsistent()
             open = option->section;
         }
     }
-    EXPECT(kOptions.size() == 17);
+    EXPECT(kOptions.size() == 19);
     EXPECT(kLeadHolder.experimental && std::wcscmp(kLeadHolder.fallback, L"guide") == 0);
     EXPECT(std::wcscmp(kLeadHolder.section, L"Experimental") == 0);
+    // The two talk options: experimental, on by default (the behaviour without them), on|off words with their labels.
+    for (const Option* talk : {&kTalkGather, &kTalkFollow})
+    {
+        EXPECT(talk->experimental && std::wcscmp(talk->section, L"Experimental") == 0);
+        EXPECT(std::wcscmp(talk->fallback, L"on") == 0);
+        EXPECT(talk->words.size() == 2 && talk->wordLabels.size() == 2);
+        EXPECT(Judge(*talk, L"Off").word == L"off" && Judge(*talk, L"").word == L"on");
+    }
 }
 
 void JudgeFile()
