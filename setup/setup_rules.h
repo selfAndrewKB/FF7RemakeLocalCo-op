@@ -72,7 +72,8 @@ enum class Tone : std::uint8_t
 struct Look
 {
     bool                     ok = false;       // a row the mod would take, or no pick and a row it would find itself
-    bool                     picked = false;   // the player picked monitors; else any row serves
+    bool                     picked = false;   // monitors are named, by the player's clicks or by the file; else any row serves
+    bool                     waits = false;    // fewer than two of the named monitors are here: a row needs more of them
     std::vector<std::size_t> screens;          // the row's monitors, left to right
     std::wstring             text;             // a few words for the status line; empty for a row with nothing to add
     std::wstring             detail;           // the longer explanation, shown on hover; may be empty
@@ -112,11 +113,23 @@ inline row::Choice FindRow(std::span<const row::Monitor> monitors, std::size_t g
     return choice;
 }
 
-/// What the choice gives: `picks` are the monitors clicked, in order, left to right in the row; `gameMonitor` the monitor the
-/// game opens on (the primary).
-inline Look LookAt(std::span<const row::Monitor> monitors, std::span<const std::size_t> picks, std::size_t gameMonitor)
+/// What the choice gives: `picks` are the row's monitors that are connected, in order, left to right in the row; `gameMonitor`
+/// the monitor the game opens on (the primary); `notConnected` how many more the settings file names that are not connected.
+/// The game never puts another monitor in a named one's place, so a file whose monitors are all away gives no row: the game
+/// waits for them in one window.
+inline Look LookAt(std::span<const row::Monitor> monitors, std::span<const std::size_t> picks, std::size_t gameMonitor,
+                   std::int32_t notConnected = 0)
 {
     Look look;
+    if (picks.empty() && notConnected > 0)
+    {
+        look.picked = true;
+        look.waits  = true;
+        look.text   = L"No saved monitor is connected.";
+        look.detail = L"The game waits for them in one window. Click monitors, in order, to choose others.";
+        look.tone   = Tone::Warning;
+        return look;
+    }
     if (picks.empty())
     {
         const row::Choice choice = FindRow(monitors, gameMonitor);
@@ -136,6 +149,7 @@ inline Look LookAt(std::span<const row::Monitor> monitors, std::span<const std::
     look.picked = true;
     if (picks.size() == 1)
     {
+        look.waits  = true;
         look.text   = std::format(L"A row needs 2 or more: click up to {} more, left to right.", kMostInRow - 1);
         look.detail = L"Save waits until the clicked monitors make a row. Click this one again to take it out.";
         return look;
@@ -221,10 +235,20 @@ inline Status StatusLine(const Look& look, const Notes& notes)
     }
     if (notes.notConnected > 0)
     {
-        return {notes.notConnected == 1 ? std::wstring(L"1 saved monitor is not connected.")
-                                        : std::format(L"{} saved monitors are not connected.", notes.notConnected),
-                L"The game makes its row from the saved monitors that are connected and takes the others in when they arrive. Save keeps "
-                L"them unless you click a monitor.",
+        const std::wstring count = notes.notConnected == 1 ? std::wstring(L"1 saved monitor is not connected")
+                                                           : std::format(L"{} saved monitors are not connected", notes.notConnected);
+        if (look.ok)
+        {
+            return {count + L".",
+                    L"The game makes its row from the saved monitors that are connected and takes the others in when they arrive. Save "
+                    L"keeps them unless you click a monitor.",
+                    Tone::Warning};
+        }
+        // Too few of them here, or the ones here make no row: the second has a reason of its own to give.
+        return {count + L": the game stays in one window.",
+                look.waits ? std::wstring(L"The game waits until at least two of the saved monitors are connected. Save keeps them unless "
+                                          L"you click a monitor.")
+                           : look.text + L" Save keeps the saved monitors unless you click a monitor.",
                 Tone::Warning};
     }
     // Clicked monitors that make no row stop a save whatever the option says: that comes first.

@@ -160,6 +160,52 @@ void OneStatusLine()
     }
 }
 
+/// Monitors the file names are waited for, never replaced: with none of them connected there is no row, though the desktop
+/// has one of its own, and with one the same. Two connected make the row and the missing one is only mentioned.
+void SavedMonitorsAway()
+{
+    EXPECT(LookAt(kDesktop, {}, 0).ok);  // the desktop has a row of its own
+    const Look away = LookAt(kDesktop, {}, 0, 2);
+    EXPECT(!away.ok && away.picked && away.waits && away.screens.empty() && away.tone == Tone::Warning);
+    EXPECT(!away.text.empty() && away.text.size() <= 70);
+
+    Notes notes;
+    notes.notConnected = 2;
+    Status status = StatusLine(away, notes);
+    EXPECT(status.text == L"2 saved monitors are not connected: the game stays in one window." && status.tone == Tone::Warning);
+    EXPECT(status.text.size() <= 70 && status.detail.find(L"at least two") != std::wstring::npos);
+    EXPECT(CanSave(away, notes) && PictureHelp(away, notes).empty());  // another option can still be changed and saved
+
+    const std::vector<std::size_t> one{0};
+    const Look alone = LookAt(kDesktop, one, 0, 1);
+    notes.notConnected = 1;
+    EXPECT(!alone.ok && StatusLine(alone, notes).text == L"1 saved monitor is not connected: the game stays in one window.");
+
+    const std::vector<std::size_t> two{0, 1};
+    const Look rest = LookAt(kDesktop, two, 0, 1);
+    EXPECT(rest.ok && StatusLine(rest, notes).text == L"1 saved monitor is not connected.");
+    EXPECT(StatusLine(rest, notes).detail.find(L"takes the others in") != std::wstring::npos);
+
+    // The connected ones make no row: the line is the same, and the hover text gives the reason in place of the wait.
+    const std::vector<std::size_t> many{0, 1, 2, 3};
+    const Look tooMany = LookAt(kDesktop, many, 0, 1);
+    EXPECT(!tooMany.ok && !tooMany.waits);
+    EXPECT(StatusLine(tooMany, notes).text == L"1 saved monitor is not connected: the game stays in one window.");
+    EXPECT(StatusLine(tooMany, notes).detail.find(tooMany.text) == 0);
+
+    // The missing monitors come before the option being off: the row would not form either way.
+    notes.spanOn = false;
+    EXPECT(StatusLine(away, notes).text == L"1 saved monitor is not connected: the game stays in one window.");
+    notes.spanOn = true;
+
+    // A click on a monitor ends the wait for the file's own: the choice is the player's again, and taking every monitor out
+    // leaves the row to the game, which can be saved.
+    const Look cleared = LookAt(kDesktop, {}, 0, 0);
+    Notes      clicked;
+    clicked.picksChanged = true;
+    EXPECT(cleared.ok && !cleared.picked && !cleared.waits && CanSave(cleared, clicked));
+}
+
 /// Save writes what it can stand behind: the file's own monitors untouched, a row, or no monitors at all.
 void WhatCanBeSaved()
 {
@@ -294,6 +340,7 @@ int main()
     PickSurvivesTheSettingsFile();
     AnyMonitors();
     OneStatusLine();
+    SavedMonitorsAway();
     WhatCanBeSaved();
     WindowLayout();
     Clicks();

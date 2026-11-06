@@ -292,13 +292,13 @@ rules::Hit HitAt(int x, int y)
 /// Works out what the window shows from what changed, and asks for a repaint.
 void Refresh()
 {
-    g_app.look = rules::LookAt(PlainMonitors(), g_app.picks, g_app.primary);
     rules::Notes notes;
     notes.gameRunning  = g_app.gameRunning;
     notes.inModFolder  = g_app.inModFolder;
     notes.spanOn       = WordOf(settings::kMultiMonitor) == L"on";
     notes.picksChanged = g_app.picksChanged;
     notes.notConnected = g_app.picksChanged ? 0 : g_app.namedNotHere;
+    g_app.look         = rules::LookAt(PlainMonitors(), g_app.picks, g_app.primary, notes.notConnected);
     notes.note         = g_app.note;
     notes.noteTone     = g_app.noteTone;
     g_app.status       = rules::StatusLine(g_app.look, notes);
