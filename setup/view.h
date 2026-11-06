@@ -19,7 +19,7 @@ struct Fonts
 {
     HFONT body    = nullptr;  // names and the status line
     HFONT strong  = nullptr;  // values, monitor names, button labels
-    HFONT minor   = nullptr;  // sizes, hints and the version
+    HFONT minor   = nullptr;  // sizes and hints
     HFONT heading = nullptr;  // the small capitals: the picture's caption and a monitor's player
     HFONT arrow   = nullptr;  // the arrows beside an option's value
 };
@@ -44,7 +44,6 @@ struct Tile
 struct Scene
 {
     rules::Frame      frame;
-    std::wstring      version;
     std::wstring      multiLabel, multiValue;
     std::wstring      orderLabel, orderValue;
     std::vector<Tile> tiles;

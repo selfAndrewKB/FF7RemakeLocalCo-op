@@ -253,16 +253,14 @@ struct Painter
         }
     }
 
-    /// The status with its coloured mark, when there is one, and the version at the far end of its line.
+    /// The status with its coloured mark; nothing at all when there is nothing to say.
     void Status() const noexcept
     {
-        RECT rect = ToRect(scene.frame.status);
-        Line(dc, fonts.minor, theme::kTextDim, rect, scene.version, DT_RIGHT | DT_VCENTER);
         if (scene.status.text.empty())
         {
             return;
         }
-        rect.right -= TextWidth(dc, fonts.minor, scene.version) + Px(16);
+        RECT       rect = ToRect(scene.frame.status);
         const LONG side = Px(8);
         const LONG top  = rect.top + (rect.bottom - rect.top - side) / 2;
         Fill(dc, RECT{rect.left, top, rect.left + side, top + side}, ToneColour(scene.status.tone));

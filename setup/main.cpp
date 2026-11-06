@@ -326,7 +326,6 @@ view::Scene SceneNow()
 {
     view::Scene scene;
     scene.frame      = FrameNow();
-    scene.version    = L"v" LSS_WIDE(LSS_VERSION_SHORT);
     scene.multiLabel = settings::kMultiMonitor.label;
     scene.multiValue = LabelOf(settings::kMultiMonitor);
     scene.orderLabel = settings::kColumnOrder.label;

@@ -1,11 +1,10 @@
 // Written by CMake from the mod's one version string (src/mod.cpp kVersion) and the app's one file name
-// (src/views/display_move.h kSetupExe), for the app's window and its file properties.
+// (src/views/display_move.h kSetupExe), for the app's file properties and its window's class.
 #pragma once
 
 #define LSS_SETUP_NAME    "@LSS_SETUP_NAME@"
 #define LSS_SETUP_FILE    "@LSS_SETUP_NAME@.exe"
 #define LSS_VERSION_TEXT  "@LSS_VERSION@"
-#define LSS_VERSION_SHORT "@LSS_VERSION_MAJOR@.@LSS_VERSION_MINOR@.@LSS_VERSION_PATCH@"
 #define LSS_VERSION_MAJOR @LSS_VERSION_MAJOR@
 #define LSS_VERSION_MINOR @LSS_VERSION_MINOR@
 #define LSS_VERSION_PATCH @LSS_VERSION_PATCH@

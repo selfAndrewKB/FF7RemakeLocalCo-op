@@ -308,7 +308,7 @@ struct Frame
     row::Rect multi, order;  // the two options, side by side
     row::Rect caption;       // the line over the desktop's picture
     row::Rect picture;       // the desktop, a tile per monitor
-    row::Rect status;        // the one status line, the version at its far end
+    row::Rect status;        // the one status line
     row::Rect restore, save, close;  // the buttons
 };
 

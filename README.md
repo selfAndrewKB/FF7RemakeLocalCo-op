@@ -145,7 +145,7 @@ one leaves. A streaming host's virtual monitor (Apollo, Vibepollo, SudoVDA) work
 so give each client a name of its own.
 
 The app's look is drawn by its own code (`setup/view.cpp`, colours in `setup/theme.h`); its icon, `setup/app.ico`, is drawn by
-`../tools/make_setup_icon.py`. Its version is the mod's, read by CMake from `src/mod.cpp`; its file name is the one the mod
+`../tools/make_setup_icon.py`. Its file properties carry the mod's version, read by CMake from `src/mod.cpp`; its file name is the one the mod
 starts the guard by, read by CMake and by `../tools/game.py` from `src/views/display_move.h` (`kSetupExe`).
 
 Picked monitors may differ in size and Windows scaling: each view fits its own monitor, top-aligned, and the window's part below a
