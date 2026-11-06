@@ -291,6 +291,12 @@ std::int64_t KeyDown(void* self, void* app, const std::uint8_t* event)
             {
                 g_pressed.clear();
             }
+            if (platform::Enabled(platform::Level::Debug))
+            {
+                platform::LogDebug(L"pad buttons: pad {}'s press of {} set {} in its own state", user + 1,
+                                   Names(std::span<const std::uint64_t>(&key, 1)),
+                                   g_pressed.empty() ? std::wstring(L"no action") : Names(g_pressed));
+            }
             if (menu_pads::OpensMenu(g_pressed, g_openers, key))
             {
                 route |= menu_pads::kToGame;

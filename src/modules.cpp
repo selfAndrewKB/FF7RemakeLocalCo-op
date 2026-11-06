@@ -79,6 +79,7 @@
 #include "views/window_span.h"
 #include "world/anim_views.h"
 #include "world/area_levels.h"
+#include "world/catch_up_move.h"
 #include "world/env_sets.h"
 #include "world/level_watch.h"
 #include "world/field_targets.h"
@@ -88,6 +89,7 @@
 #include "world/npc_senses.h"
 #include "world/overlap_fade.h"
 #include "world/party_fade.h"
+#include "world/party_warp.h"
 #include "world/search_arrows.h"
 #include "world/shop_act.h"
 #include "world/run_catch_up.h"
@@ -356,10 +358,16 @@ constexpr std::array kModules{
     // without it a further player's member fires its own story boxes as it walks into them, ahead of the story (removed
     // any time: the restore swaps the enter back; a waiting enter is then the next tick's or dropped, logged)
     Module{.name = L"story boxes", .install = Call<&world::story_boxes::Install>, .remove = &world::story_boxes::Remove},
+    // the game's own move of a character beside another; without it nobody is brought over (the run catch-up and the talk
+    // gather check it at their own install; the party warp row also names it)
+    Module{.name = L"catch-up move", .install = Call<&world::catch_up_move::Install>},
     // without it a companion a further player took past its own story box runs back from there when the level's run
     // through the box goes to its AI (its step then plays where it stands)
     Module{.name = L"run catch-up", .install = Call<&world::run_catch_up::Install>,
            .needs = {Need<&world::story_boxes::Install>(), Need<&players::lead_gate::Install>()}},
+    // without it a further player left behind in the field has no way back to player 1's character
+    Module{.name = L"party warp", .install = Call<&world::party_warp::Install>,
+           .needs = {Need<&world::catch_up_move::Install>(), Need<&battle::arena_warp::Install>()}},
     // without it characters near a further player animate by player 1's camera
     Module{.name = L"anim per view", .install = Call<&world::anim_views::Install>},
     // without it NPCs near a further player pause by player 1's camera

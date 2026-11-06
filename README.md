@@ -14,7 +14,7 @@ for working on the mod; the page for players is `PLAYERS.md`, which a release sh
 | Ctrl+F2 | The window across the row of monitors: leaves it when in, else enters, and again on each join |
 | Ctrl+F8 | Player 2 leaves; Ctrl+Shift+F8, player 3 (also cancels a rejoin after a load, and a wait for a member) |
 | Ctrl+F9 | Switch the battle menus' world slow-down: off (the default), an open command menu no longer slows the world or greys the screen, so the fight and the ATB gauges run on at full speed; on, the game's slow-down and grey (also `menu-slow on|off` and the settings file) |
-| L3 twice (a further player's pad, in battle) | Bring that player's character into the fight when it is outside the fight's area (locked out behind a crawlspace, say): the game's own recovery warp, in front of player 1's character |
+| L3 twice (a further player's pad) | In battle: bring that player's character into the fight when it is outside the fight's area (locked out behind a crawlspace, say): the game's own recovery warp, in front of player 1's character. In the field: bring that player's character back beside player 1's (left behind a door, across a drop, or just far away): the game's own catch-up move, with its fade-in; not while a scene, a talk or a field action holds either character |
 | Ctrl+F6 | Log every local player's controller, pawn, camera manager and camera actor, and each player's input, movement and camera call counts |
 
 ## The console
@@ -429,6 +429,8 @@ src/
                             returns
     area_levels_rules.h     The pieces of world/area_levels that need no game: the one level request every player's area
                             shares (research/RE-world-streaming-levers.md)
+    catch_up_move           The game's own way to put a character beside another on the field, as the modules that bring
+                            a character over call it
     charapop_rule.h         CharaPop's Light/Middle rule, as its evaluators apply it to one camera, for the entries a
                             further player's camera needs (world/npc_detail.h)
     env_set_view.h          The pieces of world/env_sets that need no game: a further player's EnvironmentSet as the mod
@@ -454,6 +456,11 @@ src/
                             player is in (research/RE-overlap-fade-two.md)
     party_fade              Party members never vanish near a camera while a further player is in: the game fades a
                             party member that comes too close to the camera, which suits one camera and not several
+    party_warp              A further player's character brought back beside player 1's in the field, when that player
+                            asks: a player can be left behind a door that shut, on the far side of a drop, or simply far
+                            away
+    party_warp_rules.h      A further player's character brought back beside player 1's in the field (world/party_warp.h
+                            applies it), as pure rules: when the ask is refused, and where the character is put
     run_catch_up            A companion a further player walked past its own story box is brought back beside player 1's
                             character when the level's run through that box goes to its AI: a character recorded as
                             having run past a box no member was meant to …
@@ -621,5 +628,5 @@ src/
                             game
     title_row_rules.h       Where the title menu's Co-op row goes among its rows' kinds (research/RE-title-menu.md):
                             directly below Options, so the rows through Options keep their places
-tests/                      65 host-side test programs (ctest), one per pure header or code stub; run without the game
+tests/                      66 host-side test programs (ctest), one per pure header or code stub; run without the game
 ```

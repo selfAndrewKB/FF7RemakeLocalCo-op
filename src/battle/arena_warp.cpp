@@ -14,6 +14,7 @@
 #include "players/scopes.h"
 #include "players/seats.h"
 #include "players/weak_object.h"
+#include "world/party_warp.h"
 
 #include <array>
 #include <cstdint>
@@ -48,7 +49,8 @@ struct Seat
     bool                          asked = false;  // a double click waits for the next engine tick
 };
 std::array<Seat, players::scopes::kMaxPlayers> g_seats;
-std::uint32_t g_presses = 0, g_warps = 0, g_alreadyInside = 0, g_refused = 0, g_noPoint = 0;
+std::uint32_t g_presses = 0, g_fieldPresses = 0, g_warps = 0, g_alreadyInside = 0, g_refused = 0, g_noPoint = 0;
+std::uint64_t g_reads = 0, g_readsFailed = 0;  // the Dash reads made, and those the game's getter could not answer
 
 using players::field_root::BattleSystem;
 using players::field_root::InBattle;
@@ -175,8 +177,11 @@ void Run(int seat) noexcept
 
 std::wstring Reading()
 {
-    return std::format(L"{}; Dash presses seen in a battle {}, brought in {}, already inside {}, refused {}, nothing moved {}",
-                       g_warp != nullptr ? L"on" : L"off", g_presses, g_warps, g_alreadyInside, g_refused, g_noPoint);
+    return std::format(L"{}; Dash presses seen in a battle {}, brought in {}, already inside {}, refused {}, nothing moved {}; "
+                       L"Dash presses seen in the field {} (their double clicks: world.party-warp); the further players' Dash "
+                       L"read {} times, unanswered {}",
+                       g_warp != nullptr ? L"on" : L"off", g_presses, g_warps, g_alreadyInside, g_refused, g_noPoint,
+                       g_fieldPresses, g_reads, g_readsFailed);
 }
 
 }  // namespace
@@ -206,7 +211,8 @@ bool Install(const platform::GameImage& image) noexcept
                        .help  = L"further players' characters brought into the fight on a double click of the left stick: "
                                 L"Dash presses seen in a battle (one per click), brought in, already inside, refused (paused "
                                 L"or a menu up, a scripted event, a battle with no recovery, down, mid-action, a field "
-                                L"action), nothing moved (no navmesh point, or the party leader)",
+                                L"action), nothing moved (no navmesh point, or the party leader); and the Dash presses seen "
+                                L"in the field, where a double click brings the character back to player 1's",
                        .get   = [] { return control::Value{Reading()}; }});
     platform::Log(L"arena warp: installed; a further player who double-clicks the left stick in a battle, outside the fight's "
                   L"area, is brought in front of player 1's character");
@@ -215,16 +221,22 @@ bool Install(const platform::GameImage& image) noexcept
 
 void ReadPress(int seat) noexcept
 {
-    if (g_warp == nullptr || !players::SeatBuilt(seat) || !InBattle())
+    if (g_warp == nullptr || !players::SeatBuilt(seat))
     {
         return;
     }
+    ++g_reads;
     bool pressed = false;
-    if (!players::action_key::Test(g_pressed, g_dashKey, pressed) || !pressed)
+    if (!players::action_key::Test(g_pressed, g_dashKey, pressed))
+    {
+        ++g_readsFailed;
+        return;
+    }
+    if (!pressed)
     {
         return;
     }
-    ++g_presses;  // one click adds one: a press seen once per click
+    ++(InBattle() ? g_presses : g_fieldPresses);  // one click adds one: a press seen once per click
     Seat& s = g_seats[seat];
     if (s.click.Press(GetTickCount64()))
     {
@@ -250,7 +262,14 @@ void Tick() noexcept
         {
             continue;  // never expected at the engine tick; the warp would read a seat's character as the leader
         }
-        Run(seat);
+        if (InBattle())
+        {
+            Run(seat);
+        }
+        else
+        {
+            world::party_warp::Bring(seat);  // the field's answer to the same ask
+        }
     }
 }
 

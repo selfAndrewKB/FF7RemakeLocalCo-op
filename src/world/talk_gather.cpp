@@ -12,6 +12,7 @@
 #include "players/seats.h"
 #include "players/weak_object.h"
 #include "world/actor_place.h"
+#include "world/catch_up_move.h"
 #include "world/field_targets.h"
 #include "world/talk_gather_rules.h"
 
@@ -29,9 +30,6 @@ using platform::Read;
 using players::SeatName;
 
 using TickFn      = void* (*)(void* channel, float dt, std::uint8_t* out);
-using NavPointFn  = bool (*)(float* out, const float* origin, const float* dir, float distance, const void* agent,
-                            std::uint64_t, std::uint8_t, std::uint32_t, std::uint64_t);
-using WarpFn      = void (*)(void* character, const float* location, const float* rotation, const float* direct, bool fade);
 using CamResetFn  = void (*)(void* params);
 using FindRowFn   = void* (*)(const void* tables, std::uint64_t name);
 using FindActorFn = void* (*)(std::uint64_t level, std::uint64_t name);
@@ -42,11 +40,9 @@ using talk_gather_rules::kFarCm;
 using actor_place::Vec3;
 
 // Set at install, then only read.
-std::uintptr_t         g_tick = 0, g_agent = 0, g_actions = 0, g_namedLevel = 0;
+std::uintptr_t         g_tick = 0, g_actions = 0, g_namedLevel = 0;
 FindRowFn              g_findRow  = nullptr;
 FindActorFn            g_findActor = nullptr;
-NavPointFn             g_navPoint = nullptr;
-WarpFn                 g_warp     = nullptr;
 CamResetFn             g_camReset = nullptr;
 std::array<platform::CallRedirect, facts::kActTickCalls.size()> g_tickCalls;
 
@@ -74,15 +70,6 @@ bool ShowMenuAct(const void* channel) noexcept
            Read(static_cast<const std::uint8_t*>(row) + facts::kActionRowType, type) && type == facts::kActionTypeShowMenu;
 }
 
-/// The character runs a field action (a ladder, a crawl, the grappling hook): not moved out of it.
-bool InFieldAction(void* character) noexcept
-{
-    const void*  component = platform::ReadPointer(character, facts::kCharacterFieldAction);
-    std::uint8_t running   = 0;
-    return component != nullptr && Read(static_cast<const std::uint8_t*>(component) + facts::kFieldActionRunning, running) &&
-           running != 0;
-}
-
 /// The talked-to NPC, found by name as the game's own field-target dispatch finds it; null when not found (or the
 /// lookup is off) or a dying object.
 void* FindNpc(std::uint64_t name) noexcept
@@ -94,25 +81,6 @@ void* FindNpc(std::uint64_t name) noexcept
                    players::weak_object::Live(actor)
                ? actor
                : nullptr;
-}
-
-/// A navmesh point `kBesideCm` from `origin` along the flat `dir` (the game's own query, its catch-up teleport's shape).
-bool NavPoint(const Vec3& origin, const Vec3& dir, Vec3& out) noexcept
-{
-    alignas(16) std::array<std::uint8_t, facts::kNavAgentSize> agent{};
-    alignas(16) float point[8] = {};  // room for an FNavLocation (location, padding, node), not only an FVector
-    const float       from[3]  = {origin.x, origin.y, origin.z};
-    const float       toward[3] = {dir.x, dir.y, 0.0f};
-    bool              found     = false;
-    if (!platform::CopyGuarded(agent.data(), reinterpret_cast<const void*>(g_agent), agent.size()) ||
-        !platform::CallGuarded(g_navPoint, found, point, from, toward, kBesideCm, static_cast<const void*>(agent.data()),
-                               std::uint64_t{0}, std::uint8_t{0}, std::uint32_t{0}, std::uint64_t{0}) ||
-        !found || (point[0] == 0.0f && point[1] == 0.0f && point[2] == 0.0f))
-    {
-        return false;
-    }
-    out = {point[0], point[1], point[2]};
-    return true;
 }
 
 std::wstring Report()
@@ -129,24 +97,18 @@ std::wstring Report()
 bool Install(const platform::GameImage& image) noexcept
 {
     const auto tick     = platform::FindFunction(image, facts::kActTick);
-    const auto navPoint = platform::FindFunction(image, facts::kNavPointAlongDir);
-    const auto warp     = platform::FindFunction(image, facts::kBattleTeleportFadeIn);
     const auto camReset = platform::FindFunction(image, facts::kFieldCameraResetBehindLeader);
-    const auto agent    = image.Rebase(facts::kNavAgentDefault, facts::kNavAgentSize);
     const auto actions  = image.Rebase(facts::kTableAction, 24);
     const auto findRow  = platform::FindFunction(image, facts::kFindRowInTables);
     const auto findNpc  = platform::FindFunction(image, facts::kFindActorByName);  // optional: without it, toward
-    const auto named    = image.Rebase(facts::kNamedActorLevel, 8);                 // player 1's character, as before
-    if (!tick || !players::field_root::Installed() || !navPoint || !warp || !camReset || !agent || !actions || !findRow)
+    const auto named    = image.Rebase(facts::kNamedActorLevel, 8);                 // where player 1's character stood
+    if (!tick || !players::field_root::Installed() || !catch_up_move::Installed() || !camReset || !actions || !findRow)
     {
         platform::Log(L"talk gather: an engine check failed; player 1's character stays where it is when another player "
                       L"starts a talk");
         return false;
     }
     g_tick     = *tick;
-    g_agent    = *agent;
-    g_navPoint = reinterpret_cast<NavPointFn>(*navPoint);
-    g_warp     = reinterpret_cast<WarpFn>(*warp);
     g_camReset = reinterpret_cast<CamResetFn>(*camReset);
     g_actions  = *actions;
     g_findRow  = reinterpret_cast<FindRowFn>(*findRow);
@@ -238,7 +200,7 @@ void OnLeaderHanded() noexcept
                            SeatName(seat), field_targets::NameOf(object), distance / 100.0f);
         return;
     }
-    if (InFieldAction(cloud))
+    if (catch_up_move::InFieldAction(cloud))
     {
         ++g_busy;
         field_targets::MarkTalkJudged(object);
@@ -274,7 +236,7 @@ void OnLeaderHanded() noexcept
     std::size_t used = beside.tries.size();
     for (std::size_t i = 0; i < beside.tries.size(); ++i)
     {
-        if (NavPoint(presser, beside.tries[i], point))
+        if (catch_up_move::NavPoint(presser, beside.tries[i], kBesideCm, point))
         {
             used = i;
             break;
@@ -290,11 +252,8 @@ void OnLeaderHanded() noexcept
         return;
     }
     field_targets::MarkTalkJudged(object);  // decided: a later act of the talk never moves it again
-    // Facing the NPC (else the presser): FRotator (pitch, yaw, roll) in degrees.
-    const float location[3] = {point.x, point.y, point.z};
-    const float rotation[3] = {0.0f, talk_gather_rules::FacingYaw(point, beside.face), 0.0f};
-    if (!platform::CallGuarded(g_warp, cloud, static_cast<const float*>(location), static_cast<const float*>(rotation),
-                               static_cast<const float*>(location), true))
+    // Facing the NPC (else the presser).
+    if (!catch_up_move::Move(cloud, point, talk_gather_rules::FacingYaw(point, beside.face)))
     {
         platform::LogWarning(L"talk gather: the move of player 1's character raised; it may stand where it was");
         return;

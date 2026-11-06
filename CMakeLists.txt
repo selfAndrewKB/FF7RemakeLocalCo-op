@@ -152,12 +152,14 @@ add_library(LocalSplitScreen SHARED
     src/world/actor_place.cpp
     src/world/anim_views.cpp
     src/world/area_levels.cpp
+    src/world/catch_up_move.cpp
     src/world/env_sets.cpp
     src/world/level_watch.cpp
     src/world/npc_crowd.cpp
     src/world/npc_detail.cpp
     src/world/npc_senses.cpp
     src/world/party_fade.cpp
+    src/world/party_warp.cpp
     src/world/overlap_fade.cpp
     src/world/forced_walk.cpp
     src/world/search_arrows.cpp
@@ -531,6 +533,13 @@ add_executable(TalkGatherRulesTests
 target_include_directories(TalkGatherRulesTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_compile_features(TalkGatherRulesTests PRIVATE cxx_std_20)
 add_test(NAME talk_gather_rules COMMAND TalkGatherRulesTests)
+
+add_executable(PartyWarpRulesTests
+    tests/party_warp_rules_test.cpp
+)
+target_include_directories(PartyWarpRulesTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(PartyWarpRulesTests PRIVATE cxx_std_20)
+add_test(NAME party_warp_rules COMMAND PartyWarpRulesTests)
 
 add_executable(MenuGreyRulesTests
     tests/menu_grey_rules_test.cpp

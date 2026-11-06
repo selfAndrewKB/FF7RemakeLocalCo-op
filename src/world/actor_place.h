@@ -22,6 +22,10 @@ struct Vec3
 bool ActorLocation(const void* actor, Vec3& out) noexcept;
 bool ActorLocation(const void* actor, float (&out)[3]) noexcept;
 
+/// The actor's facing: its root component's yaw in degrees (an FRotator's; a character's root has no parent, so its
+/// relative rotation is the world's); false, `out` untouched, when it cannot be read.
+bool ActorYaw(const void* actor, float& out) noexcept;
+
 /// The distance in the ground plane, in the actors' own units (centimetres).
 inline float FlatDistance(const Vec3& a, const Vec3& b) noexcept
 {

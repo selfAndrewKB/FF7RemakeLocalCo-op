@@ -11,6 +11,7 @@
 #include "players/scopes.h"
 #include "players/seats.h"
 #include "world/actor_place.h"
+#include "world/catch_up_move.h"
 #include "world/field_targets.h"
 #include "world/story_box_rules.h"
 #include "world/story_boxes.h"
@@ -27,70 +28,18 @@ namespace lss::world::run_catch_up {
 namespace {
 
 using actor_place::Vec3;
-using platform::Read;
 namespace rules = story_box_rules;
 
-using NavPointFn = bool (*)(float* out, const float* origin, const float* dir, float distance, const void* agent,
-                            std::uint64_t, std::uint8_t, std::uint32_t, std::uint64_t);
-using WarpFn     = void (*)(void* character, const float* location, const float* rotation, const float* direct, bool fade);
-
-constexpr float kBesideCm = 150.0f;  // from player 1's character: a following companion's distance
+constexpr float kBesideCm = catch_up_move::kFollowerCm;  // from player 1's character
 constexpr float kPi       = 3.14159265358979f;
 
 // Set at install, then only read.
-std::uintptr_t g_agent    = 0;
-NavPointFn     g_navPoint = nullptr;
-WarpFn         g_warp     = nullptr;
 bool           g_installed = false;
 
 std::atomic<bool> g_on{true};  // the console's switch
 // Game thread.
 std::uint32_t g_moved = 0, g_canRun = 0, g_onePast = 0, g_noPoint = 0, g_busy = 0, g_inScope = 0, g_noShape = 0;
 std::wstring  g_last  = L"none yet";
-
-/// The character runs a field action (a ladder, a crawl, the grappling hook): not moved out of it.
-bool InFieldAction(void* character) noexcept
-{
-    const void*  component = platform::ReadPointer(character, facts::kCharacterFieldAction);
-    std::uint8_t running   = 0;
-    return component != nullptr && Read(static_cast<const std::uint8_t*>(component) + facts::kFieldActionRunning, running) &&
-           running != 0;
-}
-
-/// A navmesh point `kBesideCm` from `origin` along the flat `dir` (the game's query, as world/talk_gather calls it).
-bool NavPoint(const Vec3& origin, const float dirX, const float dirY, Vec3& out) noexcept
-{
-    alignas(16) std::array<std::uint8_t, facts::kNavAgentSize> agent{};
-    alignas(16) float point[8]  = {};  // room for an FNavLocation (location, padding, node), not only an FVector
-    const float       from[3]   = {origin.x, origin.y, origin.z};
-    const float       toward[3] = {dirX, dirY, 0.0f};
-    bool              found     = false;
-    if (!platform::CopyGuarded(agent.data(), reinterpret_cast<const void*>(g_agent), agent.size()) ||
-        !platform::CallGuarded(g_navPoint, found, point, from, toward, kBesideCm, static_cast<const void*>(agent.data()),
-                               std::uint64_t{0}, std::uint8_t{0}, std::uint32_t{0}, std::uint64_t{0}) ||
-        !found || (point[0] == 0.0f && point[1] == 0.0f && point[2] == 0.0f))
-    {
-        return false;
-    }
-    out = {point[0], point[1], point[2]};
-    return true;
-}
-
-/// Another seat's member stands within 1 m of `at`: not a spot to bring `member` to.
-bool Taken(const Vec3& at, const void* member) noexcept
-{
-    for (int seat = 1; seat <= players::kSeatsBuilt; ++seat)
-    {
-        const void* other = players::scopes::Member(seat);
-        Vec3        there{};
-        if (other != nullptr && other != member && actor_place::ActorLocation(other, there) &&
-            actor_place::FlatDistance(at, there) < 100.0f)
-        {
-            return true;
-        }
-    }
-    return false;
-}
 
 std::wstring Reading()
 {
@@ -102,20 +51,14 @@ std::wstring Reading()
 
 }  // namespace
 
-bool Install(const platform::GameImage& image) noexcept
+bool Install(const platform::GameImage&) noexcept
 {
-    const auto navPoint = platform::FindFunction(image, facts::kNavPointAlongDir);
-    const auto warp     = platform::FindFunction(image, facts::kBattleTeleportFadeIn);
-    const auto agent    = image.Rebase(facts::kNavAgentDefault, facts::kNavAgentSize);
-    if (!navPoint || !warp || !agent || !players::field_root::Installed())
+    if (!catch_up_move::Installed() || !players::field_root::Installed())
     {
         platform::Log(L"run catch-up: an engine check failed; a companion taken past its own story box stays where it is "
                       L"when its run goes to its AI");
         return false;
     }
-    g_navPoint  = reinterpret_cast<NavPointFn>(*navPoint);
-    g_warp      = reinterpret_cast<WarpFn>(*warp);
-    g_agent     = *agent;
     g_installed = true;
     control::Register({.name  = L"run-catch-up",
                        .shape = control::Shape::OnOff,
@@ -200,7 +143,7 @@ try
         platform::Log(L"run catch-up: {}", g_last);
         return false;
     }
-    if (InFieldAction(member))
+    if (catch_up_move::InFieldAction(member))
     {
         ++g_busy;
         platform::LogDebug(L"run catch-up: {}: in a field action; not moved", who);
@@ -224,12 +167,12 @@ try
     {
         const float a = base + kTurns[i] * kPi / 180.0f;
         Vec3        candidate{};
-        if (!NavPoint(from, std::cos(a), std::sin(a), candidate))
+        if (!catch_up_move::NavPoint(from, Vec3{std::cos(a), std::sin(a), 0.0f}, kBesideCm, candidate))
         {
             continue;
         }
         const float c[3] = {candidate.x, candidate.y, candidate.z};
-        if (rules::RunCrosses(shape, c, mark.at) && !Taken(candidate, member))
+        if (rules::RunCrosses(shape, c, mark.at) && !catch_up_move::SpotTaken(candidate, member))
         {
             point = candidate;
             side  = kSides[i];
@@ -246,9 +189,7 @@ try
         return false;
     }
     const float location[3] = {point.x, point.y, point.z};
-    const float rotation[3] = {0.0f, std::atan2(mark.at[1] - point.y, mark.at[0] - point.x) * 180.0f / kPi, 0.0f};
-    if (!platform::CallGuarded(g_warp, member, static_cast<const float*>(location), static_cast<const float*>(rotation),
-                               static_cast<const float*>(location), true))
+    if (!catch_up_move::Move(member, point, std::atan2(mark.at[1] - point.y, mark.at[0] - point.x) * 180.0f / kPi))
     {
         platform::LogWarning(L"run catch-up: the move of {} raised; it may stand where it was", who);
         return false;

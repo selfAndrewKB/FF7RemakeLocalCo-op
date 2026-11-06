@@ -20,6 +20,9 @@
 // character is the party leader the area is built around: its double click does nothing. Logged: Info at install and
 // at each answered double click (the player's own ask: brought in, already inside, refused and why, nothing moved);
 // the reading `arena-warp` (with the presses seen). Game thread.
+//
+// Outside a battle the same double click asks for the field's answer: the character brought back beside player 1's
+// (world/party_warp.h). The press is read here either way, so one reader counts a pair of clicks once.
 
 namespace lss::platform {
 class GameImage;
@@ -32,7 +35,8 @@ bool Install(const platform::GameImage& image) noexcept;
 /// Game thread, inside the seat's command menu tick with its scopes and button scope held: reads its Dash press.
 void ReadPress(int seat) noexcept;
 
-/// Game thread, each engine tick, outside every scope: runs an asked warp.
+/// Game thread, each engine tick, outside every scope: runs an asked warp (in a battle), or passes the ask to
+/// world/party_warp (outside one).
 void Tick() noexcept;
 
 /// The seat left: its clicks are forgotten.

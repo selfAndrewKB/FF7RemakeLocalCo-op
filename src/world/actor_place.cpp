@@ -32,4 +32,16 @@ bool ActorLocation(const void* actor, Vec3& out) noexcept
     return true;
 }
 
+bool ActorYaw(const void* actor, float& out) noexcept
+{
+    const void* root = platform::ReadPointer(actor, facts::kActorRootComponent);
+    float       rotation[3]{};  // pitch, yaw, roll
+    if (root == nullptr || !platform::Read(static_cast<const std::uint8_t*>(root) + facts::kSceneRelativeRotation, rotation))
+    {
+        return false;
+    }
+    out = rotation[1];
+    return true;
+}
+
 }  // namespace lss::world::actor_place
