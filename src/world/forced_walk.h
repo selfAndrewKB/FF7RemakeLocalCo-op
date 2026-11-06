@@ -1,7 +1,7 @@
 #pragma once
 
-// Every player walks where the story makes player 1 walk (the user's report of 2026-10-25: in a forced walk, player 1
-// and the AI walk but a further player runs; research/RE-forced-walk-two.md; Rebirth's move_type_two was read: its
+// Every player walks where the story makes player 1 walk: left alone, in a forced walk player 1 and the AI walk but a
+// further player runs (research/RE-forced-walk-two.md; Rebirth's move_type_two was read: its
 // limits sit on the controller and are set through a setter, so its lever, the setter in the seat's scope, does not
 // carry).
 //

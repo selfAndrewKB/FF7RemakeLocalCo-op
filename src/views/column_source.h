@@ -1,38 +1,36 @@
 #pragma once
 
-// Where each column's view comes from, decided in one place each tick (plan/seats.md; cleanup step 5,
-// plan/code-alignment.md A1: until it, `scene_camera`, `mirror_player` and mod.cpp's HUD tick each decided a
-// part and nothing named the outcome per column). Pure rules over this tick's facts, host-tested
-// (tests/column_source_test.cpp); the entry point (mod.cpp) applies the result and nothing else decides. The design
-// is Rebirth's views/column_source (its seats step 6a, 2026-10-26), its names kept; the moments are Remake's.
+// Where each column's view comes from, decided in one place each tick (plan/seats.md), so that the scene camera, the
+// mirror player and the HUD's tick do not each decide a part with nothing naming the outcome per column. Pure rules over
+// this tick's facts, host-tested (tests/column_source_test.cpp); the entry point (mod.cpp) applies the result and nothing
+// else decides. The design is Rebirth's views/column_source, its names kept; the moments are Remake's.
 //
 // A column (views/columns.h) shows one of three things, one mechanism each:
 //   - Self: the player's own view, their own camera and their own HUD pass (hud/second_image.h). A scene plays on
 //     it through the scene camera copy (views/scene_camera.h: player 1's scene slots on the seat's own manager
-//     while the scene holds the players, v0.40.0), and a shop the seat opens on a monitor row runs its own shop
-//     camera there (world/shop_act.h): the row's look (the user's policy of 2026-10-21 and 2026-10-26: every view
-//     plays the scene; the opener's view zooms on the shop);
+//     while the scene holds the players), and a shop the seat opens on a monitor row runs its own shop
+//     camera there (world/shop_act.h): the row's look, where every view plays the scene and the opener's view
+//     zooms on the shop;
 //   - PlayerOne: the column stays and the mod puts player 1's camera and HUD in it, as a mirror player's column
 //     shows them (views/mirror_player.h): every slot of player 1's camera manager is set on the seat's each frame
 //     (scene_camera's every-slot copy), and the HUD passes count the column a mirror's (HudMap): it samples player
 //     1's image, or, on a monitor of another shape, gets a pass of player 1's HUD laid out for it, as a mirror's does;
 //   - Screen: no column at all; the whole screen is the engine's single view, player 1's (players/single_view.h
-//     holds the viewport's split switch to it): the one-window look for the game's whole-screen moments (the user's
-//     ruling of 2026-10-26: cutscenes, menus and minigames collapse as in Rebirth; the mirror look is the row's).
+//     holds the viewport's split switch to it): the one-window look for the game's whole-screen moments, where
+//     cutscenes, menus and minigames collapse as in Rebirth; the mirror look is the row's.
 //
 // The moments: the game shows something that takes the whole screen (views/whole_screen.h: a pause menu, a shop, a
 // script menu, a pause-family widget, a cutscene, the event camera (a scripted talk, an event), a skippable scene, a
-// cutscene skip, a minigame, a bike chase, a held black, the loading screen, the title; not a free talk or a pickup:
-// the user, 2026-10-27) gives every further seat Screen in one window and PlayerOne while columns are held (the span,
+// cutscene skip, a minigame, a bike chase, a held black, the loading screen, the title; not a free talk or a pickup)
+// gives every further seat Screen in one window and PlayerOne while columns are held (the span,
 // the console's columns): a held column is never black and never a split with a menu over it. A seat's own shop
 // camera on its manager (a row's shop) is that seat's moment: every seat keeps Self through it (the opener's view zooms, the others play on; the shop holds the game for all), never
 // the single view while a seat's own view is wanted; under the console's `on` the others go on player 1's picture
 // (with player 1's HUD: HudMap). The mirror policy
-// (the user, 2026-10-22: every column no player fills shows player 1's picture) is Why::NoPlayer; a handed seat (its
+// (every column no player fills shows player 1's picture) is Why::NoPlayer; a handed seat (its
 // member with the game's AI) keeps its own view, which the scene camera copy serves; the console's `single-view
 // on|off` is the development override. The entry point applies the single view through the switch and, when the
-// switch cannot be had, decides again with the columns held (Rebirth's review catch: never a split with a menu over
-// it).
+// switch cannot be had, decides again with the columns held: never a split with a menu over it.
 //
 // The entry point logs each seat's change once, with its reason, in plain words (Describe). Kept for parity with
 // Rebirth's, unused in Remake today: Shown's per-column sources, ViewsSplit and ListenerColumn (audio/listeners

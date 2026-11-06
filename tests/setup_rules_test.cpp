@@ -1,4 +1,4 @@
-// Host-side tests for the setup app's rules, run without the game. The desktop: the user's row of 2560 | 3440 | 2560 with a
+// Host-side tests for the setup app's rules, run without the game. The desktop: a row of 2560 | 3440 | 2560 with a
 // fourth monitor above it, and the same with a monitor scaled by Windows.
 
 #include "platform/settings.h"

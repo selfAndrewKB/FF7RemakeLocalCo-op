@@ -584,7 +584,7 @@ struct Census
 /// The member's move step moves on at a trigger (other than its arrival) that a member-only story box of the member's own
 /// sends, and the box is armed: the level expects the run to carry the member into that box, on the clock of whatever
 /// else runs meanwhile (the Ch. 5 dash crosses Tifa's fence box within 3 s, before the talk's timed "head for the
-/// stairs"; held by its player, she missed it and stalled, 2026-10-30). The box's state slot lists the trigger it sends
+/// stairs"; held by its player, she would miss it and stall). The box's state slot lists the trigger it sends
 /// (its sending state waits on it, RE-held-member-story-boxes.md) and its Status names it; world/story_boxes checks the
 /// box's group and that it is switched on. 0 when none.
 std::int64_t OwnBoxAhead(const std::vector<Slot>& slots, const Slot& self, std::int64_t arrival, const void* member)
@@ -990,8 +990,8 @@ bool Enters(const std::uint8_t* row, std::int64_t act)
 /// A live AutoWalk act that leashes player 1 to the member (players/leash_rules.h; RE-lead-unlock.md §5). The search
 /// runs from the level's few AutoWalk acts (the index) rather than from every active slot: an act aimed at the member
 /// and armed is live when an active slot of its object holds its state and that state enters it, as the act runner
-/// tests each tick. The same verdict as v0.127.0's walk over every slot's enter actions, at a few lookups a census
-/// (that walk made some 15,000 on Ch. 4: History 2026-10-29 13:21). Reads only; timed in its text.
+/// tests each tick. The same verdict as a walk over every slot's enter actions, at a few lookups a census
+/// (such a walk makes some 15,000 on Ch. 4). Reads only; timed in its text.
 Leash LeashOn(const std::vector<Slot>& slots, const std::wstring& tag, const std::wstring& memberObject) noexcept
 try
 {

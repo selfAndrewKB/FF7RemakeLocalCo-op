@@ -20,9 +20,9 @@
 //     once a second while enemies are seen;
 //   - `enemy-watch` reads every enemy seen in the last second: its action, for how long, and its target; then each
 //     human's member's area points.
-// Who aims an enemy, and when it is ready but holds back (the Laser Cannons idling on far players, 2026-10-27;
-// research/RE-enemy-attack-cadence.md §6, live check L1), from two entry redirects that call the game's function
-// unchanged (the ready test's is battle/enemy_stall's since v0.126.0, which hands each answer here):
+// Who aims an enemy, and when it is ready but holds back, as Laser Cannons idling on far players do
+// (research/RE-enemy-attack-cadence.md §6, live check L1), from two entry redirects that call the game's function
+// unchanged (the ready test's is battle/enemy_stall's, which hands each answer here):
 //   - BattleComp_SetTargetChar, every target call into an enemy's component (party members' calls pass untouched):
 //     Debug, who called it (up to three frames, the known callers named: the hate update, the script's SetTarget /
 //     SetTargetByType, the battle's start, the leader change), the character asked for, the one it holds after the

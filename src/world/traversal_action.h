@@ -9,7 +9,7 @@
 // on a worker, where none of the mod's scopes reach. There its "is this the player?" tests (the component's type
 // against the party manager's leader type, inline in every state) say no for a further player's member, so the game
 // runs the member's version: it climbs to the far end by itself, with no input and no camera. Rebirth answered such
-// tests per thread through its one leader-test getter (climb_context, leader_answer; cleanup-2026-10); Remake has no
+// tests per thread through its one leader-test getter (climb_context, leader_answer); Remake has no
 // such getter, its tests are inline compares. So the mod uses the game's own placement instead: while a further player
 // is in, the tick function's "run on any thread" flag is cleared (the engine reads it every frame and runs the tick on
 // the game thread, as it does whenever concurrent ticks are off; set back when the last further player leaves), and
@@ -34,7 +34,7 @@
 // the game's own function on the game thread the next tick (the crawl's through its stub's tail jump: its own first
 // instruction is too short to redirect).
 //
-// What a leader's action does for everyone stays player 1's (the user, 2026-10-24: a crawl locks only the mover):
+// What a leader's action does for everyone stays player 1's (a crawl locks only the mover):
 //   - the action start's global switches (the field menu, every walk-up start, encounters) are taken with player 1's
 //     leader in place for a seat's member, so a seat's action takes none of them;
 //   - the crawl's, the squeeze's and the grappling hook's field control lock is skipped for a seat's member (it would
@@ -49,7 +49,7 @@
 // A seat's member handed to its AI (a lead, a scene: the game's own hand) is an AI ally as in single player: between
 // actions its component ticks outside the seat's scopes and the animation-side fixes leave it alone, so the tick's
 // non-leader branch starts the nav-link actions its path asks for (the door a guide opens on a lead; inside the seat's
-// Leader scope the member passed the leader test and ran into the closed door, 2026-10-29). Decided once per frame,
+// Leader scope the member would pass the leader test and run into the closed door). Decided once per frame,
 // so a hand or a give-back takes effect from the next frame; an action keeps the mode it started in, and the seat's
 // camera clean-up skips an action its AI ran. The walk-up start and the field-target press refuse a handed member
 // (the player does not hold it).
@@ -57,7 +57,7 @@
 // first seen on the game thread): until then it runs as the game's member does. The lock redirects stay in place at an
 // unload (three cross a 16-byte block and may only change on the thread that runs them; they pass straight through when
 // no seat's component ticks).
-// Known gaps (reviews 2026-10-24, 2026-10-25): player 1's crawl, squeeze and hookshot locks are in every leader test's
+// Known gaps: player 1's crawl, squeeze and hookshot locks are in every leader test's
 // lock mask, so while player 1 crawls, squeezes or turns to a hook point a seat's action start is refused and its
 // ladder climb runs as the member's version; in the frame or two after a join or a level change, while the tick is
 // still on a worker, player 1's crawl lock comes from its game-thread task (not redirected) and its hookshot lock is
@@ -140,7 +140,7 @@ bool HookShotReady() noexcept;
 /// for its leader: the pick then dims the seat's targets and no start is admitted while the seat's member acts
 /// (research/RE-hookshot-press.md: without it a second press restarts the running action, and a restarted grappling hook
 /// loses its animations: a T-pose flight, no landing, the mesh left tilted). `withoutPlayerOne` also takes player 1's own
-/// action's share away (it locks only the mover, the user 2026-10-24): the walk-up starts, which keep a copy of each
+/// action's share away (it locks only the mover): the walk-up starts, which keep a copy of each
 /// spot's user per seat; the pick keeps it (its targets have no per-seat user: player 1's door or hook point is not the
 /// seat's to press meanwhile). Put back by difference when the scope closes. Logged: Debug when a seat's own share comes
 /// and goes.

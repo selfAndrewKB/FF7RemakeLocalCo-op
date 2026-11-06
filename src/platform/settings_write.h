@@ -2,7 +2,7 @@
 
 // The settings file (platform/settings.h) as the mod writes it: the whole text from the options table (FileText), so
 // every option, its words, its default and its help in the file are the code's own and never a stale copy. The values
-// are the readings (the user's words, kept; a word the mod cannot read kept as written, with a note). Every byte is
+// are the readings (the player's words, kept; a word the mod cannot read kept as written, with a note). Every byte is
 // plain ASCII (a kept word's other characters written `?`), so the profile API, which reads the file in the system's
 // code page, reads back exactly what was written; written through a temporary file moved over the old one.
 // Inline so the host test builds and writes a real file (tests/settings_test.cpp).

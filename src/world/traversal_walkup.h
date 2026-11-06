@@ -3,14 +3,14 @@
 // Players 2 and 3 walk their member up to ladders, squeezes, crawls, monkey bars, climbs, jumps, vaults, rubble,
 // duck-unders, slides, fence gaps, steps, balance beams, fans, counter gates, lifting ropes, gap jumps, pole slides and
 // wire fences, as player 1 does
-// (the user's report of 2026-10-21, picked 2026-10-24; research/RE-traversal-walkup-two.md, RE-traversal-items.md
+// (research/RE-traversal-walkup-two.md, RE-traversal-items.md
 // §10-§13; the action itself: world/traversal_action.h).
 //
 // Every walk-up spot is a field-action actor. In single player the primary controller's PlayerTrigger enters the spot's
 // volume, the actor's enter stores the party leader as its one user, and every frame the actor's TryStart tests that
 // user (moving toward an end, the stick turned by the primary camera) and requests the action on the user's own
 // field-action component. Nothing of that reaches a further player: the game sweeps only the primary controller's
-// trigger, and the user is always the leader. Rebirth's trigger_two did the same job (cleanup-2026-10; taken: a
+// trigger, and the user is always the leader. Rebirth's trigger_two did the same job (taken: a
 // second pass right after the game's, admitted classes only, the rest held back and logged; changed: Remake's
 // dispatcher resolves the trigger through the party manager, so the pass is the game's own dispatch with the seat's
 // controller answered at that one call, and the per-player state is the actor's user block):
@@ -26,9 +26,9 @@
 //     and Primary scopes with pad 2's or 3's stick: the game's own test then reads the member, the seat's stick and
 //     the seat's camera, and requests on the member's component. Around that run the member branch's ExceptionFlg
 //     (else it would request player 1's leader), player 1's camera-cut stick latch, the crawl's cooldown and player
-//     1's "an action is running" switch (the user, 2026-10-24: a crawl locks only the mover) are the seat's;
-//   - the arrows: each class's markers update gets the nearest player's member instead of player 1's leader (the user,
-//     2026-10-24: arrows near either player).
+//     1's "an action is running" switch (a crawl locks only the mover) are the seat's;
+//   - the arrows: each class's markers update gets the nearest player's member instead of player 1's leader, so the
+//     arrows show near any player.
 // A spot whose ignore group lists the member is skipped, as the game skips it for its leader. Game thread only (the
 // dispatcher, the sweep and the TryStart loop all run there). Logged: Info at install, Debug per seat enter, leave,
 // hold-back and start request, Trace per re-run.

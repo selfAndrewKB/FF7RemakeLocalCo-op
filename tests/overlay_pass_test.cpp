@@ -82,7 +82,7 @@ void DrawGate()
 /// A mirror gets a HUD pass of its own only on a monitor of another shape than player 1's view.
 void MirrorShapes()
 {
-    constexpr float kTotal = 2560.0f + 3440.0f + 2560.0f;  // the user's span, 1440 tall
+    constexpr float kTotal = 2560.0f + 3440.0f + 2560.0f;  // a span of three monitors, 1440 tall
     constexpr float kNarrow = 2560.0f / kTotal, kWide = 3440.0f / kTotal;
     EXPECT(OtherShape(kWide, 1.0f, kNarrow, 1.0f));     // a mirror on the ultrawide, player 1 on a 16:9 monitor
     EXPECT(OtherShape(kNarrow, 1.0f, kWide, 1.0f));     // player 1 on the ultrawide, a mirror on a 16:9 monitor

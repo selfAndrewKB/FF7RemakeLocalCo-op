@@ -30,7 +30,7 @@ struct Entry
 static_assert(sizeof(Name) == 8 && sizeof(Entry) == 12, "the game's layouts");
 
 /// A bounded list on static storage. The game's actor list keeps 32 entries inline and grows on the heap past that;
-/// a set in Sector 5 (v0.31.0, live) listed more than 64, so the bounds are wide.
+/// a set in Sector 5 lists more than 64 (seen live), so the bounds are wide.
 template <typename T, int N>
 struct List
 {
@@ -87,7 +87,7 @@ inline const TwoSet& NextTwoSet(bool present, bool resolved, const TwoSet& fresh
 
 /// The game's pause after a change of player 1's set (`mgr+0x3C4`, 1 s): a new set is taken at once, then no other
 /// until the pause has run out. At an area's edge the ground under a player can name two sets in turn every few
-/// frames (v0.32.0, live: 80 ms); the pause keeps the view from flipping with it.
+/// frames (seen live: 80 ms); the pause keeps the view from flipping with it.
 inline constexpr double kChangePause = 1.0;
 
 struct Paced

@@ -4,7 +4,7 @@
 // (RE-haze-occlusion.md Pass 9 H.3; ported from Rebirth's renderer/one_family_per_view, without its +0x74 write).
 //
 // Why: a view after the first in a family loses its volumetric fog after a late join (the blue haze), and the haze
-// follows the place in the family, not the player [CONFIRMED live 2026-10-24 07:20, the view-order swap]. As the first
+// follows the place in the family, not the player [CONFIRMED live by swapping the views' order]. As the first
 // view of its own family every player is rendered the way the game renders a single player.
 //
 // How: for view k, view k is swapped into slot 0 and the count set to 1; the families after the first set Square

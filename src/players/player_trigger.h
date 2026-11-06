@@ -5,9 +5,8 @@
 // The game has exactly one PlayerTrigger, a plain Actor placed in the party level with a capsule and an
 // EndCapsuleOverlapComponent, handed to the primary controller's InitPartyLevel and attached to that controller's
 // leader at every leader change. Encounter boxes, story triggers, field-action spots and the navi map's areas are
-// swept through it, and only the primary controller's is swept. The first seat (v0.3.0-v0.14.0) borrowed player
-// 1's trigger for player 2, so it rode on player 2's member: the game then started encounters where player 2
-// walked and never where player 1 did (the user's report, 2026-10-19).
+// swept through it, and only the primary controller's is swept. A seat that borrows player 1's trigger carries it on
+// its own member: the game then starts encounters where that player walks and never where player 1 does.
 //
 // No game path makes a second trigger, so this is a documented recreation, the smallest one: the placed actor
 // spawned again as a template (the engine's own spawn with the placed actor as Template duplicates its instanced

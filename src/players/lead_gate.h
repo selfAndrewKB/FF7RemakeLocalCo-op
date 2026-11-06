@@ -1,9 +1,7 @@
 #pragma once
 
 // Whether a LEAD or a run to a mark (MoveToTarget) the level wrote on a further player's member is a guide (the
-// member goes to its AI, the player's view stays on it) or staging (the player keeps it), from the game's own data
-// (the user, 2026-10-21; the run to a mark added 2026-10-27 after Aerith's run ahead of Cloud stalled under a further
-// player).
+// member goes to its AI, the player's view stays on it) or staging (the player keeps it), from the game's own data.
 //
 // Each kind's runner is the same code whether the level stages it or waits on it; the level data differs. Both
 // kinds signal the level on arrival through the same path (research/RE-fieldai-kinds.md §2, §3), so the same two of
@@ -17,25 +15,25 @@
 //      would never come (seen live: Tifa's lead stalled the Ch. 3 timer step). The member's own chain of states
 //      counts too: from its own next state, the rows' next states are walked (a few links, the game's state-change
 //      tables, a Stable ending a branch), and a further move among them (field_hold::MoveSetting) means the level
-//      walks the member along a scripted path, every link of which the hold forecloses (seen live 2026-10-27:
+//      walks the member along a scripted path, every link of which the hold forecloses (seen live:
 //      Aerith's guide home is a run to a mark, a stay until the player comes, the next run, and on, with no Lead
 //      setting in it; nothing else waited on the first run, and the chain never moved while a further player held
 //      her). One move ending in a stand is a placement and stays the player's.
 //   2. The story's marker (research/RE-navi-icon-target.md). The active story step's icon slot names the object the
 //      objective marker rides on; a marker on the member says the game points the player at it: a guide. No code
 //      links it to the LEAD setting, so it is the second signal; its absence proves nothing.
-//   3. A leash on player 1 (research/RE-lead-unlock.md, players/leash_rules.h; the user's report 2026-10-29: Tifa's
-//      Ch. 4 lead, player 1 turned back with the camera on her). The level writes it as an AutoWalk act (Type 56)
+//   3. A leash on player 1 (research/RE-lead-unlock.md, players/leash_rules.h; Tifa's Ch. 4 lead, where player 1 is
+//      turned back with the camera on her). The level writes it as an AutoWalk act (Type 56)
 //      among a running state's enter actions, measured from the default leader to the member: walk-speed bands, a
 //      look at the member when far, a turn-back further on. Nothing waits on the lead's arrival there, but the path
 //      opens only past the member's walk, which its AI makes in single player and a held member never does. The
 //      level's AutoWalk acts are found once by walking the act tables' own rows (RE-data-table-rows.md; again when a
 //      table changes); a census tests only those aimed at the member against the active slots (the time is in the Info
 //      line).
-// Any of these makes the move needed finished. Since v0.128.0 the player keeps a needed move whose point is a field
+// Any of these makes the move needed finished. The player keeps a needed move whose point is a field
 // point (players/lead_keep_rules.h; `lead-holder keeps`): hud/lead_mark marks the point in that player's view, and
 // within 2 m of it the member goes to its AI, which finishes the arrival, until the level's next setting. A needed
-// move with no point to mark is a guide, as before.
+// move with no point to mark is a guide.
 // A lead or run is judged at its first sight and the judgment is logged (one Info line: the trigger, every waiter,
 // the marker, the point, the verdict; again at each verdict change). A guide or at-the-mark verdict holds until the
 // setting ends (its state changes, the level's next setting); a staging or keep verdict is re-read while it lasts (the
@@ -57,7 +55,7 @@ namespace lss::players::lead_gate {
 
 /// Resolves the globals and the story-flag test, registers the `lead.gate` reading (the last judgment), the
 /// `lead.path` reading (a level state's chain walked as the gate walks it) and the `lead-holder` switch. False
-/// (logged) if an engine check fails; a LEAD or a run to a mark is then staging, as before v0.26.0.
+/// (logged) if an engine check fails; a LEAD or a run to a mark is then staging.
 bool Install(const platform::GameImage& image) noexcept;
 
 /// A member (`member`, its field AI `fieldAi`) runs `kind` on the level layer: the verdict from the game's data
@@ -90,7 +88,7 @@ bool OwnBoxRun(const void* member, Mark& point, std::int64_t& box) noexcept;
 std::wstring PointName(std::int64_t point) noexcept;
 
 /// hud/lead_mark installed (true) or removed: without a marker the player cannot be shown the point, so every needed
-/// move is a guide, as before v0.128.0.
+/// move is a guide.
 void SetMarking(bool on) noexcept;
 
 /// The last judgment, one line (the reading).

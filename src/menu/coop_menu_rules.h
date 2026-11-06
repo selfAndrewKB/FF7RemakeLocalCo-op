@@ -1,7 +1,7 @@
 #pragma once
 
 // The Co-op page's rules: what the game's Options screen shows when the mod opens its own copy from the Co-op row of the
-// main menu (research/RE-game-widgets.md §9-§10; plan/topics/input.md History 2026-10-31). The rows are the settings
+// main menu (research/RE-game-widgets.md §9-§10; plan/topics/input.md). The rows are the settings
 // table's options (platform/settings.h), one category per section in the table's order, one List row per option with
 // its words' names as the values. A row is told apart from the game's own by its category byte: the game's real
 // settings live at 0..0x34, the mod's rows take 0x80 + the option's place in the table, which the game never makes, so
@@ -22,8 +22,7 @@ namespace lss::menu::coop_menu_rules {
 
 namespace settings = platform::settings;
 
-/// The main menu's row, in the place of the trial's "Buy Now" row (kind 12, never shown by the full game: the user,
-/// 2026-10-31).
+/// The main menu's row, in the place of the trial's "Buy Now" row (kind 12, which the full game never shows).
 inline constexpr const wchar_t* kRowLabel = L"Co-op";
 inline constexpr const wchar_t* kRowHelp  = L"Split-screen co-op settings: the players' screens, battle and experimental options.";
 inline constexpr const wchar_t* kTitle    = L"Co-op";

@@ -14,8 +14,8 @@ namespace lss::battle::command_menu_rules {
 /// 1's write starts the frame's least value and each seat's write takes the least of the frame's so far and its
 /// own. A seat's write in a frame where player 1's tick wrote nothing goes as asked and is counted: the game's tick
 /// writes every frame (RE-battle.md §2.7), so the count stays 0 unless that changes.
-/// With the slow switched off (the user's setting, RE-menu-slow.md §7) every write asks for full speed, the value the
-/// game's tick writes while no menu is open, so an open menu no longer slows the world.
+/// With the slow switched off (the menu-slow setting, RE-menu-slow.md §7) every write asks for full speed, the value
+/// the game's tick writes while no menu is open, so the world runs on under an open menu.
 class SlowWrites
 {
 public:

@@ -1,7 +1,7 @@
 // Host-side tests for stall_rules (battle/stall_rules.h): when a ready enemy that has not acted counts as stalled, and
 // when the game may pick again for it. Run without the game.
 //
-// The case from 2026-10-29 10:51: a MonoDrive (light interval 3.3 s) at full ATB aimed at player 3 at 28 m, player 2
+// The case, as played: a MonoDrive (light interval 3.3 s) at full ATB aimed at player 3 at 28 m, player 2
 // at 0.7 m; its heavy attack needs the target within 20 m, so it waited 95 s.
 
 #include "battle/stall_rules.h"

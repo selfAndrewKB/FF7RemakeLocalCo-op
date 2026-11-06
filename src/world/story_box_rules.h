@@ -2,7 +2,7 @@
 
 // The rules of world/story_boxes, without the game (host-tested in tests/story_box_rules_test.cpp): which of a held
 // member's story-box entries wait, when a waiting one fires, and whether player 1's character has come to the box.
-// research/RE-held-member-story-boxes.md §3.4, §4, §7; the user's conditions of 2026-10-30 (session History 12:17, 12:48).
+// research/RE-held-member-story-boxes.md §3.4, §4, §7.
 
 #include <cmath>
 #include <cstdint>
@@ -131,8 +131,8 @@ inline bool Reaches(const Box& box, const float point[3], float marginCm = kReac
 /// A run the member was brought back for is over without taking its box when the member stands within kRunArrivedCm of
 /// the run's point (2D: it has arrived, the box is behind it or its path went round it), when it has not moved kRunStillCm
 /// for kRunStillMs (a run stopped short: blocked by a character), or after kAwaitRunLimitMs. Then the held enter fires:
-/// late, never lost (a run that misses its box would otherwise leave the step waiting for good, as at 15:16 on
-/// 2026-10-30). No level's clock is assumed: the Ch. 5 dash from player 1's side takes about 8 s and the talk's cue comes
+/// late, never lost (a run that misses its box would otherwise leave the step waiting for good).
+/// No level's clock is assumed: the Ch. 5 dash from player 1's side takes about 8 s and the talk's cue comes
 /// about 12.5 s after the hand, and a run that stops short is over 2 s after it stops.
 inline constexpr float        kRunArrivedCm    = 200.0f;
 inline constexpr float        kRunStillCm      = 50.0f;

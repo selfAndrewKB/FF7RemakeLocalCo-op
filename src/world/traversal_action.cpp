@@ -142,7 +142,7 @@ bool           g_neverMovable = false;  // a FieldActionSystem whose tick never 
 std::uint32_t  g_gameTicks = 0;
 std::int64_t   g_gameTime  = 0;  // performance-counter ticks spent inside component ticks on the game thread
 
-/// The frame cost of the component ticks, per 5 s window (game thread): the user's condition for the move (2026-10-24).
+/// The frame cost of the component ticks, per 5 s window (game thread): what moving the tick to the game thread costs.
 struct CostWindow
 {
     std::int64_t began = 0, game = 0, worker = 0;
@@ -717,7 +717,7 @@ const wchar_t* ActionName(std::uint8_t action) noexcept
         case facts::kFieldActionCurtain: return L"curtain";
         default: break;
     }
-    // A kind the table does not name (the guide's gate, 2026-10-29) gives its number. The text lives in this thread's
+    // A kind the table does not name (the guide's gate, for one) gives its number. The text lives in this thread's
     // buffer until its next unnamed kind; every caller uses it in one log line at once.
     thread_local wchar_t text[32]{};
     swprintf_s(text, L"field action (kind %u)", static_cast<unsigned>(action));
@@ -1116,9 +1116,9 @@ void CountCost() noexcept
 }
 
 /// Dev watch (research/RE-traversal-duct-camera-two.md): each player's squeeze camera (flavor 17 on that player's operator),
-/// read at the squeeze's start and through its first 3 s, so player 1's look and a seat's can be compared (the user,
-/// 2026-10-25: player 2's camera zooms in, then turns 90 degrees smoothly; player 1's only zooms). The squeezer's facing
-/// is the anchor the camera's hold fades to. Read only; Debug.
+/// read at the squeeze's start and through its first 3 s, so player 1's look and a seat's can be compared (the
+/// difference to look for: a seat's camera zooming in and then turning 90 degrees smoothly, where player 1's only
+/// zooms). The squeezer's facing is the anchor the camera's hold fades to. Read only; Debug.
 std::array<std::int64_t, kSeats> g_squeezeStarted{};  // 0 while that player is not squeezing
 std::array<int, kSeats>          g_squeezeSamples{};
 
@@ -1650,8 +1650,8 @@ bool PoleReady() noexcept
 namespace {
 
 /// Player 1's leader's running action took the "no new action" switch for everyone (one count of it). The start sets
-/// "took" for every leader action and the switch only when the action's actor does not force its icons (until v0.94.0
-/// this read the leader character's byte at the actor's offset). An actor that cannot be read counts as not taking it.
+/// "took" for every leader action and the switch only when the action's actor does not force its icons (read from the
+/// action's actor, not from the leader character). An actor that cannot be read counts as not taking it.
 bool PlayerOneActionHoldsNoAction() noexcept
 {
     const std::uint8_t* comp = nullptr;

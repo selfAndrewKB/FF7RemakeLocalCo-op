@@ -6,7 +6,7 @@
 // the window and the engine keeps that FOV as the view's horizontal one (MaintainXFOV), so a view as wide as the screen
 // and half as tall (two players in one window, the top view of three) shows the single-player width and half its height:
 // characters cut at the knees. Keeping the single-player height instead would make everything half size. Rebirth's rule
-// (views/view_shape.h SplitFov, chosen by eye 2026-09-25) takes the geometric middle:
+// (views/view_shape.h SplitFov, chosen by eye) takes the geometric middle:
 //     tan(vertical / 2) = tan(single-player vertical / 2) * heightRatio^weight      (weight 0.5)
 // with heightRatio the view's height over the single-player picture's. Remake improves on it in two ways
 // (research/RE-view-size-fov.md §4.4, §7 item 3): the single-player picture is the camera's image fitted into the
@@ -22,7 +22,7 @@
 // with widthRatio the view's width over the single-player picture's. Weight 1 is Rebirth's rule: the single-player scale and
 // vertical FOV, the sides cropped (32.2 deg wide of a 60 deg camera at 8:9). Weight 0 is the whole single-player width in
 // those pixels, everything half size. Between them are Rebirth's own measured blends (48.7 deg at 0.35, 44.4 at 0.5, 40.4 at
-// 0.65; plan/topics/views.md in Rebirth), which its later rule dropped because the user picked 1 by eye; here they are the
+// 0.65; plan/topics/views.md in Rebirth), which Rebirth's rule leaves out, 1 being picked there by eye; here they are the
 // slider. A narrower view leaves any sideways camera offset a larger share of the screen, so ShoulderFactor softens that
 // offset by the view's width, no further than Rebirth's by-eye minimum (views/narrow_camera.h).
 
@@ -85,9 +85,9 @@ inline float HeightRatio(const Shape& shape, float cameraAspect) noexcept
 
 /// Whether the rule applies: the view is wider than the camera's image, and either shorter than the single-player
 /// picture or a full-height column of a wider window. The column is a span's monitor wider than 16:9 (the 3440 between
-/// two 2560s, v0.147.0): at its full height the rule keeps the camera's vertical FOV, so it shows more to the sides at
-/// the 16:9 monitors' scale instead of the same width zoomed in (the user, 2026-11-02: each view fits the width of its
-/// monitor). A single view filling the window is left to the engine.
+/// two 2560s): at its full height the rule keeps the camera's vertical FOV, so it shows more to the sides at
+/// the 16:9 monitors' scale instead of the same width zoomed in, each view fitting the width of its
+/// monitor. A single view filling the window is left to the engine.
 inline bool Applies(const Shape& shape, float cameraAspect) noexcept
 {
     if (!(shape.viewWidth > 0.0f) || !(shape.viewHeight > 0.0f) || !(cameraAspect > 0.0f))

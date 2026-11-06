@@ -3,9 +3,9 @@
 // The scene camera on every further player's view: a cutscene, a talk scene or an event camera plays on each further
 // player's view as it does on player 1's (research/RE-cutscene-camera-two.md, pass S-RMK-CUTCAM;
 // RE-cutscene-scene-state.md; RE-camera.md §2.2-2.4). Rebirth collapsed to player 1's single view for scenes (its
-// whole_screen module); here the scene camera is given to each further player's camera manager instead, the user's
-// call of 2026-10-21 (in one window the views now collapse for scenes too, views/whole_screen; on a monitor row this
-// is what each further column shows).
+// whole_screen module); here the scene camera is given to each further player's camera manager instead: on a monitor
+// row this is what each further column shows, and in one window the views collapse for scenes
+// (views/whole_screen).
 //
 // Each camera manager shows the lowest active of its 25 pose slots and blends between its own slots. A scene writes
 // the primary manager's slots only (every writer resolves the primary controller's manager): the cutscene pose into
@@ -32,7 +32,7 @@
 // Not covered (documented): the field operator's own return (flavor 6 seeded with the cut's end pose, the re-seat
 // behind the leader) runs for player 1's operator only; a further player's camera returns through the end blend to
 // wherever its operator stands. Sequencer camera shakes, rumble: player 1's.
-// A mirror player's manager (views/mirror_player, v0.42.0; up to two mirrors since the seats plan's step 5) takes the
+// A mirror player's manager (views/mirror_player; up to two mirrors) takes the
 // same copy for EVERY slot, the field camera's 24 included, every frame, so its view is player 1's: a blend seeded as
 // player 1's was (player 1's slot at the switch-on), the cut raised, the end reset run on it too. One source for
 // every copy; a mirror needs no scene to run. Each mirror has its own copy record, by the mirror module's slot. A seat
@@ -104,9 +104,9 @@ struct Scene
     bool operator==(const Scene&) const = default;
 
     /// Any scene or lock beyond player 1's own move: the whole screen's gate on the event camera (views/whole_screen.h,
-    /// v0.111.0: slot 18 alone is no reason; the lock alone neither). Player 1's own crawl, squeeze or grappling hook
+    /// where slot 18 alone is no reason, and the lock alone neither). Player 1's own crawl, squeeze or grappling hook
     /// locks only player 1 (as the session keeps the seats' members theirs through it): its bits hold no one else. A
-    /// treasure or push-button lock still counts here: an event that cuts to its own shot collapses as before.
+    /// treasure or push-button lock still counts here: an event that cuts to its own shot collapses the split.
     bool HoldsAnyone() const noexcept { return playing || (lockMask & ~mover) != 0 || lockCount != 0; }
     /// The scene holds the further players: the copy's reason to run. A treasure or push-button lock freezes only the
     /// interacting character (players/field_hold.h InteractionLock; the members stay their players'), so its bits hold
@@ -123,8 +123,8 @@ Scene ReadSceneNow() noexcept;
 
 /// The event camera's slot (18) active on player 1's manager at the last Tick: an event that cut to its own shot.
 /// The whole screen then shows that shot alone (views/whole_screen.h), so a treasure or push-button lock takes the
-/// further players' members with the game's leader while it stands (the user, 2026-10-27: an event that brings the
-/// focus to something happening live may take them). False before Install.
+/// further players' members with the game's leader while it stands: an event that brings the focus to something
+/// happening live may take them. False before Install.
 bool EventShot() noexcept;
 
 /// Whether a pose slot is active on a camera manager now (one guarded read; false for a null manager, a slot past

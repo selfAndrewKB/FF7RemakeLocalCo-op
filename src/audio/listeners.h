@@ -5,7 +5,7 @@
 //
 // SEAD (Square Enix's audio middleware) measures every placed or moving sound from one listener object, which the SEAD
 // audio device sets each audio frame from the engine's listener [0], player 1's view; the engine itself keeps a
-// listener per view (its viewport's Draw sets one per local player with a view, in column order: live 2026-10-26). A
+// listener per view (its viewport's Draw sets one per local player with a view, in column order, seen live). A
 // sound farther than its range from that one listener was never voiced, however near a further player it played, and
 // AutoSe's footstep clip and its rustle and swing range were measured from it too. Every lever runs the game's own
 // code and changes only which listener it reads:

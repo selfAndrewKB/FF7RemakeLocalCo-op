@@ -13,8 +13,8 @@
 // the player may take any member no human holds, the field leader included, and never another human's. With the
 // other players' members the last ones standing, nothing passes and player 1 stays on the downed leader, as the game
 // keeps a downed leader with no one to take.
-// In co-op the game's one forced switch is refused (the user, 2026-10-28: a downed player stays on their character
-// until revived): the KO'd leader's dead-state tick calls the cycle with "forced" every tick, and that call returns at
+// In co-op the game's one forced switch is refused, so a downed player stays on their character until revived: the
+// KO'd leader's dead-state tick calls the cycle with "forced" every tick, and that call returns at
 // once while a further player holds a member, so player 1 stays on the downed leader even with an AI ally standing
 // (research/RE-pyramid-trap-control.md; a Pyramid's trap moves no one's control itself). battle/enemy_leader then
 // turns the enemies on the member the switch would have taken. Players 2 and 3 are never auto-switched (their

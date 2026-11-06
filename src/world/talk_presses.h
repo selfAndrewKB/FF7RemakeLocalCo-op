@@ -3,8 +3,7 @@
 // A further player's NPC presses, waiting for the act the NPC's talk state queues (world/shop_act, world/talk_gather),
 // as a pure table: the rules without the game (world/field_targets holds the game side: the press itself, the
 // pressed object's place from the game's target entry, the field lock, the target manager, the log lines). The rules
-// (research/RE-talk-two.md, RE-talk-far.md; built over v0.100.0-v0.103.1 inside field_targets, moved here in cleanup
-// step 4, plan/code-alignment.md C2):
+// (research/RE-talk-two.md, RE-talk-far.md):
 //   1. a newer press of the same seat replaces its older one;
 //   2. player 1's press of the same object drops every seat's press of it (the talk is player 1's);
 //   3. a world change drops every press;

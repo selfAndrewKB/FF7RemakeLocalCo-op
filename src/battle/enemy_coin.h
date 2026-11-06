@@ -1,14 +1,14 @@
 #pragma once
 
-// Enemies share their attention between the humans: one coin per enemy decision (RE-enemy-attention-coin.md; the
-// user's rule B of 2026-10-20; Rebirth's player_two/target_coin and leader_reads, reshaped to Remake's one decision
-// call and inlined leader tests).
+// Enemies share their attention between the humans: one coin per enemy decision (RE-enemy-attention-coin.md;
+// Rebirth's player_two/target_coin and leader_reads, reshaped to Remake's one decision call and inlined leader
+// tests).
 //
 // In the single-player game "the player" is one character: the enemy scripts aim at it (SetTargetByType(UCPC),
 // GetLeader, the target collectors, the expectation counts, IsAIPC, the party API), the hate rows weight it twice an
 // AI ally and win ties for it, the enemy EQS keeps it, and its opening target is the leader. In co-op every one of
-// those named player 1's character, so enemies chased Cloud and treated Aerith as the AI ally (the user's reports:
-// Rude on Cloud; an enemy circling Barret without attacking). The co-op result is the single-player one for both:
+// those named player 1's character, so enemies chased Cloud and treated Aerith as the AI ally (Rude stayed on Cloud;
+// an enemy circled Barret without attacking). The co-op result is the single-player one for both:
 //   - the toss: at the game's own decision call (the battle AI tick's gate, true only while no action runs; the
 //     mines' override too) each enemy whose last coin has seen an action tosses again, before the gate's hate
 //     update and the script's OnUpdate: one coin per decision, held through the action by the game's own target lock

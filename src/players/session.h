@@ -9,13 +9,13 @@
 // player 3 joining with player 2 out takes column 1, and keeps it when player 2 joins after. The engine then lays
 // out the split screen by itself. Each view is filled (the game's main cameras ask for 16:9) with the stock setter
 // UCameraComponent::SetConstraintAspectRatio.
-// A further player exists only with a member to play (the user, 2026-10-21, as in Rebirth): a join first asks the
+// A further player exists only with a member to play (as in Rebirth): a join first asks the
 // member test, and with the row's member not free nothing is created; the player waits outside the game and joins,
 // seating at once, when the member is free (the field steady, player 1 on a character; Ctrl+F8 stops the wait). A
 // second camera without a member would float alone over an empty view. A member in a walk its AI makes (a guide, a
 // kept move at its point: party_member::JoinsThroughHold) is taken through it, as a seated player rides it: seated,
 // handed straight back to its AI with the seat and the view kept, and taken by the controller when the walk ends; so a
-// save and its reload inside such a walk no longer change whether a player can join.
+// save and its reload inside such a walk do not change whether a player can join.
 // Member: the seat takes the member in its row of the game's party order (players/party_member.h: seat 1 the 2nd
 // row) through the game's leader funnel (players/party_seat.h), and its own field camera operator follows that
 // member (players/seat_camera.h). It follows the row through the game's own funnels (players/party_events.h):

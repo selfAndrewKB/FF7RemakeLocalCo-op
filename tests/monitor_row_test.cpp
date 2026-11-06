@@ -1,12 +1,12 @@
 // Host-side tests for views::monitor_row::Choose, run without the game.
 //
-// The cases: the user's desktop of 2026-10-21 (an ultrawide primary above, holding the game; two equal 1440p
+// The cases: a desktop with an ultrawide primary above, holding the game (two equal 1440p
 // monitors below it: the row is not the game's; the pair 2 px apart, later above the ultrawide 15 px apart: the
 // off monitor is listed as a move to the row's top); Rebirth's three-monitor row (the game in it; a two-column span
 // starting at the game's monitor and shifted left at the row's end; moves only for the span's columns); the row
 // broken by a monitor of another size, a top too far off (beyond the tolerance), a gap, or Windows scaling; the
 // game's monitor scaled with and without another row; one column always possible; bad inputs; rows of one height
-// and different widths (the user's 2560 | 3440 | 2560 of 2026-11-02), the span's widths listed.
+// and different widths (a 2560 | 3440 | 2560 row), the span's widths listed.
 
 #include "views/monitor_row.h"
 
@@ -132,7 +132,7 @@ void CheckRow(const std::vector<Monitor>& monitors, const std::vector<std::size_
     EXPECT(again.ok && again.moves.empty() && again.span == c.span);
 }
 
-/// The player's picks make a row wherever the monitors sit. The user's desktop: 2560 | 3440 | 2560 with a fourth above.
+/// The player's picks make a row wherever the monitors sit. The desktop: 2560 | 3440 | 2560 with a fourth above.
 void PickedRows()
 {
     const std::vector<Monitor> desktop{At(0, 0, 3440), At(3440, 0), At(-2560, 0), At(2585, -1440)};
@@ -210,7 +210,7 @@ void MixedRows()
     CheckRow({At(0, 0, 1920, 1080), At(0, -1080, 1920, 1080), At(1920, -1080, 1280, 800)}, {2, 1}, 2);
 }
 
-/// The user's monitors on 2026-10-21 with the pair aligned: the ultrawide primary above (the game on it), the two
+/// A desktop with the pair aligned: the ultrawide primary above (the game on it), the two
 /// 1440p monitors in a row below.
 std::vector<Monitor> UsersDesktop()
 {
@@ -236,7 +236,7 @@ void TestRowBelowTheGame()
 
 void TestUsersPairTwoPixelsOff()
 {
-    std::printf("the user's pair as first set up (the right one 2 px lower) is lined up: one move, the span over the row\n");
+    std::printf("the pair as first set up (the right one 2 px lower) is lined up: one move, the span over the row\n");
     std::vector<Monitor> monitors{At(0, 0, 3440, 1440), At(873, 1440), At(3433, 1442)};
     Choice               c = Choose(monitors, 0, 2);
     EXPECT(c.ok && c.rowMonitors == 2 && !c.gamesRow);
@@ -244,7 +244,7 @@ void TestUsersPairTwoPixelsOff()
     EXPECT(c.moves.size() == 1);
     EXPECT((c.moves.size() == 1 && c.moves[0] == Move{{3433, 1442, 5993, 2882}, 3433, 1440}));
 
-    // As the game's process sees that desktop (2026-10-21 22:23): the scaled TV also touches the pair's left monitor.
+    // As the game's process sees that desktop: the scaled TV also touches the pair's left monitor.
     std::printf("  with the scaled TV touching the pair's left: the same row and move\n");
     monitors.push_back(At(-2967, 1442, 3840, 2160, 168));
     c = Choose(monitors, 0, 2);
@@ -254,10 +254,10 @@ void TestUsersPairTwoPixelsOff()
 
 void TestUsersPairAboveTheUltrawide()
 {
-    // Seen live 2026-10-22: the right monitor sits on the ultrawide, the left one floats 15 px higher. The row's top
+    // Seen live: the right monitor sits on the ultrawide, the left one floats 15 px higher. The row's top
     // is the attached monitor's, so the floating one moves down to it (moving the attached one up instead made
     // Windows drop the other by 15 px, and the pair swapped).
-    std::printf("the user's pair above the ultrawide (22:41): the left one 15 px higher and floating; it moves down to the right one\n");
+    std::printf("the pair above the ultrawide: the left one 15 px higher and floating; it moves down to the right one\n");
     std::vector<Monitor> monitors{At(0, 0, 3440, 1440), At(419, -1455), At(2979, -1440), At(-144, 1440, 3840, 2160, 168)};
     Choice               c = Choose(monitors, 0, 2);
     EXPECT(c.ok && c.rowMonitors == 2 && !c.gamesRow);
@@ -391,9 +391,9 @@ void TestScalingBreaksTheRow()
 
 void TestOneHeightOfDifferentWidths()
 {
-    // The user's desktop of 2026-11-02: a 2560 | 3440 | 2560 row at 1440 (the ultrawide primary in the middle, the game
+    // A 2560 | 3440 | 2560 row at 1440 (the ultrawide primary in the middle, the game
     // on it) and a 2560x1440 above, sitting on the ultrawide.
-    std::printf("the user's 2560 | 3440 | 2560 row: three columns of their own widths; two from the game's monitor\n");
+    std::printf("a 2560 | 3440 | 2560 row: three columns of their own widths; two from the game's monitor\n");
     std::vector<Monitor> monitors{At(3440, 0), At(0, 0, 3440, 1440), At(-2560, 0), At(2546, -1440)};
     Choice               c = Choose(monitors, 1, 3);
     EXPECT((c.ok && c.gamesRow && c.rowMonitors == 3 && c.span == Rect{-2560, 0, 6000, 1440} && c.moves.empty()));

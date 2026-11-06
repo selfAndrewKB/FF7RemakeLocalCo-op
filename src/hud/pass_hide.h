@@ -1,7 +1,7 @@
 #pragma once
 
-// Each view's HUD image shows only its own player's world cursors (RE-hud-families.md §3, RE-field-icons-two.md; the
-// user's first report, 2026-09-30: "player 1's blue talk/examine cursor shows in player 2's half").
+// Each view's HUD image shows only its own player's world cursors (RE-hud-families.md §3, RE-field-icons-two.md):
+// left alone, player 1's blue talk and examine cursor shows in every other player's view.
 //
 // The turn-back alert (slot 36, over player 1's leader) is decided from player 1's leader and placed through player 1's
 // view: player 1's alone. The field target icons (slot 15: talk, examine, chests, field actions) and the search compass

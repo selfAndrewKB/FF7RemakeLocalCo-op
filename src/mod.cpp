@@ -67,7 +67,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.169.0-release-kit";  // the one version string (the log, UE4SS and the setup app)
+constexpr const wchar_t* kVersion = L"0.170.0-comment-audit";  // the one version string (the log, UE4SS and the setup app)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
@@ -94,7 +94,7 @@ using lss::control::Outcome;
 using lss::control::Shape;
 using lss::control::Value;
 
-/// A seat's console prefix: `p2` for the first further player, `p3` for the next (the user's names for them).
+/// A seat's console prefix: `p2` for the first further player, `p3` for the next.
 std::wstring SeatPrefix(int seat)
 {
     return std::format(L"p{}", seat + 1);
@@ -171,7 +171,7 @@ void RegisterSeatCommands(lss::players::Session& session, int seat, const std::w
 void RegisterSessionCommands(lss::players::Session& session)
 {
     using lss::control::Register;
-    // The first further player's intents are `join` and `leave` (the user's aliases); every seat's are prefixed.
+    // The first further player's intents are `join` and `leave`, with no prefix; every seat's are prefixed.
     for (int seat = 1; seat <= lss::players::kSeatsBuilt; ++seat)
     {
         const std::wstring prefix = SeatPrefix(seat);

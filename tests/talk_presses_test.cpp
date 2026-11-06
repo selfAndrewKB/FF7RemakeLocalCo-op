@@ -1,5 +1,5 @@
 // Host-side tests for the talk-press table (world/talk_presses.h): the six rules of a further player's NPC press
-// waiting for its act, as field_targets kept them over v0.100.0-v0.103.1. Run without the game.
+// waiting for its act, as world/talk_presses keeps them. Run without the game.
 
 #include "world/talk_presses.h"
 

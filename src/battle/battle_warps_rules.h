@@ -1,8 +1,7 @@
 #pragma once
 
 // Who the game warps at a battle's start and end, as the setting decides it without the game (battle/battle_warps.h
-// applies it at the game's three calls). Host-tested (tests/battle_rules_test.cpp). Cleanup step 4,
-// plan/code-alignment.md C3.
+// applies it at the game's three calls). Host-tested (tests/battle_rules_test.cpp).
 
 #include <cstdint>
 

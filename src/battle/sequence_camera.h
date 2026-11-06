@@ -5,7 +5,7 @@
 // follow plan/seats.md step 3).
 //
 // A battle camera sequence is one level-sequence actor with one camera actor; the request list keeps them, and
-// each field camera operator's tick evaluates every entry against its own leader (per player since v0.16.0) and
+// each field camera operator's tick evaluates every entry against its own leader (one operator per player) and
 // takes the last active one as its view. What the game keeps once, because single player has one camera:
 //   - the camera actor's latched points (its "fix" latches and the fixed aim, eye and input-offset points): the
 //     first operator to evaluate a shot after a cut fixes them for every view, from its own camera position;
@@ -26,8 +26,9 @@
 //     first is seeded with the first's active camera, so the game's tail applies the first's and its own with the
 //     game's code (two players: the union; three: revisited when seat 2 is wired, plan/seats.md step 6), and each
 //     entry's active byte is the OR of every operator's once player 1's and every seat in play have ticked.
-// Not covered: sequence shakes start on player 1's camera manager only (no game path: a recreation, the user's
-// call), and the Command/LeaderChange flavors' own evaluation of the last active entry (player 1's block).
+// Not covered: sequence shakes start on player 1's camera manager only (the game has no path for the others, and the
+// mod does not recreate one), and the Command/LeaderChange flavors' own evaluation of the last active entry
+// (player 1's block).
 // Game thread only (the operator ticks and the sequence actors' ticks).
 
 #include <cstdint>

@@ -8,9 +8,9 @@
 // target fields each seat already has a copy of (battle/targeting.h). One function, the cursor driver, creates,
 // moves, styles (the lock look, the dummy-lock flag), traces line of sight for and releases it, from the leader's menu
 // target, lock, dummy lock or soft target, and writes the HUD's shared keys (the enemy bar's displayed target, the
-// off-screen icon's name); the battle tick calls it right after each of its two targeting calls. So the cursor showed
-// only when player 1 had a target, and player 2's half showed player 1's cursor at player 1's target through player
-// 2's camera (the user's report, 2026-10-19). Now the driver runs again for each seat right after the seat's
+// off-screen icon's name); the battle tick calls it right after each of its two targeting calls. Left at that, the
+// cursor shows only when player 1 has a target, and a further player's view shows player 1's cursor at player 1's
+// target through its own camera. So the driver runs again for each seat right after the seat's
 // targeting run, inside the same scopes and the seat's target copy, with two more exchanges: the seat's cursor slot
 // (its own widget, created by the game's own create) and its HUD keys. The line-of-sight step (once per frame from
 // the field systems' tick) runs again for each seat's cursor with the same exchanges. The releases the game makes for

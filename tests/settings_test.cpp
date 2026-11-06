@@ -103,7 +103,7 @@ void JudgeFile()
     EXPECT(bad.source == Source::Invalid);
     EXPECT(bad.word == L"players-stay");
     EXPECT(bad.raw == L"sometimes");
-    EXPECT(Judge(kColumnOrder, L"2 1 3").word == L"213");  // player 1 may take any screen (2026-10-31)
+    EXPECT(Judge(kColumnOrder, L"2 1 3").word == L"213");  // player 1 may take any screen
     EXPECT(Judge(kColumnOrder, L"1 2 4").source == Source::Invalid);
     EXPECT(Judge(kColumnOrder, L"1 2 4").word == L"123");
 }

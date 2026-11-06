@@ -1,7 +1,7 @@
 // Host-side tests for env_set_view (world/env_set_view.h): player 2's kept set, its pacing, and the edit of a hidden-actor
 // list that touches only the mod's own entries. Run without the game.
 //
-// The case from the orphanage (2026-10-21): player 1 out on the pathway (set EnvSet_AerithHousePathway, which does not
+// The case from the orphanage: player 1 out on the pathway (set EnvSet_AerithHousePathway, which does not
 // name the pictures), player 2 at the picture (a set hiding BG0717_01_01 and BG0717_02_01). Names here are made-up
 // indices; only equality matters.
 
@@ -64,7 +64,7 @@ void TestPaceTakesTheFirstChangeAtOnce()
 
 void TestPaceHoldsAtAnEdge()
 {
-    // The ground under player 2 names two sets in turn every few frames (v0.32.0, live: 80 ms).
+    // The ground under player 2 names two sets in turn every few frames (seen live: 80 ms).
     Paced paced;
     const TwoSet a = SetOf(kPictureOne, 1), b = SetOf(kLamp, 1);
     EXPECT(Pace(paced, a, 0.0));

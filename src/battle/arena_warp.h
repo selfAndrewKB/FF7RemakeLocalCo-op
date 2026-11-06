@@ -1,8 +1,8 @@
 #pragma once
 
-// A further player's character brought into the fight on a double click of the left stick (the user, 2026-10-26: "it
-// is sometimes possible to get locked outside of a fight accessible only through a crawlspace, which is disabled in
-// fight mode. Maybe double clicking the left analog stick"; research/RE-arena-warp.md).
+// A further player's character brought into the fight on a double click of the left stick: a character can be locked
+// outside a fight whose only way in is a crawlspace, which the game closes while the fight lasts
+// (research/RE-arena-warp.md).
 //
 // The game has an in-battle recovery warp for one member: its revive and its leader switch call it for a character
 // outside the battle area (a navmesh point along the party leader's facing, then the battle warp with its fade-in).

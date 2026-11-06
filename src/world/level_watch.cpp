@@ -76,7 +76,7 @@ std::wstring NameText(std::uint64_t bits)
 
 /// A streaming level's name as the game's queue lines give it. Its PackageName, else its PackageNameToLoad, else the
 /// asset name of its WorldAsset's path ("/Game/…/030-SLUM7_Layout_045.030-SLUM7_Layout_045": the part after the last
-/// dot, or after the last slash). This build leaves PackageName empty (2026-10-29: 563 census lines named None).
+/// dot, or after the last slash). This build leaves PackageName empty: read from it alone, every level is named None.
 std::wstring LevelName(const void* streaming) noexcept
 try
 {

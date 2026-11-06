@@ -51,7 +51,7 @@ inline constexpr std::array<char, 14> kEndCameraActorText{'E', 'n', 'd', 'C', 'a
 /// "EndCameraActr2" for id 1, "EndCameraActr3" for id 2), so the spawn's duplicate-name replacement (UE 4.18
 /// StaticAllocateObject reuses an existing object of that name) can hit neither player 1's actor nor another
 /// further player's: with one name for every further player, player 3's join took over player 2's camera actor
-/// (seen live 2026-10-23, v0.67.0).
+/// (seen live).
 constexpr std::array<char, 14> FurtherCameraActorText(int controllerId) noexcept
 {
     std::array<char, 14> text{'E', 'n', 'd', 'C', 'a', 'm', 'e', 'r', 'a', 'A', 'c', 't', 'r', '?'};
@@ -302,7 +302,7 @@ inline constexpr platform::FunctionFact kGetAndOrCreateGraphicsPso{
 inline constexpr std::size_t   kPsoInitializerSize = 0xA8;
 inline constexpr std::uint32_t kPsoInitPixelShader = 0x10;
 
-// --- Distortion apply target size (RE-render-views.md 4A.1, the 2026-10-19 capture) -------------------------------
+// --- Distortion apply target size (RE-render-views.md 4A.1, from a frame capture) ---------------------------------
 // SE_Distortion_ApplyPass writes the blurred distortion into SceneColor. It sets the viewport to the whole buffer
 // (FSceneRenderTargets::BufferSize) but passes DrawRectangle the view's size as TargetSize, so in split screen player
 // 1's rectangle covers the whole screen and player 2's lands off screen. The game stores BufferSize as the
@@ -359,12 +359,12 @@ inline constexpr platform::FunctionFact kD3D11CreatePixelShaderRT{
 /// by RHICreatePixelShader_LibraryOrCode 0x141EFE440 on either RHI.
 inline constexpr std::uint32_t kRhiShaderHash = 0x18;
 
-/// The original level-0 reduce shader's OutputHash, read from the running game (D3D12, 2026-09-30,
+/// The original level-0 reduce shader's OutputHash, read from the running game (D3D12,
 /// tools/bloom_shader/find_live_hash.py). It identifies the shader on both RHIs; D3D11 keeps no copy of the code.
 inline constexpr std::array<std::uint8_t, 20> kBloomL0ShaderHash{
     0x8E, 0x8D, 0x85, 0xC6, 0x4A, 0x88, 0x3B, 0x86, 0x8A, 0x69, 0x96, 0xB8, 0xCF, 0xDC, 0xBA, 0xB2, 0x0B, 0x5F, 0x6D, 0x9C};
 // The engine's framing of that shader's code blob, around the DXBC ([resource tables][DXBC][optional data][footer]),
-// as logged from the D3D12 shader object's code copy (2026-09-30): empty resource tables; optional data 'p' (packed
+// as logged from the D3D12 shader object's code copy: empty resource tables; optional data 'p' (packed
 // resource counts 01 01 01 01 00) and 'u' (size 4, zero); footer 23 = the optional data's size, footer included.
 inline constexpr std::array<std::uint8_t, 24> kBloomL0CodePrefix{};
 inline constexpr std::array<std::uint8_t, 23> kBloomL0CodeTrailer{
@@ -606,7 +606,7 @@ inline constexpr std::uintptr_t kPostProcessCall         = 0x1421E8400;  // Rend
 inline constexpr std::uintptr_t kPostProcessProcess      = 0x14251C230;  // (this, RHICmdList, View, VelocityRT&)
 inline constexpr std::uintptr_t kSceneRenderTargetsGlobal = 0x145923AD0; // FSceneRenderTargets (static object)
 inline constexpr std::uint32_t  kSceneTargetsInGameUI    = 0x110;        // TRefCountPtr<IPooledRenderTarget>
-/// The movie frame for every view (research/RE-movie-view.md §2.5, reviewed in IDA 2026-10-22): FPostProcessing::Process
+/// The movie frame for every view (research/RE-movie-view.md §2.5, reviewed in IDA): FPostProcessing::Process
 /// ends with an unconditional release of the composite source FSceneRenderTargets+0x120 (the media texture's frame,
 /// set once per frame; its only code caller), so the second view's final pass binds the black fallback. The call is
 /// redirected (rcx = &FSceneRenderTargets) and deferred to the family's last view, the game's own guard for its other
@@ -744,7 +744,7 @@ inline constexpr std::uint32_t  kLabelsNumBits = 0x28, kWeakPointsNumBits = 0x30
 
 // The field objective and item icons (slot 51, RE-field-icon-placement.md §2.2-§2.3, §5.1): one stateless placement call
 // per icon, projecting with the controller it is given; its first three instructions (5 bytes, position-independent, no
-// branch lands inside: IDA 2026-10-22) are copied, so the redirect is installed from the game thread, outside the function.
+// branch lands inside: IDA) are copied, so the redirect is installed from the game thread, outside the function.
 inline constexpr std::uintptr_t kFieldIconPlace = 0x1414223E0;  // (entry, canvas, float dt, pc, const FVector* leader, int, const FVector* icon)
 inline constexpr std::array<std::uint8_t, 5> kFieldIconPlaceFirst{0x48, 0x8B, 0xC4, 0x55, 0x53};
 inline constexpr std::uintptr_t kOverlayProject = 0x141348940;  // bool EndUI__ProjectWorldToOverlay(pc, const FVector*, FVector2D* out)
@@ -796,7 +796,7 @@ inline constexpr std::uintptr_t kNaviFindOctagon       = 0x141472C70;  // (user 
 inline constexpr std::uintptr_t kNaviEntryCall         = 0x1414FDDE0;  // the octagon paint's FindOrAdd (pool 0)
 inline constexpr std::uintptr_t kNaviSubmitCall        = 0x1414FDFBB;  // the octagon paint's submit (pool 0)
 inline constexpr std::uintptr_t kSetColorAndOpacity    = 0x1428F1C20;  // UUserWidget (widget, const FLinearColor&)
-inline constexpr std::uintptr_t kCharacterByPlayerType = 0x1413B4C40;  // (u8 type): the party's character of that type; an RE fact kept, no user since v0.56.0 (the scopes carry the member type)
+inline constexpr std::uintptr_t kCharacterByPlayerType = 0x1413B4C40;  // (u8 type): the party's character of that type; an RE fact kept, with no user here (the scopes carry the member type)
 inline constexpr std::uint32_t  kNaviManagerRoot       = 0x08;   // weak NaviMap_C
 inline constexpr std::uint32_t  kNaviManagerOctagon    = 0x18;   // weak Nav_Map (UEndNaviMapOctagon)
 inline constexpr std::uint32_t  kNaviManagerFlags      = 0x180;  // hidden, visible, enabled, auto-rotate; +0x188 zoom
@@ -1639,8 +1639,8 @@ inline constexpr std::uint8_t   kActorModeCinema       = 7;
 /// AEndFieldAIController: a stack of 15 request layers; the active layer (0 = the party's default layer, 1 = the
 /// level's AI settings, 13 = the cinema copy, 16 = none) and its kind, the reflected FFieldAiType (the names and
 /// the hold rule: players/field_hold.h; research/RE-fieldai-kinds.md). Aerith following Cloud in the field reads
-/// layer 1 kind 11 ACCOMPANY [CONFIRMED live 2026-10-19]; the level stages the members on layer 1 during gameplay
-/// (STAY, FOLLOW_POSITION, LEAD, NONE) [CONFIRMED live 2026-10-20].
+/// layer 1 kind 11 ACCOMPANY [CONFIRMED live]; the level stages the members on layer 1 during gameplay
+/// (STAY, FOLLOW_POSITION, LEAD, NONE) [CONFIRMED live].
 inline constexpr std::uint32_t  kFieldAiActiveLayer    = 0xDF8;
 inline constexpr std::uint32_t  kFieldAiActiveKind     = 0x55B8;
 inline constexpr std::uint32_t  kFieldAiLayerRecords   = 0xE00;   // 15 records of 0x4C8 bytes; byte +0 = the kind (0 empty)
@@ -1706,7 +1706,7 @@ inline constexpr platform::FunctionFact kSetActorType{L"EndCharacter800_SetActor
 /// slot index into the array at +0xEE4A30). A slot: +0 the object FName, +8 the current state FName, +0x10 the
 /// current FEndDataTableStateChange row. A row: StringArgumentList (+0x78, count +0x80; [2] = the arrival trigger of a
 /// Lead/MoveToTarget/FollowActor setting), StateTriggerList (+0x98, count +0xA0; the triggers this state waits on, 8
-/// read), NextStateChange (+0xA8, count +0xB0; FStrings of 16 bytes). [CONFIRMED code, read live 2026-10-21 from
+/// read), NextStateChange (+0xA8, count +0xB0; FStrings of 16 bytes). [CONFIRMED code, read live from
 /// outside the game: Tifa's Lead slot and the timer object waiting on her arrival]
 inline constexpr std::uint32_t  kStateManagerActiveList  = 0x67E1E0;  // the list object (the walk stops back at it)
 inline constexpr std::uint32_t  kStateManagerActiveHead  = 0x67E1E8;
@@ -1721,7 +1721,7 @@ inline constexpr std::uint32_t  kStateRowStringArgs      = 0x78;
 /// A move setting's destination: StringArgumentList[1] of a MoveToTarget or Lead row names a field point
 /// (FieldAISetting_MoveToTarget 0x1411663B0 looks it up and does not run without it; FieldAISetting_Lead_L1 the
 /// same). For FollowActor it names the actor followed, for RouteMove the route's base name (points base+n).
-/// [CONFIRMED code 2026-10-27, RE-lead-arrival-wait.md §6]
+/// [CONFIRMED code, RE-lead-arrival-wait.md §6]
 inline constexpr std::uint32_t  kStateRowDestinationArg  = 1;
 inline constexpr std::uint32_t  kStateRowIntArgs         = 0x88;  // IntegerArgumentList (int32*, count +0x90)
 inline constexpr std::uint32_t  kStateRowTriggers        = 0x98;
@@ -1733,7 +1733,7 @@ inline constexpr std::uint32_t  kStateRowTriggersRead    = 8;
 /// LEAD (7) at +0x154/+0x15C (FieldAI_K07Lead_OnMoveDone_Signal 0x1406C1BC0); the run to a mark (4, "MoveToTarget")
 /// at +0x144/+0x14C (FieldAISetting_MoveToTarget writes them at +0x64/+0x6C of the record block that the kind's
 /// enter copies to handler+0xE0; FieldAI_K04FollowPosition_OnMoveDone_Signal 0x1406BE390 and its goal-turn update
-/// 0x1406BEE40 pass handler+324/+332) [CONFIRMED code 2026-10-27]. A run a state-manager command writes
+/// 0x1406BEE40 pass handler+324/+332) [CONFIRMED code]. A run a state-manager command writes
 /// (StateMgrCmd_FieldAIRequest_Exec) names no object (0): nothing can wait on it.
 inline constexpr std::uint32_t  kFieldAiHandlers         = 0xD88;
 struct ArrivalHandlerNames
@@ -1760,14 +1760,14 @@ inline constexpr std::uint32_t  kTriggerRowStates        = 0x50;
 inline constexpr std::uint32_t  kTriggerRowSendObjects   = 0x80;
 inline constexpr std::uint32_t  kTriggerRowDirectSetsMax = 32;
 /// The three state-change data tables (g_DT_StateChange; a state row by its FName through the same virtual, as
-/// StateSlot_SetState 0x141169C00 does when a slot steps to its next state). [CONFIRMED code 2026-10-27]
+/// StateSlot_SetState 0x141169C00 does when a slot steps to its next state). [CONFIRMED code]
 inline constexpr std::uintptr_t kStateChangeTablesGlobal = 0x145843FB0;
 /// The level's acts and act groups, each three data tables with the same row lookup: a state's EnterActionList names
 /// either; ActSequence_QueueActionOrGroup 0x140FB6E00 tries the group tables first, a group being an FName list (+0x08,
 /// count +0x10) of which its 32 accessors (0x1442A07E0) read at most 32 acts. An act row (FEndDataTableAction): Type
 /// (+0x0C, i32, the runner kind ActSequence_CreateActRunner_ByActionType 0x140DAB480 switches on), StringArgumentList
 /// (+0xC8, FString*, count +0xD0), IntegerArgumentList (+0xD8, i32*, count +0xE0), FloatArgumentList (+0xE8, float*,
-/// count +0xF0). [CONFIRMED code 2026-10-29, RE-lead-unlock.md §3, §5] The act tables and the Type field are
+/// count +0xF0). [CONFIRMED code, RE-lead-unlock.md §3, §5] The act tables and the Type field are
 /// kTableAction, kActionRowType and kActionRowIntegers (below, with the talk gather's facts).
 inline constexpr std::uintptr_t kActionGroupTablesGlobal  = 0x145839D60;
 inline constexpr std::uint32_t  kActionGroupRowActions    = 0x08;
@@ -1791,7 +1791,7 @@ inline constexpr std::uint32_t  kAutoWalkFltTurnBack      = 0;
 /// elements {FName key +0, row +8, hash links}, a UE 4.18 sparse array (platform/sparse_array.h; its Num at +0x40).
 /// The FindRow (vt+0x250, UEndDataObjectAction__FindRow 0x141988B70) hashes into it and returns element + 8; the game's
 /// own walk (vt+0x258 GetRowNames 0x141988BD0) reads the same bits. Rows are built at the asset's load; the slots are
-/// emptied by UnInitDataTable. [CONFIRMED code 2026-10-29, RE-data-table-rows.md]
+/// emptied by UnInitDataTable. [CONFIRMED code, RE-data-table-rows.md]
 inline constexpr std::uint32_t  kDataObjectRows           = 0x38;
 inline constexpr std::uint32_t  kDataObjectRowCount       = 0x40;
 inline constexpr std::uint32_t  kDataObjectElementRow     = 0x08;
@@ -1804,7 +1804,7 @@ inline constexpr std::int32_t   kDataObjectRowsMax        = 1 << 16;  // Ch. 4's
 /// +0x128; a story flag that hides the slot); the fallback InvNaviIcon (flag +0x160, shown while ViewLocationID
 /// +0x168 is set, target +0x17C). The first slot with a target and no set invisible flag is the one shown; its
 /// target is resolved by name every frame (a field point, else the level object: a character). [CONFIRMED code, read
-/// live 2026-10-21: the Ch. 3 record targets opy030_Tifa]
+/// live: the Ch. 3 record targets opy030_Tifa]
 inline constexpr std::uint32_t  kRootObjectiveIcons      = 0x1F8;
 inline constexpr std::uint32_t  kObjectiveIconRecordKey  = 0x08;
 inline constexpr std::uint32_t  kObjectiveIconRecordRow  = 0x18;
@@ -1825,7 +1825,7 @@ inline constexpr platform::FunctionFact kStoryFlagIsSet{L"StoryFlag_IsSet", 0x14
 /// FieldPoint_FindByName(manager, const FName*) returns the point's FTransform (translation at +0x10) or null; a
 /// pure hash probe on the game thread, the result copied at once (the table moves as levels stream). The objective
 /// marker resolves its target through it first and draws at the record's shown position (+0x34, world cm).
-/// [CONFIRMED code 2026-10-27, RE-lead-arrival-wait.md §6, RE-navi-icon-target.md §1.3]
+/// [CONFIRMED code, RE-lead-arrival-wait.md §6, RE-navi-icon-target.md §1.3]
 inline constexpr std::uint32_t  kRootFieldPoints         = 0x140;
 inline constexpr std::uint32_t  kFieldPointLocation      = 0x10;
 inline constexpr std::uint32_t  kObjectiveIconRecordAt   = 0x34;  // the shown position (FVector, world cm)
@@ -1833,13 +1833,13 @@ inline constexpr std::array<std::uint8_t, 16> kFieldPointFindByNameEntry{
     0x40, 0x53, 0x48, 0x83, 0xEC, 0x20, 0x4C, 0x8B, 0x02, 0x48, 0x8D, 0x59, 0x08, 0x48, 0x8B, 0xCB};
 inline constexpr platform::FunctionFact kFieldPointFindByName{L"FieldPoint_FindByName", 0x140FF89C0, kFieldPointFindByNameEntry};
 
-// --- A held member's own story boxes (research/RE-held-member-story-boxes.md, 2026-10-30) ---------------------------
+// --- A held member's own story boxes (research/RE-held-member-story-boxes.md) ---------------------------
 /// EndFieldStateTrigger_OnColliderBeginOverlap(fieldPoints, FName volume by value, AActor* collider): the story box's
 /// enter, once per new box in a character's own sweep (the dispatcher's diff, game thread, world tick): records the
 /// collider as an occupant, then sends the box's attribute-1 Status if the box is on and its group lists the collider.
 /// The return is ignored by every caller. First instruction `mov [rsp+10h], rdx` (5 bytes, block-aligned, position-
 /// independent); the end mirror takes the same arguments and only undoes a recorded occupant. [CONFIRMED code + entry
-/// bytes, IDA 2026-10-30]
+/// bytes, IDA]
 inline constexpr std::uintptr_t kStoryBoxBegin = 0x14100CC70;
 inline constexpr std::array<std::uint8_t, 5> kStoryBoxBeginFirst{0x48, 0x89, 0x54, 0x24, 0x10};
 inline constexpr std::array<std::uint8_t, 16> kStoryBoxEndEntry{
@@ -1938,7 +1938,7 @@ inline constexpr std::array<std::uint8_t, 16> kBattleSuspendEntry{
 inline constexpr std::size_t kBattleSuspendFirstBytes = 5;  // mov r11, rsp; push rbp; push rbx
 inline constexpr platform::FunctionFact kBattleSuspend{L"BattleSystem_Suspend_ReleaseCursorAndIcons", 0x1409B5630, kBattleSuspendEntry};
 
-// --- The world around two views (research/RE-camera-fades.md, 2026-10-21) ------------------------
+// --- The world around two views (research/RE-camera-fades.md) ------------------------
 /// EndCharacter_ApplyLeaderCameraFade(char, u8 enable, const FName* reason, u8 force, u8 forceOn): adds (enable 0) or
 /// removes (enable 1) a named reason on the character's list of reasons not to near-fade; with any reason listed its
 /// mesh's render near-fade is off, with none it is on at the EndParam distances. The leader change lists "Default" on
@@ -1956,7 +1956,7 @@ inline constexpr std::uint32_t kCharacterNoFadeReasons    = 0xFC0;  // AEndChara
 inline constexpr std::uint32_t kCharacterNoFadeReasonsNum = 0xFC8;
 inline constexpr std::uint32_t kMeshNearFarFadeEnabled    = 0x8B0;  // u8 on the skinned mesh: the render near-fade is on
 
-// --- Animation detail judged from two cameras (research/RE-anim-two-views.md, 2026-10-21) --------
+// --- Animation detail judged from two cameras (research/RE-anim-two-views.md) --------
 /// The judge EndSkelMeshComp_AnimOptimizationEval(mesh, bool* forceOut, mesh** leadOut, bool cameraCut), slot +0xA48
 /// of UEndSkeletalMeshComponent's and UEndSwitchableSkeletalMeshComponent's vtables (the only two slots holding it),
 /// called serially on the game thread by the allocator's Update, the slot +0x50 of its vtable, at the world's
@@ -1987,7 +1987,7 @@ inline constexpr std::uint32_t kCharacterKbd              = 0x1A90;  // AEndChar
 inline constexpr std::uint32_t kKbdBonamiks               = 0x428;   //   its Bonamik array (data), the first one's mode below
 inline constexpr std::uint32_t kBonamikUpdateMode         = 0x1C9C;  //   0 normal; 1 reduced (out of the camera's cone)
 
-// --- NPCs near a further player: CharaPop (research/RE-npc-near-player-two.md, 2026-10-21) -------
+// --- NPCs near a further player: CharaPop (research/RE-npc-near-player-two.md) -------
 /// CharaPop_SetEntryMinLODLevel_ByName(const FName* objectName, u8 level, bool evaluateNow) -> found: the entry's
 /// minimum level (3 keeps it awake, shown and fully animated; 0 clears it), the setter event scripts and field-AI
 /// animations use; off the game thread it posts itself to the game thread.
@@ -2130,7 +2130,7 @@ inline constexpr std::uint32_t  kEnvSetBlockActorsNum = 0x1C8;
 inline constexpr std::uint32_t  kEnvSetBlockActorsMax = 0x1CC;
 
 // --- The world's levels: what loads and shows them (research/RE-world-streaming-players.md, pass S-RMK-STREAM; the call
-// sites, argument shapes and the load bits checked by hand in IDA 2026-10-27) ---------------------------------------------
+// sites, argument shapes and the load bits checked by hand in IDA) ---------------------------------------------
 /// EnvSetMgr_TickEvaluate_LeaderDownTrace's two calls on a change of player 1's area set: the set's level list for the
 /// visibility slot 4 (`EnvSet_RequestLevelList_cand(u8 slot, int prio, TArray<FName>* names, TArray<u8>* unvisible)`,
 /// the bytes parallel to the names and possibly null; the callee sorts the names in place), and the area's planner level
@@ -2206,7 +2206,7 @@ inline constexpr std::uint32_t  kSaveDataEnvSetName   = 0x480AC;  // from the ac
 inline constexpr std::uint32_t  kSaveDataEnvSetNameBytes = 0x80;
 
 // --- The game window, the resolution and the Borderless letterbox (research/RE-multi-monitor-views.md, reviewed by
-// hand 2026-10-21 §13; RE-view-size-fov.md §7.2) ----------------------------------------------------------------
+// hand, §13; RE-view-size-fov.md §7.2) ----------------------------------------------------------------
 inline constexpr std::uintptr_t kGEngine                   = 0x145831188;  // UEngine* GEngine
 inline constexpr std::uint32_t  kGameEngineViewportWindow  = 0x1078;       // UGameEngine::GameViewportWindow (TWeakPtr<SWindow>: object; referencer +0x1080)
 inline constexpr std::uint32_t  kSWindowNativeWindow       = 0x6B8;        // SWindow::NativeWindow (TSharedPtr<FGenericWindow>: object)
@@ -2247,7 +2247,7 @@ inline constexpr platform::FunctionFact kRequestResolutionChange{L"FSystemResolu
 /// GSystemResolution: ResX, ResY +4, WindowMode +8 (0 Fullscreen, 1 WindowedFullscreen = the game's Borderless and
 /// Fullscreen options, 2 Windowed). One writer: FSystemResolution::UpdateSystemResolution.
 inline constexpr std::uintptr_t kSystemResolution           = 0x1453E3AE0;
-/// Dynamic resolution (research/RE-split-upscale.md, S-RMK-UPSCALE; read by the integrator 2026-10-24): each global
+/// Dynamic resolution (research/RE-split-upscale.md, S-RMK-UPSCALE): each global
 /// holds a pointer, set at the console variable's registration, to its shadowed values (the game thread's at +0, the
 /// render thread's at +4); FDefaultDynResDriver takes fminf(Max / 100, the heuristic) as every view's fraction.
 inline constexpr std::uintptr_t kDynResMaxScreenPercentageRef = 0x145952648;  // r.DynamicRes.MaxScreenPercentage (float)
@@ -2298,7 +2298,7 @@ inline constexpr std::uintptr_t kBloomAreaHeightMul = 0x1425C72E6;  // in the bl
 inline constexpr std::uint8_t   kBloomAreaBySp[]    = {0xF3, 0x41, 0x0F, 0x59, 0xC8};  // mulss xmm1, xmm8
 /// mulss xmm1, xmm7 as ONE instruction of the original's length (an empty REX prefix): a 4-byte form plus a nop would
 /// add an instruction start the original lacks, and a thread stopped on it when the original is put back would resume
-/// inside `mulss xmm1, xmm8` (review 2026-10-24).
+/// inside `mulss xmm1, xmm8` (review).
 inline constexpr std::uint8_t   kBloomAreaByViewScale[] = {0xF3, 0x40, 0x0F, 0x59, 0xCF};
 inline constexpr std::uint32_t  kSystemResolutionWindowMode = 0x8;
 /// The 321 copies of `cmp dword [GSystemResolution.WindowMode], 1` (83 3D rel32 01): the final tonemap pass's own
@@ -2310,7 +2310,7 @@ inline constexpr std::size_t    kLetterboxCompares     = 321;
 /// FViewport+0xC4), `cmp eax, 1`, `jnz`. In window mode 1 the view init options' rect and constrained rect both
 /// become (0, 0, GSystemResolution.ResX, ResY) and the player's own rect is kept aside at +0xF0: Square Enix's one
 /// view at the option resolution, upscaled by the final pass. With two local players every view then covers the
-/// whole target and the last drawn wins (seen live 2026-10-21 on the spanned window: one view over both monitors
+/// whole target and the last drawn wins (seen live on the spanned window: one view over both monitors
 /// with the 321 compares already patched). The patch rewrites this cmp's imm8 with the others.
 inline constexpr std::array<std::uint8_t, 11> kViewRectOverrideWitness{0xFF, 0x90, 0xF0, 0x00, 0x00, 0x00,  // call [rax+0F0h]
                                                                         0x83, 0xF8, 0x01,                    // cmp eax, 1
@@ -2416,7 +2416,7 @@ inline constexpr std::uint32_t  kBikeGameSharedRefCount = 0x8;
 
 // Walk-up traversal for further players: ladders, squeezes, crawls, monkey bars, climbs and jumps
 // (research/RE-traversal-walkup-two.md, S-RMK-TRAVERSE3B; RE-traversal-action-two.md, S-RMK-TRAVERSE3A; both read in
-// IDA by the integrator 2026-10-24). Every walk-up spot is a field-action actor: the primary controller's
+// IDA). Every walk-up spot is a field-action actor: the primary controller's
 // PlayerTrigger enter stores the party leader as the actor's one user, a per-frame TryStart requests the action on that
 // user's own field-action component, and the component runs it.
 
@@ -2905,7 +2905,7 @@ inline constexpr std::uint32_t kTargetsActiveHead = 0xBC50, kTargetsItemNext = 0
 /// The entry's place (an FVector at entry +0x24 = item +0x3C; entry +0x3C is its row A: AddTarget's location argument,
 /// RE-talk-far.md §4.1), the
 /// pressed object's own spot. A talk target carries its state object's name (an ObjectActor row, "oba030_..."), which
-/// the character registry's lookup by name does not know (none found live, 2026-10-26): the entry is the game's own
+/// the character registry's lookup by name does not know (none found live): the entry is the game's own
 /// record of where the talked-to object stands, read while it exists (the talk state removes it a tick later).
 inline constexpr std::uint32_t kTargetsEntryLocation = 0x24;
 /// The pick's pending write of one entry's disabled byte (the field-action component's start/end posts it): an 8-byte
@@ -3021,7 +3021,7 @@ inline constexpr platform::FunctionFact kFindTargetEntry{L"FieldTargetMgr_FindEn
 // SEAD (Square Enix's middleware) measures every placed or moving sound from one listener object, which the SEAD audio
 // device sets each audio frame from the engine's listener [0] only (player 1's view). Positions are UE world cm, axes
 // as UE's (the push copies the translation as is). audio/listeners measures each sound from the nearest player's
-// listener (RE §10: the build checks, 2026-10-26).
+// listener (RE §10: the build checks).
 
 /// The SEAD listener singleton (SQEX::Sd::Lay::Listener*, 0xA0 bytes): its position at +0x30. The object holds its
 /// vtable (one slot, the deleting destructor), padding at +0x08 and values only (no pointer, no count): a byte copy is
@@ -3183,7 +3183,7 @@ inline constexpr int kAutoSeStepTypeLast  = 6;
 // (0..12): the text and help (const wchar_t*[13], .rdata, read only by the row's setup, which copies them into a new
 // FString), the order (u8[13], .rdata, read only by the build) and the unlock flag (FName[13], .data, written once by a
 // static initializer): a kind is kept when its raw flag is 0 or that story flag is set. Kind 12 is the trial's "Buy
-// Now" (flag stfCmn_IsTrialMode, never set in the full game: the user, 2026-10-31); the mod gives it its text, help and
+// Now" (flag stfCmn_IsTrialMode, never set in the full game); the mod gives it its text, help and
 // a 0 flag, and puts it before System (11). A press broadcasts the kind to OpenWindowByKind.
 inline constexpr std::uint8_t   kTopRowKind        = 12;
 inline constexpr std::uintptr_t kTopRowTextSlot    = 0x1443C4780 + kTopRowKind * 8;  // g_MainTopMenu_ItemTextIds[12]
@@ -3550,7 +3550,7 @@ inline constexpr std::uint32_t kFocusLayerCount  = 0x48;
 
 
 // --- The battle's rates: enemy HP and stagger, enemy damage, EXP and AP (research/RE-enemy-stat-scaling.md,
-// RE-streamlined-progression.md; reviewed against the binary 2026-10-31 16:11) ----------------------------------------
+// RE-streamlined-progression.md; reviewed against the binary) ----------------------------------------
 /// EnemyParam_ComputeStats_FromSpecAndLevel(estimateRow, paramRow, int* hp, int* bp, int* pa, int* ma, int* pd, int* md):
 /// the HP and stagger gauge in percent of the EnemyParameter row in, the values out, then the Easy/Hard rate. Called by
 /// an enemy's battle start, the spec override (a phase row) and a guest ally's construction; the first two are

@@ -1,14 +1,13 @@
 #pragma once
 
 // A companion a further player walked past its own story box is brought back beside player 1's character when the
-// level's run through that box goes to its AI (the user, 2026-10-30, after the Ch. 5 tunnel runs: "if the character is
-// recorded as having run past the box where no member or AI was intended to go yet, maybe we can teleport the character
-// back towards Cloud for the AI handoff"; research/RE-field-catchup-warp.md).
+// level's run through that box goes to its AI: a character recorded as having run past a box no member was meant to
+// reach yet is put back beside Cloud for the AI's run (research/RE-field-catchup-warp.md).
 //
 // The lead gate hands a run whose step moves on at the member's own armed story box to its AI (players/lead_gate
 // OwnBoxAhead), so the game's run carries the member in on the game's clock. A member its player took past that box
 // cannot be carried in: the run from there to its point never passes through the box (story_box_rules RunCrosses), so
-// the box's held-back enter fired at the hand and the step played where the member stood (played 2026-10-30 15:54: Tifa's
+// left alone, the box's held-back enter fires at the hand and the step plays where the member stands (seen in play: Tifa's
 // fence animation against the wrong stretch of the gate, a slow slide back). In single player the game's own follow AI
 // warps a companion more than 10 m from its leader back beside it (RE §1); a held member never gets that warp. So, just
 // before the hand, when the run from where the member stands misses its box and the run from beside player 1's character

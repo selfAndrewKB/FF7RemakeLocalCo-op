@@ -1,9 +1,9 @@
 #pragma once
 
-// A further player's member never fires its own story box ahead of the story, and never loses one (the user, 2026-10-30:
-// "no dialogue is ever cut and goes missing ... I want that seamless"; research/RE-held-member-story-boxes.md,
-// RE-tifa-barret-talk-order.md: in the Ch. 5 tunnel player 2 walked Tifa into her talk box with Barret before her step
-// listened for the talk's trigger, and the scene stalled for good).
+// A further player's member never fires its own story box ahead of the story, and never loses one: no line of dialogue
+// is ever cut or lost (research/RE-held-member-story-boxes.md, RE-tifa-barret-talk-order.md: in the Ch. 5 tunnel a
+// player who walks Tifa into her talk box with Barret before her step listens for the talk's trigger stalls the scene
+// for good).
 //
 // Each character's own body is swept for the level's group boxes every tick, whoever controls it; a box limited to
 // one member (its group does not list the party leader) is placed where that member arrives when the level moves it or
@@ -15,14 +15,14 @@
 //   - the level moves it or hands it to its AI (its PLAYER slot empties: a guide, a script, a scene's hand), or writes a
 //     move of its own on it (a run or a lead, players/lead_gate OnLevelMove), even one its player keeps: in single player
 //     that move carries the companion through its boxes (the Ch. 5 dash crosses the talk box and the fence box in about
-//     3 s, before the talk sends "head for the stairs"; v0.129.0 counted only a move kept at a marked point, and the
-//     fence box, held until player 1 came 31 s later, missed that trigger: the stall again, 2026-10-30 15:17);
+//     3 s, before the talk sends "head for the stairs"; counting only a move kept at a marked point, the
+//     fence box, held until player 1 comes half a minute later, would miss that trigger and the scene would stall);
 //   - its player leaves (it follows on its AI);
 //   - player 1's character comes within a few metres of the box (world/story_box_rules.h Reaches): a following companion
 //     walks in about then.
 // Not during a cutscene (the game's own sweep dispatches nothing in the CINEMA mode). If the member is no longer inside
 // at that moment, the game's end handler follows at once, so the box's occupant record stays balanced. Party boxes
-// (turn-backs, scene starts), group-less boxes, doors and every AI-driven member are the game's, as before.
+// (turn-backs, scene starts), group-less boxes, doors and every AI-driven member are the game's.
 // Info lines: each enter held back, each replay (and whether the box was off then: nothing sent, as in single player),
 // and each remembered enter whose box went away first (its level unloaded): the only way one is dropped.
 // Game thread only: the enter runs inside the world tick's dispatcher; Tick runs outside it, where the redirect is placed.

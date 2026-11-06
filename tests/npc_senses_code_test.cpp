@@ -41,7 +41,7 @@ void TestCellRule()
     {
         EXPECT(code::CellOf(v) == static_cast<int>(std::floor((v + 200.0f) / 400.0f)));
     }
-    // Read live 2026-10-21: player 1 at (-851, 16932, 1163) in the grid centred (-2, 42, 3).
+    // Read live: player 1 at (-851, 16932, 1163) in the grid centred (-2, 42, 3).
     const float one[3] = {-851.0f, 16932.0f, 1163.0f};
     EXPECT((code::CellOf(one) == code::Cell{-2, 42, 3}));
 }
@@ -85,7 +85,7 @@ void TestChooseCentre()
     }
 }
 
-/// The two-player rule as it stood before the N form (v0.29.0 .. v0.58.0), kept verbatim as the reference.
+/// The two-player rule in its own form, kept verbatim as a reference for the N form.
 code::Choice OldChooseCentre(code::Cell one, code::Cell two) noexcept
 {
     if (std::abs(two.z - one.z) > 1)

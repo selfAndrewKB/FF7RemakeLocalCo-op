@@ -287,7 +287,7 @@ int OwnerOf(const void* entry) noexcept
 }
 
 /// The canvas slot holding `widget`, matched on the widget's Slate object as the placement matches it (the game's
-/// GetCachedWidget: the GC widget at +0xD8, else the plain one at +0xC8; IDA 2026-10-22), or nullptr.
+/// GetCachedWidget: the GC widget at +0xD8, else the plain one at +0xC8), or nullptr.
 std::uint8_t* SlotOf(void* canvas, void* widget) noexcept
 {
     void*      slate      = nullptr;

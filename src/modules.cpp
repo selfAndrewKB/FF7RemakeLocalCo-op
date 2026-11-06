@@ -376,7 +376,7 @@ constexpr std::array kModules{
     // logging only; without it the world's levels are not watched
     Module{.name = L"level watch", .install = Call<&world::level_watch::Install>, .remove = &world::level_watch::Remove},
     // The field hooks the seats' members use, removed only with every further player out (the field-action tick back
-    // on any thread; the seats' triggers no longer reach the dispatcher; the presses and chest opens back to the
+    // on any thread; the seats' triggers stop reaching the dispatcher; the presses and chest opens back to the
     // game's; the consumers of the presses first).
     // without it further players' members take ladders by themselves
     Module{.name = L"traversal action", .install = Call<&world::traversal_action::Install>, .remove = &world::traversal_action::Remove,
@@ -592,8 +592,9 @@ Columns TickColumns(const ColumnsIn& in) noexcept
     views::column_layout::Tick(columns.wanted, in.playersIn + views::mirror_player::Count(), views::window_span::Columns(),
                                views::window_span::ColumnWidths(), views::window_span::ColumnHeights(), in.listSeats);
     views::mirror_player::Tick(in.playersIn, in.seatIds, columns.wanted, columns.alone);
-    // Whenever the letterbox patch is on the views are in window pixels, one view included (the span's hold keeps it on
-    // with a further player awaiting a member: seen 2026-10-24 on the ultrawide, player 1's view streaked past the resolution).
+    // Whenever the letterbox patch is on the views are in window pixels, one view included: the span's hold keeps it on
+    // with a further player awaiting a member, since otherwise player 1's view would streak past the resolution on a
+    // wider monitor.
     views::split_scale::Tick(views::letterbox_patch::Applied());
     return columns;
 }

@@ -1,17 +1,17 @@
 #pragma once
 
 // The battle's rates: enemy damage, enemy HP, boss HP, the enemies' stagger gauge, EXP and AP, each a multiplier from
-// 0.1 to 10.0 set from the Co-op page, the console or the settings file (platform/settings.h; the user, 2026-10-31;
-// plan/topics/battle.md History 16:11). Each one drives the game's own computation where the game has one
+// 0.1 to 10.0 set from the Co-op page, the console or the settings file (platform/settings.h). Each one drives the
+// game's own computation where the game has one
 // (research/RE-enemy-stat-scaling.md, RE-streamlined-progression.md):
 //   - HP and the stagger gauge: the game computes an enemy's from its tables in one function, at the enemy's battle
 //     start and at each phase change (the spec override). Its two enemy calls are redirected: the game's values are
 //     scaled before the game sets them, the boss rate for an enemy whose own row marks it the fight's leader
 //     (CharacterKindID 1, the game's own boss notion: its death rewards every enemy left), the enemy rate otherwise;
-//     a party-side unit (a summon) is left as the game made it. These rates are set between fights (the user,
-//     2026-11-01): a max HP changed mid-fight through the game's phase change kept the bar's share, but the boss's hits
-//     no longer came off its HP record (plan/topics/battle.md History 2026-11-01 20:00), so the battle pause's Co-op
-//     row and the re-run on the enemies fighting were taken out. The console still sets them at any time.
+//     a party-side unit (a summon) is left as the game made it. These rates are set between fights: a max HP changed
+//     mid-fight through the game's phase change keeps the bar's share, but the boss's hits then stop coming off its HP
+//     record (plan/topics/battle.md), so the battle pause has no Co-op row and the enemies fighting are not run
+//     again. The console still sets them at any time.
 //   - Enemy damage to the party: on Easy and Hard the game scales each enemy hit on the party by a rate row of its
 //     own, which takes the multiplier (the row the game reads, written times it and put back at removal). On Normal
 //     the game has no such step and no row is read, so the step is the mod's: the same conditions (an enemy-side

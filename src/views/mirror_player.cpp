@@ -147,9 +147,8 @@ std::int32_t FreeControllerId() noexcept
 
 /// Why a mirror cannot be added now, or null with player 1's controller filled.
 /// `atLeave`: the tick a further player leaves for a world change. The field is leaving, not steady, and still running:
-/// the mirror added then holds the column through the loading screen, where a steady-field add came too late (the
-/// user, 2026-10-22 10:52: one view stretched over both monitors at a save load with player 2 in, mirrored on the
-/// next load because the mirror from the first was still in).
+/// the mirror added then holds the column through the loading screen, where an add in the steady field comes too
+/// late: one view then stretches over both monitors at a save load with a further player in.
 const wchar_t* Refusal(std::int32_t column, UObject*& playerOneController, bool atLeave) noexcept
 {
     const auto game = players::game_state::Current();

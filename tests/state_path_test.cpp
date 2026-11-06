@@ -1,5 +1,5 @@
 // Host-side tests for players/state_path.h: a member's chain of level states, walked as the lead gate walks it.
-// The chains are the ones the game printed live on 2026-10-27 (Aerith's guide home in Ch. 8, Barret's walk-ups to
+// The chains are the ones the game printed live (Aerith's guide home in Ch. 8, Barret's walk-ups to
 // the terminal in Ch. 7), with the destinations made up.
 
 #include "players/state_path.h"

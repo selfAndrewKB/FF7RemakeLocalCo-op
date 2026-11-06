@@ -2,10 +2,10 @@
 
 // Whether the game shows something that takes the whole screen, from the game's own state: the reason the
 // one-window single view collapses the split (players/single_view.h applies it; views/column_source.h decides it as
-// Why::WholeScreen; the user's ruling of 2026-10-26: in one window cutscenes, menus and minigames collapse to the
-// engine's single view as in Rebirth, and the mirror look stays the monitor row's; 2026-10-27: those three, plus the
-// scripted talks and events that take the game's event camera, and no more, so a free talk or a field pickup, which
-// hold the field control lock only, play on every view as they did before v0.109.0). Rebirth's views/whole_screen gave
+// Why::WholeScreen). In one window cutscenes, menus and minigames collapse to the engine's single view as in Rebirth,
+// and so do the scripted talks and events that take the game's event camera; the mirror look stays the monitor row's.
+// No more than those: a free talk or a field pickup, which hold the field control lock only, play on every view.
+// Rebirth's views/whole_screen gave
 // the shape (its reads from its RE-p2-single-view.md); Remake's signals are the ones its research located
 // (research/RE-lifecycle-world.md §2, §4, §8; RE-pause-menu-any-pad.md §3.4; RE-shop-two.md §3), most of them read by
 // another module already, so this one reads through them:
@@ -15,22 +15,22 @@
 //   - the on/off table (players/field_root.h OnOff; Square Enix's EndFieldOnOffTable reference counts): the
 //     script-opened menus 72-76; 12 ShowSkipPauseMenu (a skippable scene); 39, 40 and 53 a held black screen;
 //     41 the loading screen; 36 MiniGamePlaying with its owner, the act's name (an act's exclusion row sets it from
-//     data, Fort Condor natively, research/RE-minigame-signal.md §1; the Reactor 5 lock segment's acts set it, live
-//     2026-10-27), the moment held over the one-tick gap between a segment's chained acts (whole_screen_rules.h
+//     data, Fort Condor natively, research/RE-minigame-signal.md §1; the Reactor 5 lock segment's acts set it, seen
+//     live), the moment held over the one-tick gap between a segment's chained acts (whole_screen_rules.h
 //     BridgeActGap, the mod's own bridge);
 //   - the shop UI's own "a shop is up" byte (players/game_state.h ShopUp: a shop runs in the field state) and the
 //     game's own IsPauseMenuClosed (PauseWidgetAlive: a Blueprint-opened pause menu, Libra from the main menu);
 //   - through views/scene_camera.h's read (ReadSceneNow; nothing of these is known while its globals failed their
 //     check): the cutscene manager playing, its skip byte, and the lock mask's bit 21 for the arena rule below. The
-//     lock itself is no reason (v0.109.0 read it as one: a talk, a shop's talk, an event, a pickup and a one-frame
-//     transition collapsed the window in the user's play 2026-10-27 01:56-02:05, bits 0, 2, 20 and 1; the user's
-//     call: menus, cutscenes and minigames only, widened the same night to the event camera, below);
+//     lock itself is no reason: read as one, a talk, a shop's talk, an event, a pickup and a one-frame transition
+//     (bits 0, 2, 20 and 1) would each collapse the window, where only menus, cutscenes, minigames and the event
+//     camera, below, are meant to;
 //   - the event camera (views/scene_camera.h SlotActive: the event camera system's slot 18 active on player 1's
 //     manager, research/RE-cutscene-camera-two.md §2.3) while a scene holds the players (the field lock outside
 //     player 1's own move, or the cutscene: a field area's rail camera writes 18 in free play too and holds no lock
 //     [ASSUMPTION until a rail area is played; §11 Q3]), outside a battle: a scripted talk runs on it with the game's
-//     own angles and cuts, the HUD off and the speakers alone in frame, and the user wants those single (2026-10-27
-//     ~03:00: "almost like cutscenes, only difference is they cannot be skipped"); a free talk keeps the field
+//     own angles and cuts, the HUD off and the speakers alone in frame, and those are shown single: they are cutscenes
+//     in all but that they cannot be skipped; a free talk keeps the field
 //     camera's slot 24 and stays split (live: Chadley's scripted talk on 18, the armed leader's free talk on 24; the
 //     talk camera's slot 14, a look-at a shop uses, is not counted [ASSUMPTION: no free talk seen on 14]);
 //   - a VR simulator or colosseum session (on/off 78 ShowColosseumMenu, held for the whole session; research/

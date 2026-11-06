@@ -167,14 +167,14 @@ void SlotsAndEntries()
     EXPECT(Same(EntryWanted(true, kThreeColumns, kStockFavorTop, true, swap, {0, 2, -1}).record, kThreeColumns));
 }
 
-/// Columns of their own widths (the span's monitors, v0.147.0): each record's fractions give back the monitor's exact
+/// Columns of their own widths (the span's monitors): each record's fractions give back the monitor's exact
 /// pixels through the engine's float product and truncation, the columns touch, and equal widths are equal columns.
 void ColumnsOfTheirWidths()
 {
     const auto pixels = [](float fraction, std::int32_t total) {
         return static_cast<std::int32_t>(std::trunc(fraction * static_cast<float>(total)));
     };
-    const std::array<std::int32_t, 3> row{2560, 3440, 2560};  // the user's 1440 row, 2026-11-02
+    const std::array<std::int32_t, 3> row{2560, 3440, 2560};  // a row at 1440, the ultrawide in the middle
     const Records columns = ColumnRecords(row);
     std::int32_t  left    = 0;
     for (std::size_t i = 0; i < 3; ++i)

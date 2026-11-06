@@ -276,7 +276,7 @@ bool Install(const platform::GameImage& image) noexcept
     g_slowTarget   = *slow;
     g_slot         = *slot;
     g_gameMode     = reinterpret_cast<void**>(*gameMode);
-    // The user's setting (one of the table's words), set before the redirect is placed: no write reads it yet.
+    // The menu-slow setting (one of the table's words), set before the redirect is placed: no write reads it yet.
     g_slowWrites.SetSlows(platform::settings::Of(platform::settings::kMenuSlow).word == L"on");
     if (!g_slow.Install(g_slowCall, g_slowTarget, reinterpret_cast<std::uintptr_t>(&SetSlot)))
     {

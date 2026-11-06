@@ -160,7 +160,7 @@ Wait FieldWait(void* member) noexcept
         }
         // The game's own leader handed to its AI: the game is in a scene, a field action or the control lock, and it
         // hands every player's member the same way (the funnel, or its backstop in the session). A seat that landed
-        // inside such a hand played through it (seen live 2026-10-21: Tifa taken mid-animation under lock 0x1).
+        // inside such a hand would play through it (seen live: Tifa taken mid-animation under lock 0x1).
         if (!LeaderWithPlayer())
         {
             return Wait::LeaderHanded;
@@ -229,8 +229,8 @@ bool JudgedState(const void* member, field_hold::Judged& out) noexcept
         return false;
     }
     std::uint8_t kinds[field_hold::kLayers] = {};
-    // An interest scene never takes a member (the user, 2026-10-30): it is judged by the request beneath it. Only with the
-    // guard: without it an interest walk could start under the player and fault (it hands, as before the guard).
+    // An interest scene never takes a member: it is judged by the request beneath it. Only with the
+    // guard: without it an interest walk could start under the player and fault, so the member is then handed.
     if (kind == field_hold::kInterest && ai_move_guard::Active())
     {
         static_assert(field_hold::kLayers == facts::kFieldAiLayers, "the request stack's layers");
@@ -359,7 +359,7 @@ Choice Choose(int seat, void* playerOneController, void* taker, bool log, std::u
     }
     if (choice.ordinal < 0 && support)
     {
-        choice.wait = Wait::Support;  // the user's Barret case (2026-10-22 11:10): types 0 1 9 read as a solo party
+        choice.wait = Wait::Support;  // types 0 1 9 read as a solo party (seen with Barret)
     }
     if (log)
     {

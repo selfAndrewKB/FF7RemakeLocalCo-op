@@ -12,7 +12,7 @@
 // set, records this frame's places and drops the entries that did not move. With one family per player
 // (render/one_family.h) the second family's update drops every entry, so players 2 and 3 and the mirror columns draw
 // moving objects without their motion through the world: smear, and dithered hair, when the camera follows a moving
-// character [CONFIRMED code; seen by the user in player 3's view, 2026-11-01].
+// character [CONFIRMED code; seen in player 3's view].
 //
 // How, with the game's own two gates, for every family after the frame's first:
 //   1. game thread, once the family's boundary is queued and right before its submission: the started flag = 1, the

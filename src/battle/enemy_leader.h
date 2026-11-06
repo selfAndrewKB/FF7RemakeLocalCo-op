@@ -14,7 +14,7 @@
 // leader, as Rude did (nothing in the game checks that a non-hate enemy's target is alive) [CONFIRMED live].
 //
 // The co-op result is the single-player one: the enemies turn on the standing human's member. The leader itself
-// stays (player 1 inert on its downed leader, the user's rule), so the two steps the switch would have run get the
+// stays (player 1 inert on its downed leader, the co-op rule), so the two steps the switch would have run get the
 // member the game would have switched to:
 //   - the enemy-facing leader: the game's leader while it stands, else the first other human's member that stands,
 //     else the game's own leader; read each engine tick on the game thread while a battle runs;
@@ -26,11 +26,11 @@
 //   - the battle AI tick's leader read (its one call site) answers that member for every battle AI while the
 //     enemy-facing leader differs from the game's, so the game's own OnChangeLeader fires, forward and back.
 // The Blueprint natives an enemy script picks "the player" with (SetTargetByType(UCPC), GetLeader, the target-type
-// collector behind GetActionCharacter and kin; none tests that the leader stands) were answered here too from
-// v0.19.1 (the re-target alone left Rude's script re-picking the downed Cloud each action [CONFIRMED live]); since
-// v0.36.0 battle/enemy_coin answers them from each enemy's coin, whose toss skips a downed member.
-// In co-op the game's forced switch is refused altogether (battle/party_switch; the user's rule 2026-10-28: a downed
-// player stays on their character until revived), so with no human's member standing the enemy-facing leader is the
+// collector behind GetActionCharacter and kin; none tests that the leader stands) are battle/enemy_coin's to answer,
+// from each enemy's coin, whose toss skips a downed member: the re-target alone leaves a script such as Rude's
+// picking the downed Cloud again at each action [CONFIRMED live].
+// In co-op the game's forced switch is refused altogether (battle/party_switch: a downed player stays on their
+// character until revived), so with no human's member standing the enemy-facing leader is the
 // standing AI ally that switch would have taken (the next deployed slot from the leader's, wrap-around, no human's,
 // no battle support guest), and the same re-target and OnChangeLeader run for it. `Instead` publishes that member for
 // the coin: an enemy whose coin finds no standing human answers its "the player" actor reads with it, as a single

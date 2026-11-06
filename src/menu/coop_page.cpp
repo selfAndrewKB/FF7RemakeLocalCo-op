@@ -328,7 +328,7 @@ const wchar_t* FillPageRaw(void* page)
         {
             g.removeAt(rows, 0, rows->num);
         }
-        // The game's construct only appends rows and finds categories by key (checked in IDA for the reviewer, 2026-10-31),
+        // The game's construct only appends rows and finds categories by key (read in IDA),
         // so after a re-add it adds its rows behind the mod's, which this clears again.
         for (const int option : category.options)
         {

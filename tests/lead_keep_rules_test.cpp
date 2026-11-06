@@ -85,7 +85,7 @@ void TestStagingStaysThePlayers()
 void TestARunIntoItsOwnBoxIsAGuide()
 {
     // Tifa's Ch. 5 dash to the fence: nothing waits on its arrival, but it moves on at her fence box, before the talk's timed
-    // "head for the stairs" (2026-10-30). A guide whatever else holds, the keep switch included.
+    // "head for the stairs". A guide whatever else holds, the keep switch included.
     for (const bool needed : {false, true})
     {
         for (const bool keeps : {false, true})

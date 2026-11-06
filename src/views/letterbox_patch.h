@@ -8,10 +8,10 @@
 // target, so each is fitted over the other. The compare is `cmp dword [GSystemResolution.WindowMode], 1` and the
 // compiler inlined it into the pass and each of its 320 pixel-shader setter permutations: 321 copies of one 7-byte
 // instruction, each followed (after at most two moves) by a `jnz` over the fit. There is no single site to redirect
-// (research/RE-view-size-fov.md §7.2, RE-multi-monitor-views.md §6.3; the user approved the patch 2026-10-20).
+// (research/RE-view-size-fov.md §7.2, RE-multi-monitor-views.md §6.3), so every copy is patched.
 //
-// Upstream of the pass (found live 2026-10-21, when the spanned window showed one view over both monitors with the
-// 321 compares patched): ULocalPlayer::CalcSceneView asks the viewport's window mode and, in mode 1, replaces each
+// Upstream of the pass, with the 321 compares patched, a spanned window still shows one view over both monitors:
+// ULocalPlayer::CalcSceneView asks the viewport's window mode and, in mode 1, replaces each
 // view's rect and constrained rect in the init options by (0, 0, ResX, ResY), the whole resolution, keeping the
 // player's rect aside. That is the first half of the upscale (one view at the option resolution; the pass then
 // fits it); with two players every view covers the whole target and the last drawn wins. The same one-byte rewrite

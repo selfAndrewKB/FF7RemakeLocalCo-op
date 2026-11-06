@@ -1,7 +1,7 @@
 #pragma once
 
-// An enemy aimed at a human it cannot reach picks again (the 2026-10-29 Mako 5 fight: a MonoDrive at full ATB aimed at
-// player 3 28 m away waited 95 s with player 2 0.7 m from it; research/RE-enemy-stall-repick.md, pass S-RMK-STALL).
+// An enemy aimed at a human it cannot reach picks again: a MonoDrive at full ATB, aimed at a player 28 m away, was seen
+// to wait 95 s with another player 0.7 m from it (research/RE-enemy-stall-repick.md, pass S-RMK-STALL).
 //
 // In single player every human target is the one character the party moves with. In co-op the hate rows give every
 // human the player's weight (battle/enemy_coin's rule B), so a hate enemy's target moves to another human after each

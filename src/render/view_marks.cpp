@@ -26,7 +26,7 @@ namespace lss::render::view_marks {
 
 namespace {
 
-// The context-to-queue path, read from the database (2026-11-02; decompiles in research/.ida-mcp/view-marks/): the
+// The context-to-queue path, read from the database (decompiles in research/.ida-mcp/view-marks/): the
 // game's own FlushCommands picks the context's command list manager, its ExecuteCommandLists reaches the queue.
 constexpr std::uint32_t kContextDevice     = 0x08;    // FD3D12CommandContext -> FD3D12Device*
 constexpr std::uint32_t kContextAsync      = 0x2AEC;  // its bIsAsyncComputeContext: 0 picks the direct manager

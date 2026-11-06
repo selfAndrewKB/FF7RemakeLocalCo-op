@@ -156,6 +156,13 @@ Picked monitors may differ in size and Windows scaling: each view fits its own m
 shorter monitor is simply not seen. A view wider than about 4096 px (a 32:9 monitor) shows a band of wrong colours at its right
 side. With none picked, a row needs monitors of one height at 100 % scaling.
 
+## Comments
+
+A comment says what the code does and why, in plain sentences, and stays true as the code ages. It carries no date, no
+version number, no quote of or credit to a person, and no history (`until`, `used to`, `now`): the reason behind a rule is
+stated as a fact, and a fault the code prevents as what would happen without it. Addresses live in `src/engine_facts.h`, research
+in `../Documentation/research`; a comment may name a research file, and may mark a claim `[CONFIRMED]` or `[ASSUMPTION]`.
+
 ## Packaging
 
 `python package.py` builds, runs the host tests and writes `dist/LocalSplitScreen-v<version>.zip`: the folder `LocalSplitScreen` to copy
@@ -230,7 +237,8 @@ src/
     image_entries           The columns' layer entries on the render thread (RE-hud-two-images.md §3, §7: H2 and H3)
     layout_code.h           The machine code for the 16:9 assumptions in Square's HUD placement that misplace things in
                             a split half's band
-    lead_mark               A further player's own marker for the move it keeps
+    lead_mark               A further player's own marker for the move it keeps: the game's own main-objective diamond,
+                            placed in the world to guide that player
     marker_replay           Battle world markers placed through each player's own camera
     minimap                 Each seat's own minimap and compass: a navi map manager per seat, the game's own
     minimap_rules.h         The navi map's pool-0 handover across the frame's HUD passes, as a pure rule (hud/minimap.h
@@ -242,7 +250,8 @@ src/
                             the whole HUD, anchored as a native screen of the half's shape, with its world markers on
                             their objects
     overlay_pass            The HUD passes by column (plan/seats.md step 4)
-    pass_hide               Each view's HUD image shows only its own player's world cursors
+    pass_hide               Each view's HUD image shows only its own player's world cursors: left alone, player 1's blue
+                            talk and examine cursor shows in every other player's view
     root_placement          Where the HUD's main roots sit in a split half: as in single player, each in its corner of
                             the half
     second_image            The further columns' HUD images: the game's own overlay rendered again each frame for each
@@ -261,7 +270,9 @@ src/
                             a copy of an action key, as the game calls them: the key is 24 bytes (FName, details object,
                             reference controller), passed by value, and …
     action_tables.h         A pad's own copy of the game's action state (RE-input.md §1.6-§1.7, RE-input-p2.md §2.3)
-    ai_move_guard           A further player's member is never given an AI-only move while its player holds it
+    ai_move_guard           A further player's member is never given an AI-only move while its player holds it: handed
+                            to its AI, an interest walk can loop on a ladder for minutes, and that loop must never
+                            happen
     camera_override         A seat's member's camera overrides reach that seat's camera (RE-lock-camera-ledger.md row
                             X3)
     field_exit              Every further player leaves before the game leaves the field
@@ -298,8 +309,8 @@ src/
                             is the slow one, so never per frame)
     pad_rules.h             The pure rules of each physical pad's input, as the pad table reads it (players/pad_table)
                             and the player windows hear it (players/player_window)
-    pad_table               Which physical pad answers each of the game's pad slots (plan/topics/input.md State
-                            "Planned"; the user's design of 2026-10-30 18:43; research/RE-pad-slots.md)
+    pad_table               Which physical pad answers each of the game's pad slots (plan/topics/input.md;
+                            research/RE-pad-slots.md)
     party_events            The game's party funnels, heard by the session (RE-slot-member.md §1.5, §2.5, §3; Rebirth's
                             player_two/party_events)
     party_member            Which deployed party member a further player plays, and when it is the player's to take
@@ -340,9 +351,7 @@ src/
                             frame, the haze watches
     ao_origin               Square Enix's AO downsample, stage 0, made to read each view's own rows (the split-screen
                             ghost)
-    area_blend              Each player's view takes the indoor or outdoor look of its own camera (the user's report of
-                            2026-10-25: player 1's Cloud walks into a building, the picture brightens for Cloud, and the
-                            outside turns very bright in the other …
+    area_blend              Each player's view takes the indoor or outdoor look of its own camera
     area_chains.h           Each view's own chain of area light settings, a pure rule tested on the host over a model of
                             the game's setter
     bloom_origin            Square Enix's first bloom reduce made to read each view's own rows (the moving-content
@@ -375,7 +384,7 @@ src/
                             moving object was last frame steps once a frame, as with one player, not once per player's
                             family
     movie_frame             The pre-rendered movie in every view (research/RE-movie-view.md, pass S-RMK-MOVIEVIEW,
-                            reviewed in IDA 2026-10-22)
+                            reviewed in IDA)
     occlusion_exempt        A test for the blue haze in player 2's and player 3's views: chosen objects skip their
                             occlusion test and count as visible, in all views or only some (the switch below)
     one_family              One view family per player: the game viewport's frame is handed to the renderer one player
@@ -405,7 +414,9 @@ src/
     anim_choice.h           Which camera the game's animation judge reads for one mesh, and a further player's camera
                             snapshot in the game's own form
     anim_views              Characters near any player animate as the game animates them near player 1
-    area_levels             Every player's area stays loaded and solid, not only player 1's
+    area_levels             Every player's area stays loaded and solid, not only player 1's: left to the game, the world
+                            and much of its lighting unload around a further player, who cannot move until player 1
+                            returns
     area_levels_rules.h     The pieces of world/area_levels that need no game: the one level request every player's area
                             shares (research/RE-world-streaming-levers.md §1, §4.2-§4.4)
     charapop_rule.h         CharaPop's Light/Middle rule, as its evaluators apply it to one camera, for the entries a
@@ -417,32 +428,35 @@ src/
                             1's view does under player 1
     field_targets           A further player opens chests, picks up the shining items on the ground, opens doors and
                             curtains and fires the grappling hook with their own pad, as player 1 does
-    forced_walk             Every player walks where the story makes player 1 walk
+    forced_walk             Every player walks where the story makes player 1 walk: left alone, in a forced walk player
+                            1 and the AI walk but a further player runs
     level_watch             Logging only: what loads, shows, hides and unloads the world's levels, so the further
-                            players' areas can be held by the game's own loader (the user, 2026-10-27: "we'll take the
-                            native path for world loading
+                            players' areas can be held by the game's own loader
     npc_crowd               The game's NPC crowd follows every player: each NPC is scored from the nearest player
     npc_detail              The NPCs a further player is near keep the detail the game would give them from that
                             player's own camera
-    npc_senses              NPCs notice every further player as they notice player 1, player 1 first
-                            (research/RE-npc-reactions.md; the user, 2026-10-21: "some NPCs that programmed to respond
-                            to P1's presence as they walk by ...
+    npc_senses              NPCs notice every further player as they notice player 1, player 1 first: an NPC made to
+                            respond to player 1 walking by responds to any player, and to player 1 when several are near
     npc_senses_code.h       The pieces of world/npc_senses that need no game: the stimulus grid's cell rule, the choice
                             of its centre, and the machine code that puts that centre in place
     overlap_fade            No character turns see-through in a ladder, squeeze, crawl or similar move while a further
                             player is in
-    party_fade              Party members never vanish near a camera while a further player is in
+    party_fade              Party members never vanish near a camera while a further player is in: the game fades a
+                            party member that comes too close to the camera, which suits one camera and not several
     run_catch_up            A companion a further player walked past its own story box is brought back beside player 1's
-                            character when the level's run through that box goes to its AI (the user, 2026-10-30, after
-                            the Ch
-    search_arrows           Each player's own grappling-hook search arrow
+                            character when the level's run through that box goes to its AI: a character recorded as
+                            having run past a box no member was meant to …
+    search_arrows           Each player's own grappling-hook search arrow: left alone, player 1's search arrow hides
+                            whenever another player's appears
     shop_act                A shop a further player opens is that player's: its camera zooms on the opener's view, the
                             shopkeeper and the opener's character face each other, and the opener's pad drives it
     story_box_rules.h       The rules of world/story_boxes, without the game: which of a held member's story-box entries
                             wait, when a waiting one fires, and whether player 1's character has come to the box
     story_boxes             A further player's member never fires its own story box ahead of the story, and never loses
-                            one (the user, 2026-10-30: "no dialogue is ever cut and goes missing ...
-    talk_gather             Player 1's character is brought to a talk another player starts, when it is far
+                            one: no line of dialogue is ever cut or lost (research/RE-held-member-story-boxes.md,
+                            RE-tifa-barret-talk-order.md: in the Ch
+    talk_gather             Player 1's character is brought to a talk another player starts, when it is far, since Cloud
+                            has lines to speak in it (research/RE-talk-far.md)
     talk_gather_rules.h     Where player 1's character is brought when another player starts a talk (world/talk_gather.h
                             applies it), as a pure rule: the flat directions to try for a navmesh point beside the
                             presser, in order, and whom the moved character …
@@ -461,9 +475,11 @@ src/
   views/                    the views: the span over a row of monitors, the columns, the mirror player, the scene
                             camera, the split scale
     column_layout           Three columns through the engine's own layout table; on a span of monitors of different
-                            widths each column is its own monitor's width (v0.147.0)
+                            widths each column is its own monitor's width
     column_rules.h          The pure rules of the view columns (plan/seats.md step 5: three columns)
-    column_source           Where each column's view comes from, decided in one place each tick
+    column_source           Where each column's view comes from, decided in one place each tick, so that the scene
+                            camera, the mirror player and the HUD's tick do not each decide a part with nothing naming
+                            the outcome per column
     columns.h               The view columns: how many views the screen shows and whose each one is, read once per tick
                             from the engine's local-player list
     display_align           The monitors placed to make the row, for as long as the game holds it, and put back at the
@@ -502,11 +518,13 @@ src/
                             view of three down one side) the characters' …
     split_fov_rules.h       The split FOV rule as arithmetic, apart from the engine so it is tested on the host
                             (views/split_fov.h applies it)
-    split_scale             Split views fill their part of the window whatever the game's resolution option
+    split_scale             Split views fill their part of the window whatever the game's resolution option, which can
+                            be changed while the game runs
     split_scale_rules.h     The pure rule of views/split_scale: how far the split views must be scaled so they fit the
                             scene buffer
     whole_screen            Whether the game shows something that takes the whole screen, from the game's own state: the
-                            reason the one-window single view collapses the split
+                            reason the one-window single view collapses the split (players/single_view.h applies it;
+                            views/column_source.h decides it as …
     whole_screen_rules.h    Whether the game shows something that takes the whole screen: the decision, pure, over the
                             signals views/whole_screen.cpp reads each tick (views/whole_screen.h names the game state
                             behind each one)
@@ -514,17 +532,18 @@ src/
                             game's own levers
   battle/                   battle per seat: the command menu, targeting, the cursor, the lock and sequence cameras, the
                             enemies' attention, the options
-    arena_warp              A further player's character brought into the fight on a double click of the left stick (the
-                            user, 2026-10-26: "it is sometimes possible to get locked outside of a fight accessible only
-                            through a crawlspace, which is disabled in …
+    arena_warp              A further player's character brought into the fight on a double click of the left stick: a
+                            character can be locked outside a fight whose only way in is a crawlspace, which the game
+                            closes while the fight lasts
     arena_warp_rules.h      The double click that brings a further player's character into the fight
                             (battle/arena_warp.h applies it on the Dash press): two presses within kDoubleClickMs are
                             one double click, and a pair once spent starts afresh
     battle_rates            The battle's rates: enemy damage, enemy HP, boss HP, the enemies' stagger gauge, EXP and AP,
                             each a multiplier from 0.1 to 10.0 set from the Co-op page, the console or the settings file
+                            (platform/settings.h)
     battle_rates_rules.h    The battle's rates (battle/battle_rates.h): the multipliers' words and the arithmetic, done
                             the game's way
-    battle_warps            Which party members the game warps at a battle's start and end
+    battle_warps            Which party members the game warps at a battle's start and end (research/RE-battle-warp.md)
     battle_warps_rules.h    Who the game warps at a battle's start and end, as the setting decides it without the game
                             (battle/battle_warps.h applies it at the game's three calls)
     coin_choice.h           Which human an enemy counts as "the player" for one decision
@@ -540,14 +559,17 @@ src/
     enemy_coin              Enemies share their attention between the humans: one coin per enemy decision
     enemy_leader            Enemies follow the human whose member stands when the game's leader is down
                             (RE-enemy-leader-reads.md §2, §5.1)
-    enemy_stall             An enemy aimed at a human it cannot reach picks again
+    enemy_stall             An enemy aimed at a human it cannot reach picks again: a MonoDrive at full ATB, aimed at a
+                            player 28 m away, was seen to wait 95 s with another player 0.7 m from it
     enemy_watch             What each enemy is doing, for the live reads behind the circling report
     lock_camera             Each seat's lock camera at the edges outside the operator's tick (RE-lock-camera-ledger.md;
                             the seats follow plan/seats.md step 3)
     lock_camera_rules.h     The lock camera readings' arithmetic, without the game (battle/lock_camera.h applies it)
     member_rates            Each further player's member at the player's rates (RE-battle-member-two.md §2, L1;
                             Rebirth's player_two/player_hits)
-    menu_grey               The open battle menu's grey and sound muffle follow the menu slow-down switch
+    menu_grey               The open battle menu's grey and sound muffle follow the menu slow-down switch: with the slow
+                            off, a grey screen and a muffled mix under a world that runs on would be all that is left of
+                            the wait
     menu_grey_rules.h       The open battle menu's grey under the slow-down switch (battle/menu_grey.h applies it), as
                             pure rules over what the game's UI filter 0 shows: at the wait's spawn, at a menu-close
                             restore, at a flip of the switch and at the tick …
@@ -573,7 +595,8 @@ src/
                             settings table's options, and its value reads and commits
     coop_page_open          Opening and closing the Co-op page over the main menu, as the game shows and closes its own
                             windows
-    coop_slider             The Co-op page's sliders
+    coop_slider             The Co-op page's sliders: a list of a hundred values runs past the screen's bottom, so an
+                            option with that many is a slider of the game's own, made to scroll
     game_ui                 The game's UI pieces the Co-op menu's modules share: the UI system's managers, the main
                             menu's first page, weak pointers held in the game's widgets, and FStrings read and copied
                             the game's way

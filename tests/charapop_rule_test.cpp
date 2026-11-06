@@ -1,7 +1,7 @@
 // Host-side tests for charapop::KeepsAwakeOrShown, ShouldRaise and HoldOf, run without the game. Taken from Rebirth's
-// tests/charapop_rule_test.cpp (cleanup-2026-10, 9c355f2) with the rule.
+// tests/charapop_rule_test.cpp with the rule.
 //
-// Rebirth's live Middle parameters (log of 2026-10-02): FOV 75, draw 10000, in 6000, out 3000, should-tick 1000.
+// Rebirth's live Middle parameters, from its log: FOV 75, draw 10000, in 6000, out 3000, should-tick 1000.
 
 #include "world/charapop_rule.h"
 

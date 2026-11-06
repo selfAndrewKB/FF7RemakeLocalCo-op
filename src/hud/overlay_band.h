@@ -9,7 +9,7 @@
 // The HUD is one Slate overlay (SEndRootOverlay) rendered into one 16:9 UI image per frame, which
 // a post-process pass blends into every view. That pass fits the image to the view as a fixed 16:9
 // frame, centred, by cover: scale = max(viewW/imageW, viewH/imageH), so a view of another shape
-// shows only a band of the image (RE-p2-hud.md; the fit measured in game, 2026-09-25). Laying the
+// shows only a band of the image (RE-p2-hud.md; the fit measured in game). Laying the
 // overlay out inside that band, instead of the whole image, shows the whole HUD, anchored as a
 // native screen of the view's shape would anchor it.
 //

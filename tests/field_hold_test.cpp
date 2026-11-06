@@ -1,4 +1,4 @@
-// Host-side tests for players/field_hold.h: the user's rule on every layer and kind that matters.
+// Host-side tests for players/field_hold.h: the rule on every layer and kind that matters.
 
 #include "players/field_hold.h"
 
@@ -39,8 +39,8 @@ void LevelStagingIsFree()
 void ArrivalAsksTheGame()
 {
     // LEAD on the level layer walks a member to a mark in step with the player as often as it makes a guide; the
-    // kind cannot tell the two apart, so the rule hands the question on (the user, 2026-10-21). The run to a mark
-    // is the same question (the user, 2026-10-27: Aerith's run ahead of Cloud stalled the level under a further player).
+    // kind cannot tell the two apart, so the rule hands the question on. The run to a mark
+    // is the same question (Aerith's run ahead of Cloud stalls the level under a further player).
     // Elsewhere it is what its layer says: the stream's default never leads, the cinema copy is the actor mode's.
     EXPECT(fh::Of(fh::kLayerLevel, fh::kLead) == Hold::Arrival);
     EXPECT(fh::Of(fh::kLayerStream, fh::kLead) == Hold::Free);
@@ -83,8 +83,8 @@ void OnlyTheArrivalKindsAskTheGame()
 
 void AnimationsAreWatched()
 {
-    // A scripted animation, the level's or a one-shot: the AI plays it and the player watches (the user,
-    // 2026-10-21, after a seat mid-animation cut one short). On a script layer the layer is named first.
+    // A scripted animation, the level's or a one-shot: the AI plays it and the player watches (a seat
+    // taken mid-animation would cut one short). On a script layer the layer is named first.
     EXPECT(fh::Of(fh::kLayerLevel, fh::kAnimation) == Hold::Animation);
     EXPECT(fh::Of(fh::kLayerLevel, fh::kSingleAnimation) == Hold::Animation);
     EXPECT(fh::Of(fh::kLayerStream, fh::kAnimation) == Hold::Animation);
@@ -135,7 +135,7 @@ void NoStateWaits()
 
 void AnInterestIsJudgedBeneathIt()
 {
-    // Live 2026-10-29: Aerith's layers [1 11 0 0 0 0 0 0 0 12 0 0 0 0 0], active layer 9 kind 12: the follow beneath.
+    // As read live: Aerith's layers [1 11 0 0 0 0 0 0 0 12 0 0 0 0 0], active layer 9 kind 12: the follow beneath.
     const std::uint8_t aerith[fh::kLayers] = {1, 11, 0, 0, 0, 0, 0, 0, 0, 12, 0, 0, 0, 0, 0};
     const fh::Judged   judged              = fh::JudgedState(9, fh::kInterest, aerith);
     EXPECT(judged.layer == fh::kLayerLevel && judged.kind == fh::kAccompany);
@@ -172,7 +172,7 @@ void NamesCoverTheEnum()
 
 void InteractionLocksFreezeTheInteractor()
 {
-    // A treasure, a pickup, a switch or a terminal: the interactor's lock alone (the bits seen live 2026-10-27:
+    // A treasure, a pickup, a switch or a terminal: the interactor's lock alone (the bits seen live:
     // 0x100000 at a switch, 0x4 at a chest).
     EXPECT(fh::InteractionLock(0x4));
     EXPECT(fh::InteractionLock(0x100000));

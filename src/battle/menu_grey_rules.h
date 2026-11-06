@@ -4,7 +4,7 @@
 // game's UI filter 0 shows: at the wait's spawn, at a menu-close restore, at a flip of the switch and at the tick that
 // settles a debt. A debt is a skip or a stop that may have left another owner's count (a minigame's wait, a
 // Blueprint's show) with no effect up; it is settled the game's unsuppress way once no battle menu waits (research/
-// RE-menu-grey.md). Host-tested (tests/menu_grey_rules_test.cpp). Cleanup step 4, plan/code-alignment.md C3.
+// RE-menu-grey.md). Host-tested (tests/menu_grey_rules_test.cpp).
 
 #include <cstddef>
 #include <cstdint>

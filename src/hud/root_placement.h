@@ -1,7 +1,7 @@
 #pragma once
 
 // Where the HUD's main roots sit in a split half: as in single player, each in its corner of the half (RE-hud-band-3d.md
-// Q5; Rebirth's hud/hud_placement, the user's reference there: minimap top right, compass top centre, command menu bottom
+// Q5; Rebirth's hud/hud_placement, the reference: minimap top right, compass top centre, command menu bottom
 // left, party panel bottom right).
 //
 // The roots' Blueprints design their contents for a 1920x1080 frame inside a widget that fills the layout. In single

@@ -2,10 +2,9 @@
 
 // The engine's single view: the whole screen player 1's view alone while further players are in (their controllers,
 // characters and pads untouched). The one-window outcome for the moments views/column_source.h decides (a full-screen
-// menu, a shop, a cutscene, a scripted talk on the event camera, a minigame: views/whole_screen.h; the user's ruling
-// of 2026-10-26 and of 2026-10-27);
+// menu, a shop, a cutscene, a scripted talk on the event camera, a minigame: views/whole_screen.h);
 // this class only holds the engine's switch to what it is told. Rebirth's players/single_view, taken as
-// it is (its rules were played there since v0.34); only the switch's access differs (players/split_switch.h: 4.18
+// it is (its rules are proven in play there); only the switch's access differs (players/split_switch.h: 4.18
 // has no reflected setter, the viewport's byte is written directly).
 //
 // The engine lays the local players out from one stock switch, UGameViewportClient::bDisableSplitScreenOverride:

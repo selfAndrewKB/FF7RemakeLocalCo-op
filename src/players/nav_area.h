@@ -28,10 +28,9 @@
 // before its command controller is bound (the first frame of a join) writes the row on player 1's menu, and the later
 // leave, then the seat's, does not clear it there.
 //
-// Rooms per player (research/RE-room-walk-limit.md; the user's report of 2026-10-26: player 2 in the item shop left
-// player 1 walking everywhere, player 2 never capped). An InDoor volume's Enter, Stay (every frame) and Leave write the
-// room's walk limit onto the default party leader, whichever controller's component runs them, so a seat's room capped
-// player 1's character and never the seat's. The three handlers' leader calls are redirected: while a seat's component
+// Rooms per player (research/RE-room-walk-limit.md). An InDoor volume's Enter, Stay (every frame) and Leave write the
+// room's walk limit onto the default party leader, whichever controller's component runs them, so a seat's room would
+// cap player 1's character and never the seat's. The three handlers' leader calls are redirected: while a seat's component
 // runs the game's diff (its tick, the spawn re-enter), keyed on the component's owner rather than the scopes, or the
 // game's camera reset diffs the primary controller's component while a seat's Primary scope makes it the seat's (any
 // game code run in the seat's scopes), they get that controller's own field character (the one the

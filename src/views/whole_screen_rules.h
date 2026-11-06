@@ -4,7 +4,7 @@
 // tests/whole_screen_rules_test.cpp), over the signals views/whole_screen.cpp reads each tick (views/whole_screen.h
 // names the game state behind each one). The reason is what the one-window single view collapses the split for
 // (players/single_view.h; views/column_source.h Why::WholeScreen): the menus, the cutscenes, the minigames the game's
-// own signals pick up, and the scripted talks and events that take the game's event camera (the user, 2026-10-27: not
+// own signals pick up, and the scripted talks and events that take the game's event camera (not
 // a free talk in the field camera or a field pickup, which hold the field control lock only; those play on every
 // view). Rebirth's views/whole_screen_reason.h gave the shape; the signals and their order are Remake's
 // (research/RE-lifecycle-world.md §8).
@@ -71,7 +71,7 @@ inline constexpr std::uint8_t kStateCinemaPause  = 7;
 inline constexpr std::uint8_t kStatePauseMenu    = 8;
 inline constexpr std::uint8_t kStateChapterPause = 10;
 
-/// The title's location name as the field root carries it (players/game_state.h `game.location`; live 2026-10-18).
+/// The title's location name as the field root carries it (players/game_state.h `game.location`; seen live).
 inline constexpr std::wstring_view kTitleLocation = L"005-TITLB";
 
 constexpr bool IsTitle(std::wstring_view location) noexcept
@@ -149,7 +149,7 @@ constexpr Reason ReasonOf(const Signals& s) noexcept
 }
 
 /// How many ticks a minigame moment outlives on/off 36: a minigame segment runs as chained acts (the Reactor 5 lock
-/// segment's phases, live 2026-10-27), and 36 is off for the one tick between an act's release (its step 10) and the
+/// segment's phases, seen live), and 36 is off for the one tick between an act's release (its step 10) and the
 /// next act's start (its step 2; research/RE-minigame-signal.md §1), which would flash the split for a frame. The
 /// mod's own bridge over the game's gap [ASSUMPTION: three ticks cover every chain; the gap seen was one tick].
 inline constexpr unsigned kMinigameGapTicks = 3;

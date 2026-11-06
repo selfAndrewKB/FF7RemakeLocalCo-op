@@ -31,7 +31,7 @@ enum class Kind : std::uint8_t
 
 /// A pass's call in the scene renderer: its name, the call's address, the callee, and the 11 bytes around the call
 /// (three before the E8, the call, three after), as read in the database (research/.ida-mcp/pass-marks/_sites.tsv,
-/// generated from it; checked against the exe 2026-11-02).
+/// generated from it and checked against the exe).
 struct PassSite
 {
     const wchar_t*               name;

@@ -1,14 +1,13 @@
 #pragma once
 
 // Logging only: what loads, shows, hides and unloads the world's levels, so the further players' areas can be held by
-// the game's own loader (the user, 2026-10-27: "we'll take the native path for world loading. prepare the logging";
-// research/RE-world-streaming-players.md, lever A and the live checks of §8).
+// the game's own loader (research/RE-world-streaming-players.md, lever A and the live checks of §8).
 //
 // The game decides residency and visibility from player 1's area alone: Square Enix's EnvironmentSet manager traces
 // down from the party leader, and on a change of the area set it requests that set's level list on visibility slot 4
 // (levels marked in the parallel bytes are hidden: reason 5, actors only, the level stays loaded) and puts the area's
 // planner level set into residency slot 32 (the reference-counted loader adds the new set, then releases the old; a
-// level's last release enqueues its unload). What the user sees behind player 1 is one or the other; these lines tell
+// level's last release enqueues its unload). What a player sees behind player 1 is one or the other; these lines tell
 // which:
 //   - player 1's area change: the slot-32 set, old and new, with each further player's own ground set beside it (Info:
 //     a state change); the slot-4 list with each level's byte is logged by world/area_levels, which owns that call

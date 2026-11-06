@@ -1,9 +1,9 @@
 #pragma once
 
 // A shop a further player opens is that player's: its camera zooms on the opener's view, the shopkeeper and the
-// opener's character face each other, and the opener's pad drives it (research/RE-shop-two.md §8; the user,
-// 2026-10-26: shopkeepers for every player, "shops should pause the entire game"; Rebirth's player_two/shop_talk and
-// shop camera skip were the model).
+// opener's character face each other, and the opener's pad drives it (research/RE-shop-two.md §8; Rebirth's
+// player_two/shop_talk and shop camera skip were the model). Shopkeepers serve every player, and a shop pauses the
+// whole game.
 //
 // A shopkeeper is an NPC (world/field_targets admits NPCs for further players). The press only fires the NPC's talk
 // trigger; the NPC's next state then queues, on later frames and outside any player's run, a greeting and a show-menu
@@ -16,8 +16,8 @@
 //     scopes; its Update, OnFinish and destructor (vtable entries of this act alone) run in the same scopes. So "the
 //     leader" is the opener's character through the game's own code, and the camera: on a row the opener's manager
 //     (the opener's view zooms on the shop, the others keep theirs); in one window the game's own primary manager,
-//     player 1's, which the engine's single view shows (views/whole_screen.h: the shop takes the whole screen; the
-//     user's ruling of 2026-10-26), framing the opener's character with the shopkeeper as single player does
+//     player 1's, which the engine's single view shows (views/whole_screen.h: the shop takes the whole screen),
+//     framing the opener's character with the shopkeeper as single player does
 //     [ASSUMPTION until played]. The
 //     act's tick (which takes and releases the field lock) is not scoped: the lock and its hand stay the game's, so
 //     the whole game pauses as for player 1's shop.

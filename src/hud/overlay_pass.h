@@ -49,9 +49,9 @@ int ListedColumnOf(int seat) noexcept;
 int ShownSeat(int column) noexcept;
 
 /// Whether a view of `sizeX` x `sizeY` (fractions of the window) has another shape than player 1's `oneX` x `oneY`:
-/// width over height more than 1 % apart. A mirror of another shape gets a HUD pass of its own (the user's choice of
-/// 2026-11-02: the game's composite cover-fits player 1's image to a mirror's shape, so a wider mirror showed player
-/// 1's HUD enlarged and cut, a narrower one inset); one of the same shape samples player 1's image, at no cost.
+/// width over height more than 1 % apart. A mirror of another shape gets a HUD pass of its own: the game's composite
+/// cover-fits player 1's image to a mirror's shape, so a wider mirror would show player 1's HUD enlarged and cut, a
+/// narrower one inset. One of the same shape samples player 1's image, at no cost.
 constexpr bool OtherShape(float sizeX, float sizeY, float oneX, float oneY) noexcept
 {
     if (!(sizeX > 0.0f) || !(sizeY > 0.0f) || !(oneX > 0.0f) || !(oneY > 0.0f))

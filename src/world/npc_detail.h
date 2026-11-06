@@ -1,7 +1,7 @@
 #pragma once
 
 // The NPCs a further player is near keep the detail the game would give them from that player's own camera
-// (research/RE-npc-near-player-two.md §1; Rebirth's player_two/charapop_near, cleanup-2026-10, single-seat; the seats
+// (research/RE-npc-near-player-two.md §1; Rebirth's player_two/charapop_near, single-seat; the seats
 // follow plan/seats.md step 3: the reach is the union of every further player's view).
 //
 // The game's NPC detail (CharaPop) judges every entry from player 1's camera only: an NPC beside player 2 pauses as

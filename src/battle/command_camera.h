@@ -8,7 +8,7 @@
 // command controller (EndUISystem[19]) and the input object's focus path (the row that has focus). A seat's
 // operator ticks in its primary, operator, leader and target-field scopes, so the flavor runs on the seat's own
 // operator; but without the UI slot and the focus scope it read player 1's controller and player 1's focus: no
-// open menu of its own there, nothing to frame (the user's 2026-10-22 report; research/RE-command-camera-two.md).
+// open menu of its own there, nothing to frame (research/RE-command-camera-two.md).
 // This module:
 //   - holds the seat's UI slot and focus scope around its operator tick while its menu is in battle (Rebirth's
 //     rule: a further player's camera update in its UI context in battle), so the flavor reads the seat's own list;

@@ -34,7 +34,7 @@ float TanHalf(float degrees)
     return std::tan(degrees * 3.14159265358979f / 360.0f);
 }
 
-/// Which views take the rule: the user's two cases, and every view that must keep the engine's FOV.
+/// Which views take the rule: the two cases it is for, and every view that must keep the engine's FOV.
 void WhoTakesIt()
 {
     EXPECT(Applies({1920, 540, 1920, 1080}, kSolo));    // two players in one window, each half
@@ -47,7 +47,7 @@ void WhoTakesIt()
     EXPECT(!Applies({960, 1080, 1920, 1080}, kSolo));   // side by side
     EXPECT(!Applies({2560, 1080, 2560, 1080}, kSolo));  // a 21:9 single view: as tall as the single-player picture
     EXPECT(Applies({2560, 540, 2560, 1080}, kSolo));    // two players in a 21:9 window
-    EXPECT(Applies({3440, 1440, 8560, 1440}, kSolo));   // the ultrawide of a 2560 | 3440 | 2560 span (v0.147.0)
+    EXPECT(Applies({3440, 1440, 8560, 1440}, kSolo));   // the ultrawide of a 2560 | 3440 | 2560 span
     EXPECT(!Applies({2560, 1440, 8560, 1440}, kSolo));  // a 16:9 monitor of that span
     EXPECT(Applies({3440, 1440, 6000, 1440}, kSolo));   // the ultrawide of a two-monitor span
     // A monitor shorter than the row's tallest is judged on its own height: the wide one keeps the camera's vertical FOV like any

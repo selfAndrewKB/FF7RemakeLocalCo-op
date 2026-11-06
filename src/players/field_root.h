@@ -4,9 +4,8 @@
 // RE-script-release.md): the game's field root object (facts::kEndGameRootGlobal), its state manager (the field
 // control lock's mask and counter live there, as do the on/off table and the owner of each id), the root's object
 // that holds the character registry and the field battle state, the battle system global (null outside battle), the
-// party manager and the game's own party leader getter. Before this header each module rebased the same globals and walked the same
-// pointers itself (fourteen copies of the root, seven of the battle system, two of InBattle; cleanup step 3,
-// plan/code-alignment.md B1). Rebased and verified once at install, which runs right after weak_object's and before
+// party manager and the game's own party leader getter. One header for them, so no module rebases the same globals
+// and walks the same pointers itself. Rebased and verified once at install, which runs right after weak_object's and before
 // every module that reads them; a module that needs them checks Installed() at its own install. Every read is
 // guarded and answers null or 0 while the game has no root (the boot, the title's first frames) or no battle; a
 // module keeps gating its own readers and ticks on its own install, as before (this module says nothing about

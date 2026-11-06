@@ -5,8 +5,8 @@
 // research/RE-one-family-ledger.md for the parts of the mod that follow the family).
 //
 // Why: in one family of several views, every view after the first loses its volumetric fog after a late join (the
-// flickering blue haze), and the haze follows the place in the family, not the player [CONFIRMED live 2026-10-24 07:20,
-// the view-order swap]. Each player first in its own family is drawn as the game draws a single player: its own
+// flickering blue haze), and the haze follows the place in the family, not the player [CONFIRMED live by swapping the
+// views' order]. Each player first in its own family is drawn as the game draws a single player: its own
 // occlusion pass, light grid, fog, translucency lighting volume, sun cascades and post-processing (Rebirth renders its
 // players the same way).
 //

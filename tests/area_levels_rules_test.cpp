@@ -1,7 +1,7 @@
 // Host-side tests for area_levels_rules (world/area_levels_rules.h): the one level request every player's area shares.
 // Run without the game.
 //
-// The case from 2026-10-29 06:46: player 2 in the apartment block (its area lists 165-SlumAptB shown), player 1 walks
+// The case, as played: player 2 in the apartment block (its area lists 165-SlumAptB shown), player 1 walks
 // to Area040, whose list drops it; the game unloaded player 2's floor. Names here are made-up numbers; only equality
 // matters.
 

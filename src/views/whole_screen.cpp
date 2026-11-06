@@ -80,8 +80,8 @@ Signals Read(const void* managerOne) noexcept
     s.pauseWidget = players::game_state::PauseWidgetAlive();
     // The cutscene manager and the field control lock's mask come through the scene camera's read (Scene{} while its
     // globals failed their check: no cutscene, skip, bit or held scene is known then, and so no event camera reason).
-    // The lock itself is no reason: a free talk or a pickup holds it, and those play on every view (the user,
-    // 2026-10-27); a scripted talk's event camera is its own signal below, which the lock gates; its bit 21 is read
+    // The lock itself is no reason: a free talk or a pickup holds it, and those play on every view;
+    // a scripted talk's event camera is its own signal below, which the lock gates; its bit 21 is read
     // for the arena rule (a VR or colosseum session switches it by phase: its menus collapse by ArenaMenu, its fights
     // stay split).
     const scene_camera::Scene scene = scene_camera::ReadSceneNow();
@@ -89,7 +89,7 @@ Signals Read(const void* managerOne) noexcept
     s.skipping    = scene.skip;
     s.minigameBit = (scene.lockMask & facts::kControlLockMiniGame) != 0;
     // The event camera system's slot on player 1's manager: a scripted talk (the game's own angles and cuts, the HUD
-    // off, the speakers alone in frame) or an event; a free talk keeps the field camera's slot (live 2026-10-27:
+    // off, the speakers alone in frame) or an event; a free talk keeps the field camera's slot (seen live:
     // Chadley's scripted talk on 18 with cuts, the armed leader's free talk on 24 alone). A field area's rail camera
     // writes 18 in free play too (research/RE-cutscene-camera-two.md §2.3, §11 Q3), so the rule takes the slot only
     // while a scene holds the players (the lock outside player 1's own move, or the cutscene) [ASSUMPTION until a

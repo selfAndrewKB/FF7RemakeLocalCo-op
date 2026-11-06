@@ -1,7 +1,7 @@
 #pragma once
 
 // The view columns: how many views the screen shows and whose each one is, read once per tick from the engine's
-// local-player list (plan/seats.md step 5; cleanup step 5, plan/code-alignment.md A1; Rebirth's views/columns.h, the
+// local-player list (plan/seats.md step 5; Rebirth's views/columns.h, the
 // Map taken as is). Pure, no game; host-tested (tests/columns_test.cpp).
 //
 // A column is one view slot of the engine's local player list, laid out by the engine: two players top and bottom

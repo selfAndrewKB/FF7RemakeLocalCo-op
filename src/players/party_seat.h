@@ -12,7 +12,7 @@
 //
 // The game has one PlayerTrigger (a placed actor) and SwitchLeaderInternal needs one per controller: each further
 // player gets its own copy (players/player_trigger.h); only if none can be made is player 1's borrowed, which then
-// rides on the member (encounters follow it: the user's bug of 2026-10-19) and is put back at the release.
+// rides on the member (encounters then follow it) and is put back at the release.
 // Seat-indexed (seat 1 = player 2); game thread only.
 
 #include <cstdint>

@@ -15,10 +15,10 @@
 //
 // The engine gives the view at place i of its local-player list the entry's record i. The mod's columns are those
 // places (player 1's, then the seats in join order, then the mirrors), and every per-view module counts in them. Where
-// a column shows on screen is the column order's (the setting `column-order`, the user 2026-10-25): by player number
+// a column shows on screen is the column order's (the setting `column-order`): by player number
 // whatever the order the players joined in; with `1 3 2` player 2's view takes the right-hand record and player 3's the
 // middle one, through the same entry, the records arranged (Slots, Arrange). A view of no player (a mirror) takes a slot left over. Any player may
-// take any screen, player 1 too (2026-10-31: nothing in the engine ties player 1 to the first record, RE-layout-fov.md
+// take any screen, player 1 too (nothing in the engine ties player 1 to the first record, RE-layout-fov.md
 // §9, and the mod tells views by their place in the list, not on screen). Two views take one of the engine's two-player
 // entries (top and bottom, or side by side), arranged the same way (TwoSlots): the two players in the order's order.
 
@@ -291,8 +291,8 @@ inline float EdgeFraction(std::int32_t pixels, std::int32_t total) noexcept
 }
 
 /// Full-height columns for a row of monitors of these widths, left to right (the span's, views/monitor_row): each view
-/// fills its own monitor edge to edge, a wider monitor a wider view (the user, 2026-11-02: "the game automatically fits
-/// the width of the monitor it is on"). Equal widths give equal columns. Any width not above 0: every record empty.
+/// fills its own monitor edge to edge, a wider monitor a wider view, as the game fits a single view to the width of the
+/// monitor it is on. Equal widths give equal columns. Any width not above 0: every record empty.
 template <std::size_t N>
 RecordSet<N> ColumnRecords(const std::array<std::int32_t, N>& widths) noexcept
 {

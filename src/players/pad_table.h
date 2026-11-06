@@ -1,7 +1,6 @@
 #pragma once
 
-// Which physical pad answers each of the game's pad slots (plan/topics/input.md State "Planned"; the user's design of
-// 2026-10-30 18:43; research/RE-pad-slots.md).
+// Which physical pad answers each of the game's pad slots (plan/topics/input.md; research/RE-pad-slots.md).
 //
 // The game reads pads in one place, Unreal's stock XInputInterface::SendControllerEvents, through xinput1_3's two
 // import slots (GetState, SetState for rumble). The mod points those slots at its own two functions, which ask XInput

@@ -7,7 +7,7 @@
 // Clearing every object's "can be occluded" flag (FScene::PrimitiveOcclusionFlags bit 0) from outside the game cures
 // the haze, and halving the set narrowed it, but the game rewrites some objects' flags every frame (animated
 // background layers, emissive parts, enemies), so a hold from outside covers them only part of the time [CONFIRMED
-// live 2026-10-23 23:48]. This test applies the set where the flags are read: a redirect on the one call to
+// live]. This test applies the set where the flags are read: a redirect on the one call to
 // FetchVisibilityForPrimitives_Range (each view's occlusion answers, run for one view at a time on the render thread)
 // clears bit 0 for the set's objects, calls the game's function, and puts each cleared bit back. An object without the
 // bit is never tested and counts as visible; nothing else reads the change, and no gap remains.
@@ -21,7 +21,7 @@
 // the engine's list, told by its state: render/view_places, wherever it sits on screen; a scene capture's view is no
 // player's and counts with the others; with no list known, the view whose rectangle starts at the window's top-left
 // corner). Exempting in player 1's view only tells a limit shared by all views' queries from a fault in the
-// answers of player 2's and player 3's own views (2026-10-24: the latter).
+// answers of player 2's and player 3's own views (the fault is in the latter).
 //
 // Command `occlusion-exempt.third-column <a b, c d> | none | main`: a set of its own for the third column's view (the third
 // view of the engine's list; with no list known, the view whose rectangle's left edge is two widths in, in the top row,

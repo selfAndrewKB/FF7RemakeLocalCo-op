@@ -1,7 +1,7 @@
 #pragma once
 
-// Every player's area stays loaded and solid, not only player 1's (the user, 2026-10-29: "The entire world and much of
-// its lighting unloads around P2 and they can no longer move until P1 returns"; research/RE-world-streaming-levers.md
+// Every player's area stays loaded and solid, not only player 1's: left to the game, the world and much of its lighting
+// unload around a further player, who cannot move until player 1 returns (research/RE-world-streaming-levers.md
 // §1, §2, §4; S-RMK-STREAM's lever A, the planner set by id, loads nothing of the ground and is not used).
 //
 // The game streams the world by player 1's area alone: Square Enix's EnvironmentSet manager traces down from the party

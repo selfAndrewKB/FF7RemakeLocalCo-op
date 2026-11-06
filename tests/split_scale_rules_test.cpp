@@ -24,7 +24,7 @@ int g_failures = 0;
 /// The cap for the cases seen and the edges.
 void Caps()
 {
-    EXPECT(CapPercent(1920, 1080, 2560, 1440) == 75);   // the user's TV, 2026-10-24: 1080p option on a 1440p desktop
+    EXPECT(CapPercent(1920, 1080, 2560, 1440) == 75);   // a 1080p option on a 1440p desktop
     EXPECT(CapPercent(2560, 1440, 2560, 1440) == 100);  // the option equal to the window: nothing to do
     EXPECT(CapPercent(3840, 2160, 2560, 1440) == 100);  // above the window: never above 100
     EXPECT(CapPercent(1280, 720, 2560, 1440) == 50);
@@ -37,9 +37,9 @@ void Caps()
     EXPECT(CapPercent(-1, -1, -1, -1) == 100);
     EXPECT(CapPercent(1, 1, 100000, 100000) == 1);      // never below 1
     static_assert(CapPercent(1920, 1080, 2560, 1440) == 75, "constexpr");
-    EXPECT(CapPercent(1920, 1080, 4096, 2160) == 46);   // the user's TV, 2026-10-24 (read live at 0.46)
+    EXPECT(CapPercent(1920, 1080, 4096, 2160) == 46);   // a 4096x2160 TV (read live at 0.46)
     EXPECT(CapPercent(1920, 1080, 3440, 1440) == 55);   // the ultrawide (read live at 0.55)
-    EXPECT(CapPercent(1920, 1080, 3200, 1800) == 59);   // 60 exactly, but 3200 x 0.6f rounds up to 1921 (review 2026-10-24)
+    EXPECT(CapPercent(1920, 1080, 3200, 1800) == 59);   // 60 exactly, but 3200 x 0.6f rounds up to 1921
     EXPECT(ScaledSize(3200, 60) == 1921);
     EXPECT(ScaledSize(2560, 75) == 1920);
 }

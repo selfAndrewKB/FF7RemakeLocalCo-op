@@ -248,7 +248,7 @@ void OnLeaderHanded() noexcept
     }
     // A navmesh point just beside the presser (the rule: world/talk_gather_rules.h). The NPC's place: where the pressed
     // object stood by its target entry at the press (a talk target carries its state object's name, which the character
-    // lookup by name does not know: none found live 2026-10-26), else that lookup (the lookup is not tried after a noted
+    // lookup by name does not know: none found live), else that lookup (the lookup is not tried after a noted
     // place: the entry is the surer source).
     Vec3           npcAt{};
     float          spot[3] = {};

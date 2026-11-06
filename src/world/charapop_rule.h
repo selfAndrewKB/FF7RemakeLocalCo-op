@@ -3,7 +3,7 @@
 // CharaPop's Light/Middle rule, as its evaluators apply it to one camera (research/RE-npc-near-player-two.md §1.3,
 // RE-world-two-views.md §1.2: CharaPopEntry_EvalLOD_Light_PrimaryCam 0x140F8E080, _Middle_PrimaryCam 0x140F8E6E0), for
 // the entries a further player's camera needs (world/npc_detail.h). Pure, host-tested (tests/charapop_rule_test.cpp). Taken from
-// Rebirth's player_two/charapop_rule.h (cleanup-2026-10, 9c355f2) unchanged in logic: Remake's evaluators apply the
+// Rebirth's player_two/charapop_rule.h unchanged in logic: Remake's evaluators apply the
 // same rule with the same parameter names.
 //
 //   paused  when distance > should-tick and (in the FOV cone ? distance > in-camera : distance > out-of-camera)

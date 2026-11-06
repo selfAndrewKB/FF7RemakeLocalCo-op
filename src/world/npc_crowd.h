@@ -1,7 +1,7 @@
 #pragma once
 
 // The game's NPC crowd follows every player: each NPC is scored from the nearest player (research/
-// RE-npc-near-player-two.md §2; Rebirth's player_two/charapop_centre, "approach B", the user's choice there; the seats
+// RE-npc-near-player-two.md §2; Rebirth's player_two/charapop_centre, its "approach B"; the seats
 // follow plan/seats.md step 3).
 //
 // CharaPop keeps a budget of NPCs spawned, ranked by a score whose distance part is measured from one centre: the

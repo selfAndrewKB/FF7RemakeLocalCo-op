@@ -7,7 +7,7 @@
 namespace lss::platform {
 
 namespace detail {
-std::atomic<std::uint8_t> g_level{static_cast<std::uint8_t>(Level::Debug)};  // Debug by default (the user, 2026-10-19)
+std::atomic<std::uint8_t> g_level{static_cast<std::uint8_t>(Level::Debug)};  // Debug by default: the development setting
 }
 
 void SetLevel(Level level) noexcept

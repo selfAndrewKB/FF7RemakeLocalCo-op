@@ -596,9 +596,9 @@ void TickSeat(int seat, void* seatMember, void* seatController) noexcept
 
 void Tick() noexcept
 {
-    // A further player's view on player 1's camera shows player 1's world: its own hides leave at once (the pre-boss
-    // scene of chapter 5, 2026-11-01: the scene moved the further players' characters into the boss room, whose set
-    // hid a container the scene shows on player 1's view). Back on its own camera, its set's hides at the next read.
+    // A further player's view on player 1's camera shows player 1's world: its own hides leave at once. The pre-boss
+    // scene of chapter 5 moves the further players' characters into the boss room, whose set hides a container the
+    // scene shows on player 1's view. Back on its own camera, its set's hides at the next read.
     for (int seat = 1; seat <= kSeatsBuilt; ++seat)
     {
         Seat&      s     = g_seats[seat];

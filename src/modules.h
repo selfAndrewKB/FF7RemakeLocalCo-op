@@ -5,11 +5,10 @@
 // it in reverse; each module logs its own install line, one whose check fails stands aside alone, and a row whose
 // needed row stood aside stands aside too (said once). The order constraints the modules carry (the shadows' call
 // site before the area blend, every needed row before the row that needs it) are pinned by static_asserts beside
-// the table: the build fails if a row moves past one. The design is Rebirth's modules.h (its cleanup of 2026-10;
-// cleanup step 6, plan/code-alignment.md A2: until it mod.cpp kept the install, remove and tick orders as three hand-
-// kept lists with nested install conditions); changed for Remake: a row names the rows it needs instead of each
-// module checking its dependency at install, and the world hooks the seats' members use are removed only with every
-// further player out, as before (RemoveWithPlayersOut).
+// the table: the build fails if a row moves past one. The design is Rebirth's modules.h, in place of three hand-kept
+// lists of install, remove and tick order with nested install conditions. For Remake a row names the rows it needs
+// instead of each module checking its dependency at install, and the world hooks the seats' members use are removed
+// only with every further player out (RemoveWithPlayersOut).
 //
 // Outside the table, in the entry point: what every module relies on (the weak pointers, the field root, the session
 // and the modules it installs itself) before it; the session's commands, the console and the engine callback after

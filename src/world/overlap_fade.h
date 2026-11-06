@@ -1,7 +1,7 @@
 #pragma once
 
-// No character turns see-through in a ladder, squeeze, crawl or similar move while a further player is in (the user's
-// decision of 2026-10-25; research/RE-overlap-fade-two.md; Rebirth's near_fade was the model for "the game's own
+// No character turns see-through in a ladder, squeeze, crawl or similar move while a further player is in
+// (research/RE-overlap-fade-two.md; Rebirth's near_fade was the model for "the game's own
 // un-fade clears a fade found on").
 //
 // The game fades a character in a field action that is not the party leader's to 0.3 (the vent crawl's to nothing)

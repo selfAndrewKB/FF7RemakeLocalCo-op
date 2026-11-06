@@ -1,7 +1,7 @@
 #pragma once
 
 // Each view's place in the engine's list, told by the view's own state rather than where it sits on screen (plan/topics/
-// views.md History 2026-10-31: the sweep of what tied player 1's view to the first screen).
+// views.md: nothing may tie player 1's view to the first screen).
 //
 // The game viewport's family holds one view per local player in the list's order (player 1's, the seats', the
 // mirrors'), each with the state its local player keeps for its whole life (FSceneView +0x08). At each of the game

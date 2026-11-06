@@ -1,8 +1,7 @@
 #pragma once
 
-// Which party members the game warps at a battle's start and end (research/RE-battle-warp.md; the user, 2026-10-26:
-// "disabling the pre and post-encounter party teleport"; Rebirth's player_two/battle_warp_two kept player 2's member
-// where it was, played there).
+// Which party members the game warps at a battle's start and end (research/RE-battle-warp.md). Rebirth's
+// player_two/battle_warp_two kept player 2's member where it was.
 //
 // At a battle's start the game warps every present party member but the leader to a navmesh point behind the leader,
 // with a short fade; at its end it warps a member back in front of the leader when it is far (by default more than 8 m,

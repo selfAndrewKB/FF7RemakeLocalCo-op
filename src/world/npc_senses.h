@@ -1,8 +1,8 @@
 #pragma once
 
-// NPCs notice every further player as they notice player 1, player 1 first (research/RE-npc-reactions.md; the user,
-// 2026-10-21: "some NPCs that programmed to respond to P1's presence as they walk by ... expand to P2, while still
-// giving P1 priority"; the seats follow plan/seats.md step 3).
+// NPCs notice every further player as they notice player 1, player 1 first (research/RE-npc-reactions.md): an NPC
+// made to respond to player 1 walking by responds to any player, and to player 1 when several are near (the seats
+// follow plan/seats.md step 3).
 //
 // The turn an NPC makes toward a passer-by is Square Enix's own NPC model: its Curiosity look takes the most
 // interesting character it sees within 2 m and keeps it to the end. It picks any character, a further player's

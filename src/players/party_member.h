@@ -1,7 +1,7 @@
 #pragma once
 
-// Which deployed party member a further player plays, and when it is the player's to take (the user's rule,
-// 2026-10-01, carried from Rebirth's player_two/party_member; RE-slot-member.md).
+// Which deployed party member a further player plays, and when it is the player's to take (the rule carried from
+// Rebirth's player_two/party_member; RE-slot-member.md).
 //
 // The first further player plays the member in the 2nd slot of the game's own party order: the row after the field
 // leader in the deployed formation (PartyManager+0x230..+0x232, the deployed types in ascending order, the order the
@@ -16,7 +16,7 @@
 // player (not handed to its AI for a scene, a field action or the control lock), a treasure or push-button lock alone
 // excepted (field_hold::InteractionLock: the member is then judged by its own state); in battle the BATTLE mode. A story script that takes a held
 // member (a script layer, an animation, the cinema modes) gets it the way the game hands its leader to its AI, the
-// seat and the player's view kept on it, until the hold ends (the user, 2026-10-21). A LEAD the level writes on
+// seat and the player's view kept on it, until the hold ends. A LEAD the level writes on
 // the member is the player's while it is staging or kept (its point marked), and the AI's while it is a guide or once
 // the player brings it to its point (the game's own data decides: players/lead_gate.h). A downed member stays playable, as player 1 stays on a downed leader. With fewer rows than
 // seats (a solo story party) that player has no member and waits.
@@ -130,7 +130,7 @@ Wait HoldWait(void* member) noexcept;
 
 /// The layer and kind `member`'s field AI hold is judged by: its active request, or, for an interest scene while
 /// players/ai_move_guard is active, the one beneath it (field_hold::JudgedState: an interest scene never takes a
-/// member, the user 2026-10-30). False when unread.
+/// member). False when unread.
 bool JudgedState(const void* member, field_hold::Judged& out) noexcept;
 
 /// The member's active request is an INTEREST (an ambient interest walk). A hold judged beneath it still hands the

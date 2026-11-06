@@ -21,7 +21,7 @@ using CodeBlock                                = std::array<std::uint8_t, kCodeB
 /// (for jumps relative to it); returning false places nothing.
 /// The code goes into a shared pool of executable 64 KiB blocks: one search finds a block near the
 /// game's image and every later site within its reach reuses it, so a redirect costs no search after
-/// the first (a search per redirect cost ~100 ms across the game's fragmented image, live 2026-10-07).
+/// the first (a search per redirect cost ~100 ms across the game's fragmented image, measured live).
 /// Placed code is never freed: another thread may run it at any moment after it is reachable. A block
 /// stays executable while code is added to it, so code already in it keeps running. `fill` runs under
 /// the pool's lock, which is not re-entrant: it must only write bytes, never place code itself.

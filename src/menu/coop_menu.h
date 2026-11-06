@@ -1,7 +1,7 @@
 #pragma once
 
 // The Co-op row of the game's main menu and the page it opens (research/RE-game-widgets.md §9-§10; plan/topics/
-// input.md History 2026-10-31; the rows and texts: menu/coop_menu_rules.h; the page: menu/coop_page; its opening and
+// input.md; the rows and texts: menu/coop_menu_rules.h; the page: menu/coop_page; its opening and
 // closing: menu/coop_page_open).
 //
 // The row: the main menu builds its left list from four tables by row kind; the mod gives the trial's "Buy Now" kind

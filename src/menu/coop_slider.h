@@ -1,7 +1,8 @@
 #pragma once
 
-// The Co-op page's sliders (research/RE-options-gauge-scroll.md; the user, 2026-11-01: the 100-value lists ran past the
-// screen's bottom, and a slider of the game's own was asked to scroll). A row with more values than the game's longest
+// The Co-op page's sliders (research/RE-options-gauge-scroll.md): a list of a hundred values runs past the screen's
+// bottom, so an option with that many is a slider of the game's own, made to scroll. A row with more values than the
+// game's longest
 // list is the game's Range row (menu/coop_page builds it; coop_menu_rules::IsSlider). The game's gauge then holds one
 // cell per value and grows past its frame, since nothing sizes its strip; the strip is the game's scrolling list
 // (virtualising, clipped to its bounds), so after each of the game's own gauge updates (the press and every Left/Right
@@ -10,7 +11,7 @@
 // coop_menu_rules::FirstVisible), places the marker by the same canvas-slot setter the game uses, and writes the value's
 // word in the gauge's label. The row's own value text is the word too (the row text's FromInt call redirected for the
 // mod's sliders). The mod deciding when to scroll is the one step the game has no path for (no gauge of the game's
-// holds more than its frame); the user approved it 2026-11-01. Holding Left/Right steps on (the user, 2026-11-01): the
+// holds more than its frame), a recreation accepted for that reason. Holding Left/Right steps on: the
 // input already sends a held button's repeats (0.2 s, then every 0.1 s) and the page's action handler drops them at one
 // test (research/RE-options-gauge-repeat.md); its vtable slot is replaced, and on the mod's open slider a held d-pad
 // Left/Right reaches it as a press, the event put back after. Only the mod's page is touched. Each open logged at Debug

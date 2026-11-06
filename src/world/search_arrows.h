@@ -1,7 +1,7 @@
 #pragma once
 
-// Each player's own grappling-hook search arrow (the user's report of 2026-10-25: player 1's search arrow hides whenever
-// player 2's or player 3's appears; research/RE-hookshot-arrows.md; Rebirth's hud/search_pins kept one shared list and
+// Each player's own grappling-hook search arrow: left alone, player 1's search arrow hides whenever another player's
+// appears (research/RE-hookshot-arrows.md; Rebirth's hud/search_pins kept one shared list and
 // hid by owner, which cannot work here: the game clears the whole list at every enter).
 //
 // The game keeps the search compass and its arrows in one object (EndUISystem[55]): a hook area's enter and its

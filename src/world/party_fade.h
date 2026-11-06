@@ -1,7 +1,7 @@
 #pragma once
 
-// Party members never vanish near a camera while a further player is in (the user's reminder of 2026-10-21: "disable
-// the camera making party members disappear when they are too close to it"; research/RE-camera-fades.md L1 and L2;
+// Party members never vanish near a camera while a further player is in: the game fades a party member that comes too
+// close to the camera, which suits one camera and not several (research/RE-camera-fades.md L1 and L2;
 // the seats follow plan/seats.md step 3: the rule is the same for any number of further players, so it is keyed on
 // how many are in, not on a seat).
 //

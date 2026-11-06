@@ -1,7 +1,7 @@
 #pragma once
 
-// Player 1's character is brought to a talk another player starts, when it is far (research/RE-talk-far.md; the user,
-// 2026-10-26: "Are they teleported to said conversation when Cloud has to speak? That would be preferred.").
+// Player 1's character is brought to a talk another player starts, when it is far, since Cloud has lines to speak in
+// it (research/RE-talk-far.md).
 //
 // A further player's NPC talk plays as the game scripts it (world/field_targets): its speaker and listeners are named
 // by the data, so player 1's character (Cloud) speaks wherever it stands, and the talk camera frames it there. Nothing
@@ -12,7 +12,7 @@
 //   - at that hand, when the act's object is an NPC a further player pressed (field_targets::PeekTalkPress), the act is
 //     not a shop (a show-menu act is the opener's alone), and player 1's character stands more than 8 m (flat) from the
 //     player who pressed and runs no field action (a ladder, a crawl, the hook): a navmesh point 1.2 m beside the
-//     presser, as near the NPC as the presser (the user, 2026-10-26: "Just beside."), on the side of the presser's line
+//     presser, as near the NPC as the presser (just beside it), on the side of the presser's line
 //     to the NPC that faces player 1's character, else the other side, else behind (where the NPC stands: the game's
 //     target entry of the pressed object, noted at the press, else the game's lookup of an actor by name; without
 //     either, toward player 1's character or either side; the game's own navmesh query, with the shape the game's

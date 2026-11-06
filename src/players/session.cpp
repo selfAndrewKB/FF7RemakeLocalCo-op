@@ -288,8 +288,8 @@ try
 {
     ++ticks_;
     // The instance lives as long as the game; found once (a UE4SS object walk, never per tick: one try a second until
-    // it exists), so LocalPlayer() answers before any join: the HUD's two-view layout under the mirror player read
-    // every view through it and saw none in a session without a join (the user, 2026-10-22 10:13: markers drifting).
+    // it exists), so LocalPlayer() answers before any join: the HUD's two-view layout under the mirror player reads
+    // every view through it, and with none found in a session without a join its markers drift.
     if (gameInstance_ == nullptr && ticks_ % 60 == 1)
     {
         gameInstance_ = GameInstance();
@@ -516,7 +516,7 @@ void Session::LogWait(Seat& seat, const party_member::Choice& choice, const wcha
 void Session::LogFormation(Seat& seat, const party_member::Choice& choice) noexcept
 {
     // The wait's own line names only the seat's row and its reason, so a formation that changes without changing
-    // them (Barret entering the party order, the game's leader moving) was invisible in the 2026-10-22 10:30 log.
+    // them (Barret entering the party order, the game's leader moving) would be invisible in the log.
     if (choice.formation == 0 || choice.formation == seat.formationLogged)
     {
         return;
@@ -691,7 +691,7 @@ try
                       Describe(playerOneController));
         return;
     }
-    // The member first (the user, 2026-10-21): no controller and camera for the seat until the row's member is free.
+    // The member first: no controller and camera for the seat until the row's member is free.
     // The instance is kept for the wait: found once, it lives as long as the game.
     gameInstance_ = gameInstance;
     if (seatInstalled_)
@@ -1067,7 +1067,7 @@ try
     // through that gained another bit reads as the push-button event when its bit stands): the same backstop. Only while the
     // game's leader is with its AI: a push-button bit standing with the leader on its player would otherwise hand and
     // return the member at every check (no such setter is known; EventControl_Begin hands the leader).
-    // A kept member's event cut to its own shot while the lock still stands (slot 18 alone is no reason, v0.111.0).
+    // A kept member's event cut to its own shot while the lock still stands (slot 18 alone is no reason).
     const bool eventShot = seat.keptThroughLock && field_hold::InteractionLock(party_member::ControlLockMask()) &&
                            views::scene_camera::EventShot();
     if (hold == party_member::Wait::LeaderHanded || (hold == party_member::Wait::PushButtonEvent && !party_member::LeaderWithPlayer()) ||
@@ -1078,7 +1078,7 @@ try
             return;  // player 1's own crawl, squeeze or grappling hook only: the member stays its player's (HandWithLeader)
         }
         // The hand funnel's backstop: the game's leader is with its AI and the seat's member is not (a seat that
-        // landed inside the hand, after the funnel fired: seen live 2026-10-21, Tifa taken mid-animation), or an
+        // landed inside the hand, after the funnel fired: seen live, Tifa taken mid-animation), or an
         // interaction lock the member stayed through gained another bit (a scene, a story beat).
         if (eventShot)
         {
@@ -1116,8 +1116,8 @@ void Session::OnLeaderChanging(void* self, void* character) noexcept
 {
     auto* session = static_cast<Session*>(self);
     // The game's leader going home (onto the field leader: a battle's end) ends every stand-in: each seat takes its own
-    // row again. Otherwise the seat whose member the change takes plays the character player 1 leaves (the user,
-    // 2026-10-25: the battle leader option; a forced switch alike), so no other seat is moved.
+    // row again. Otherwise the seat whose member the change takes plays the character player 1 leaves (the battle
+    // leader option; a forced switch alike), so no other seat is moved.
     const bool         home = party_member::IsFieldLeader(character);
     const std::uint8_t was  = party_member::GameLeaderType();  // player 1's character before the change
     for (int index = 1; index <= kSeatsBuilt; ++index)
@@ -1202,7 +1202,7 @@ void Session::HandWithLeader(Seat& seat) noexcept
                            party_member::ControlLockMask(), seat.Name());
         return;
     }
-    // Player 1's crawl, squeeze or grappling hook locks the field for its own leader only (the user, 2026-10-24: a crawl
+    // Player 1's crawl, squeeze or grappling hook locks the field for its own leader only (a crawl
     // locks only the mover): the member stays its player's, unless a story lock stands with it (the first lock's hand
     // runs before its bits are set: a mask still 0 asks MoverLockNow).
     if (world::traversal_action::PlayerOneMoveHolds(party_member::ControlLockMask()))

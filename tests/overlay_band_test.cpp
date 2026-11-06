@@ -1,6 +1,6 @@
 // Host-side tests for hud::VisibleBand and MarkerHostScale, run without the game.
 //
-// The expected values are the ones measured or derived on 2026-09-25 (RE-p2-hud.md): a 3840x2160 UI
+// The expected values are the ones measured or derived in RE-p2-hud.md: a 3840x2160 UI
 // image, a 2560x1440 window, halves of 2560x720 (top/bottom), 1280x1440 (side by side) and 1280x720
 // (16:9 with bars). Solo must reproduce the engine's own host scale, 1.333.
 

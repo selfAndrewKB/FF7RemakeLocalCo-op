@@ -6,22 +6,22 @@
 // its kind byte (the reflected FFieldAiType) says what runs. Layer 0 is the stream's default, layer 1 the level's AI
 // settings, written during gameplay to stage the members (a stay, a run to a mark, a lead, the follow); layers 2 to
 // 12 are the scripts' (acts, events, field actions, story moves) and 13 the cinema copy a cutscene's preparation
-// makes of the active record. The user's rule (2026-10-20; research/RE-fieldai-kinds.md): players 2 and 3 keep
+// makes of the active record. The rule (research/RE-fieldai-kinds.md): players 2 and 3 keep
 // control through the level's staging, and wait, the member handed to its AI, only when a script needs it: an
 // animation, the unread ESCAPE_POSITION, or any request on a script layer. A request written on a player-held
 // member runs its enter and one update and freezes until the hand; only SINGLE_ANIMATION's exit reports finished
 // to the scripts, so nothing else stalls while held.
-// ANIMATION on the level layer is a scripted animation too (the user, 2026-10-21, after player 2 seated on Tifa in
-// the middle of one and cut it short): both animation kinds hand the member to its AI with the player's view kept
+// ANIMATION on the level layer is a scripted animation too (left alone, a player seated on a member in the middle of
+// one would cut it short): both animation kinds hand the member to its AI with the player's view kept
 // on it, until the animation ends.
-// LEAD on the level layer is a kind this rule cannot settle (the user, 2026-10-21): the level writes it as often
+// LEAD on the level layer is a kind this rule cannot settle: the level writes it as often
 // to walk a member to a mark in step with the player ("walk up to the console", twice on the Ch. 7 reactor walk) as
 // to make the member a guide the player follows ("follow Tifa", Ch. 3). The run to a mark (FOLLOW_POSITION,
-// "MoveToTarget") on the level layer is the same case (the user, 2026-10-27: Aerith's run ahead of Cloud in Ch. 8
-// stalled the level while a further player held her, until that player left): a run the level merely stages, or
+// "MoveToTarget") on the level layer is the same case (Aerith's run ahead of Cloud in Ch. 8 stalls the level for as
+// long as a further player holds her): a run the level merely stages, or
 // one a level step waits on. The handler is the same code either way; what differs is level data: whether a level
 // step waits on the arrival, and whether the story marks the member. A guide on a held member stalls the level (its
-// runner never ticks, the arrival never fires: seen live 2026-10-21 and 2026-10-27), so the rule answers Arrival
+// runner never ticks, the arrival never fires: seen live), so the rule answers Arrival
 // and the caller asks the game's own data (players/lead_gate.h): a guide goes to its AI with the player's view on
 // it, staging stays the player's.
 //
@@ -63,7 +63,7 @@ enum Kind : std::uint8_t
 /// a switch, a lever, a terminal). The game hands only its leader for them, the interactor; an event's other actors
 /// are the ones it lists, which it puts in the cinema actor mode and moves on a script layer (both a member's own
 /// hold). So under such a lock a further player's member is judged by its own state, and stays its player's when
-/// nothing holds it (the user, 2026-10-27: keep moving through a switch, a terminal or a pickup). The game hands only
+/// nothing holds it: a player keeps moving through another's switch, terminal or pickup. The game hands only
 /// its own leader (player 1's character) for these locks, whichever player interacts; a further player's own chest
 /// holds its opener on a script layer of its own (RE-chest-two.md), which the member's own state already answers.
 inline constexpr std::uint32_t kLockTreasure     = 0x4;
@@ -109,8 +109,8 @@ constexpr bool SameIgnoringCase(std::wstring_view a, std::wstring_view b) noexce
 /// StateMgr_OnActorSettingArrived_SendArg2Signal 0x14114E100 compares, without case [CONFIRMED code]. One such
 /// move that ends in a stand is a placement (Barret's lead path on the Mako 5 save: Lead, then Stable); a further move
 /// ahead in the member's own chain before it stands is the level walking the member along a path, which a hold
-/// breaks at the first link (Aerith's guide home, Ch. 8, live 2026-10-27: run, stay, run, ... with no Lead setting
-/// in it at all; the "follow this character" the user means is built from runs and stays).
+/// breaks at the first link (Aerith's guide home, Ch. 8, seen live: run, stay, run, ... with no Lead setting
+/// in it at all; what plays as "follow this character" is built from runs and stays).
 constexpr bool MoveSetting(std::wstring_view status) noexcept
 {
     return SameIgnoringCase(status, L"Lead") || SameIgnoringCase(status, L"MoveToTarget") ||
@@ -150,9 +150,9 @@ struct Judged
 /// writer is the AI model's interest intention, which reacts to any member but the leader inside the point's sphere,
 /// in single player too). Nothing waits on it: no arrival signal, no script step. With players/ai_move_guard placed
 /// its walk cannot start under a player, so it never takes the member from its player: the hold is the next non-empty
-/// layer's below it, a lead or a script written meanwhile included (the user, 2026-10-29: Aerith handed to her AI for
-/// 5 minutes, her interest walk looping on a ladder; research/RE-interest-ladder-loop.md). The user's rule since
-/// 2026-10-30, after the patches of v0.128.2-v0.128.5: interest scenes never take a character a player holds (three
+/// layer's below it, a lead or a script written meanwhile included (handed to her AI, Aerith's interest walk can loop
+/// on a ladder for minutes; research/RE-interest-ladder-loop.md). The rule: interest scenes never take a character a
+/// player holds (three
 /// placed scenes in the game walk a companion, all cosmetic; none speaks: research/RE-interest-audit.md,
 /// RE-dialogue-ambient-coop.md). `kinds`: the 15 layers' kind bytes.
 constexpr Judged JudgedState(std::uint8_t activeLayer, std::uint8_t activeKind, const std::uint8_t (&kinds)[kLayers]) noexcept

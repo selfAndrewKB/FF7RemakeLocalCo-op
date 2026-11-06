@@ -1,9 +1,8 @@
 #pragma once
 
 // The double click that brings a further player's character into the fight (battle/arena_warp.h applies it on the
-// Dash press): two presses within kDoubleClickMs are one double click, and a pair once spent starts afresh (the user,
-// 2026-10-26: "double-tapping L3"). Host-tested (tests/battle_rules_test.cpp). Cleanup step 4,
-// plan/code-alignment.md C3.
+// Dash press): two presses within kDoubleClickMs are one double click, and a pair once spent starts afresh.
+// Host-tested (tests/battle_rules_test.cpp).
 
 #include <cstdint>
 

@@ -211,10 +211,10 @@ constexpr float kFencePoint[3] = {490.0f, -38330.0f, -4920.0f};
 
 void TestTheDashFromCloudRunsThroughTheFenceBox()
 {
-    // Played 2026-10-30 15:57 (run 3): Tifa beside Cloud at box 0195; her AI's dash went through the box.
+    // As played, one run: Tifa beside Cloud at box 0195; her AI's dash goes through the box.
     const float byCloud[3] = {3221.0f, -32878.0f, -4885.0f};
     EXPECT(RunCrosses(kTifaRun, byCloud, kFencePoint));
-    // Run 2: between box 0200 and the fence box.
+    // Another run: between box 0200 and the fence box.
     const float between[3] = {1200.0f, -36800.0f, -4880.0f};
     EXPECT(RunCrosses(kTifaRun, between, kFencePoint));
 }

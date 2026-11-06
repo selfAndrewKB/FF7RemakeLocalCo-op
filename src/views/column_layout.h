@@ -1,13 +1,13 @@
 #pragma once
 
 // Three columns through the engine's own layout table (plan/seats.md step 5; research/RE-three-views.md); on a span of
-// monitors of different widths each column is its own monitor's width (v0.147.0).
+// monitors of different widths each column is its own monitor's width.
 //
 // UGameViewportClient lays its local players out every redraw from its own layout table (SplitscreenInfo, filled by
 // its constructor): with three local players it takes the three-player entry the settings name, ThreePlayer_FavorTop
 // by default, whose records put player 1 on top and the other two in the quadrants below (research/RE-layout-fov.md
-// §2, RE-multi-monitor-views.md §7). UE 4.18 has no three-column entry (Rebirth's 4.26 has one, which its third view
-// selects by the setting; read 2026-10-22, cleanup-2026-10 views/third_view). So while three columns are wanted on a
+// §2, RE-multi-monitor-views.md §7). UE 4.18 has no three-column entry (Rebirth's 4.26 has one, which Rebirth's
+// views/third_view selects by the setting). So while three columns are wanted on a
 // span of monitors, or asked for on the console, this module writes that entry's three records to columns;
 // in one window it writes the layout the setting `three-player-split` names (column_rules::ThreeSplitRecords: one
 // across the top and two below, the engine's own entry and the default, one across the bottom, or one down either side).
@@ -28,7 +28,7 @@
 // that number here and to the mirror player each tick.
 //
 // The column order (the settings file's `column-order` under [Views], the console's `column-order 123 | 132 | 213 ...`;
-// the user 2026-10-25, every player from 2026-10-31): which screen each player takes, by player number, whatever the
+// it applies to every player, player 1 included): which screen each player takes, by player number, whatever the
 // order they joined in. The entry's records are arranged for it (column_rules::Slots): `1 3 2` puts player 2's view on
 // the right (in one window, three players: the last of the other two) and player 3's in the middle, `2 1 3` player 2's
 // first (the large view) and player 1's second; a mirror takes a screen left over. With the players listed as the order

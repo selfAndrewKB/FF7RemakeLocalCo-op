@@ -3,10 +3,10 @@
 // Where player 1's character is brought when another player starts a talk (world/talk_gather.h applies it), as a pure
 // rule: the flat directions to try for a navmesh point beside the presser, in order, and whom the moved character
 // faces. With the NPC's place known and within the game's own "far" of the presser: the side of the presser's line
-// to the NPC that faces where player 1's character stands, else the other side, else behind the presser (the user,
-// 2026-10-26: "just beside", facing the NPC). Without it: toward player 1's character, else either side of that line,
-// facing the presser (research/RE-talk-far.md; the 14:28 live miss of v0.102.0 was this rule's input, not the rule).
-// Host-tested (tests/talk_gather_rules_test.cpp). Cleanup step 4, plan/code-alignment.md C3.
+// to the NPC that faces where player 1's character stands, else the other side, else behind the presser (just beside,
+// facing the NPC). Without it: toward player 1's character, else either side of that line,
+// facing the presser (research/RE-talk-far.md).
+// Host-tested (tests/talk_gather_rules_test.cpp).
 
 #include "world/actor_place.h"
 
@@ -19,7 +19,7 @@ namespace lss::world::talk_gather_rules {
 using actor_place::Vec3;
 
 constexpr float kFarCm    = 800.0f;  // the game's own "far from the leader" (the battle end's warp threshold)
-constexpr float kBesideCm = 120.0f;  // shoulder to shoulder with the presser (the user, 2026-10-26: "Just beside.")
+constexpr float kBesideCm = 120.0f;  // shoulder to shoulder with the presser: just beside
 constexpr float kPi       = 3.14159265358979f;
 
 struct Beside
