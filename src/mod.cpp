@@ -67,7 +67,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.172.1-talk-options";  // the one version string (the log, UE4SS and the setup app)
+constexpr const wchar_t* kVersion = L"0.173.0-walk-forgotten";  // the one version string (the log, UE4SS and the setup app)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;

@@ -233,13 +233,19 @@ void Session::EndMemberModules(const Seat& seat) noexcept
 void Session::OnFieldExit(void* self, const wchar_t* caller) noexcept
 {
     auto* session = static_cast<Session*>(self);
-    if (session->Count() == 0)
-    {
-        return;
-    }
     if (!platform::OnGameThread())
     {
-        platform::Log(L"field exit: requested off the game thread ({}); the players are left to the field-step check", caller);
+        if (session->Count() != 0)
+        {
+            platform::Log(L"field exit: requested off the game thread ({}); the players are left to the field-step check", caller);
+        }
+        return;
+    }
+    // The field goes with its level, players in or not: every walk judged in it is forgotten, so a level entered again
+    // (a retry, a load) is judged from its own data, not from a verdict reached before the change.
+    lead_gate::ForgetAll();
+    if (session->Count() == 0)
+    {
         return;
     }
     session->LeaveForWorldChange(caller);
@@ -247,6 +253,7 @@ void Session::OnFieldExit(void* self, const wchar_t* caller) noexcept
 
 void Session::LeaveForWorldChange(const wchar_t* why) noexcept
 {
+    lead_gate::ForgetAll();  // the field goes with its level (OnFieldExit's reason; the field-step check comes here directly)
     // Each seat's column first, before any leaves (the list closes up behind a leave): the rejoin restores that order.
     auto* players = LocalPlayers(gameInstance_);
     for (int index = 1; index <= kSeatsBuilt; ++index)
@@ -973,7 +980,7 @@ void Session::HandForHold(Seat& seat, void* member, party_member::Wait hold, boo
                   party_member::Describe(hold),
                   seat.handedToAi ? L"yes" : L"NO (the hand faulted; tried again)", seat.Name(),
                   hold == party_member::Wait::Guide || hold == party_member::Wait::AtMark
-                      ? std::format(L" (lead gate: {})", lead_gate::Reading())
+                      ? std::format(L" (lead gate: {})", lead_gate::ReadingOf(member))
                       : L"");
     if (party_member::InterestOnTop(member))
     {
@@ -993,7 +1000,14 @@ void Session::ReturnFromHold(Seat& seat, void* member) noexcept
     platform::Log(L"{}'s member (type {}) back on its controller: its hold ended ({}): {}; the member: {}", seat.Name(),
                   party_seat::MemberType(seat.index), party_member::Describe(seat.hold),
                   party_member::ReturnTo(member, Controller(seat)) ? L"yes" : L"NO", party_member::AiDetail(member));
-    seat.hold = party_member::Wait::None;
+    // A walk's judgment goes with its hold, so the move set again is judged anew. Only a walk's: judgments are per level
+    // object, and another seat's member may still be on a move of that object while this one ends an unrelated hold.
+    const bool walk = seat.hold == party_member::Wait::Guide || seat.hold == party_member::Wait::AtMark;
+    seat.hold       = party_member::Wait::None;
+    if (walk)
+    {
+        lead_gate::Forget(member);
+    }
 }
 
 void Session::FollowSlot(Seat& seat) noexcept
@@ -1014,6 +1028,7 @@ try
         party_seat::Forget(seat.index);
         seat.ResetMember();
         seat.standIn = facts::kPlayerTypeNone;  // a rebuilt party: its own row again
+        lead_gate::ForgetAll();                 // the level began again with it: every walk judged before is stale
         return;
     }
     auto* players = LocalPlayers(gameInstance_);

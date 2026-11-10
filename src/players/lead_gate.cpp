@@ -112,6 +112,7 @@ struct Judgment
     std::uint32_t censusTick = 0;
     std::uint32_t calls      = 0;
     std::uint32_t touched    = 0;      // the clock at the last call (the least recently used slot is reused)
+    std::wstring  reading;             // the judgment in words, as logged (the hand's log line quotes it)
 };
 /// One judgment per level object: a run-ahead is written on every member at once (one per further player), and
 /// the seats ask in turn. Four covers three further players with one to spare.
@@ -119,7 +120,7 @@ std::array<Judgment, 4> g_judged;
 std::uint32_t           g_clock   = 0;
 std::wstring            g_reading = L"none yet";
 
-/// The judgment slot of `object`, else the least recently used one.
+/// The judgment slot of `object`, else an empty one, else the least recently used one.
 Judgment& JudgmentOf(std::int64_t object) noexcept
 {
     Judgment* slot = nullptr;
@@ -130,13 +131,41 @@ Judgment& JudgmentOf(std::int64_t object) noexcept
             slot = &j;
             break;
         }
-        if (slot == nullptr || j.touched < slot->touched)
+        if (slot == nullptr || (j.object == 0 && slot->object != 0) ||
+            ((j.object == 0) == (slot->object == 0) && j.touched < slot->touched))
         {
             slot = &j;
         }
     }
     slot->touched = ++g_clock;
     return *slot;
+}
+
+/// The level object each member was last judged on, for Forget (a seat's member each; the entry of a member not seen
+/// before takes an empty slot, else the first).
+struct MemberObject
+{
+    const void*  member = nullptr;
+    std::int64_t object = 0;
+};
+std::array<MemberObject, 4> g_memberObjects;
+
+void Remember(const void* member, std::int64_t object) noexcept
+{
+    MemberObject* slot = nullptr;
+    for (MemberObject& m : g_memberObjects)
+    {
+        if (m.member == member)
+        {
+            slot = &m;
+            break;
+        }
+        if (slot == nullptr || (slot->member != nullptr && m.member == nullptr))
+        {
+            slot = &m;
+        }
+    }
+    *slot = MemberObject{.member = member, .object = object};
 }
 
 /// A name's text for the log: "None" for no name, its bits when the engine cannot say.
@@ -1188,6 +1217,7 @@ try
         return Verdict::Staging;
     }
     Judgment&  last = JudgmentOf(object);
+    Remember(member, object);
     const bool same = last.object == object && last.state == state && last.kind == kind;
     if (same && lead_keep_rules::ToAi(last.verdict))
     {
@@ -1256,6 +1286,7 @@ try
                                                 : last.destination != 0 ? std::format(L"{} (not a field point)", Name(last.destination))
                                                                         : std::wstring(L"none named"),
                                 lead_keep_rules::Name(last.verdict));
+        last.reading = g_reading;
         if (!same || last.verdict != was)
         {
             platform::Log(L"lead gate: {}", g_reading);
@@ -1365,9 +1396,59 @@ void SetMarking(bool on) noexcept
     g_marking = on;
 }
 
+void Forget(const void* member) noexcept
+{
+    for (MemberObject& m : g_memberObjects)
+    {
+        if (member == nullptr || m.member != member)
+        {
+            continue;
+        }
+        for (Judgment& j : g_judged)
+        {
+            if (m.object != 0 && j.object == m.object)
+            {
+                j = Judgment{.touched = j.touched};
+            }
+        }
+        m = MemberObject{};
+    }
+}
+
+void ForgetAll() noexcept
+{
+    for (Judgment& j : g_judged)
+    {
+        j = Judgment{.touched = j.touched};
+    }
+    g_memberObjects = {};
+}
+
 std::wstring Reading() noexcept
 {
     return g_reading;
+}
+
+std::wstring ReadingOf(const void* member) noexcept
+try
+{
+    std::uint8_t kind   = 0;
+    std::int64_t object = 0, state = 0;
+    if (CurrentMove(member, kind, object, state))
+    {
+        for (const Judgment& j : g_judged)
+        {
+            if (j.object == object && j.state == state && j.kind == kind && !j.reading.empty())
+            {
+                return j.reading;
+            }
+        }
+    }
+    return std::format(L"no judgment of this move; the last judged: {}", g_reading);
+}
+catch (...)
+{
+    return L"the judgment could not be read";
 }
 
 }  // namespace lss::players::lead_gate

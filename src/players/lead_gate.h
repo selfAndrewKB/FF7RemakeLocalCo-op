@@ -39,8 +39,11 @@
 // setting ends (its state changes, the level's next setting); a staging or keep verdict is re-read while it lasts (the
 // marker and the member's distance to the point each time, the waiters once a second), so a marker that comes late
 // still changes it. One judgment is kept per level object (a run-ahead is written on every member at once, one per
-// further player). Reads are guarded; the game calls (the trigger table's row lookup, the story flag test, the field
-// point lookup) are the ones the game makes on the same data. Game thread.
+// further player). A walk's judgment is forgotten when the walk's hold ends, and every judgment when the field is left
+// (a retry, a load, a jump, the title) or the party is rebuilt under a player, so a move the level sets again is judged
+// from its data anew, never from a verdict reached before (a save loaded after a kept move ended at its point would
+// otherwise hand the move to the AI at once). Reads are guarded; the game calls (the trigger table's row lookup, the
+// story flag test, the field point lookup) are the ones the game makes on the same data. Game thread.
 
 #include "players/lead_keep_rules.h"
 
@@ -91,7 +94,16 @@ std::wstring PointName(std::int64_t point) noexcept;
 /// move is a guide.
 void SetMarking(bool on) noexcept;
 
+/// `member`'s hold ended: the judgment of the move it was last judged on is forgotten (the move set again is judged anew).
+void Forget(const void* member) noexcept;
+
+/// The field is left (a retry, a load, a jump, the title) or the party is rebuilt under a player: every judgment forgotten.
+void ForgetAll() noexcept;
+
 /// The last judgment, one line (the reading).
 std::wstring Reading() noexcept;
+
+/// The judgment of `member`'s current move, one line (the hand's log line); when it has none, the last judgment, said so.
+std::wstring ReadingOf(const void* member) noexcept;
 
 }  // namespace lss::players::lead_gate
