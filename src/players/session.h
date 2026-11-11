@@ -81,8 +81,8 @@ public:
     /// arrows): its member is given back and the new row's seated by the session's follow, as at a story party change.
     /// False (nothing changed) when the seat cannot step (CanStepMember).
     bool StepMember(int seat, int dir) noexcept;
-    /// The seat plays its member (seated, not handed to its AI, standing in for no one), no battle is on, and another
-    /// rank is free to step to.
+    /// The seat plays its member (seated, not handed to its AI, standing in for no one), no battle is on, the party has
+    /// another rank, and the player holding it, if any, plays its member too (a step onto it trades ranks with that player).
     bool CanStepMember(int seat) const noexcept;
     /// The actor of the seat's row now (its rank's, or the stand-in's), whatever its state: a player window's name. Null
     /// without one.
@@ -206,6 +206,13 @@ private:
     void JoinNow(int index) noexcept;
     /// The ranks the other seats hold (in, waiting for a member, or to rejoin), as party_rank_rules' bits.
     std::uint32_t RanksHeldBesides(int index) const noexcept;
+    /// The seat other than `besides` that holds `rank` (in, waiting, or to rejoin), or 0.
+    int SeatHoldingRank(int rank, int besides) const noexcept;
+    /// Where a step of `index`'s rank in `dir` would land: the rank (`next`), the seat holding it (`holder`, 0 for none) and
+    /// the party's rank count. False when the seat cannot step (CanStepMember's conditions).
+    bool StepTarget(int index, int dir, int& next, int& holder, int& count) const noexcept;
+    /// The seat plays its member: seated, not handed to its AI, standing in for no one.
+    bool PlaysMember(int index) const noexcept;
     /// A seat whose rank the party no longer has (a story party change shrank it) takes the lowest free one.
     void SettleRank(Seat& seat, void* playerOneController) noexcept;
     /// Player 1's controller, or null.

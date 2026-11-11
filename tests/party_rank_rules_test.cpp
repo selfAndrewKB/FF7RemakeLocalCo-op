@@ -37,16 +37,18 @@ void TheNextFreeMember()
     EXPECT(Lowest(0, 5) == 1 && Lowest(Bit(1) | Bit(2), 5) == 0);  // never past a formation's rows
 }
 
-/// The arrows step over the free ranks, wrapping; a rank another player holds is skipped.
+/// The arrows step over every rank, wrapping; a rank another player holds is stepped onto too (the session trades).
 void TheArrows()
 {
     EXPECT(Step(1, 1, 0, 2) == 2);
     EXPECT(Step(2, 1, 0, 2) == 1);   // wraps
     EXPECT(Step(1, -1, 0, 2) == 2);  // wraps left
     EXPECT(Step(2, -1, 0, 2) == 1);
-    EXPECT(Step(1, 1, Bit(2), 2) == 1);  // the other member is player 3's: nowhere to go
-    EXPECT(Step(1, 1, 0, 1) == 1);       // one member free: no step
-    EXPECT(Step(1, 1, 0, 0) == 1);       // no party read
+    EXPECT(Step(1, 1, Bit(2), 2) == 2);   // the other member is player 3's: the step lands on it, the players trade
+    EXPECT(Step(2, -1, Bit(1), 2) == 1);  // the same leftwards
+    EXPECT(Step(1, 1, Bit(1) | Bit(2), 2) == 2);  // in range the held ranks are not read
+    EXPECT(Step(1, 1, 0, 1) == 1);        // one member past player 1's: no step
+    EXPECT(Step(1, 1, 0, 0) == 1);        // no party read
 }
 
 /// A rank the party no longer has (a story change shrank it) steps to the lowest free one.
@@ -54,6 +56,7 @@ void AShrunkParty()
 {
     EXPECT(Step(2, 1, 0, 1) == 1);
     EXPECT(Step(2, -1, Bit(1), 1) == 2);  // that one is another player's: unchanged, the member test then waits
+    EXPECT(Step(3, 1, Bit(1) | Bit(2), 2) == 3);  // every rank another player's: stays
     EXPECT(Step(0, 1, 0, 2) == 1);
 }
 

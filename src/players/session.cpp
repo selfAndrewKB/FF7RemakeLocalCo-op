@@ -78,7 +78,7 @@ constexpr int                  kRejoinFailures = 3;
 /// A refused seat (the funnel did not take the member) is tried again after this many ticks; the party order is
 /// checked under a held member every this many ticks (cheap guarded reads).
 constexpr std::uint32_t kSeatRetryTicks  = 60;
-constexpr std::uint32_t kSwapGraceTicks  = 30;  // after a leader change: the seat's next character may still be held for a moment
+constexpr std::uint32_t kSwapGraceTicks  = 30;  // after a leader change or a trade: the seat's next character may still be another seat's for a moment
 constexpr std::uint32_t kFollowSlotTicks = 10;
 
 UObject* Field(const void* object, std::uint32_t offset) noexcept
@@ -624,35 +624,85 @@ void Session::Join(int index) noexcept
     JoinNow(index);
 }
 
-bool Session::CanStepMember(int index) const noexcept
+bool Session::PlaysMember(int index) const noexcept
 {
-    // Seated and playing (not handed to its AI for a hold), in the field: a member swap mid-fight is unbuilt ground.
-    if (!In(index) || !Seated(index) || HandedToAi(index) || seats_[index].standIn != facts::kPlayerTypeNone ||
-        field_root::InBattle())
+    // Seated and playing: not handed to its AI for a hold, standing in for no one.
+    return In(index) && Seated(index) && !HandedToAi(index) && seats_[index].standIn == facts::kPlayerTypeNone;
+}
+
+int Session::SeatHoldingRank(int rank, int besides) const noexcept
+{
+    for (int other = 1; other <= kSeatsBuilt; ++other)
+    {
+        const Seat& o = seats_[other];
+        if (other != besides && (o.localPlayer != nullptr || o.awaiting || o.rejoin.pending) && party_member::Rank(other) == rank)
+        {
+            return other;
+        }
+    }
+    return 0;
+}
+
+bool Session::StepTarget(int index, int dir, int& next, int& holder, int& count) const noexcept
+{
+    // In the field only: a swap in a fight is not supported. A step onto another player's rank trades with that player,
+    // whose member must be free to give back too (not handed to its AI): a trade under a hold would move the hold's return.
+    if (!PlaysMember(index) || field_root::InBattle())
     {
         return false;
     }
     const int rank = party_member::Rank(index);
-    const int next = party_rank_rules::Step(rank, 1, RanksHeldBesides(index), party_member::Ranks(PlayerOneController()));
-    return next != rank;
-}
-
-bool Session::StepMember(int index, int dir) noexcept
-{
-    if (!CanStepMember(index))
-    {
-        return false;
-    }
-    const int rank  = party_member::Rank(index);
-    const int count = party_member::Ranks(PlayerOneController());
-    const int next  = party_rank_rules::Step(rank, dir, RanksHeldBesides(index), count);
+    count          = party_member::Ranks(PlayerOneController());
+    next           = party_rank_rules::Step(rank, dir, RanksHeldBesides(index), count);
     if (next == rank)
     {
         return false;
     }
+    holder = SeatHoldingRank(next, index);
+    return holder == 0 || !HandedToAi(holder);
+}
+
+bool Session::CanStepMember(int index) const noexcept
+{
+    int next = 0, holder = 0, count = 0;
+    return StepTarget(index, 1, next, holder, count);  // a ring of two ranks: a step either way has the same target, or none has
+}
+
+bool Session::StepMember(int index, int dir) noexcept
+{
+    int next = 0, holder = 0, count = 0;
+    if (!StepTarget(index, dir, next, holder, count))
+    {
+        return false;
+    }
+    const int rank = party_member::Rank(index);
+    // Two writes with nothing between them on the one thread that reads the ranks (the follow runs later in the tick).
+    if (holder != 0)
+    {
+        party_member::SetRank(holder, rank);
+        // Each seat's new row is the other's member until the other's follow has given it back: no leave to wait meanwhile.
+        seats_[index].seatGraceUntil  = ticks_ + kSwapGraceTicks;
+        seats_[holder].seatGraceUntil = ticks_ + kSwapGraceTicks;
+    }
     party_member::SetRank(index, next);
-    platform::Log(L"{} steps {} to rank {} of {} in the party order: its member is given back and the new row's seated",
-                  seats_[index].Name(), dir >= 0 ? L"right" : L"left", next, count);
+    const wchar_t* way = dir >= 0 ? L"right" : L"left";
+    if (holder != 0 && Seated(holder))
+    {
+        platform::Log(L"{} steps {} to rank {} of {} in the party order, trading places with {} (now rank {}): both members are "
+                      L"given back and each seat takes the other's",
+                      seats_[index].Name(), way, next, count, seats_[holder].Name(), rank);
+    }
+    else if (holder != 0)
+    {
+        platform::Log(L"{} steps {} to rank {} of {} in the party order, taking the rank {} waited for ({} now waits on rank {}): "
+                      L"its member is given back and the new row's seated",
+                      seats_[index].Name(), way, next, count, seats_[holder].Name(), seats_[holder].Name(), rank);
+    }
+    else
+    {
+        platform::Log(L"{} steps {} to rank {} of {} in the party order: its member is given back and the new row's seated",
+                      seats_[index].Name(), way, next, count);
+    }
     return true;
 }
 
