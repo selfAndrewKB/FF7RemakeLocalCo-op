@@ -204,7 +204,9 @@ private:
     static void OnFieldExit(void* self, const wchar_t* caller) noexcept;
     /// Join's work, for the player's intent and for a rejoin or a wait (which keep the seat's rank).
     void JoinNow(int index) noexcept;
-    /// The ranks the other seats hold (in, waiting for a member, or to rejoin), as party_rank_rules' bits.
+    /// The seat claims a rank of the party order: in, waiting for a member, or to rejoin.
+    static bool ClaimsRank(const Seat& seat) noexcept;
+    /// The ranks the other seats claim, as party_rank_rules' bits.
     std::uint32_t RanksHeldBesides(int index) const noexcept;
     /// The seat other than `besides` that holds `rank` (in, waiting, or to rejoin), or 0.
     int SeatHoldingRank(int rank, int besides) const noexcept;

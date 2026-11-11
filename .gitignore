@@ -2,3 +2,6 @@ build/
 build-*/
 dist/
 
+
+# the codex plugin's own hook file, written into the repo root by the plugin
+.codex/

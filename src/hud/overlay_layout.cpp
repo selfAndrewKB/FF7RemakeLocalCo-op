@@ -129,15 +129,13 @@ std::atomic<int> g_mapTiles{kMapTileOrigins | kMapTileMatrices};
 /// What a walk of the entry's layers read, for the log.
 struct WalkStats
 {
-    std::int32_t   bitCount  = 0;
-    std::uintptr_t records   = 0;
-    std::uintptr_t secondary = 0;
-    int            layers    = 0;
-    int            elements  = 0;
+    std::int32_t bitCount = 0;  // the further layers' allocation bits (0 for the overlay entry: its layer is the paint's)
+    int          layers   = 0;
+    int          elements = 0;
 };
 
-/// What the last tile placement of a column did, so each change is logged once (the element total and the pointers
-/// are printed, not compared: they move with the HUD's own life).
+/// What the last tile placement of a column did, so each change is logged once (the element total is printed, not
+/// compared: it moves with the HUD's own life).
 struct TilesLogged
 {
     int          quads    = -1;
@@ -402,9 +400,7 @@ void ForEachElement(std::uintptr_t entry, WalkStats& stats, Fn&& fn) noexcept
     {
         return;
     }
-    stats.bitCount  = bitCount;
-    stats.records   = records;
-    stats.secondary = secondary;
+    stats.bitCount = bitCount;
     if (bitCount <= 0 || bitCount > 1024 || records == 0)
     {
         return;
@@ -457,9 +453,6 @@ static_assert(offsetof(ElementFields, type) == facts::kElementType - facts::kEle
 static_assert(offsetof(ElementFields, matrixIndex) == facts::kElementMatrixIndex - facts::kElementTextureMode);
 static_assert(sizeof(ElementFields) == facts::kElementMatrixIndex + 4 - facts::kElementTextureMode);
 static_assert(facts::kElementTextureMode + sizeof(ElementFields) <= facts::kElementSize);
-
-constexpr std::uint32_t kEntryDumpStart = 0x80;  // the entry's words logged when the walk reads no layer
-constexpr int           kEntryDumpWords = 32;
 
 /// The area map's tiles in a band (research/RE-hud-band-clip.md): each tile quad's shader vector holds the tile's origin in
 /// the paint's pixels, which the pixel shader compares with the pixel's position on the image, so in a band the mask is
@@ -520,26 +513,12 @@ void PlaceMapTiles(const Submit& submit) noexcept
     if (!(now == g_tilesLogged[column]))
     {
         g_tilesLogged[column] = now;
-        std::wstring words;
-        if (stats.layers == 0)
-        {
-            std::uint64_t dump[kEntryDumpWords] = {};
-            if (platform::CopyGuarded(dump, reinterpret_cast<const void*>(submit.entry + kEntryDumpStart), sizeof(dump)))
-            {
-                words.reserve(kEntryDumpWords * 24);
-                for (int i = 0; i < kEntryDumpWords; ++i)
-                {
-                    words += std::format(L" +{:X}:{:X}", kEntryDumpStart + 8 * i, dump[i]);
-                }
-            }
-        }
         platform::LogDebug(L"HUD layout: column {}: {} map tile quad(s), {} moved by the band's ({},{}), {} mask draw(s) {} the band map "
                            L"(hud-band.map-tiles {}), {} matrix index(es) shared with on-screen elements; the first quad's origin "
-                           L"({:.1f},{:.1f}), 1/tile {:.6f}; the walk: {} layer bit(s), records 0x{:X}, secondary 0x{:X}, {} layer(s), "
-                           L"{} element(s); entry 0x{:X}{}",
+                           L"({:.1f},{:.1f}), 1/tile {:.6f}; the walk: {} layer(s) ({} further layer bit(s)), {} element(s)",
                            column, quads, moved, submit.band.minX, submit.band.minY, masks,
                            (bits & kMapTileMatrices) != 0 ? L"kept out of" : L"left in", bits, shared, first[0], first[1], first[2],
-                           stats.bitCount, stats.records, stats.secondary, stats.layers, stats.elements, submit.entry, words);
+                           stats.layers, stats.bitCount, stats.elements);
     }
 }
 

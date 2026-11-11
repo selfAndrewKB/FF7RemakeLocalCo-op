@@ -1743,14 +1743,16 @@ inline constexpr platform::FunctionFact kSetActorType{L"EndCharacter800_SetActor
 // --- A guide (a lead or a run to a mark): the level's waiters and the story's marker (RE-lead-arrival-wait.md,
 // RE-navi-icon-target.md) ---
 /// The level state manager ([root+0x138]) keeps one slot per level object and attribute (an object's attribute-4
-/// slot holds its AI setting state); the active slots are a linked list (head at +0x67E1E8, node +8 next, +0x18 the
-/// slot index into the array at +0xEE4A30). A slot: +0 the object FName, +8 the current state FName, +0x10 the
+/// slot holds its AI setting state); the active slots are a linked list (head at +0x67E1E8; a node's next at
+/// kStateNodeNext and its slot index, into the array at +0xEE4A30, at kStateNodeSlotIndex). A slot: +0 the object FName, +8 the current state FName, +0x10 the
 /// current FEndDataTableStateChange row. A row: StringArgumentList (+0x78, count +0x80; [2] = the arrival trigger of a
 /// Lead/MoveToTarget/FollowActor setting), StateTriggerList (+0x98, count +0xA0; the triggers this state waits on, 8
 /// read), NextStateChange (+0xA8, count +0xB0; FStrings of 16 bytes). [CONFIRMED code, read live from
 /// outside the game: Tifa's Lead slot and the timer object waiting on her arrival]
 inline constexpr std::uint32_t  kStateManagerActiveList  = 0x67E1E0;  // the list object (the walk stops back at it)
 inline constexpr std::uint32_t  kStateManagerActiveHead  = 0x67E1E8;
+inline constexpr std::uint32_t  kStateNodeNext           = 0x08;      // a list node's next node
+inline constexpr std::uint32_t  kStateNodeSlotIndex      = 0x18;      // a list node's slot index (int32)
 inline constexpr std::uint32_t  kStateManagerSlots       = 0xEE4A30;  // slot pointers, kStateManagerSlotCount of them
 inline constexpr std::uint32_t  kStateManagerSlotCount   = 0x33F00;
 inline constexpr std::uint32_t  kStateSlotObject         = 0x00;

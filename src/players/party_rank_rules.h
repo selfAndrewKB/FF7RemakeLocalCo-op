@@ -16,9 +16,15 @@ namespace lss::players::party_rank_rules {
 /// The most rows past player 1's: a formation holds three members.
 inline constexpr int kMaxRanks = 2;
 
+/// Rank `rank`'s bit in a set of ranks; 0 for a rank the set cannot hold.
+constexpr std::uint32_t Bit(int rank) noexcept
+{
+    return rank >= 1 && rank < 32 ? 1u << rank : 0u;
+}
+
 constexpr bool Used(std::uint32_t used, int rank) noexcept
 {
-    return rank >= 1 && rank < 32 && (used & (1u << rank)) != 0;
+    return (used & Bit(rank)) != 0;
 }
 
 /// The lowest rank of 1..count not in `used` (bit r: rank r another player's), or 0 with none.

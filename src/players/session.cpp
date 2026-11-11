@@ -572,16 +572,19 @@ UObject* Session::PlayerOneController() const noexcept
     return Field(LocalPlayer(0), facts::kLocalPlayerController);
 }
 
+bool Session::ClaimsRank(const Seat& seat) noexcept
+{
+    return seat.localPlayer != nullptr || seat.awaiting || seat.rejoin.pending;
+}
+
 std::uint32_t Session::RanksHeldBesides(int index) const noexcept
 {
     std::uint32_t held = 0;
     for (int other = 1; other <= kSeatsBuilt; ++other)
     {
-        const Seat& o = seats_[other];
-        if (other != index && (o.localPlayer != nullptr || o.awaiting || o.rejoin.pending))
+        if (other != index && ClaimsRank(seats_[other]))
         {
-            const int rank = party_member::Rank(other);
-            held |= rank >= 1 && rank < 32 ? 1u << rank : 0u;
+            held |= party_rank_rules::Bit(party_member::Rank(other));
         }
     }
     return held;
@@ -608,7 +611,7 @@ void Session::Join(int index) noexcept
     if (SeatBuilt(index))
     {
         Seat& seat = seats_[index];
-        if (seat.localPlayer == nullptr && !seat.awaiting && !seat.rejoin.pending)
+        if (!ClaimsRank(seat))
         {
             // The next party member no other player plays (party_rank_rules::Lowest; none free: its own number, and the
             // member test below says why it waits).
@@ -634,8 +637,7 @@ int Session::SeatHoldingRank(int rank, int besides) const noexcept
 {
     for (int other = 1; other <= kSeatsBuilt; ++other)
     {
-        const Seat& o = seats_[other];
-        if (other != besides && (o.localPlayer != nullptr || o.awaiting || o.rejoin.pending) && party_member::Rank(other) == rank)
+        if (other != besides && ClaimsRank(seats_[other]) && party_member::Rank(other) == rank)
         {
             return other;
         }

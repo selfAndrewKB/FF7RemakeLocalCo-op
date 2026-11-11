@@ -78,11 +78,11 @@ constexpr bool JoinsThroughHold(Wait wait) noexcept
     return wait == Wait::Guide || wait == Wait::AtMark || wait == Wait::SceneLeadIn;
 }
 
-/// The walks the member's AI makes under a hold the lead gate judged (a guide, a kept move at its point, a scene
-/// lead-in): their judgment goes with the hold (lead_gate::Forget).
+/// The walks the member's AI makes under a hold the lead gate judged: their judgment goes with the hold
+/// (lead_gate::Forget). The same holds a join rides through, since each is such a walk.
 constexpr bool GateWalk(Wait wait) noexcept
 {
-    return wait == Wait::Guide || wait == Wait::AtMark || wait == Wait::SceneLeadIn;
+    return JoinsThroughHold(wait);
 }
 
 struct Choice

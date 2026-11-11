@@ -241,38 +241,50 @@ struct Slot
     const std::uint8_t* row    = nullptr;
 };
 
-/// The state manager's active slots (object, state, row), capped at the slot array's size.
-std::vector<Slot> ActiveSlots(const std::uint8_t* sm) noexcept
+/// Walks the state manager's active list, calling `fn(slot)` with each active slot's address (the list's node names a
+/// slot of the array) until `fn` returns true or the list ends; capped at the slot array's size. True when `fn` stopped it.
+template <typename Fn>
+bool ForEachActiveSlot(const std::uint8_t* sm, Fn&& fn) noexcept
 {
-    std::vector<Slot>   slots;
     const std::uint8_t* node = nullptr;
     const std::uint8_t* end  = sm + facts::kStateManagerActiveList;
     if (!Read(sm + facts::kStateManagerActiveHead, node))
     {
-        return slots;
+        return false;
     }
-    slots.reserve(8192);
     for (std::uint32_t n = 0; node != nullptr && node != end && n < facts::kStateManagerSlotCount; ++n)
     {
         std::int32_t index = -1;
-        if (Read(node + 0x18, index) && index >= 0 && static_cast<std::uint32_t>(index) < facts::kStateManagerSlotCount)
+        if (Read(node + facts::kStateNodeSlotIndex, index) && index >= 0 && static_cast<std::uint32_t>(index) < facts::kStateManagerSlotCount)
         {
             const std::uint8_t* slot = nullptr;
-            if (Read(sm + facts::kStateManagerSlots + 8u * static_cast<std::uint32_t>(index), slot) && slot != nullptr)
+            if (Read(sm + facts::kStateManagerSlots + 8u * static_cast<std::uint32_t>(index), slot) && slot != nullptr && fn(slot))
             {
-                Slot s;
-                if (Read(slot + facts::kStateSlotObject, s.object) && Read(slot + facts::kStateSlotState, s.state) &&
-                    Read(slot + facts::kStateSlotRow, s.row))
-                {
-                    slots.push_back(s);
-                }
+                return true;
             }
         }
-        if (!Read(node + 8, node))
+        if (!Read(node + facts::kStateNodeNext, node))
         {
             break;
         }
     }
+    return false;
+}
+
+/// The state manager's active slots (object, state, row), capped at the slot array's size.
+std::vector<Slot> ActiveSlots(const std::uint8_t* sm) noexcept
+{
+    std::vector<Slot> slots;
+    slots.reserve(8192);
+    ForEachActiveSlot(sm, [&](const std::uint8_t* slot) noexcept {
+        Slot s;
+        if (Read(slot + facts::kStateSlotObject, s.object) && Read(slot + facts::kStateSlotState, s.state) &&
+            Read(slot + facts::kStateSlotRow, s.row))
+        {
+            slots.push_back(s);
+        }
+        return false;
+    });
     return slots;
 }
 
@@ -1372,35 +1384,21 @@ bool LeadInNoted(std::int64_t object) noexcept
     return false;
 }
 
-/// The current state of level object `object` among the state manager's active slots, stopping at its slot (the walk of
-/// ActiveSlots without the list). False when the object has no active slot or a read fails.
+/// The current state of level object `object` among the state manager's active slots, stopping at its slot. False when
+/// the object has no active slot or a read fails.
 bool StateOfObject(const std::uint8_t* sm, std::int64_t object, std::int64_t& state) noexcept
 {
-    const std::uint8_t* node = nullptr;
-    const std::uint8_t* end  = sm + facts::kStateManagerActiveList;
-    if (!Read(sm + facts::kStateManagerActiveHead, node))
-    {
-        return false;
-    }
-    for (std::uint32_t n = 0; node != nullptr && node != end && n < facts::kStateManagerSlotCount; ++n)
-    {
-        std::int32_t index = -1;
-        if (Read(node + 0x18, index) && index >= 0 && static_cast<std::uint32_t>(index) < facts::kStateManagerSlotCount)
+    bool read = false;
+    ForEachActiveSlot(sm, [&](const std::uint8_t* slot) noexcept {
+        std::int64_t holder = 0;
+        if (!Read(slot + facts::kStateSlotObject, holder) || holder != object)
         {
-            const std::uint8_t* slot   = nullptr;
-            std::int64_t        holder = 0;
-            if (Read(sm + facts::kStateManagerSlots + 8u * static_cast<std::uint32_t>(index), slot) && slot != nullptr &&
-                Read(slot + facts::kStateSlotObject, holder) && holder == object)
-            {
-                return Read(slot + facts::kStateSlotState, state);
-            }
+            return false;
         }
-        if (!Read(node + 8, node))
-        {
-            break;
-        }
-    }
-    return false;
+        read = Read(slot + facts::kStateSlotState, state);
+        return true;
+    });
+    return read;
 }
 
 }  // namespace
@@ -1579,11 +1577,14 @@ try
     }
     // A scene lead-in's stand: no move on the member, the judgment is its object's.
     object = RememberedObject(member);
-    for (const Judgment& j : g_judged)
+    if (object != 0)
     {
-        if (object != 0 && j.object == object && j.leadIn && !j.reading.empty())
+        for (const Judgment& j : g_judged)
         {
-            return j.reading;
+            if (j.object == object && j.leadIn && !j.reading.empty())
+            {
+                return j.reading;
+            }
         }
     }
     return std::format(L"no judgment of this move; the last judged: {}", g_reading);

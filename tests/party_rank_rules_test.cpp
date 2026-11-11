@@ -20,11 +20,6 @@ int g_failures = 0;
         }                                                                    \
     } while (false)
 
-constexpr std::uint32_t Bit(int rank)
-{
-    return 1u << rank;
-}
-
 /// A joiner takes the next member no other player plays: player 3 with player 2 out takes the first row past player 1's.
 void TheNextFreeMember()
 {
