@@ -178,6 +178,12 @@ Wait FieldWait(void* member) noexcept
     {
         return Wait::NoFieldAi;
     }
+    // A scene lead-in the level wrote on the member (lead_keep_rules.h kSceneLeadIns): its AI plays it through, the run and
+    // the stand after it, whatever kind the state is now and whatever the lead rule would say of the run.
+    if (state.layer == field_hold::kLayerLevel && lead_gate::SceneLeadIn(member))
+    {
+        return Wait::SceneLeadIn;
+    }
     const std::uint8_t kind = state.kind;
     switch (field_hold::Of(state.layer, kind))
     {
@@ -475,6 +481,8 @@ const wchar_t* WhyHeldByScript(void* member) noexcept
         return L"a guide (a lead or a run to a mark: a level step waits on its arrival, or the story's marker rides on it): its AI walks it";
     case Wait::AtMark:
         return L"brought to its move's point: its AI finishes the arrival until the level's next setting";
+    case Wait::SceneLeadIn:
+        return L"on a scene lead-in (a run and a stand a scene opens on, excluded from the lead rule by name): its AI plays it through";
     default:
         return nullptr;  // a push-button event or the game's leader handed is the game's own hand (party_events); the rest holds nothing
     }
@@ -608,6 +616,9 @@ const wchar_t* Describe(Wait wait) noexcept
     case Wait::AtMark:
         return L"its player brought it to its move's point: its AI finishes the arrival (a lead waits for player 1 first), until the "
                L"level's next setting";
+    case Wait::SceneLeadIn:
+        return L"the level's scene lead-in is on it (a run and a stand a scene opens on, excluded from the lead rule by name): its AI "
+               L"plays it through to the scene";
     case Wait::NoFieldAi:
         return L"its field AI has no state yet";
     case Wait::Unread:

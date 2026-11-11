@@ -51,28 +51,38 @@ enum class Wait : std::uint8_t
     Animation,    // its AI plays a scripted animation (ANIMATION or the one-shot SINGLE_ANIMATION: field_hold.h)
     Guide,        // its AI walks a guide: a lead or a run to a mark the level waits on, or the story marks it (lead_gate.h)
     AtMark,       // its player brought a kept move to its point: its AI finishes the arrival (lead_keep_rules.h)
+    SceneLeadIn,  // the level's scene lead-in on it, a run and a stand a scene opens on: its AI plays it through, whatever
+                  // the lead rule would say (lead_keep_rules.h kSceneLeadIns, lead_gate.h)
     NoFieldAi,    // its field AI has no state yet
     Unread,       // the party could not be read
 };
 
 /// The waits a seated member's own scripted hold makes: a cutscene mode, a script layer or kind, an animation, a
-/// guide lead, a kept move brought to its point. The session answers each with the game's own hand (the member to its
-/// AI, the seat and the player's view kept) and takes the member back when the hold ends. The rest (a push-button
-/// event, the game's leader handed) is the game's own hand of its leader, heard by party_events.
+/// guide lead, a kept move brought to its point, a scene lead-in. The session answers each with the game's own hand (the
+/// member to its AI, the seat and the player's view kept) and takes the member back when the hold ends. The rest (a
+/// push-button event, the game's leader handed) is the game's own hand of its leader, heard by party_events.
 constexpr bool ScriptHold(Wait wait) noexcept
 {
-    return wait == Wait::Cinema || wait == Wait::AiHeld || wait == Wait::Animation || wait == Wait::Guide || wait == Wait::AtMark;
+    return wait == Wait::Cinema || wait == Wait::AiHeld || wait == Wait::Animation || wait == Wait::Guide || wait == Wait::AtMark ||
+           wait == Wait::SceneLeadIn;
 }
 
-/// The holds a joining player takes the member through, as a seated player rides them: a guide or a kept move at its
-/// point, both a walk the member's AI makes. A walk survives the take: a request on a member a player holds freezes,
-/// and handed back it starts again from where the member stands; only a one-shot animation reports itself finished
-/// when taken (RE-fieldai-kinds.md, "Possession"). So the join seats the member and hands it straight back to its AI
-/// (the seat and the player's view kept), and the controller takes it when the walk ends. The other holds (a cutscene
-/// mode, a script layer, an animation) still wait: taking the member could end the script's step.
+/// The holds a joining player takes the member through, as a seated player rides them: a guide, a kept move at its
+/// point or a scene lead-in, each a walk the member's AI makes. A walk survives the take: a request on a member a player
+/// holds freezes, and handed back it starts again from where the member stands; only a one-shot animation reports itself
+/// finished when taken (RE-fieldai-kinds.md, "Possession"). So the join seats the member and hands it straight back to
+/// its AI (the seat and the player's view kept), and the controller takes it when the walk ends. The other holds (a
+/// cutscene mode, a script layer, an animation) still wait: taking the member could end the script's step.
 constexpr bool JoinsThroughHold(Wait wait) noexcept
 {
-    return wait == Wait::Guide || wait == Wait::AtMark;
+    return wait == Wait::Guide || wait == Wait::AtMark || wait == Wait::SceneLeadIn;
+}
+
+/// The walks the member's AI makes under a hold the lead gate judged (a guide, a kept move at its point, a scene
+/// lead-in): their judgment goes with the hold (lead_gate::Forget).
+constexpr bool GateWalk(Wait wait) noexcept
+{
+    return wait == Wait::Guide || wait == Wait::AtMark || wait == Wait::SceneLeadIn;
 }
 
 struct Choice

@@ -979,9 +979,7 @@ void Session::HandForHold(Seat& seat, void* member, party_member::Wait hold, boo
                   seat.Name(), party_seat::MemberType(seat.index), joined ? L" as it joins (the walk goes on)" : L"",
                   party_member::Describe(hold),
                   seat.handedToAi ? L"yes" : L"NO (the hand faulted; tried again)", seat.Name(),
-                  hold == party_member::Wait::Guide || hold == party_member::Wait::AtMark
-                      ? std::format(L" (lead gate: {})", lead_gate::ReadingOf(member))
-                      : L"");
+                  party_member::GateWalk(hold) ? std::format(L" (lead gate: {})", lead_gate::ReadingOf(member)) : L"");
     if (party_member::InterestOnTop(member))
     {
         // Kept rather than handed, the hold beneath could wait for ever (an interest that clears only at its walk's
@@ -1002,7 +1000,7 @@ void Session::ReturnFromHold(Seat& seat, void* member) noexcept
                   party_member::ReturnTo(member, Controller(seat)) ? L"yes" : L"NO", party_member::AiDetail(member));
     // A walk's judgment goes with its hold, so the move set again is judged anew. Only a walk's: judgments are per level
     // object, and another seat's member may still be on a move of that object while this one ends an unrelated hold.
-    const bool walk = seat.hold == party_member::Wait::Guide || seat.hold == party_member::Wait::AtMark;
+    const bool walk = party_member::GateWalk(seat.hold);
     seat.hold       = party_member::Wait::None;
     if (walk)
     {

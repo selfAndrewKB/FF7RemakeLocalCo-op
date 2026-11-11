@@ -68,6 +68,13 @@ bool Install(const platform::GameImage& image) noexcept;
 /// level object (a state-manager command's).
 lead_keep_rules::Verdict Judge(const void* member, const void* fieldAi, std::uint8_t kind) noexcept;
 
+/// The level has `member` on a scene lead-in (lead_keep_rules.h kSceneLeadIns): the run, read from the member's own arrival
+/// handler, or the stand after it, read from the member's level object's slot in the state manager (the object the run
+/// was seen on; a stand met with no run before it, a save loaded there, is not one). Logged at Info when the state is
+/// first seen, with the object and the state; the judgment is kept for the readings and forgotten when the object's state
+/// leaves the list (the lead-in's end) or the hold ends another way.
+bool SceneLeadIn(const void* member) noexcept;
+
 /// The point a kept move goes to (world centimetres) and its name.
 struct Mark
 {

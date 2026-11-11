@@ -105,6 +105,7 @@ struct Judgment
     bool          leash      = false;  // a live AutoWalk act leashes player 1 to the member
     bool          signals    = false;  // the move names an arrival trigger
     std::int64_t  ownBox     = 0;      // the step moves on at this armed story box of its own (OwnBoxAhead): a guide
+    bool          leadIn     = false;  // a scene lead-in by name (lead_keep_rules::SceneLeadIn); SceneLeadIn reads the object's slot
     bool          pointKnown = false;  // its destination is a field point of the loaded level (`point`)
     bool          reached    = false;  // measured within the hand radius while the move was needed, kept and signalling (this setting)
     std::int64_t  destination = 0;
@@ -166,6 +167,19 @@ void Remember(const void* member, std::int64_t object) noexcept
         }
     }
     *slot = MemberObject{.member = member, .object = object};
+}
+
+/// The level object `member` was last judged on, 0 when none.
+std::int64_t RememberedObject(const void* member) noexcept
+{
+    for (const MemberObject& m : g_memberObjects)
+    {
+        if (m.member == member)
+        {
+            return m.object;
+        }
+    }
+    return 0;
 }
 
 /// A name's text for the log: "None" for no name, its bits when the engine cannot say.
@@ -1323,7 +1337,126 @@ bool CurrentMove(const void* member, std::uint8_t& kind, std::int64_t& object, s
     return MoveOf(ai, kind, object, state);
 }
 
+/// The judgment of `object` set to the scene lead-in `state` the member's field AI runs as `kind`, logged at Info when the
+/// state is new to it.
+void NoteSceneLeadIn(std::int64_t object, std::int64_t state, std::uint8_t kind) noexcept
+try
+{
+    Judgment& j = JudgmentOf(object);
+    if (j.object == object && j.state == state && j.leadIn)
+    {
+        return;
+    }
+    j = Judgment{.object = object, .state = state, .kind = kind, .verdict = Verdict::Guide, .leadIn = true, .touched = j.touched};
+    j.reading = std::format(L"{} on object {} is a scene lead-in, excluded from the lead rule by name; to its AI, which plays it "
+                            L"through to the scene with the player's view on it",
+                            Name(state), Name(object));
+    g_reading = j.reading;
+    platform::Log(L"lead gate: {}", j.reading);
+}
+catch (...)
+{
+    platform::LogDebug(L"lead gate: the scene lead-in's note raised; the hold stands");
+}
+
+/// The judgment of `object` is a scene lead-in's.
+bool LeadInNoted(std::int64_t object) noexcept
+{
+    for (const Judgment& j : g_judged)
+    {
+        if (j.object == object && j.leadIn)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+/// The current state of level object `object` among the state manager's active slots, stopping at its slot (the walk of
+/// ActiveSlots without the list). False when the object has no active slot or a read fails.
+bool StateOfObject(const std::uint8_t* sm, std::int64_t object, std::int64_t& state) noexcept
+{
+    const std::uint8_t* node = nullptr;
+    const std::uint8_t* end  = sm + facts::kStateManagerActiveList;
+    if (!Read(sm + facts::kStateManagerActiveHead, node))
+    {
+        return false;
+    }
+    for (std::uint32_t n = 0; node != nullptr && node != end && n < facts::kStateManagerSlotCount; ++n)
+    {
+        std::int32_t index = -1;
+        if (Read(node + 0x18, index) && index >= 0 && static_cast<std::uint32_t>(index) < facts::kStateManagerSlotCount)
+        {
+            const std::uint8_t* slot   = nullptr;
+            std::int64_t        holder = 0;
+            if (Read(sm + facts::kStateManagerSlots + 8u * static_cast<std::uint32_t>(index), slot) && slot != nullptr &&
+                Read(slot + facts::kStateSlotObject, holder) && holder == object)
+            {
+                return Read(slot + facts::kStateSlotState, state);
+            }
+        }
+        if (!Read(node + 8, node))
+        {
+            break;
+        }
+    }
+    return false;
+}
+
 }  // namespace
+
+bool SceneLeadIn(const void* member) noexcept
+try
+{
+    if (g_storyFlagIsSet == nullptr)
+    {
+        return false;  // not installed: no state read
+    }
+    // The run: its state is on the member's own arrival handler.
+    std::uint8_t kind   = 0;
+    std::int64_t object = 0, state = 0;
+    if (CurrentMove(member, kind, object, state) && object != 0)
+    {
+        if (!lead_keep_rules::SceneLeadIn(Name(state)))
+        {
+            if (object == RememberedObject(member) && LeadInNoted(object))
+            {
+                Forget(member);  // a move off the list after a lead-in: the lead-in is over
+            }
+            return false;
+        }
+        Remember(member, object);
+        NoteSceneLeadIn(object, state, kind);
+        return true;
+    }
+    // The stand after it: the object's own slot, read only while the member's judgment is a lead-in's (no slot walk
+    // otherwise; a stand met with no run before it is the player's). A state off the list ends the lead-in: its judgment
+    // goes, so the walk stops with it whichever way the hold ends. A slot not read this check (a read that failed, a
+    // slot between states) leaves the hold standing until a state is read.
+    object = RememberedObject(member);
+    if (object == 0 || !LeadInNoted(object))
+    {
+        return false;
+    }
+    const std::uint8_t* sm = field_root::StateManager();
+    if (sm == nullptr || !StateOfObject(sm, object, state))
+    {
+        return true;
+    }
+    if (!lead_keep_rules::SceneLeadIn(Name(state)))
+    {
+        Forget(member);
+        return false;
+    }
+    field_hold::Judged judged;
+    NoteSceneLeadIn(object, state, party_member::JudgedState(member, judged) ? judged.kind : field_hold::kEmpty);
+    return true;
+}
+catch (...)
+{
+    platform::LogDebug(L"lead gate: the scene lead-in's read raised; the member is judged by the rule this check");
+    return false;
+}
 
 bool OnLevelMove(const void* member) noexcept
 try
@@ -1442,6 +1575,15 @@ try
             {
                 return j.reading;
             }
+        }
+    }
+    // A scene lead-in's stand: no move on the member, the judgment is its object's.
+    object = RememberedObject(member);
+    for (const Judgment& j : g_judged)
+    {
+        if (object != 0 && j.object == object && j.leadIn && !j.reading.empty())
+        {
+            return j.reading;
         }
     }
     return std::format(L"no judgment of this move; the last judged: {}", g_reading);

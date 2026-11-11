@@ -97,6 +97,19 @@ void TestARunIntoItsOwnBoxIsAGuide()
     EXPECT(Decide(false, true, true, true, false, false) == Verdict::Staging);
 }
 
+void TestSceneLeadInsAreNamedWithoutCase()
+{
+    // Cloud's run from Aerith to the Corneo mansion front, and his stand there: the AI plays both whole.
+    EXPECT(SceneLeadIn(L"scg080_SLU5B_40_Cloud_RunfromAerith"));
+    EXPECT(SceneLeadIn(L"scg080_SLU5B_40_Cloud_RunStayfromAerith"));
+    EXPECT(SceneLeadIn(L"SCG080_SLU5B_40_CLOUD_RUNFROMAERITH"));
+    // The states around them stay the rule's: his stand after the Honeybee Inn, his stand with no status, nothing.
+    EXPECT(!SceneLeadIn(L"scg080_SLU5B_40_Cloud_Stay_AfterHoney"));
+    EXPECT(!SceneLeadIn(L"scg080_SLU5B_40_Cloud_AI_None"));
+    EXPECT(!SceneLeadIn(L"scg080_SLU5B_40_Cloud_RunfromAerith_"));
+    EXPECT(!SceneLeadIn(L""));
+}
+
 void TestOnlyTheGuideAndTheMarkHand()
 {
     EXPECT(ToAi(Verdict::Guide));
@@ -127,6 +140,7 @@ int main()
     TestTheGuideSwitchBringsBackTheGuide();
     TestStagingStaysThePlayers();
     TestARunIntoItsOwnBoxIsAGuide();
+    TestSceneLeadInsAreNamedWithoutCase();
     TestOnlyTheGuideAndTheMarkHand();
     TestReachedIsTwoDimensionalAndInclusive();
     return lss::test::Report();

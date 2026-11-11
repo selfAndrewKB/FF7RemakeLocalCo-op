@@ -20,7 +20,10 @@
 //
 // Pure (host-tested in tests/lead_keep_rules_test.cpp).
 
+#include "players/field_hold.h"
+
 #include <cstdint>
+#include <string_view>
 
 namespace lss::players::lead_keep_rules {
 
@@ -64,6 +67,30 @@ constexpr Verdict Decide(bool needed, bool keeps, bool pointKnown, bool signals,
         return Verdict::Guide;
     }
     return signals && reached ? Verdict::AtMark : Verdict::Keep;
+}
+
+/// The level moves a scene opens on, by their state names: the member runs ahead and stands at the scene's spot, and the
+/// scene starts when the leader reaches it and talks to the member. The run and the stand are one piece of staging the
+/// member's AI must play whole: a player walking the run brings the leader's talk before the level has armed the scene,
+/// and the talk plays as a plain line (Cloud's run from Aerith to the Corneo mansion front after the dance). Excluded
+/// from the lead rule by name, whatever the switch: the member goes to its AI at the first of these states and comes
+/// back when its state leaves them (the scene itself takes it as every scene does). Lookups compare without case, as the
+/// game compares names.
+inline constexpr std::wstring_view kSceneLeadIns[] = {
+    L"scg080_SLU5B_40_Cloud_RunfromAerith",
+    L"scg080_SLU5B_40_Cloud_RunStayfromAerith",
+};
+
+constexpr bool SceneLeadIn(std::wstring_view state) noexcept
+{
+    for (const std::wstring_view name : kSceneLeadIns)
+    {
+        if (field_hold::SameIgnoringCase(name, state))
+        {
+            return true;
+        }
+    }
+    return false;
 }
 
 /// The verdicts that hand the member to its AI; each holds until the move's setting ends.
