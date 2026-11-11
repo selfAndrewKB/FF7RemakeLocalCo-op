@@ -21,6 +21,8 @@
 #include <Windows.h>
 
 #include <algorithm>
+#include <atomic>
+#include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -84,6 +86,7 @@ struct Pending
     float          originX = 0.0f, originY = 0.0f, viewW = 0.0f, viewH = 0.0f;
     float          hostScale = 0.0f;
     ClipMap        clip{};
+    IntRect        band{};
 };
 Pending g_pending;
 
@@ -110,9 +113,73 @@ struct Submit
     bool           active = false;
     std::uintptr_t entry  = 0;
     ClipMap        clip{};
+    IntRect        band{};
 };
 Submit       g_submit;
 std::int32_t g_loggedMatrices = -1;
+std::atomic<int> g_clipLogRenders{0};  // `hud.clip-log <n>`: the entry's clip states logged for that many band passes
+
+// The area map's tiles in a band (`hud-band.map-tiles`, bits): 1 moves each tile quad's mask origin from the paint's pixels
+// to the image's, where the pixel shader locates the mask under the pixel's position; 2 leaves the mask draws' own matrices
+// out of the band map, since they draw into the mask target, not the image. Both on; the bits are for telling them apart.
+constexpr int kMapTileOrigins  = 1;
+constexpr int kMapTileMatrices = 2;
+std::atomic<int> g_mapTiles{kMapTileOrigins | kMapTileMatrices};
+
+/// What a walk of the entry's layers read, for the log.
+struct WalkStats
+{
+    std::int32_t   bitCount  = 0;
+    std::uintptr_t records   = 0;
+    std::uintptr_t secondary = 0;
+    int            layers    = 0;
+    int            elements  = 0;
+};
+
+/// What the last tile placement of a column did, so each change is logged once (the element total and the pointers
+/// are printed, not compared: they move with the HUD's own life).
+struct TilesLogged
+{
+    int          quads    = -1;
+    int          masks    = -1;
+    int          shared   = -1;
+    int          bits     = -1;
+    int          layers   = -1;
+    std::int32_t bitCount = -1;
+    IntRect      band{};
+    int          moved    = -1;  // the quads whose origin was written this pass
+    bool         operator==(const TilesLogged&) const = default;
+};
+TilesLogged g_tilesLogged[kMaxColumns];
+
+/// The per-child matrix list's bound (PlaceChildMatrices), and two sets over it rebuilt each band pass: the matrices
+/// the pass leaves alone (the mask draws') and the matrices on-screen elements draw with, for noticing a shared index.
+constexpr std::int32_t kMaxChildMatrices = 4096;
+struct MatrixSet
+{
+    std::uint64_t words[kMaxChildMatrices / 64] = {};
+
+    void Clear() noexcept { std::memset(words, 0, sizeof(words)); }
+    bool Has(std::int32_t index) const noexcept
+    {
+        return index >= 0 && index < kMaxChildMatrices && ((words[index >> 6] >> (index & 63)) & 1u) != 0;
+    }
+    void Add(std::int32_t index) noexcept
+    {
+        if (index >= 0 && index < kMaxChildMatrices)
+        {
+            words[index >> 6] |= std::uint64_t{1} << (index & 63);
+        }
+    }
+};
+static_assert(sizeof(MatrixSet::words) * 8 == kMaxChildMatrices);
+MatrixSet g_matrixSkip;
+MatrixSet g_matrixOnScreen;
+
+bool SkipsMatrix(std::int32_t index) noexcept
+{
+    return g_matrixSkip.Has(index);
+}
 
 /// What the log last said, so each change is logged once.
 struct Logged
@@ -203,7 +270,7 @@ IntRect* LayoutRect(IntRect* out)
         *out          = band;
         g_bandApplies = 1;
         g_pending = {true, place, share.originX * hostW, share.originY * hostH, viewW, viewH, host,
-                     BandClipMap(band, image.Width(), image.Height())};
+                     BandClipMap(band, image.Width(), image.Height()), band};
         g_hostSet[column] = {true,
                              {{static_cast<float>(band.minX), static_cast<float>(band.minY)},
                               {share.originX * hostW, share.originY * hostH},
@@ -260,8 +327,220 @@ void* LayerEntry(void* slot, std::uintptr_t name, const IntRect* rect)
         WriteFloat(overlay + facts::kOverlayHostSize + 4, g_pending.viewH);
         WriteFloat(overlay + facts::kOverlayHostScale, g_pending.hostScale);
     }
-    g_submit = {true, e, g_pending.clip};
+    g_submit = {true, e, g_pending.clip, g_pending.band};
     return entry;
+}
+
+constexpr std::int32_t kMaxLayerElements = 4096;  // a layer's element count beyond which it is not read
+constexpr int          kMaxWalkedLayers  = 16;    // the layers one walk reads; more are left alone, never read twice
+
+/// The layers a walk has visited, so a layer reachable twice (the paint's layer among the records) is read once:
+/// the origin move must not be applied twice. Full, it admits no more.
+struct VisitedLayers
+{
+    std::uintptr_t layers[kMaxWalkedLayers] = {};
+    int            count                    = 0;
+
+    bool Add(std::uintptr_t layer) noexcept
+    {
+        for (int i = 0; i < count; ++i)
+        {
+            if (layers[i] == layer)
+            {
+                return false;
+            }
+        }
+        if (count >= kMaxWalkedLayers)
+        {
+            return false;
+        }
+        layers[count++] = layer;
+        return true;
+    }
+};
+
+/// Calls `fn(element)` for each draw element of one layer, read under guards and bounded; a layer that does not read as
+/// one, or was walked already, is skipped.
+template <typename Fn>
+void ForEachLayerElement(std::uintptr_t layer, VisitedLayers& visited, WalkStats& stats, Fn&& fn) noexcept
+{
+    std::uintptr_t elements = 0;
+    std::int32_t   count    = 0;
+    if (layer == 0 || !visited.Add(layer) ||
+        !platform::CopyGuarded(&elements, reinterpret_cast<const void*>(layer + facts::kLayerElements), sizeof(elements)) ||
+        !platform::CopyGuarded(&count, reinterpret_cast<const void*>(layer + facts::kLayerElementCount), sizeof(count)) ||
+        count <= 0 || count > kMaxLayerElements || elements == 0)
+    {
+        return;
+    }
+    ++stats.layers;
+    stats.elements += count;
+    for (std::int32_t k = 0; k < count; ++k)
+    {
+        fn(elements + static_cast<std::uintptr_t>(k) * facts::kElementSize);
+    }
+}
+
+/// Calls `fn(element)` for each draw element of the entry: the layer the paint adds to, then the further layers (the
+/// renderer's own walk).
+template <typename Fn>
+void ForEachElement(std::uintptr_t entry, WalkStats& stats, Fn&& fn) noexcept
+{
+    std::int32_t   bitCount = 0;
+    std::uintptr_t records = 0, secondary = 0, current = 0;
+    std::uint32_t  inlineBits[4] = {};
+    VisitedLayers  visited;
+    stats = {};
+    if (platform::CopyGuarded(&current, reinterpret_cast<const void*>(entry + facts::kEntryCurrentLayer), sizeof(current)))
+    {
+        ForEachLayerElement(current, visited, stats, fn);
+    }
+    if (!platform::CopyGuarded(&bitCount, reinterpret_cast<const void*>(entry + facts::kEntryLayerBitCount), sizeof(bitCount)) ||
+        !platform::CopyGuarded(&records, reinterpret_cast<const void*>(entry + facts::kEntryLayers), sizeof(records)) ||
+        !platform::CopyGuarded(&secondary, reinterpret_cast<const void*>(entry + facts::kEntryLayerBitsSecondary), sizeof(secondary)) ||
+        !platform::CopyGuarded(inlineBits, reinterpret_cast<const void*>(entry + facts::kEntryLayerBitsInline), sizeof(inlineBits)))
+    {
+        return;
+    }
+    stats.bitCount  = bitCount;
+    stats.records   = records;
+    stats.secondary = secondary;
+    if (bitCount <= 0 || bitCount > 1024 || records == 0)
+    {
+        return;
+    }
+    std::uint32_t word = 0;
+    for (std::int32_t i = 0; i < bitCount; ++i)
+    {
+        if ((i & 31) == 0)
+        {
+            word = 0;
+            if (secondary != 0)
+            {
+                if (!platform::CopyGuarded(&word, reinterpret_cast<const void*>(secondary + static_cast<std::uintptr_t>(i >> 5) * 4), sizeof(word)))
+                {
+                    return;
+                }
+            }
+            else if (i < 128)
+            {
+                word = inlineBits[i >> 5];
+            }
+        }
+        if (((word >> (i & 31)) & 1u) == 0)
+        {
+            continue;  // a free record
+        }
+        std::uintptr_t layer = 0;
+        if (platform::CopyGuarded(&layer, reinterpret_cast<const void*>(records + static_cast<std::uintptr_t>(i) * facts::kLayerRecordSize + facts::kLayerRecordLayer), sizeof(layer)))
+        {
+            ForEachLayerElement(layer, visited, stats, fn);
+        }
+    }
+}
+
+/// The fields of a draw element the tile placement reads, in one guarded copy: texture mode and draw flags, the shader
+/// vector, the type and the matrix index (facts::kElementTextureMode up to and including kElementMatrixIndex).
+struct ElementFields
+{
+    std::int32_t textureMode = 0;
+    std::int32_t drawFlags   = 0;
+    std::uint8_t pad0[facts::kElementShaderVector - facts::kElementDrawFlags - 4] = {};
+    float        vector[4]   = {};
+    std::int32_t type        = 0;
+    std::uint8_t pad1[facts::kElementMatrixIndex - facts::kElementType - 4] = {};
+    std::int32_t matrixIndex = -1;
+};
+static_assert(offsetof(ElementFields, drawFlags) == facts::kElementDrawFlags - facts::kElementTextureMode);
+static_assert(offsetof(ElementFields, vector) == facts::kElementShaderVector - facts::kElementTextureMode);
+static_assert(offsetof(ElementFields, type) == facts::kElementType - facts::kElementTextureMode);
+static_assert(offsetof(ElementFields, matrixIndex) == facts::kElementMatrixIndex - facts::kElementTextureMode);
+static_assert(sizeof(ElementFields) == facts::kElementMatrixIndex + 4 - facts::kElementTextureMode);
+static_assert(facts::kElementTextureMode + sizeof(ElementFields) <= facts::kElementSize);
+
+constexpr std::uint32_t kEntryDumpStart = 0x80;  // the entry's words logged when the walk reads no layer
+constexpr int           kEntryDumpWords = 32;
+
+/// The area map's tiles in a band (research/RE-hud-band-clip.md): each tile quad's shader vector holds the tile's origin in
+/// the paint's pixels, which the pixel shader compares with the pixel's position on the image, so in a band the mask is
+/// sampled offset by the band's Min and wraps within the tile (a blank strip across the map); the origin is moved by the
+/// band's Min. The mask draws' own matrices draw into the mask target, where the band does not exist: they are left out of
+/// the band map, whatever the element's type. Fills the skip set for PlaceChildMatrices.
+void PlaceMapTiles(const Submit& submit) noexcept
+{
+    g_matrixSkip.Clear();
+    g_matrixOnScreen.Clear();
+    const int bits = g_mapTiles.load(std::memory_order_relaxed);
+    int   quads = 0, masks = 0, moved = 0;
+    float first[4] = {};
+    bool  firstRead = false;
+    WalkStats stats;
+    ForEachElement(submit.entry, stats, [&](std::uintptr_t element) noexcept {
+        ElementFields e;
+        if (!platform::CopyGuarded(&e, reinterpret_cast<const void*>(element + facts::kElementTextureMode), sizeof(e)))
+        {
+            return;
+        }
+        if ((e.drawFlags & facts::kElementDrawToTarget) != 0)
+        {
+            ++masks;
+            if ((bits & kMapTileMatrices) != 0)
+            {
+                g_matrixSkip.Add(e.matrixIndex);
+            }
+            return;
+        }
+        g_matrixOnScreen.Add(e.matrixIndex);
+        if (e.type != facts::kElementTypeCustomVerts || e.textureMode != facts::kElementTextureModeMask)
+        {
+            return;
+        }
+        ++quads;
+        if (!firstRead)
+        {
+            firstRead = true;
+            std::memcpy(first, e.vector, sizeof(first));
+        }
+        if ((bits & kMapTileOrigins) != 0 && (submit.band.minX != 0 || submit.band.minY != 0))
+        {
+            const float origin[2] = {e.vector[0] + static_cast<float>(submit.band.minX), e.vector[1] + static_cast<float>(submit.band.minY)};
+            if (platform::WriteGuarded(reinterpret_cast<void*>(element + facts::kElementShaderVector), origin, sizeof(origin)))
+            {
+                ++moved;
+            }
+        }
+    });
+    int shared = 0;  // matrices a mask draw and an on-screen element both use: such a one would be left off the band
+    for (std::size_t w = 0; w < std::size(g_matrixSkip.words); ++w)
+    {
+        shared += std::popcount(g_matrixSkip.words[w] & g_matrixOnScreen.words[w]);
+    }
+    const int         column = std::clamp(overlay_pass::Column(), 0, kMaxColumns - 1);
+    const TilesLogged now{quads, masks, shared, bits, stats.layers, stats.bitCount, submit.band, moved};
+    if (!(now == g_tilesLogged[column]))
+    {
+        g_tilesLogged[column] = now;
+        std::wstring words;
+        if (stats.layers == 0)
+        {
+            std::uint64_t dump[kEntryDumpWords] = {};
+            if (platform::CopyGuarded(dump, reinterpret_cast<const void*>(submit.entry + kEntryDumpStart), sizeof(dump)))
+            {
+                words.reserve(kEntryDumpWords * 24);
+                for (int i = 0; i < kEntryDumpWords; ++i)
+                {
+                    words += std::format(L" +{:X}:{:X}", kEntryDumpStart + 8 * i, dump[i]);
+                }
+            }
+        }
+        platform::LogDebug(L"HUD layout: column {}: {} map tile quad(s), {} moved by the band's ({},{}), {} mask draw(s) {} the band map "
+                           L"(hud-band.map-tiles {}), {} matrix index(es) shared with on-screen elements; the first quad's origin "
+                           L"({:.1f},{:.1f}), 1/tile {:.6f}; the walk: {} layer bit(s), records 0x{:X}, secondary 0x{:X}, {} layer(s), "
+                           L"{} element(s); entry 0x{:X}{}",
+                           column, quads, moved, submit.band.minX, submit.band.minY, masks,
+                           (bits & kMapTileMatrices) != 0 ? L"kept out of" : L"left in", bits, shared, first[0], first[1], first[2],
+                           stats.bitCount, stats.records, stats.secondary, stats.layers, stats.elements, submit.entry, words);
+    }
 }
 
 /// Moves the per-child view-projections onto the band (the equivalent of a viewport the draw lacks).
@@ -271,7 +550,7 @@ void PlaceChildMatrices(const Submit& submit) noexcept
     float*       data  = nullptr;
     if (!platform::CopyGuarded(&count, reinterpret_cast<const void*>(submit.entry + facts::kEntryChildMatrixCount), sizeof(count)) ||
         !platform::CopyGuarded(&data, reinterpret_cast<const void*>(submit.entry + facts::kEntryChildMatrices), sizeof(data)) ||
-        count < 0 || count > 4096 || (count > 0 && data == nullptr))
+        count < 0 || count > kMaxChildMatrices || (count > 0 && data == nullptr))
     {
         if (g_loggedMatrices != -2)
         {
@@ -287,6 +566,10 @@ void PlaceChildMatrices(const Submit& submit) noexcept
     }
     for (std::int32_t i = 0; i < count; ++i)
     {
+        if (SkipsMatrix(i))
+        {
+            continue;  // a mask draw's matrix: it draws into the mask target, not the image
+        }
         ApplyClipMap(*reinterpret_cast<float(*)[16]>(data + static_cast<std::ptrdiff_t>(i) * 16), submit.clip);
     }
     if (count != g_loggedMatrices)
@@ -301,13 +584,70 @@ void PlaceChildMatrices(const Submit& submit) noexcept
     }
 }
 
+/// Logs the entry's clip states for this band pass: each zone's rect in the paint's absolute pixels (the renderer adds
+/// the entry rect's Min to it for the scissor), for comparing a cut's rows with the zones (hud.clip-log).
+void LogClipStates(const Submit& submit) noexcept
+{
+    std::int32_t count = 0;
+    std::uintptr_t data = 0;
+    if (!platform::CopyGuarded(&count, reinterpret_cast<const void*>(submit.entry + facts::kEntryClipStateCount), sizeof(count)) ||
+        !platform::CopyGuarded(&data, reinterpret_cast<const void*>(submit.entry + facts::kEntryClipStates), sizeof(data)) ||
+        count < 0 || count > 1024 || (count > 0 && data == 0))
+    {
+        platform::Log(L"HUD clips: column {}: the entry's clip states do not look like a list (count {})", overlay_pass::Column(), count);
+        return;
+    }
+    std::wstring text;
+    for (std::int32_t i = 0; i < count; ++i)
+    {
+        std::uint8_t state[facts::kClipStateSize] = {};
+        if (!platform::CopyGuarded(state, reinterpret_cast<const void*>(data + static_cast<std::uintptr_t>(i) * facts::kClipStateSize),
+                                   sizeof(state)))
+        {
+            text += std::format(L" [{}] unreadable;", i);
+            continue;
+        }
+        float tl[2] = {}, br[2] = {};
+        std::memcpy(tl, state + facts::kClipStateTopLeft, sizeof(tl));
+        std::memcpy(br, state + facts::kClipStateBottomRight, sizeof(br));
+        const std::uint8_t flags = state[facts::kClipStateFlags];
+        const std::uint8_t own   = state[facts::kClipStateOwnRect];
+        std::int32_t   stackCount = 0;
+        std::uintptr_t stack      = 0;
+        std::memcpy(&stackCount, state + facts::kClipStateStackCount, sizeof(stackCount));
+        std::memcpy(&stack, state + facts::kClipStateStack, sizeof(stack));
+        text += std::format(L" [{}] ({:.0f},{:.0f})-({:.0f},{:.0f}) flags {} own {} stack {}", i, tl[0], tl[1], br[0], br[1], flags, own, stackCount);
+        if (own == 0 && stackCount > 0 && stackCount <= 64 && stack != 0)
+        {
+            alignas(4) std::uint8_t zone[36] = {};
+            if (platform::CopyGuarded(zone, reinterpret_cast<const void*>(stack + static_cast<std::uintptr_t>(stackCount - 1) * sizeof(zone)), sizeof(zone)))
+            {
+                float ztl[2] = {}, zbr[2] = {};
+                std::memcpy(ztl, zone, sizeof(ztl));
+                std::memcpy(zbr, zone + 0x18, sizeof(zbr));
+                text += std::format(L" last zone ({:.0f},{:.0f})-({:.0f},{:.0f}) flags {}", ztl[0], ztl[1], zbr[0], zbr[1], zone[0x20]);
+            }
+        }
+        text += L";";
+    }
+    platform::Log(L"HUD clips: column {}, band ({},{})-({},{}): {} clip state(s):{}", overlay_pass::Column(),
+                  g_logged[g_loggedColumn].band.minX, g_logged[g_loggedColumn].band.minY, g_logged[g_loggedColumn].band.maxX,
+                  g_logged[g_loggedColumn].band.maxY, count, text);
+}
+
 /// Replaces the render's call to FEndMenuRenderer__SubmitLayerSlot (same register arguments; no result).
 void SubmitSlot(void* renderer, std::uintptr_t pool, void* slot)
 {
     if (g_submit.active && g_gameThread.Here())
     {
         g_submit.active = false;
+        PlaceMapTiles(g_submit);  // first: it names the matrices the band map leaves alone
         PlaceChildMatrices(g_submit);
+        if (g_clipLogRenders.load(std::memory_order_relaxed) > 0)
+        {
+            g_clipLogRenders.fetch_sub(1, std::memory_order_relaxed);
+            LogClipStates(g_submit);
+        }
     }
     if (overlay_pass::Further())
     {
@@ -423,6 +763,28 @@ bool Install(const platform::GameImage& image) noexcept
               .shape = Shape::Text,
               .help  = L"the HUD layout's last decision: image, view, band, layout and marker host scales",
               .get   = [] { return Value{g_lastText}; }});
+    Register({.name  = L"hud-band.map-tiles",
+              .shape = Shape::Integer,
+              .min   = 0,
+              .max   = 3,
+              .help  = L"the area map's tiles in a band, bits: 1 each tile quad's mask origin moved to the image's pixels, 2 the mask "
+                       L"draws' matrices kept out of the band map (3 at start; 0 shows the game's strips)",
+              .set   = [](const Value& value) {
+                  g_mapTiles.store(static_cast<int>(std::clamp<std::int64_t>(std::get<std::int64_t>(value), 0, kMapTileOrigins | kMapTileMatrices)),
+                                   std::memory_order_relaxed);
+                  return Outcome{};
+              },
+              .get = [] { return Value{static_cast<std::int64_t>(g_mapTiles.load(std::memory_order_relaxed))}; }});
+    Register({.name  = L"hud.clip-log",
+              .shape = Shape::Integer,
+              .min   = 0,
+              .max   = 600,
+              .help  = L"log the overlay entry's clip states (each zone's rect in the paint's pixels) for that many band passes",
+              .set   = [](const Value& value) {
+                  g_clipLogRenders.store(static_cast<int>(std::clamp<std::int64_t>(std::get<std::int64_t>(value), 0, 600)), std::memory_order_relaxed);
+                  return Outcome{};
+              },
+              .get = [] { return Value{static_cast<std::int64_t>(g_clipLogRenders.load(std::memory_order_relaxed))}; }});
     platform::Log(L"HUD layout: installed (hud-band on); the rect call follows on the game thread");
     InstallFrameCode(image);
     InstallArrowCode(image);

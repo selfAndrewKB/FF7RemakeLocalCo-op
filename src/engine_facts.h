@@ -588,6 +588,47 @@ inline constexpr std::uint32_t kEntryMatrixTranslateY  = 0x74;  // m31
 // (RE-hud-band-3d.md).
 inline constexpr std::uint32_t kEntryChildMatrices     = 0xD0;  // float* (16 per matrix)
 inline constexpr std::uint32_t kEntryChildMatrixCount  = 0xD8;  // int32
+// The clip states the paint pushes into the entry (64-byte records): the zone's corners in the paint's absolute
+// pixels (top-left, then bottom-right at +0x20), a flags byte (bit 0: axis aligned), a byte saying the state has a
+// rect of its own, and a stack of 36-byte zones whose last one is used instead when the byte is clear. The renderer's
+// scissor is the entry rect's Min plus that rect (FEndMenuRenderer__DrawEntryBatchToTarget 0x1439FD100).
+inline constexpr std::uint32_t kEntryClipStates        = 0xB0;  // clip state* (64 bytes each)
+inline constexpr std::uint32_t kEntryClipStateCount    = 0xB8;  // int32
+inline constexpr std::uint32_t kClipStateSize          = 0x40;
+inline constexpr std::uint32_t kClipStateTopLeft       = 0x08;  // float x, y
+inline constexpr std::uint32_t kClipStateBottomRight   = 0x20;  // float x, y
+inline constexpr std::uint32_t kClipStateFlags         = 0x28;  // uint8: bit 0 axis aligned
+inline constexpr std::uint32_t kClipStateOwnRect       = 0x2C;  // uint8: the corners above apply (else the stack's last zone)
+inline constexpr std::uint32_t kClipStateStack         = 0x30;  // zone* (36 bytes each: top-left at +0, bottom-right at +0x18)
+inline constexpr std::uint32_t kClipStateStackCount    = 0x38;  // int32
+// The entry's layers: a sparse array (the stock 4.18 shape: the records, an inline bit array of four words with a secondary
+// pointer, the bit count) of 40-byte records holding the layer at +0x10; a layer's draw elements are 304-byte records
+// (FEndMenuLayerEntry__AllocElement 0x143A080E0, FEndMenuElement__InitCommon 0x143A06EB0): the texture mode (1 binds the
+// entry's offscreen target as the second texture), the draw flags (bit 2 renders into that target), a pixel-shader
+// vector, the type (4: custom vertices) and the indices of the clip state and the per-child matrix the element draws with.
+inline constexpr std::uint32_t kEntryCurrentLayer      = 0x90;   // layer*: the layer the paint adds to (the root overlay's one)
+inline constexpr std::uint32_t kEntryLayers            = 0xE0;   // record* (40 bytes each): further layers, empty for the overlay
+inline constexpr std::uint32_t kEntryLayerBitsInline   = 0xF0;   // uint32[4]
+inline constexpr std::uint32_t kEntryLayerBitsSecondary = 0x100; // uint32* (used when not null)
+inline constexpr std::uint32_t kEntryLayerBitCount     = 0x108;  // int32
+inline constexpr std::uint32_t kLayerRecordSize        = 40;
+inline constexpr std::uint32_t kLayerRecordLayer       = 0x10;   // layer*
+inline constexpr std::uint32_t kLayerElements          = 0x1078; // element* (304 bytes each)
+inline constexpr std::uint32_t kLayerElementCount      = 0x1080; // int32
+inline constexpr std::uint32_t kElementSize            = 0x130;
+inline constexpr std::uint32_t kElementTextureMode     = 0x30;   // int32
+inline constexpr std::uint32_t kElementDrawFlags       = 0x34;   // int32: bit 2 = render into the entry's offscreen target
+inline constexpr std::uint32_t kElementShaderVector    = 0x40;   // float x, y, z, w
+inline constexpr std::uint32_t kElementType            = 0x50;   // int32: 4 = custom vertices
+inline constexpr std::uint32_t kElementMatrixIndex     = 0x58;   // int32 into the entry's per-child matrices, -1 for the entry's
+// The area map (SEndNaviMap__PaintChildren_PushOrthoVP 0x1414FB580) draws each 256-unit tile twice: the region's shape into
+// the widget's mask target under a per-child matrix of its own (flags bit 2), then the map texture quad on screen with the
+// mask bound (texture mode 1), its shader vector x and y the tile's origin in the paint's absolute pixels and z one over
+// the tile's pixel size (w the entry's own value), locating the mask under the pixel's position on the target
+// (research/RE-hud-band-clip.md).
+inline constexpr std::int32_t  kElementTypeCustomVerts = 4;
+inline constexpr std::int32_t  kElementTextureModeMask = 1;
+inline constexpr std::int32_t  kElementDrawToTarget    = 4;
 inline constexpr std::uintptr_t kLayerSubmitCall       = 0x14150A1EC;  // call SubmitLayerSlot: crosses a block
 inline constexpr std::uintptr_t kSubmitLayerSlot       = 0x1439FC750;  // (renderer, pool, slot)
 
