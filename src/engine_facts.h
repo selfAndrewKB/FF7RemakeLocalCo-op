@@ -599,8 +599,12 @@ inline constexpr std::uint32_t kClipStateTopLeft       = 0x08;  // float x, y
 inline constexpr std::uint32_t kClipStateBottomRight   = 0x20;  // float x, y
 inline constexpr std::uint32_t kClipStateFlags         = 0x28;  // uint8: bit 0 axis aligned
 inline constexpr std::uint32_t kClipStateOwnRect       = 0x2C;  // uint8: the corners above apply (else the stack's last zone)
-inline constexpr std::uint32_t kClipStateStack         = 0x30;  // zone* (36 bytes each: top-left at +0, bottom-right at +0x18)
+inline constexpr std::uint32_t kClipStateStack         = 0x30;  // zone* (kClipZoneSize bytes each)
 inline constexpr std::uint32_t kClipStateStackCount    = 0x38;  // int32
+inline constexpr std::uint32_t kClipZoneSize           = 36;
+inline constexpr std::uint32_t kClipZoneTopLeft        = 0x00;  // float x, y
+inline constexpr std::uint32_t kClipZoneBottomRight    = 0x18;  // float x, y
+inline constexpr std::uint32_t kClipZoneFlags          = 0x20;  // uint8
 // The entry's layers: a sparse array (the stock 4.18 shape: the records, an inline bit array of four words with a secondary
 // pointer, the bit count) of 40-byte records holding the layer at +0x10; a layer's draw elements are 304-byte records
 // (FEndMenuLayerEntry__AllocElement 0x143A080E0, FEndMenuElement__InitCommon 0x143A06EB0): the texture mode (1 binds the

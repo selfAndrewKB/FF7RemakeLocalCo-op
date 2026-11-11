@@ -598,13 +598,14 @@ void LogClipStates(const Submit& submit) noexcept
         text += std::format(L" [{}] ({:.0f},{:.0f})-({:.0f},{:.0f}) flags {} own {} stack {}", i, tl[0], tl[1], br[0], br[1], flags, own, stackCount);
         if (own == 0 && stackCount > 0 && stackCount <= 64 && stack != 0)
         {
-            alignas(4) std::uint8_t zone[36] = {};
+            std::uint8_t zone[facts::kClipZoneSize] = {};
             if (platform::CopyGuarded(zone, reinterpret_cast<const void*>(stack + static_cast<std::uintptr_t>(stackCount - 1) * sizeof(zone)), sizeof(zone)))
             {
                 float ztl[2] = {}, zbr[2] = {};
-                std::memcpy(ztl, zone, sizeof(ztl));
-                std::memcpy(zbr, zone + 0x18, sizeof(zbr));
-                text += std::format(L" last zone ({:.0f},{:.0f})-({:.0f},{:.0f}) flags {}", ztl[0], ztl[1], zbr[0], zbr[1], zone[0x20]);
+                std::memcpy(ztl, zone + facts::kClipZoneTopLeft, sizeof(ztl));
+                std::memcpy(zbr, zone + facts::kClipZoneBottomRight, sizeof(zbr));
+                text += std::format(L" last zone ({:.0f},{:.0f})-({:.0f},{:.0f}) flags {}", ztl[0], ztl[1], zbr[0], zbr[1],
+                                    zone[facts::kClipZoneFlags]);
             }
         }
         text += L";";
