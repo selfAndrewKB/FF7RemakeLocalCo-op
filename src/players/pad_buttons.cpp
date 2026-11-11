@@ -14,7 +14,9 @@
 #include "players/action_tables.h"
 #include "players/game_state.h"
 #include "players/menu_pads.h"
+#include "views/whole_screen.h"
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <cstring>
@@ -61,9 +63,11 @@ std::uint32_t                                 g_events[kMaxPads]{};
 platform::GameThreadMark g_thread;
 bool                                          g_offThreadLogged = false;
 bool                                          g_buildFailedLogged = false;
-// The menus' share of the pads (players/menu_pads.h). Game thread only.
+// The menus', minigames' and bike chases' share of the pads (players/menu_pads.h). Game thread only.
 bool                                          g_menus       = true;   // the switch `pad-menus`
-bool                                          g_menuTime    = false;  // as the last input tick saw it (for the log)
+bool                                          g_minigames   = true;   // the switch `pad-minigames`
+bool                                          g_shared      = false;  // the game's input is shared, as the last input tick saw it
+std::uint32_t                                 g_toGameAtStart[kMaxPads]{};  // g_toGame when the shared moment began (its end's report)
 std::array<std::uintptr_t, 3>                 g_openerAt{};           // the PauseMenu, MapMenu, EnemyIntel FKey globals
 std::array<std::uint64_t, 3>                  g_openers{};            // their FNames (all 0 until all three read)
 std::array<menu_pads::Keys, kMaxPads>         g_keys;                 // each further pad's keys down, by route
@@ -82,6 +86,17 @@ std::wstring PerPad(const std::uint32_t (&counts)[kMaxPads])
         text += std::format(L"{}pad {} {}", user == 1 ? L"" : L", ", user + 1, counts[user]);
     }
     return text;
+}
+
+/// The same, each count less its value at `since` (a count never resets, so the difference is the span's own).
+std::wstring PerPadSince(const std::uint32_t (&counts)[kMaxPads], const std::uint32_t (&since)[kMaxPads])
+{
+    std::uint32_t delta[kMaxPads]{};
+    for (unsigned user = 0; user < kMaxPads; ++user)
+    {
+        delta[user] = counts[user] - since[user];
+    }
+    return PerPad(delta);
 }
 
 std::uint8_t* Owner() noexcept
@@ -196,6 +211,43 @@ bool MenuTime() noexcept
     return g_menus && game_state::MenuOwnsInput();
 }
 
+/// A minigame or a bike chase holds the whole screen (this engine tick's read: the input tick runs before it, so the
+/// first frame of a moment and the first after it still take the frame before's route; a key's release follows
+/// its press either way).
+bool PlayTime() noexcept
+{
+    return g_minigames && menu_pads::SharedPlay(views::whole_screen::Current());
+}
+
+/// The game's input is shared: every pad is the game's pad. A pause menu over a minigame is a menu's moment (the
+/// whole-screen reason ranks the menu first), so with the menus' share off it ends the shared moment.
+bool SharedTime() noexcept
+{
+    return MenuTime() || PlayTime();
+}
+
+/// The Info line's text at a shared moment's beginning or end; empty if it could not be formatted (the input tick
+/// must not throw).
+std::wstring SharedMomentText(bool starting) noexcept
+try
+{
+    if (!starting)
+    {
+        return std::format(L"the shared moment ended; each seat's pad's buttons are its own player's again (key events "
+                           L"the game handled as its own pad's during it: {})",
+                           PerPadSince(g_toGame, g_toGameAtStart));
+    }
+    if (MenuTime())
+    {
+        return L"a menu owns input; every pad drives it";
+    }
+    return std::format(L"{} holds the screen; every pad drives it", views::whole_screen::NameOf(views::whole_screen::Current()));
+}
+catch (...)
+{
+    return {};
+}
+
 struct Handled
 {
     std::int64_t result = 0;
@@ -247,8 +299,9 @@ std::int64_t ToGame(KeyEventFn original, void* self, void* app, const std::uint8
     return original(self, app, event);
 }
 
-/// A further pad's key-down: a key already down repeats where its press went; a new press goes to the game while a
-/// menu owns input, otherwise to the pad's copy, and also to the game when it pressed only menu openers there.
+/// A further pad's key-down: a key already down repeats where its press went; a new press goes to the game while
+/// the game's input is shared, otherwise to the pad's copy, and also to the game when it pressed only menu openers
+/// there.
 std::int64_t KeyDown(void* self, void* app, const std::uint8_t* event)
 {
     std::uint32_t user = 0;
@@ -260,14 +313,14 @@ std::int64_t KeyDown(void* self, void* app, const std::uint8_t* event)
         return g_keyDown(self, app, event);
     }
     menu_pads::Keys&   keys     = g_keys[user];
-    const bool         menuTime = MenuTime();
+    const bool         shared   = SharedTime();
     const bool         newPress = menu_pads::Where(keys, key) == 0;
-    std::uint8_t       route    = menu_pads::Route(keys, key, menuTime);
+    std::uint8_t       route    = menu_pads::Route(keys, key, shared);
     std::int64_t       result   = 0;
     if ((route & menu_pads::kToCopy) != 0)
     {
-        const bool check = g_menus && newPress && !menuTime && g_openers[0] != 0;
-        const Handled handled = InCopy(g_keyDown, self, app, event, user, !menuTime, check);
+        const bool check = g_menus && newPress && !shared && g_openers[0] != 0;
+        const Handled handled = InCopy(g_keyDown, self, app, event, user, !shared, check);
         if (!handled.inCopy)
         {
             if (newPress)
@@ -330,8 +383,8 @@ std::int64_t KeyDown(void* self, void* app, const std::uint8_t* event)
     return result;
 }
 
-/// A further pad's key-up: released where its press went (a key never recorded: the game's while a menu owns input,
-/// otherwise the pad's copy).
+/// A further pad's key-up: released where its press went (a key never recorded: the game's while the game's input
+/// is shared, otherwise the pad's copy).
 std::int64_t KeyUp(void* self, void* app, const std::uint8_t* event)
 {
     std::uint32_t user = 0;
@@ -347,13 +400,12 @@ std::int64_t KeyUp(void* self, void* app, const std::uint8_t* event)
         return g_keyUp(self, app, event);
     }
     menu_pads::Keys&   keys     = g_keys[user];
-    const bool         menuTime = MenuTime();
-    const std::uint8_t route    = menu_pads::Route(keys, key, menuTime);
+    const std::uint8_t route    = menu_pads::Route(keys, key, SharedTime());
     menu_pads::Forget(keys, key);
     std::int64_t result = 0;
     if ((route & menu_pads::kToCopy) != 0)
     {
-        // The release keeps the player's UI context even in menu time: its press may have been captured there.
+        // The release keeps the player's UI context even in a shared moment: its press may have been captured there.
         const Handled handled = InCopy(g_keyUp, self, app, event, user, true, false);
         if (!handled.inCopy)
         {
@@ -394,8 +446,8 @@ std::int64_t RouteUp(void* owner, void* actionEvent)
     return reinterpret_cast<RouteUpFn>(g_routeUp.Original())(owner, actionEvent);
 }
 
-/// The input tick: the stick aggregation sees pad 1's record alone (every pad's while a menu owns input: the game's
-/// own aggregate, the furthest-pushed stick wins), then each pad's copy gets the game's advance.
+/// The input tick: the stick aggregation sees pad 1's record alone (every pad's while the game's input is shared:
+/// the game's own aggregate, the furthest-pushed stick wins), then each pad's copy gets the game's advance.
 void Tick(void* self, float deltaTime, void* slateApp, void* cursor)
 {
     std::uint8_t* owner = static_cast<std::uint8_t*>(self);
@@ -408,19 +460,21 @@ void Tick(void* self, float deltaTime, void* slateApp, void* cursor)
     {
         platform::Log(L"pad buttons: the menu openers' names read; every pad opens the game's menus");
     }
-    const bool menuTime = MenuTime();
-    if (menuTime != g_menuTime)
+    const bool shared = SharedTime();
+    if (shared != g_shared)
     {
-        g_menuTime = menuTime;
-        platform::Log(L"pad buttons: {}", menuTime ? L"a menu owns input; every pad drives it"
-                                                   : L"no menu owns input; each further pad's buttons are its "
-                                                     L"own player's again");
+        g_shared = shared;
+        if (shared)
+        {
+            std::ranges::copy(g_toGame, g_toGameAtStart);
+        }
+        platform::Log(L"pad buttons: {}", SharedMomentText(shared));
     }
     std::uint8_t* bank  = owner + facts::kStickBanks + 16 * facts::kXInputBank + facts::kStickBankCount;
     std::int32_t  count = 0;
     std::memcpy(&count, bank, sizeof(count));
     const std::int32_t one = 1;
-    if (menuTime)
+    if (shared)
     {
         count = 0;  // the game's own aggregate: nothing clamped, nothing to put back
     }
@@ -514,8 +568,17 @@ bool Install(const platform::GameImage& image) noexcept
                            return control::Outcome{};
                        },
                        .get = [] { return control::Value{g_menus}; }});
+    control::Register({.name  = L"pad-minigames",
+                       .shape = control::Shape::OnOff,
+                       .help  = L"every pad drives a minigame or a bike chase that holds the screen (players/menu_pads.h; on)",
+                       .set   = [](const control::Value& value) {
+                           g_minigames = std::get<bool>(value);
+                           platform::Log(L"pad minigames {}", g_minigames ? L"on" : L"off");
+                           return control::Outcome{};
+                       },
+                       .get = [] { return control::Value{g_minigames}; }});
     control::Register({.name = L"pad.to-game", .shape = control::Shape::Text,
-                       .help = L"each further pad's key events the game handled as its own pad's (menus)",
+                       .help = L"each seat's pad's key events the game handled as its own pad's (menus, minigames, bike chases)",
                        .get  = [] { return control::Value{PerPad(g_toGame)}; }});
     control::Register({.name = L"pad.menu-opens", .shape = control::Shape::Integer, .max = INT32_MAX,
                        .help = L"further pads' presses of Start, the map or the enemy intel button given to the game",
@@ -523,7 +586,8 @@ bool Install(const platform::GameImage& image) noexcept
     control::Register({.name = L"pad.events", .shape = control::Shape::Text,
                        .help = L"key events handled in each further pad's own state so far",
                        .get  = [] { return control::Value{PerPad(g_events)}; }});
-    platform::Log(L"pad buttons: installed; each further pad's buttons are its own player's{}",
+    platform::Log(L"pad buttons: installed; each further pad's buttons are its own player's{}; every pad drives a "
+                  L"minigame or a bike chase that holds the screen (pad-minigames)",
                   g_openers[0] != 0 ? L"; every pad opens the game's menus and drives an open one (pad-menus)"
                                      : L"; every pad drives an open menu (pad-menus)");
     return true;

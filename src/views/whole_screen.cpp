@@ -192,4 +192,9 @@ bool Shown() noexcept
     return g_reason != Reason::None;
 }
 
+Reason Current() noexcept
+{
+    return g_reason;
+}
+
 }  // namespace lss::views::whole_screen

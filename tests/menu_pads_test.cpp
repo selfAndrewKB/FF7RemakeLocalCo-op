@@ -51,10 +51,26 @@ void TestKeys()
     EXPECT(mp::Where(keys, kCross) == mp::kToGame);
 }
 
+void TestSharedPlay()
+{
+    using lss::views::whole_screen::Reason;
+    // Every reason there is: only a minigame and a bike chase share the pads (a menu has the game's own test).
+    constexpr Reason kAll[] = {Reason::None,      Reason::PauseMenu,   Reason::CinemaPause,    Reason::ChapterPause,
+                               Reason::ScriptMenu, Reason::Shop,       Reason::PauseWidget,    Reason::ArenaMenu,
+                               Reason::Minigame,  Reason::Bike,        Reason::Cutscene,       Reason::EventCamera,
+                               Reason::SkippableScene, Reason::CutsceneSkip, Reason::Black,    Reason::Loading,
+                               Reason::Title};
+    for (const Reason reason : kAll)
+    {
+        const bool shared = reason == Reason::Minigame || reason == Reason::Bike;
+        EXPECT(mp::SharedPlay(reason) == shared);
+    }
+}
+
 void TestRoute()
 {
     mp::Keys keys;
-    // New presses: the copy outside menu time, the game inside it.
+    // New presses: the copy outside a shared moment, the game inside it.
     EXPECT(mp::Route(keys, kCross, false) == mp::kToCopy);
     EXPECT(mp::Route(keys, kCross, true) == mp::kToGame);
     // A key pressed into the copy before a menu opened repeats and releases there, even in menu time.
@@ -111,6 +127,7 @@ void TestOpensMenu()
 int main()
 {
     TestKeys();
+    TestSharedPlay();
     TestRoute();
     TestPressed();
     TestOpensMenu();

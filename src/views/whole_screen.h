@@ -42,7 +42,8 @@
 //   - the title, by the field root's location name.
 // Read once per engine tick before the session (Tick): logged at Info when something takes the whole screen or lets
 // go, at Debug for a reason changing within a moment, for the hold over a gap between acts, and for each change of
-// the signals; Shown() answers this tick's.
+// the signals; Shown() answers this tick's, Current() names it (the pads' share of a minigame or a bike chase reads
+// it: players/menu_pads.h).
 // The reads patch nothing. Reading `whole-screen`. Game thread.
 
 #include "views/whole_screen_rules.h"
@@ -63,5 +64,8 @@ void Tick(const void* managerOne) noexcept;
 
 /// The game shows something that takes the whole screen this tick.
 bool Shown() noexcept;
+
+/// This tick's reason, the hold over an act gap included (Reason::None while nothing takes the whole screen).
+Reason Current() noexcept;
 
 }  // namespace lss::views::whole_screen

@@ -307,8 +307,8 @@ src/
     local_player_list       The engine's list of local players, for the modules that add a local player of the mod's own
                             (players/session: a further player; views/mirror_player: the mirror in an empty column)
                             through UE's own paths, on the game thread
-    menu_pads.h             Where a further pad's key events go while the game's menus need them
-                            (research/RE-pause-menu-any-pad.md)
+    menu_pads.h             Where a further pad's key events go while the game's menus, minigames and bike chases need
+                            them
     nav_area                A seat's nav-area component ticks in that seat's scopes
                             (research/RE-operator-settings-two.md)
     operator_battle_mode    Each seat's field camera operator enters and leaves battle mode with player 1's

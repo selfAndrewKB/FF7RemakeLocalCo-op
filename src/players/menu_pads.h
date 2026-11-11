@@ -1,18 +1,22 @@
 #pragma once
 
-// Where a further pad's key events go while the game's menus need them (research/RE-pause-menu-any-pad.md).
+// Where a further pad's key events go while the game's menus, minigames and bike chases need them
+// (research/RE-pause-menu-any-pad.md; research/RE-minigame-input.md).
 //
 // A further pad's events normally write that pad's own copy of the action tables (players/pad_buttons.h), so the
-// game's one pause poll and its menus never see them: only player 1 could pause, and only player 1 could move in a
-// menu. The game itself treats every pad alike, so the lever restores its own rule in two places:
-//   - while a menu owns input (the game's pause or menu state, or its own IsPauseMenuClosed is false), a new press
-//     is the game's own pad event: the menu is shared, and every pad drives it, as in an unmodded game;
-//   - outside menu time, a press that pressed only menu openers (PauseMenu, MapMenu, EnemyIntel, besides the raw key
+// game's one pause poll, its menus and its minigames never see them: only player 1 could pause, move in a menu or
+// play a minigame. The game itself treats every pad alike, so the lever restores its own rule in two places:
+//   - while the game's input is shared, a new press is the game's own pad event and every pad drives it, as in an
+//     unmodded game: a menu owns input (the game's pause or menu state, or its own IsPauseMenuClosed is false), or a
+//     minigame or a bike chase holds the whole screen (views/whole_screen.h; SharedPlay below: the game plays them on
+//     one picture, reading its pad-blind pollers and the merged stick);
+//   - outside that, a press that pressed only menu openers (PauseMenu, MapMenu, EnemyIntel, besides the raw key
 //     itself) in the pad's copy is also given to the game, so the game's own poll opens the menu with its own gates.
 // Each key's release goes where its press went (the copy, the game, or both), so neither side keeps a press it
 // cannot release, and a key's repeats follow its press too. Pure functions, host-tested (tests/menu_pads_test.cpp).
 
 #include "players/action_tables.h"
+#include "views/whole_screen_rules.h"
 
 #include <array>
 #include <cstddef>
@@ -88,16 +92,26 @@ inline void Forget(Keys& keys, std::uint64_t key) noexcept
     }
 }
 
+/// The whole-screen moments the game plays with every pad as its own, as it does a menu: a minigame, which the game
+/// runs on player 1's picture through its pad-blind pollers and the stick aggregate, and a bike chase, driven the
+/// same way. A cutscene, a scripted scene, a held black screen or a loading screen plays nothing of a pad's, and a
+/// menu has the game's own test (players/game_state.h MenuOwnsInput), so neither is one.
+constexpr bool SharedPlay(views::whole_screen::Reason reason) noexcept
+{
+    return reason == views::whole_screen::Reason::Minigame || reason == views::whole_screen::Reason::Bike;
+}
+
 /// The route of a key event: a key already down (a repeat, or its release) goes where its press went; a new press
-/// (or the release of a key never recorded) goes to the game while a menu owns input, otherwise to the pad's copy.
-inline std::uint8_t Route(const Keys& keys, std::uint64_t key, bool menuTime) noexcept
+/// (or the release of a key never recorded) goes to the game while the game's input is shared (a menu owns it, or a
+/// minigame or a bike chase holds the screen), otherwise to the pad's copy.
+inline std::uint8_t Route(const Keys& keys, std::uint64_t key, bool shared) noexcept
 {
     const std::uint8_t where = Where(keys, key);
     if (where != 0)
     {
         return where;
     }
-    return menuTime ? kToGame : kToCopy;
+    return shared ? kToGame : kToCopy;
 }
 
 /// The names of the copy's raw elements this event pressed: latch 0 before, latch 1 and held after (the game's own

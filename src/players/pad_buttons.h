@@ -20,12 +20,15 @@
 // is skipped, unless a UI context for that pad's player is open (players/focus_context.h, registered here):
 // then the press is dispatched inside it, into that player's own widgets.
 //
-// The game's menus are shared, so there the game's own rule for a second pad comes back (players/menu_pads.h,
-// RE-pause-menu-any-pad.md, switch `pad-menus`): while a menu owns input (game_state::MenuOwnsInput, a shop too), a further
-// pad's new presses are the game's own pad events and the stick aggregate takes every pad, so every pad drives the
-// menu; outside it, a press that pressed only menu openers in the pad's copy (Start's PauseMenu, MapMenu,
-// EnemyIntel) is given to the game as well, so the game's own poll opens the menu. Each key's repeats and release
-// go where its press went. Game thread only.
+// The game's menus are shared, and so are its minigames and bike chases, played on one picture, so there the game's
+// own rule for a second pad comes back (players/menu_pads.h, RE-pause-menu-any-pad.md, RE-minigame-input.md;
+// switches `pad-menus`, `pad-minigames`): while a menu owns input (game_state::MenuOwnsInput, a shop too), or a
+// minigame or a bike chase holds the whole screen (views/whole_screen.h), a further pad's new presses are the game's
+// own pad events and the stick aggregate takes every pad, so every pad drives the menu or the game; outside it, a
+// press that pressed only menu openers in the pad's copy (Start's PauseMenu, MapMenu, EnemyIntel) is given to the
+// game as well, so the game's own poll opens the menu. Each key's repeats and release go where its press went.
+// Logged at Info when the shared moment begins and ends, with the key events each pad gave the game during it.
+// Game thread only.
 
 #include <cstdint>
 
