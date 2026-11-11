@@ -90,6 +90,7 @@
 #include "world/overlap_fade.h"
 #include "world/party_fade.h"
 #include "world/party_warp.h"
+#include "world/referenced_actor.h"
 #include "world/search_arrows.h"
 #include "world/shop_act.h"
 #include "world/run_catch_up.h"
@@ -388,6 +389,10 @@ constexpr std::array kModules{
     // game's; the consumers of the presses first).
     // without it further players' members take ladders by themselves
     Module{.name = L"traversal action", .install = Call<&world::traversal_action::Install>, .remove = &world::traversal_action::Remove,
+           .removal = Removal::WithPlayersOut},
+    // without it a seat's trigger sweep (the walk-up below, removed before it) can crash the game on a member whose
+    // referenced actor is not an End actor
+    Module{.name = L"referenced actor", .install = Call<&world::referenced_actor::Install>, .remove = &world::referenced_actor::Remove,
            .removal = Removal::WithPlayersOut},
     // without it further players cannot use walk-up spots
     Module{.name = L"traversal walk-up", .install = Call<&world::traversal_walkup::Install>, .remove = &world::traversal_walkup::Remove,

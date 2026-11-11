@@ -172,6 +172,7 @@ add_library(LocalSplitScreen SHARED
     src/world/target_icons.cpp
     src/world/traversal_action.cpp
     src/world/traversal_walkup.cpp
+    src/world/referenced_actor.cpp
     src/audio/listeners.cpp
 )
 

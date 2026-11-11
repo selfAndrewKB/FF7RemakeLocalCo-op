@@ -2429,6 +2429,22 @@ inline constexpr platform::FunctionFact kPlayerTriggerSweep{L"EndPlayerControlle
                                                             kPlayerTriggerSweepEntry};
 inline constexpr std::uint32_t  kControllerPlayerTrigger    = 0x6E0;  // AEndPlayerController::PlayerTrigger (the actor)
 inline constexpr std::uint32_t  kControllerTriggerComponent = 0x6E8;  // AEndPlayerController: its trigger's overlap component
+/// The sweep first asks the controller's leader (PC+0x6F8) through its End actor interface whether to reset its
+/// trigger: that read (the interface's vt+0xB0 body, reached by per-class thunks passing the character's reference
+/// block, AEndCharacter +0xA00) resolves the weak object the block names, casts it to the interface with the stock
+/// UObject::GetInterfaceAddress and calls the result with no test (research/RE-referenced-actor-crash.md):
+/// world/referenced_actor.h guards its entry. The first instruction is 3 bytes, so the redirect sits at the second.
+inline constexpr std::array<std::uint8_t, 16> kReferencedActorReadEntry{
+    0x4C, 0x8B, 0xDC, 0x57, 0x48, 0x81, 0xEC, 0x90, 0x00, 0x00, 0x00, 0x44, 0x8B, 0x41, 0x04, 0x49};
+inline constexpr std::array<std::uint8_t, 3> kReferencedActorReadFirst{0x4C, 0x8B, 0xDC};              // mov r11, rsp
+inline constexpr std::array<std::uint8_t, 8> kReferencedActorReadSecond{0x57, 0x48, 0x81, 0xEC, 0x90, 0x00, 0x00, 0x00};  // push rdi; sub rsp, 90h
+inline constexpr platform::FunctionFact kReferencedActorRead{L"EndActorInterface_RefActorStateByte_vtB0", 0x1416276E0,
+                                                              kReferencedActorReadEntry};
+inline constexpr std::array<std::uint8_t, 16> kGetInterfaceAddressEntry{
+    0x4C, 0x8B, 0xDC, 0x55, 0x56, 0x57, 0x48, 0x81, 0xEC, 0x80, 0x00, 0x00, 0x00, 0x33, 0xF6, 0x48};
+inline constexpr platform::FunctionFact kGetInterfaceAddress{L"UObject::GetInterfaceAddress", 0x141EB0AE0,
+                                                              kGetInterfaceAddressEntry};
+inline constexpr std::uintptr_t kEndActorInterfaceClass = 0x14599AD20;  // UClass*: UEndActorInterface's class, 0 until first asked
 /// The game's party setup for a controller (once per controller: the trigger's component bound to it) and its one leader
 /// change, every switch's end (players/party_seat.h).
 inline constexpr std::array<std::uint8_t, 16> kInitPartyLevelEntry{

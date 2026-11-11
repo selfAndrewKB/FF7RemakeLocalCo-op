@@ -465,6 +465,8 @@ src/
                             away
     party_warp_rules.h      A further player's character brought back beside player 1's in the field (world/party_warp.h
                             applies it), as pure rules: when the ask is refused, and where the character is put
+    referenced_actor        The game's read through a character's referenced actor, guarded where that actor is not an
+                            End actor (research/RE-referenced-actor-crash.md)
     run_catch_up            A companion a further player walked past its own story box is brought back beside player 1's
                             character when the level's run through that box goes to its AI: a character recorded as
                             having run past a box no member was meant to …
