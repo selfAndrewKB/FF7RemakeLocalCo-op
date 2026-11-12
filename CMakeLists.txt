@@ -343,6 +343,13 @@ target_include_directories(PartyRankRulesTests PRIVATE "${CMAKE_CURRENT_SOURCE_D
 target_compile_features(PartyRankRulesTests PRIVATE cxx_std_20)
 add_test(NAME party_rank_rules COMMAND PartyRankRulesTests)
 
+add_executable(PartySwitchRulesTests
+    tests/party_switch_rules_test.cpp
+)
+target_include_directories(PartySwitchRulesTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(PartySwitchRulesTests PRIVATE cxx_std_20)
+add_test(NAME party_switch_rules COMMAND PartySwitchRulesTests)
+
 add_executable(SunOwnerTests
     tests/sun_owner_test.cpp
 )

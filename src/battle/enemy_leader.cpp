@@ -1,5 +1,7 @@
 #include "battle/enemy_leader.h"
 
+#include "battle/member_state.h"
+
 #include "control/registry.h"
 #include "engine_facts.h"
 #include "platform/call_redirect.h"
@@ -89,9 +91,7 @@ std::uint8_t* Component(void* character) noexcept
 /// A member in the KO state (or unreadable: nobody to follow).
 bool Downed(void* character) noexcept
 {
-    std::uint8_t state = 0;
-    const auto*  component = Component(character);
-    return component == nullptr || !Read(component + facts::kBattleCompActionState, state) || state == facts::kBattleCompStateKnockedOut;
+    return member_state::KnockedOut(character, true);
 }
 
 void* GameLeader() noexcept

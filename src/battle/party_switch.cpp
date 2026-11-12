@@ -1,11 +1,14 @@
 #include "battle/party_switch.h"
 
 #include "battle/command_menu_tick.h"
+#include "battle/member_state.h"
+#include "battle/party_switch_rules.h"
 #include "engine_facts.h"
 #include "platform/call_redirect.h"
 #include "platform/image.h"
 #include "platform/log.h"
 #include "platform/verified_code.h"
+#include "players/field_root.h"
 #include "players/scopes.h"
 #include "players/seats.h"
 
@@ -28,6 +31,8 @@ std::uintptr_t         g_cycleLeader   = 0;
 platform::CallRedirect g_cycleCall;
 platform::CallRedirect g_canSwitchCall;
 platform::CallRedirect g_koCall;
+std::uintptr_t         g_dpadSites[2]{};  // the d-pad's two calls of the cycle (next, previous): cross their blocks, placed from Tick
+platform::CallRedirect g_dpadCalls[2];
 bool                   g_placed = false;
 
 // A forced switch refused since the last Tick (written by the hook on the dead-state tick's thread, the game thread
@@ -95,6 +100,44 @@ std::uint64_t KoAutoSwitch(void* system, std::uint64_t direction, std::uint64_t 
     return reinterpret_cast<CycleLeaderFn>(g_cycleLeader)(system, direction, forced, input);
 }
 
+/// The leader whose switch runs now (a seat's member inside its tick, the party manager's leader slot being the seat's
+/// there; player 1's character otherwise) lies knocked out. An unreadable state is not down: the game's gate stays.
+bool LeaderDown() noexcept
+{
+    return member_state::KnockedOut(players::field_root::PartyLeader(facts::kLeaderCurrent), false);
+}
+
+int g_cyclingSeat = 0;  // the seat whose d-pad cycle runs now (game thread), 0 outside one and for player 1's
+
+/// The d-pad's call of the cycle, player 1's and, inside its tick, each seat's: the game's cycle, run as its forced switch
+/// runs it when in co-op the pressing player's character lies knocked out (party_switch_rules::ForcedCycle).
+std::uint64_t RequestedCycle(void* system, std::uint64_t direction, std::uint64_t forced, std::uint64_t input)
+{
+    const int           seat  = command_menu_tick::TickingSeat();  // 0: player 1's press
+    const bool          coop  = seat != 0 || players::AnyFurtherMember();
+    const bool          down  = coop && LeaderDown();
+    const std::uint64_t force = party_switch_rules::ForcedCycle(coop, down) ? 1 : forced;
+    g_cyclingSeat             = seat;
+    const std::uint64_t taken = reinterpret_cast<CycleLeaderFn>(g_cycleLeader)(system, direction, force, input);
+    g_cyclingSeat             = 0;
+    if (!coop)
+    {
+        return taken;
+    }
+    if (down)
+    {
+        platform::Log(L"party switch: {}'s character is down; their own switch {} (the game's two-standing gate dropped, as its own "
+                      L"forced switch drops it)",
+                      players::SeatName(seat), taken != 0 ? L"takes another member" : L"finds nobody to take");
+    }
+    else
+    {
+        platform::LogDebug(L"party switch: {} asked to switch to the {} member: {}", players::SeatName(seat),
+                           direction != 0 ? L"next" : L"previous", taken != 0 ? L"taken" : L"refused by the game's cycle");
+    }
+    return taken;
+}
+
 }  // namespace
 
 bool Install(const platform::GameImage& image) noexcept
@@ -104,10 +147,17 @@ bool Install(const platform::GameImage& image) noexcept
     const auto canSwitch = image.Rebase(facts::kCanSwitchCandidateCall, 5);
     const auto koSite    = image.Rebase(facts::kKoAutoSwitchCall, 5);
     const auto cycleFn   = platform::FindFunction(image, facts::kCycleLeader);
+    const auto dpadNext  = image.Rebase(facts::kDpadSwitchNextCall, 5);
+    const auto dpadPrev  = image.Rebase(facts::kDpadSwitchPreviousCall, 5);
     if (koSite && cycleFn)
     {
         g_koSite      = *koSite;
         g_cycleLeader = *cycleFn;
+    }
+    if (cycleFn && dpadNext && dpadPrev)
+    {
+        g_dpadSites[0] = *dpadNext;
+        g_dpadSites[1] = *dpadPrev;
     }
     if (!target || !cycle || !canSwitch)
     {
@@ -124,12 +174,17 @@ bool Install(const platform::GameImage& image) noexcept
     return true;
 }
 
+int CyclingSeat() noexcept
+{
+    return g_cyclingSeat;
+}
+
 void Remove() noexcept
 {
     g_canSwitchCall.Restore();
     g_cycleCall.Restore();
-    // The KO tick's crossing call stays (only the thread that runs it could put it back); it refuses only while a
-    // further player holds a member.
+    // The KO tick's crossing call and the d-pad's two stay (only the thread that runs them could put them back); the DLL
+    // is pinned for them (platform/call_redirect.h), and each passes the game's call through with no further player in.
 }
 
 void Tick() noexcept
@@ -167,6 +222,23 @@ void Tick() noexcept
     else
     {
         platform::Log(L"party switch: the KO tick's forced switch could not be redirected; a downed player 1 is moved to a standing AI ally");
+    }
+    // The d-pad's two calls together, or neither: one direction dropping the gate and the other not would puzzle a player.
+    bool dpad = g_cycleLeader != 0;
+    for (std::size_t i = 0; dpad && i < 2; ++i)
+    {
+        dpad = g_dpadSites[i] != 0 &&
+               g_dpadCalls[i].InstallFromOwnThread(g_dpadSites[i], g_cycleLeader, reinterpret_cast<std::uintptr_t>(&RequestedCycle));
+    }
+    if (dpad)
+    {
+        platform::Log(L"party switch: a downed player's own d-pad switch takes a standing AI member (the game's two-standing gate dropped "
+                      L"in co-op)");
+    }
+    else
+    {
+        g_dpadCalls[0].Restore();  // a crossing call put back from the thread that placed it, between the ticks
+        platform::Log(L"party switch: the d-pad's calls could not be redirected; a downed player's switch stays the game's refusal");
     }
 }
 

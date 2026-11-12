@@ -153,6 +153,10 @@ std::uint8_t ActorMode(const void* member) noexcept;
 /// The member's party status is in the formation (PARTY or battle support).
 bool InFormation(std::uint8_t type) noexcept;
 
+/// The player type of a deployed `member` (the formation's row naming its actor); facts::kPlayerTypeNone when it is in no
+/// row or the party cannot be read.
+std::uint8_t TypeOf(void* member) noexcept;
+
 /// The field control lock mask (0 when free or unread), and whether its push-button event bit is set.
 std::uint32_t ControlLockMask() noexcept;
 bool          PushButtonLocked() noexcept;

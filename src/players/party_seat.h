@@ -33,6 +33,10 @@ bool SeatMember(int seat, void* playerOneController, void* controller, void* mem
 /// the controller no longer holds a character (also when nothing was seated); false (logged) if it still does.
 bool Unseat(int seat, void* playerOneController, void* controller) noexcept;
 
+/// The game's own switch moved the seat's `controller` onto `member` (of player type `type`): the record follows, with no
+/// call of the funnel. False (nothing recorded) unless the controller names it.
+bool Adopt(int seat, void* controller, void* member, std::uint8_t type) noexcept;
+
 /// The seat's controller is gone; a later one is set up afresh.
 void Forget(int seat) noexcept;
 

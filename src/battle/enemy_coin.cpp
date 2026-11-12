@@ -11,6 +11,7 @@
 #include "battle/coin_table.h"
 #include "battle/enemy_leader.h"
 #include "battle/enemy_stall.h"
+#include "battle/member_state.h"
 #include "battle/enemy_watch.h"
 #include "battle/type_answer_code.h"
 #include "control/registry.h"
@@ -237,13 +238,10 @@ bool Tossing() noexcept
            (g_seated.load(std::memory_order_relaxed) & ~1u) != 0;
 }
 
-/// `seat`'s member stands in the battle (its component not in the KO state). Any thread, guarded.
+/// `seat`'s member stands in the battle (its component not in the KO state; unreadable: not standing). Any thread, guarded.
 bool Standing(int seat) noexcept
 {
-    void*       member    = g_members[static_cast<std::size_t>(seat)].load(std::memory_order_relaxed);
-    const auto* component = static_cast<const std::uint8_t*>(ReadPointer(member, facts::kCharacterBattleComponent));
-    std::uint8_t state    = 0;
-    return component != nullptr && Read(component + facts::kBattleCompActionState, state) && state != facts::kBattleCompStateKnockedOut;
+    return !member_state::KnockedOut(g_members[static_cast<std::size_t>(seat)].load(std::memory_order_relaxed), true);
 }
 
 /// The battle component of the controller's pawn if it is an enemy's (not on the party side); else null. Any thread.

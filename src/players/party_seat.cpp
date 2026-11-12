@@ -147,6 +147,21 @@ bool Unseat(int seat, void* playerOneController, void* controller) noexcept
     return true;
 }
 
+bool Adopt(int seat, void* controller, void* member, std::uint8_t type) noexcept
+{
+    if (!ValidSeat(seat) || controller == nullptr || member == nullptr || ReadPointer(controller, kLeader) != member)
+    {
+        return false;
+    }
+    State& state = g_seats[seat];
+    state.member = member;
+    state.type   = type;
+    scopes::BindMember(seat, member, type);
+    seat_objects::BindMember(seat, member);
+    platform::Log(L"{}: its controller now holds member type {} by the game's own switch (its leader field names it)", SeatName(seat), type);
+    return true;
+}
+
 void Forget(int seat) noexcept
 {
     if (!ValidSeat(seat))

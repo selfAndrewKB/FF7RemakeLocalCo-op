@@ -33,6 +33,8 @@
 #include "players/weak_object.h"
 #include "battle/arena_warp.h"
 #include "battle/command_menu.h"
+#include "battle/party_switch.h"
+#include "battle/party_switch_rules.h"
 #include "battle/targeting.h"
 #include "battle/lock_camera.h"
 #include "world/run_catch_up.h"
@@ -148,6 +150,9 @@ void Session::Seat::ResetMember() noexcept
     returnWaitLogged = false;  // the next member's "stays with its AI" line is its own
     hold            = party_member::Wait::None;
     joinedInHold    = false;
+    ownSwitch        = false;
+    ownSwitchPending = nullptr;
+    outOfBattleTicks = 0;
 }
 
 Session::Session() noexcept
@@ -375,9 +380,13 @@ try
                 LeaveToAwait(seat, party_member::Describe(choice.wait));
             }
         }
-        else if (ticks_ % kFollowSlotTicks == 0)
+        else
         {
-            FollowSlot(seat);
+            TickOwnSwitch(seat);
+            if (ticks_ % kFollowSlotTicks == 0)
+            {
+                FollowSlot(seat);
+            }
         }
     }
 }
@@ -964,10 +973,7 @@ try
     platform::Log(L"{} plays member type {} (row {} of the party order){}", seat.Name(), choice.type, choice.ordinal,
                   seat.waitLogged == 0 ? L"" : std::format(L", {} ticks after it began to wait for one", ticks_ - seat.awaitSince));
     seat.waitLogged = 0;
-    if (cameraInstalled_ && !seat_camera::Start(seat.index, playerOne, seatController, choice.member))
-    {
-        platform::Log(L"{} keeps a still camera; each player's sticks are still their own pad's", seat.Name());
-    }
+    StartSeatCamera(seat, playerOne, seatController, choice.member);
     if (party_member::JoinsThroughHold(choice.wait))
     {
         // Taken in a walk its AI makes: handed straight back, on the tick it was seated, as a seated player's member is
@@ -982,6 +988,14 @@ catch (...)
     platform::Log(L"seat: an engine lookup raised an exception");
     choice.wait = party_member::Wait::Unread;
     return false;
+}
+
+void Session::StartSeatCamera(Seat& seat, UObject* playerOneController, UObject* controller, void* member) noexcept
+{
+    if (cameraInstalled_ && !seat_camera::Start(seat.index, playerOneController, controller, member))
+    {
+        platform::Log(L"{} keeps a still camera; each player's sticks are still their own pad's", seat.Name());
+    }
 }
 
 void Session::DestroyOperator(Seat& seat) noexcept
@@ -1060,6 +1074,76 @@ void Session::ReturnFromHold(Seat& seat, void* member) noexcept
     }
 }
 
+void Session::TickOwnSwitch(Seat& seat) noexcept
+{
+    if (seat.ownSwitchPending != nullptr)
+    {
+        void* character       = seat.ownSwitchPending;
+        seat.ownSwitchPending = nullptr;
+        AdoptOwnSwitch(seat, character);
+    }
+    seat.outOfBattleTicks = seat.ownSwitch && !field_root::InBattle() ? seat.outOfBattleTicks + 1 : 0;
+    if (battle::party_switch_rules::OwnSwitchEnds(seat.ownSwitch, seat.outOfBattleTicks))
+    {
+        EndOwnSwitch(seat, L"the fight is over");
+    }
+}
+
+/// The game moved the seat's controller from its member onto `character` by the seat's own switch (the old member to
+/// its battle AI, the new one possessed, the controller's camera manager retargeted, all the game's own): the seat
+/// plays `character` from here, as after a take, and keeps it while the fight lasts.
+void Session::AdoptOwnSwitch(Seat& seat, void* character) noexcept
+try
+{
+    auto*    players    = LocalPlayers(gameInstance_);
+    UObject* controller = Controller(seat);
+    if (players == nullptr || players->Num() < 1 || controller == nullptr || !Seated(seat.index))
+    {
+        return;
+    }
+    // Nothing is touched until the switch is known to have landed on a deployed member: the controller names it, and
+    // the formation has its row.
+    const std::uint8_t was  = party_seat::MemberType(seat.index);
+    const std::uint8_t type = party_member::TypeOf(character);
+    if (platform::ReadPointer(controller, facts::kControllerLeaderCharacter) != character || type == facts::kPlayerTypeNone)
+    {
+        platform::Log(L"{}'s own switch did not land ({}); {} keeps member type {}", seat.Name(),
+                      type == facts::kPlayerTypeNone ? L"the character is in no row of the formation"
+                                                     : L"its controller does not hold the member the game's switch named",
+                      seat.Name(), was);
+        return;
+    }
+    EndMemberModules(seat);  // the menu, lock and target let go of the old member; set up again for the new one by their own ticks
+    DestroyOperator(seat);
+    seat.ResetMember();
+    party_seat::Adopt(seat.index, controller, character, type);  // the controller names the character: checked above
+    if (!weak_object::WeakPairOf(character, seat.memberWeak))
+    {
+        seat.memberWeak[0] = -1;
+        seat.memberWeak[1] = 0;
+    }
+    seat.ownSwitch        = true;
+    seat.outOfBattleTicks = 0;
+    platform::Log(L"{} switches from member type {} to type {} (their own d-pad switch in the fight, the game's own cycle); back on "
+                  L"their row's member when the fight ends",
+                  seat.Name(), was, type);
+    StartSeatCamera(seat, Field((*players)[0], facts::kLocalPlayerController), controller, character);
+    Report();
+}
+catch (...)
+{
+    platform::Log(L"own switch: an engine lookup raised an exception");
+}
+
+/// The own switch over: the seat follows its row again (FollowSlot gives the member back when the row names another).
+void Session::EndOwnSwitch(Seat& seat, const wchar_t* why) noexcept
+{
+    platform::Log(L"{}'s own switch ends: {}; {}'s row of the party order decides again", seat.Name(), why, seat.Name());
+    seat.ownSwitch        = false;
+    seat.outOfBattleTicks = 0;
+    FollowSlot(seat);
+}
+
 void Session::FollowSlot(Seat& seat) noexcept
 try
 {
@@ -1085,6 +1169,10 @@ try
     if (players == nullptr || players->Num() < 1)
     {
         return;
+    }
+    if (battle::party_switch_rules::OwnSwitchHolds(seat.ownSwitch, field_root::InBattle()))
+    {
+        return;  // the player's own switch holds while the fight lasts; its row decides again at the end (TickOwnSwitch)
     }
     if (const wchar_t* why = party_member::WhyNotInSlot(seat.index, member, party_seat::MemberType(seat.index),
                                                        Field((*players)[0], facts::kLocalPlayerController), seat.standIn))
@@ -1198,6 +1286,19 @@ catch (...)
 void Session::OnLeaderChanging(void* self, void* character) noexcept
 {
     auto* session = static_cast<Session*>(self);
+    // A seat's own d-pad switch: the game's cycle runs inside that seat's command tick with the seat's controller as the
+    // primary, so this change moves the seat's controller, not player 1's (battle/party_switch.h); the seat adopts the
+    // character once the game has moved it (TickOwnSwitch). Nothing of player 1's changes: no stand-in, no going home.
+    if (const int pass = battle::party_switch::CyclingSeat(); pass != 0)
+    {
+        Seat& seat = session->seats_[pass];
+        if (character != nullptr && party_seat::Member(pass) != nullptr && character != party_seat::Member(pass))
+        {
+            seat.ownSwitchPending = character;
+            platform::LogDebug(L"{}'s own switch asked: the game moves its controller onto another member (adopted next tick)", seat.Name());
+        }
+        return;
+    }
     // The game's leader going home (onto the field leader: a battle's end) ends every stand-in: each seat takes its own
     // row again. Otherwise the seat whose member the change takes plays the character player 1 leaves (the battle
     // leader option; a forced switch alike), so no other seat is moved.
@@ -1477,6 +1578,7 @@ try
         const auto type = party_seat::MemberType(seat.index);
         return seat.holdHand    ? std::format(L"handed type {} ({}; {}'s view on it)", type, party_member::Describe(seat.hold), seat.Name())
                : seat.handedToAi ? std::format(L"handed type {} (with the game's leader, lock {:#x})", type, party_member::ControlLockMask())
+               : seat.ownSwitch  ? std::format(L"playing type {} (their own switch in the fight; the row decides again at its end)", type)
                                  : std::format(L"playing type {}", type);
     }
     auto* players = LocalPlayers(gameInstance_);

@@ -594,6 +594,8 @@ src/
                             (research/RE-lock-camera-ledger.md)
     lock_camera_rules.h     The lock camera readings' arithmetic, without the game (battle/lock_camera.h applies it)
     member_rates            Each further player's member at the player's rates (research/RE-battle-member-two.md)
+    member_state.h          A party member's battle state as the game keeps it on its battle player component, read
+                            guarded (any thread)
     menu_grey               The open battle menu's grey and sound muffle follow the menu slow-down switch: with the slow
                             off, a grey screen and a muffled mix under a world that runs on would be all that is left of
                             the wait
@@ -601,6 +603,9 @@ src/
                             pure rules over what the game's UI filter 0 shows: at the wait's spawn, at a menu-close
                             restore, at a flip of the switch and at the tick …
     party_switch            Neither player switches onto a member the other human plays (research/RE-battle-switch.md)
+    party_switch_rules.h    The battle switch's rules in co-op (battle/party_switch.h applies the first,
+                            players/session.h the others), as pure functions over what the game reports; tested on the
+                            host
     sequence_camera         The battle sequence cameras (abilities, enemy specials, summons) on each player's own camera
                             (research/RE-seq-camera-two.md)
     stall_rules.h           When an enemy that is ready to attack but declines counts as stalled, and whether the game
@@ -634,5 +639,5 @@ src/
                             game
     title_row_rules.h       Where the title menu's Co-op row goes among its rows' kinds (research/RE-title-menu.md):
                             directly below Options, so the rows through Options keep their places
-tests/                      66 host-side test programs (ctest), one per pure header or code stub; run without the game
+tests/                      67 host-side test programs (ctest), one per pure header or code stub; run without the game
 ```

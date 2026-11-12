@@ -67,7 +67,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.179.0-summon-gauge";  // the one version string (the log, UE4SS and the setup app)
+constexpr const wchar_t* kVersion = L"0.180.0-own-switch";  // the one version string (the log, UE4SS and the setup app)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;

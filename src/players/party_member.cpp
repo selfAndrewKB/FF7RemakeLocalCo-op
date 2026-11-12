@@ -488,6 +488,23 @@ const wchar_t* WhyHeldByScript(void* member) noexcept
     }
 }
 
+std::uint8_t TypeOf(void* member) noexcept
+{
+    Party party;
+    if (member == nullptr || !ReadParty(nullptr, party))
+    {
+        return facts::kPlayerTypeNone;
+    }
+    for (const std::uint8_t type : party.types)
+    {
+        if (ActorOfType(party, type) == member)
+        {
+            return type;
+        }
+    }
+    return facts::kPlayerTypeNone;
+}
+
 bool InFormation(std::uint8_t type) noexcept
 {
     std::uint8_t* data   = nullptr;

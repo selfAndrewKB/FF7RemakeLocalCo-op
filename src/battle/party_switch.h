@@ -18,9 +18,20 @@
 // (research/RE-pyramid-trap-control.md; a Pyramid's trap moves no one's control itself). battle/enemy_leader then
 // turns the enemies on the member the switch would have taken. Players 2 and 3 are never auto-switched (their
 // member's KO tick fails the leader test). Single player keeps the game's switch.
-// CanSwitch's call and the KO tick's call cross code blocks, so they are placed from the game thread outside the
-// functions. Refusals are logged on change (a downed episode's start, and its end after 30 quiet ticks). The game
-// thread [ASSUMPTION for the dead-state tick, a component tick; the hook's one flag is atomic].
+// A player's own switch in a fight is the game's: a seat's d-pad reaches its own command controller's switch step,
+// ticked inside the seat's scopes (battle/command_menu_tick.h), so the game's cycle starts at the seat's member, passes
+// over the other humans' as above, hands the old member to its battle AI and possesses the new one with the seat's
+// controller, its camera retargeted by the game's own broadcast; the session hears the change inside that tick, adopts
+// the member and keeps it while the fight lasts (players/session.h, battle/party_switch_rules.h). The seat's tick holds
+// its Operator scope, so the cycle's camera-transition gate reads the seat's own camera.
+// A downed player switches too: the d-pad's two calls of the cycle are redirected, and in co-op, for a leader whose
+// battle component lies knocked out, the cycle runs as the game's own forced switch runs it (its two-standing gate
+// skipped), since the mod refuses that forced switch and the gate, which does not count the other players' members,
+// would leave a downed player with no switch. Run so, the cycle also turns the AI members that follow the leader onto
+// the new one, as the game's forced switch does. Logged per press (Debug), at Info when the gate is dropped.
+// CanSwitch's call, the KO tick's call and the d-pad's two calls cross code blocks, so they are placed from the game
+// thread outside the functions. Refusals are logged on change (a downed episode's start, and its end after 30 quiet
+// ticks). The game thread [ASSUMPTION for the dead-state tick, a component tick; the hook's one flag is atomic].
 
 namespace lss::platform {
 class GameImage;
@@ -31,7 +42,11 @@ namespace lss::battle::party_switch {
 bool Install(const platform::GameImage& image) noexcept;
 void Remove() noexcept;
 
-/// Each engine tick, on the game thread: places the crossing redirect once.
+/// Each engine tick, on the game thread: places the crossing redirects once.
 void Tick() noexcept;
+
+/// The seat (1..) whose d-pad press runs the game's cycle now, inside its command tick; 0 outside one and for player
+/// 1's press. The session hears the leader change the cycle makes as that seat's own switch. Game thread.
+int CyclingSeat() noexcept;
 
 }  // namespace lss::battle::party_switch

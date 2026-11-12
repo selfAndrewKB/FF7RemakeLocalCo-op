@@ -1633,6 +1633,11 @@ inline constexpr std::uintptr_t kKoAutoSwitchCall = 0x14098660E;
 inline constexpr std::array<std::uint8_t, 16> kCycleLeaderEntry{
     0x48, 0x89, 0x5C, 0x24, 0x10, 0x55, 0x56, 0x57, 0x41, 0x54, 0x41, 0x55, 0x41, 0x56, 0x41, 0x57};
 inline constexpr platform::FunctionFact kCycleLeader{L"BattleSystem_CycleLeader", 0x1409BAA80, kCycleLeaderEntry};
+/// The d-pad's two calls of the cycle in FieldCommandCtrl_Tick_LeaderOrdinal_SwitchReq01 (RE-battle-switch.md): the
+/// next member (BattleSystem_CycleLeader(sys, 1, forced 0, input 1), E8 ED D0 59 FF) and the previous one (direction 0,
+/// E8 9F D0 59 FF). Both cross their 16-byte block (placed from the game thread, outside the tick).
+inline constexpr std::uintptr_t kDpadSwitchNextCall     = 0x14141D98E;
+inline constexpr std::uintptr_t kDpadSwitchPreviousCall = 0x14141D9DC;
 
 // --- The battle warps (RE-battle-warp.md §3) --------------------------------------------------------------------
 // EncountMgr_BattleIn_DefaultLeaderAndTeleport's member loop fetches each present member with

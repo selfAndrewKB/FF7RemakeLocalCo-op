@@ -191,6 +191,10 @@ private:
         std::uint32_t        awaitSince     = 0;        // the tick the wait for a member began (0 none): the wait's length in the join line
         std::uint32_t        formationLogged = 0;       // the formation last logged under the wait (party_member::Choice::formation), 0 none
         int                  lastColumn     = kNoColumn;  // the column held when a world change took it out (the rejoin's order)
+        bool                 ownSwitch      = false;    // plays a member its own d-pad switch took in a fight (battle/party_switch_rules.h):
+                                                        // its row decides again at the fight's end
+        void*                ownSwitchPending = nullptr;  // the character the game's switch is moving its controller onto, adopted next tick
+        std::uint32_t        outOfBattleTicks = 0;      // ticks in a row the game's in-battle test said no while the own switch holds
 
         /// "player 2" for seat 1: the name every line of the seat's uses.
         const wchar_t* Name() const noexcept { return SeatName(index); }
@@ -246,6 +250,13 @@ private:
     void ReturnFromHold(Seat& seat, void* member) noexcept;
     /// The party order, the member's existence and its AI's hold, checked while the seat holds a member.
     void FollowSlot(Seat& seat) noexcept;
+    /// The seat's own field camera operator spawned on `member` (the join's take and the own switch alike).
+    void StartSeatCamera(Seat& seat, RC::Unreal::UObject* playerOneController, RC::Unreal::UObject* controller, void* member) noexcept;
+    /// The seat's own d-pad switch in a fight (battle/party_switch.h): each tick, the adoption of the member the game moved
+    /// its controller onto, and the fight's end, when its row decides again.
+    void TickOwnSwitch(Seat& seat) noexcept;
+    void AdoptOwnSwitch(Seat& seat, void* character) noexcept;
+    void EndOwnSwitch(Seat& seat, const wchar_t* why) noexcept;
     /// The game's party funnels (players/party_events.h), each answered for every seat.
     static void OnLeaderChanging(void* self, void* character) noexcept;
     static void OnStreamFinishing(void* self) noexcept;
