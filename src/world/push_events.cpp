@@ -9,6 +9,7 @@
 #include "platform/log.h"
 #include "platform/name_text.h"
 #include "platform/verified_code.h"
+#include "platform/vtable_entry.h"
 #include "players/field_root.h"
 #include "players/pad_buttons.h"
 #include "players/party_member.h"
@@ -90,6 +91,20 @@ platform::CallRedirect g_init, g_step, g_notify, g_free;
 std::uintptr_t         g_tablePush = 0;  // the push-button row tables' set
 CRITICAL_SECTION*      g_lock      = nullptr;
 bool                   g_installed = false;
+
+// The member's field AI while its event runs: its follow behaviour reads the party leader every frame, so a member
+// that is not the leader turns toward the leader during its hold and the pick drops the lever. Its two per-frame
+// functions (the actor tick on the game thread, the update on a worker) are replaced in the four field AI controller
+// classes to skip that member; the step runs both inside the seat's scopes instead, where the member is the leader, so
+// the behaviour stands as the leader's does in single player.
+using AiFn = void (*)(void* controller, float dt);
+std::array<platform::VTableEntry, 2 * facts::kFieldAiControllerVtables.size()> g_aiSlots;
+AiFn               g_aiUpdate = nullptr, g_aiTick = nullptr;  // the game's functions, run by the step
+bool               g_aiPlaced = false;
+std::atomic<void*> g_eventAiController{nullptr};  // the member's field AI controller while its event runs (any thread)
+std::atomic<std::uint32_t> g_aiSkipped{0};  // the game's runs skipped for it
+std::uint32_t              g_aiRunInStep = 0;
+bool                       g_aiFirstStep = false;  // the first step after the publish leaves the AI alone: a worker's run may still be in it
 
 // Game thread.
 std::array<SeatState, kSeats> g_seats{};
@@ -306,12 +321,68 @@ catch (...)
     return L"?";
 }
 
+/// The member's field AI back to the game's own runs.
+void ForgetMemberAi() noexcept
+{
+    g_eventAiController.store(nullptr, std::memory_order_release);
+    g_aiFirstStep = false;
+}
+
 void DropEvent() noexcept
 {
     g_event = Event{};
     g_eventObject.store(nullptr, std::memory_order_release);
+    ForgetMemberAi();
     const auto lock = LockDeferred();
     g_deferredCount = 0;
+}
+
+/// One of the member's field AI functions as the game calls it, on whatever thread: skipped for the member whose event
+/// runs (the step runs it, in the seat's scopes); the game's own run for every other controller.
+void RunUnlessEvent(void* controller, float dt, AiFn original) noexcept
+{
+    if (controller != nullptr && controller == g_eventAiController.load(std::memory_order_acquire))
+    {
+        g_aiSkipped.fetch_add(1, std::memory_order_relaxed);
+        return;
+    }
+    original(controller, dt);
+}
+
+void AiUpdate(void* controller, float dt)
+{
+    RunUnlessEvent(controller, dt, g_aiUpdate);
+}
+
+void AiTick(void* controller, float dt)
+{
+    RunUnlessEvent(controller, dt, g_aiTick);
+}
+
+/// The member's field AI run once this frame, inside the seat's scopes: its actor tick, then its update, as the game's
+/// tick groups order them. Not on the first step after the publish (a worker's run that passed the skip before it may
+/// still be in the function), and not once the member no longer holds that controller (a level change: the pointer
+/// is let go, the game's runs resume).
+void RunMemberAi(float dt) noexcept
+{
+    void* controller = g_eventAiController.load(std::memory_order_acquire);
+    if (controller == nullptr)
+    {
+        return;
+    }
+    if (g_aiFirstStep)
+    {
+        g_aiFirstStep = false;
+        return;
+    }
+    if (ReadPointer(g_seats[g_event.seat].member, facts::kCharacterFieldAi) != controller)
+    {
+        ForgetMemberAi();
+        return;
+    }
+    platform::CallGuarded(g_aiTick, controller, dt);
+    platform::CallGuarded(g_aiUpdate, controller, dt);
+    ++g_aiRunInStep;
 }
 
 // --- The redirects -----------------------------------------------------------------------------------------------------
@@ -359,6 +430,14 @@ char Init(void* object, const std::uint64_t* targetName, const std::uint64_t* ke
         return 0;
     }
     g_event = Event{.object = object, .seat = seat, .actionId = id, .target = target, .noAnimation = plan.plan.noAnimation};
+    void* aiController = g_aiPlaced ? ReadPointer(g_seats[seat].member, facts::kCharacterFieldAi) : nullptr;
+    g_aiFirstStep      = aiController != nullptr;
+    g_eventAiController.store(aiController, std::memory_order_release);
+    if (g_aiPlaced && aiController == nullptr)
+    {
+        platform::LogWarning(L"levers: {}'s character has no field AI controller to run in the step; it may turn toward the leader during the hold",
+                             SeatName(seat));
+    }
     {
         const auto lock = LockDeferred();  // nothing kept from an earlier event in this slot
         g_deferredCount = 0;
@@ -504,6 +583,7 @@ void Step(void* object, float dt)
             g_inStep.store(true, std::memory_order_release);
             original(object, dt);
             g_inStep.store(false, std::memory_order_release);
+            RunMemberAi(dt);
         }
     }
     Watch(object, dt);
@@ -570,11 +650,47 @@ void Free(void* object)
     DropEvent();
 }
 
+/// The member's field AI into the step: the four classes' two slots, all or none (a class left to the game would turn
+/// its member away mid-hold). The game's functions are kept from before the first slot changes: a run that enters a
+/// replaced slot reaches them at once, and keeps reaching them after a rollback or the removal.
+void PlaceFieldAiSlots(const platform::GameImage& image) noexcept
+{
+    const auto update = platform::FindFunction(image, facts::kFieldAiUpdate);
+    const auto tick   = platform::FindFunction(image, facts::kFieldAiTick);
+    bool       placed = update && tick;
+    if (placed)
+    {
+        g_aiUpdate = reinterpret_cast<AiFn>(*update);
+        g_aiTick   = reinterpret_cast<AiFn>(*tick);
+    }
+    for (std::size_t i = 0; placed && i < facts::kFieldAiControllerVtables.size(); ++i)
+    {
+        const std::uintptr_t vtable = facts::kFieldAiControllerVtables[i];
+        placed = platform::ReplaceSlot(image, {L"a field AI controller's update slot", vtable + facts::kFieldAiUpdateSlot, facts::kFieldAiUpdate},
+                                       reinterpret_cast<std::uintptr_t>(&AiUpdate), g_aiSlots[2 * i]) &&
+                 platform::ReplaceSlot(image, {L"a field AI controller's tick slot", vtable + facts::kFieldAiTickSlot, facts::kFieldAiTick},
+                                       reinterpret_cast<std::uintptr_t>(&AiTick), g_aiSlots[2 * i + 1]);
+    }
+    g_aiPlaced = placed;
+    if (!placed)
+    {
+        for (platform::VTableEntry& slot : g_aiSlots)
+        {
+            slot.Restore();
+        }
+        platform::LogWarning(L"levers: the field AI's slots are not as the research read them; a character without the lever animation may "
+                             L"turn toward the leader during its hold and lose the lever");
+    }
+}
+
 std::wstring Report()
 {
-    std::wstring out = std::format(L"{}; notifies on the game thread {}, elsewhere {} (deferred and run {}); watchdog ends {}",
+    std::wstring out = std::format(L"{}; notifies on the game thread {}, elsewhere {} (deferred and run {}); watchdog ends {}; the member's field "
+                                   L"AI {}: runs in the step {}, the game's skipped {}",
                                    !g_installed ? L"not installed" : g_init.IsInstalled() ? L"on" : L"off (a call could not be redirected)",
-                                   g_notifyOnThread.load(), g_notifyOffThread.load(), g_deferredRun, g_watchdogs);
+                                   g_notifyOnThread.load(), g_notifyOffThread.load(), g_deferredRun, g_watchdogs,
+                                   g_aiPlaced ? L"in the step while an event runs" : L"the game's (its slots not taken)", g_aiRunInStep,
+                                   g_aiSkipped.load());
     if (g_event.object != nullptr)
     {
         out += std::format(L"; running: {}'s {} at step {} for {:.1f} s{}", SeatName(g_event.seat), Name(g_event.target), g_event.lastStep,
@@ -630,6 +746,7 @@ bool Install(const platform::GameImage& image) noexcept
         return fail(L"one of the four calls");
     }
     g_installed = true;
+    PlaceFieldAiSlots(image);
     control::Register({.name  = L"levers",
                        .shape = control::Shape::Text,
                        .help  = L"the lever or switch event player 2 or 3 runs, its step, and the counts",
@@ -641,6 +758,11 @@ bool Install(const platform::GameImage& image) noexcept
 void Remove() noexcept
 {
     g_installed = false;
+    g_aiPlaced  = false;
+    for (platform::VTableEntry& slot : g_aiSlots)
+    {
+        slot.Restore();
+    }
     g_free.Restore();
     g_notify.Restore();
     g_step.Restore();
