@@ -50,6 +50,9 @@ bool LeverRow(std::uint64_t name, const void* member) noexcept;
 /// A press of such a target by `seat` may start an event now: the calls placed, no event running, the member not in battle
 /// and running no field action.
 bool Admitted(int seat) noexcept;
+/// `seat`'s own event runs on the target `name` now: its icon stays the player's to hold (the game's pick keeps it in
+/// its hold state with the gauge; marked disabled, the pick would set it to none and the hold step would end the event).
+bool Running(int seat, std::uint64_t name) noexcept;
 
 /// The seat's player is leaving (its scopes still bound): its running event, if any, is ended.
 void OnSeatLeaving(int seat) noexcept;

@@ -429,7 +429,10 @@ public:
                 state.itemKind[i]  = Classify(name, named, state.member);
             }
             constexpr std::uint8_t disabled = 1;
-            if (name == 0 || Admitted(state.itemKind[i], seat) || !Read(item + facts::kTargetsItemDisabled, off) || off != 0 ||
+            // The target of the seat's own running lever event stays admitted: the game's pick keeps that icon in its hold
+            // state with the gauge, as it keeps player 1's; disabled, the pick would set it to none, which ends the hold.
+            if (name == 0 || Admitted(state.itemKind[i], seat) || push_events::Running(seat, name) ||
+                !Read(item + facts::kTargetsItemDisabled, off) || off != 0 ||
                 !platform::WriteGuarded(item + facts::kTargetsItemDisabled, &disabled, 1))
             {
                 continue;

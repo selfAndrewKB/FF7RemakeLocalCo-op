@@ -702,6 +702,11 @@ bool Admitted(int seat) noexcept
            Read(action + facts::kFieldActionState, running) && running == 0;
 }
 
+bool Running(int seat, std::uint64_t name) noexcept
+{
+    return g_gameThread.Here() && g_event.object != nullptr && g_event.seat == seat && g_event.target == name;
+}
+
 void OnSeatLeaving(int seat) noexcept
 {
     if (g_event.object == nullptr || g_event.seat != seat || !g_gameThread.Here())
