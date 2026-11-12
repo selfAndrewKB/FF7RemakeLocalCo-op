@@ -186,6 +186,55 @@ void TestLayoutSize()
     EXPECT((LayoutSizeOf(IntRect{960, 0, 2880, 2160}) == LayoutSize{1920.0f, 2160.0f}));  // side-by-side band
     EXPECT((LayoutSizeOf(IntRect{}) == LayoutSize{}));
 }
+
+void TestEffectViewport()
+{
+    std::puts("effect viewport: a column's UI particles get a box of the tick layout's width at its band's scale");
+    using lss::hud::EffectBox;
+    using lss::hud::EffectViewport;
+    using lss::hud::LayoutPoint;
+    using lss::hud::LayoutSize;
+    const LayoutPoint corner{1.0f, 1.0f};
+    const auto        near = [](const std::optional<EffectBox>& b, float x, float y, float w) {
+        return b && std::fabs(b->centreX - x) < 1e-4f && std::fabs(b->centreY - y) < 1e-4f && std::fabs(b->width - w) < 1e-4f;
+    };
+    // One 16:9 view: the whole image, as the game draws it.
+    EXPECT(near(EffectViewport(LayoutSize{1920.0f, 1080.0f}, LayoutSize{1920.0f, 1080.0f}, IntRect{0, 0, 3840, 2160}, 3840, 2160, corner),
+                0.5f, 0.5f, 1.0f));
+    // The row's ultrawide (player 1's, the tick's own layout 2580x1080 in a 3840x2160 image, band rows 276..1884): the
+    // centre moved right by the 660 units the corner-anchored gauge stands further right than in the frame, at the band's
+    // 1608/1080 px per unit; the box as wide as the layout at that scale.
+    EXPECT(near(EffectViewport(LayoutSize{2580.0f, 1080.0f}, LayoutSize{2580.0f, 1080.0f}, IntRect{0, 276, 3840, 1884}, 3840, 2160, corner),
+                (1290.0f + 660.0f) * (1608.0f / 1080.0f) / 3840.0f, (276.0f + 540.0f * (1608.0f / 1080.0f)) / 2160.0f,
+                2580.0f * (1608.0f / 1080.0f) / 3840.0f));
+    // A 16:9 column beside it: the gauge at its design place, the tick's centre at 1290 units = 2580 px of 3840, the
+    // box 5160 px wide (the one particle, placed for the wide layout, moved past the image's right edge).
+    EXPECT(near(EffectViewport(LayoutSize{2580.0f, 1080.0f}, LayoutSize{1920.0f, 1080.0f}, IntRect{0, 0, 3840, 2160}, 3840, 2160, corner),
+                2580.0f / 3840.0f, 0.5f, 5160.0f / 3840.0f));
+    // Two stacked halves of one shape (3840x1080 units each, one px per unit): the gauge 1920 units right of its design
+    // place, so the centre at the image's right edge; the lower band's middle height; the box as wide as the image.
+    EXPECT(near(EffectViewport(LayoutSize{3840.0f, 1080.0f}, LayoutSize{3840.0f, 1080.0f}, IntRect{0, 1080, 3840, 2160}, 3840, 2160, corner),
+                1.0f, 0.75f, 1.0f));
+    // Two side-by-side halves (1920x2160 units each, the tick's too): the gauge 1080 units below its design place, so
+    // the right half's centre at its band's middle width and the image's bottom; the box as wide as the band.
+    EXPECT(near(EffectViewport(LayoutSize{1920.0f, 2160.0f}, LayoutSize{1920.0f, 2160.0f}, IntRect{1920, 0, 3840, 2160}, 3840, 2160, corner),
+                0.75f, 1.0f, 0.5f));
+    // A centre anchor and a left anchor move the centre by half the extra width and by none of it.
+    EXPECT(near(EffectViewport(LayoutSize{1920.0f, 1080.0f}, LayoutSize{2580.0f, 1080.0f}, IntRect{0, 276, 3840, 1884}, 3840, 2160,
+                               LayoutPoint{0.5f, 0.0f}),
+                (960.0f + 330.0f) * (1608.0f / 1080.0f) / 3840.0f, (276.0f + 540.0f * (1608.0f / 1080.0f)) / 2160.0f,
+                1920.0f * (1608.0f / 1080.0f) / 3840.0f));
+    EXPECT(near(EffectViewport(LayoutSize{1920.0f, 1080.0f}, LayoutSize{2580.0f, 1080.0f}, IntRect{0, 276, 3840, 1884}, 3840, 2160, LayoutPoint{}),
+                960.0f * (1608.0f / 1080.0f) / 3840.0f, (276.0f + 540.0f * (1608.0f / 1080.0f)) / 2160.0f,
+                1920.0f * (1608.0f / 1080.0f) / 3840.0f));
+    // Unknowns.
+    EXPECT(!EffectViewport(LayoutSize{}, LayoutSize{1920.0f, 1080.0f}, IntRect{0, 0, 3840, 2160}, 3840, 2160, corner));
+    EXPECT(!EffectViewport(LayoutSize{1920.0f, 1080.0f}, LayoutSize{}, IntRect{0, 0, 3840, 2160}, 3840, 2160, corner));
+    EXPECT(!EffectViewport(LayoutSize{1920.0f, 1080.0f}, LayoutSize{1920.0f, 1080.0f}, IntRect{}, 3840, 2160, corner));
+    EXPECT(!EffectViewport(LayoutSize{1920.0f, 1080.0f}, LayoutSize{1920.0f, 1080.0f}, IntRect{0, 0, 3840, 2160}, 0, 2160, corner));
+    EXPECT(!EffectViewport(LayoutSize{1920.0f, 1080.0f}, LayoutSize{1920.0f, 1080.0f}, IntRect{0, 0, 3840, 2160}, 3840, 2160,
+                           LayoutPoint{std::nanf(""), 1.0f}));
+}
 }  // namespace
 
 int main()
@@ -198,6 +247,7 @@ int main()
     TestClipMapMatchesPlacement();
     TestUnusable();
     TestLayoutSize();
+    TestEffectViewport();
 
     std::printf(g_failures == 0 ? "all tests passed\n" : "%d check(s) failed\n", g_failures);
     return g_failures == 0 ? 0 : 1;

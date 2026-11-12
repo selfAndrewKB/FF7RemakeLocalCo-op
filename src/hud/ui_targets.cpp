@@ -9,6 +9,7 @@
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
+#include "hud/ui_effect_pass.h"
 #include "render/family_now.h"
 #include "render/movie_frame.h"
 #include "render/view_places.h"
@@ -178,7 +179,9 @@ std::uint64_t UiPass(void* sceneTargets, void* commandList, void* view, platform
             SetMember(nullptr);
         }
     }
-    image_entries::BeginUiPass(enabled ? ImageColumn(column, render::family_now::For(view)) : -1);
+    const int imageColumn = enabled ? ImageColumn(column, render::family_now::For(view)) : -1;
+    image_entries::BeginUiPass(imageColumn);
+    ui_effect_pass::NoteUiPass(imageColumn);  // the UI particles drawn after this pass's HUD go into that column's box
     const std::uint64_t bound = reinterpret_cast<AllocBindFn>(call.Original())(sceneTargets, commandList);
     void* const after = Member();
     g_render.rotation.AfterUiPass(column, after);

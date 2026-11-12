@@ -37,6 +37,7 @@ struct Placement
     const wchar_t* className;
     float          anchorX;  // the corner of the band its 1920x1080 area goes to
     float          anchorY;
+    bool           glow = false;  // the widget whose tick places the UI particles: their boxes follow its corner
 };
 constexpr Placement kPlacements[] = {
     {L"NaviMap_C", 1.0f, 0.0f},  // top right: the minimap and the objective distance
@@ -44,9 +45,10 @@ constexpr Placement kPlacements[] = {
     {L"Command_C", 0.0f, 1.0f},  // bottom left: the command menu and its prompt row
     {L"Status_C", 1.0f, 1.0f},   // bottom right: the party panel
     // Bottom right, above the party panel: the summon gauges, two roots the field command controller makes at a summon's
-    // first show, ordinary default-fill roots placed by their Blueprint design alone (research/RE-hud-families.md).
-    {L"SummonChantGauge_C", 1.0f, 1.0f},  // the "SUMMON" bar that fills during a fight
-    {L"SummonTimeGauge_C", 1.0f, 1.0f},   // the summoned creature's name and its time left
+    // first show, ordinary default-fill roots placed by their Blueprint design alone (research/RE-hud-families.md). The
+    // time gauge's own tick places the glow's particles from design points (hud/ui_effect_pass.h).
+    {L"SummonChantGauge_C", 1.0f, 1.0f},        // the "SUMMON" bar that fills during a fight
+    {L"SummonTimeGauge_C", 1.0f, 1.0f, true},   // the summoned creature's name and its time left
 };
 constexpr std::uint32_t kScanTicks = 30;  // new roots are looked for this often; placed ones are checked every tick
 
@@ -329,6 +331,18 @@ try
 }
 catch (...)
 {
+}
+
+LayoutPoint GlowAnchor() noexcept
+{
+    for (const Placement& placement : kPlacements)
+    {
+        if (placement.glow)
+        {
+            return {placement.anchorX, placement.anchorY};
+        }
+    }
+    return {};
 }
 
 }  // namespace lss::hud::root_placement

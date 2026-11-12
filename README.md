@@ -273,6 +273,8 @@ src/
                             further column (hud/overlay_pass.h), before the game's own render, into a layer entry per
                             column of the same pool-2 ring slot
     target_rotation.h       Which UI target each view samples, with N columns (hud/ui_targets.h)
+    ui_effect_pass          The UI particles (the summon gauge's glow and every other UI effect) placed and sized per
+                            column
     ui_targets              One UI image per view, on the render thread (research/RE-hud-two-images.md)
     user_widgets            The live UUserWidgets, kept current without walking every UObject
     view_prompt             A few lines of text in one player's own view: the player windows where the game's own window

@@ -649,6 +649,39 @@ inline constexpr std::uintptr_t kUiAllocBindClearCall    = 0x1421E826B;  // the 
 inline constexpr std::uintptr_t kUiAllocBind             = 0x142541670;  // SceneRenderTargets__AllocBindInGameUITarget
 inline constexpr std::uintptr_t kPostProcessCall         = 0x1421E8400;  // Render: call FPostProcessing::Process
 inline constexpr std::uintptr_t kPostProcessProcess      = 0x14251C230;  // (this, RHICmdList, View, VelocityRT&)
+/// The UI particles (the summon gauge's glow and every other UI effect) drawn per view into the view's UI image, right
+/// after the HUD delegate in Render's UI loop (RE-summon-gauge.md §2.4, §10): SceneRenderer__DrawInGameUIPrimitivesForView
+/// (renderer, view, RHICmdList), its call inside one block, under whatever viewport is current (AllocBind's whole image,
+/// which the HUD's own layer draws rely on, so that one is left alone and the particles get a viewport of their own).
+inline constexpr std::uintptr_t kUiPrimitivesDrawCall = 0x1421E8330;  // E8 0B 4E 44 00
+inline constexpr std::uintptr_t kUiPrimitivesDraw     = 0x14262D140;
+/// The UI image's size as AllocBind reads it for its viewport every time (FSceneRenderTargets +0x240/+0x244).
+inline constexpr std::uint32_t kSceneTargetsUiWidth  = 0x240;
+inline constexpr std::uint32_t kSceneTargetsUiHeight = 0x244;
+/// FRHICommandListBase as this build lays it out and FRHICommandSetViewport as AllocBind appends it (RE-summon-gauge.md
+/// §10.1): the list's link to the last command's Next (+0x08), the command count (+0x14), the memstack's Top and End
+/// (+0x30/+0x38; a new chunk from FMemStackBase__AllocateNewChunk(stack, size) when a command does not fit); a command is
+/// Next (+0x00) then its execute function (+0x08), the viewport's MinX, MinY (u32), MinZ (float), MaxX, MaxY (u32), MaxZ
+/// (float) at +0x10..+0x24, 0x28 bytes, 8-aligned. A viewport's MinX/MinY are unsigned at the RHI: never negative.
+inline constexpr std::uint32_t  kRhiListCommandLink   = 0x08;
+inline constexpr std::uint32_t  kRhiListCommandCount  = 0x14;
+inline constexpr std::uint32_t  kRhiListStackTop      = 0x30;
+inline constexpr std::uint32_t  kRhiListStackEnd      = 0x38;
+inline constexpr std::uint32_t  kRhiCommandExecute    = 0x08;
+inline constexpr std::uint32_t  kRhiViewportFields    = 0x10;
+inline constexpr std::uint32_t  kRhiCommandSize       = 0x28;
+inline constexpr std::uint32_t  kRhiChunkRequest      = 0x30;  // what AllocBind asks the memstack for a viewport command
+inline constexpr std::uintptr_t kRhiSetViewportExecute = 0x141F09590;  // FRHICommandSetViewport's execute (context vt+0x168)
+inline constexpr std::uintptr_t kMemStackAllocateChunk = 0x141CB8DA0;  // FMemStackBase__AllocateNewChunk(stack, minSize)
+/// The UI effects' layout-point conversion (UIEffect_LayoutPointToEffectSpace 0x1413FD2A0) reads the overlay's UI size
+/// twice through EndUI__GetOverlayUISize(FVector2D* out) (returns out; the overlay's +0x398 pair, else the in-game UI
+/// rect's size): both calls inside one block. Answered with player 1's column's size during a further column's pass, so
+/// every effect is converted in one layout (an effect set once, in whichever pass, included).
+inline constexpr std::uintptr_t kEffectUiSizeCallOne = 0x1413FD2C0;  // E8 FB B4 F4 FF
+inline constexpr std::uintptr_t kEffectUiSizeCallTwo = 0x1413FD2F6;  // E8 C5 B4 F4 FF
+inline constexpr std::array<std::uint8_t, 16> kOverlayUiSizeGetterEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x08, 0x57, 0x48, 0x83, 0xEC, 0x30, 0x48, 0x8B, 0x1D, 0x37, 0x19, 0x51};
+inline constexpr platform::FunctionFact kOverlayUiSizeGetter{L"EndUI__GetOverlayUISize", 0x1413487C0, kOverlayUiSizeGetterEntry};
 inline constexpr std::uintptr_t kSceneRenderTargetsGlobal = 0x145923AD0; // FSceneRenderTargets (static object)
 inline constexpr std::uint32_t  kSceneTargetsInGameUI    = 0x110;        // TRefCountPtr<IPooledRenderTarget>
 /// The movie frame for every view (research/RE-movie-view.md §2.5, reviewed in IDA): FPostProcessing::Process
@@ -3032,6 +3065,18 @@ inline constexpr platform::FunctionFact kPushFree{L"PushButtonEvent_Free_OnOffsO
 inline constexpr std::uintptr_t kBoardExitSlot = 0x144BB75C8;
 inline constexpr std::array<std::uint8_t, 16> kBoardExitEntry{0x48, 0x89, 0x5C, 0x24, 0x10, 0x57, 0x48, 0x83, 0xEC, 0x60, 0x48, 0x8B, 0xD9, 0xE8, 0x1E, 0xD2};
 inline constexpr platform::FunctionFact kBoardExit{L"FieldActionOperationBoardState_Exit_ClearCtrlFlags3000", 0x1410592E0, kBoardExitEntry};
+/// A party member's field AI while a further player's event runs on it (RE-further-player-levers.md §14.8): its follow
+/// behaviour reads the party leader every frame, in the AI's per-frame update (AEndFieldAIController_UpdateActiveKind,
+/// the controller's own tick function, run on a worker thread: the state machine, a direct turn toward the leader, the
+/// AI model) and in its actor tick (AEndFieldAIController_Tick, the game thread: the behaviour tree's leader key). A
+/// member that is not the leader turns toward the leader during its hold, and the pick drops the lever. Both are vtable
+/// slots (void(controller, float dt)) of the field AI controller's class and its three subclasses.
+inline constexpr std::array<std::uintptr_t, 4> kFieldAiControllerVtables{0x144BB5210, 0x144CF72E0, 0x144CF7E90, 0x144CF89B0};
+inline constexpr std::uint32_t kFieldAiUpdateSlot = 0x7D8, kFieldAiTickSlot = 0x408;
+inline constexpr std::array<std::uint8_t, 16> kFieldAiUpdateEntry{0x40, 0x53, 0x48, 0x83, 0xEC, 0x30, 0x80, 0xB9, 0xF8, 0x0D, 0x00, 0x00, 0x10, 0x48, 0x8B, 0xD9};
+inline constexpr platform::FunctionFact kFieldAiUpdate{L"AEndFieldAIController_UpdateActiveKind", 0x140FBF630, kFieldAiUpdateEntry};
+inline constexpr std::array<std::uint8_t, 16> kFieldAiTickEntry{0x40, 0x53, 0x48, 0x83, 0xEC, 0x30, 0x0F, 0x29, 0x74, 0x24, 0x20, 0x48, 0x8B, 0xD9, 0x0F, 0x28};
+inline constexpr platform::FunctionFact kFieldAiTick{L"AEndFieldAIController_Tick", 0x140FBF5C0, kFieldAiTickEntry};
 /// The pool's items as the pick and the target removal read them (item = entry - 0x18): the target name (entry +0x0C),
 /// its state-object name (entry +0x14, the dispatch's SituationTrigger key), the icon widget (entry +0x60), the location
 /// dirty byte (entry +0x92: posted outside the pick, consumed by the first pick that meets it) and the disabled byte

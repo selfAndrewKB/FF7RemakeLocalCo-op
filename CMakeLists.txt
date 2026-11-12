@@ -61,6 +61,7 @@ add_library(LocalSplitScreen SHARED
     src/hud/overlay_layout.cpp
     src/hud/root_placement.cpp
     src/hud/ui_targets.cpp
+    src/hud/ui_effect_pass.cpp
     src/hud/user_widgets.cpp
     src/platform/byte_scope.cpp
     src/platform/call_redirect.cpp

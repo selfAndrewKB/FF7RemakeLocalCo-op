@@ -30,6 +30,7 @@
 #include "hud/overlay_pass.h"
 #include "hud/root_placement.h"
 #include "hud/second_image.h"
+#include "hud/ui_effect_pass.h"
 #include "hud/ui_targets.h"
 #include "platform/guarded.h"
 #include "platform/log.h"
@@ -421,6 +422,8 @@ constexpr std::array kModules{
     Module{.name = L"overlay layout", .install = Call<&hud::overlay_layout::Install>, .remove = &RemoveOverlayLayout},
     // without it both halves sample one UI image
     Module{.name = L"ui targets", .install = Call<&hud::ui_targets::Install>, .remove = &hud::ui_targets::Remove},
+    // without it the summon gauge's glow floats away from its bar in a split view (one particle, placed for one layout)
+    Module{.name = L"ui effect pass", .install = Call<&hud::ui_effect_pass::Install>, .remove = &hud::ui_effect_pass::Remove},
     // without it a movie shows in the first view only
     Module{.name = L"movie frame", .install = Call<&render::movie_frame::Install>, .remove = &render::movie_frame::Remove},
     // the further players' HUD image: its entries, each seat's minimap, the image itself

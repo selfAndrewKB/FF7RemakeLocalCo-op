@@ -6,7 +6,9 @@
 #include "hud/layout_code.h"
 #include "hud/overlay_band.h"
 #include "hud/overlay_pass.h"
+#include "hud/root_placement.h"
 #include "hud/second_image.h"
+#include "hud/ui_effect_pass.h"
 #include "platform/call_redirect.h"
 #include "platform/code_redirect.h"
 #include "platform/game_thread.h"
@@ -105,6 +107,24 @@ static_assert(offsetof(HostValues, origin) == facts::kOverlayHostOrigin - facts:
 static_assert(offsetof(HostValues, ui) == facts::kOverlayUiSize - facts::kOverlayLayoutMin);
 static_assert(offsetof(HostValues, size) == facts::kOverlayHostSize - facts::kOverlayLayoutMin);
 static_assert(offsetof(HostValues, scale) == facts::kOverlayHostScale - facts::kOverlayLayoutMin);
+
+/// Each column's layout and band as its pass of this frame laid the overlay out (the band and its layout while the band
+/// applied, else none), filled pass by pass (further columns first, column 0 last), read when column 0's pass, the
+/// frame's last, records: each column then gets its UI particles' box against column 0's layout (hud/ui_effect_pass.h).
+struct ColumnOverlay
+{
+    LayoutSize   layout = kSoloLayout;
+    IntRect      band{};
+    std::int32_t imageWidth  = 0;
+    std::int32_t imageHeight = 0;
+};
+ColumnOverlay g_columnOverlay[kMaxColumns];
+bool          g_columnSeen[kMaxColumns] = {};
+bool          g_boxesPublished          = false;
+
+// The UI effects' conversion reads the overlay's UI size twice; both reads answered (or neither).
+using UiSizeFn = Size2D* (*)(Size2D* out);
+platform::CallRedirect g_effectSizeCalls[2];
 
 /// The entry the layer-entry call placed in this render, for the submit call at its end: the per-child matrices
 /// the paint pushed are complete only then.
@@ -213,6 +233,65 @@ std::uintptr_t Overlay() noexcept
     return overlay;
 }
 
+/// Column 0's pass is the frame's last, so the overlay holds its layout at the widget tick that places the UI particles
+/// (and the conversion's size reads answer it in the further passes, below): each column recorded this frame gets its
+/// box against it; a column whose band did not apply gets none; one not recorded keeps its last.
+void RecordColumn(int column, const LayoutSize& layout, const IntRect& band, std::int32_t imageWidth, std::int32_t imageHeight) noexcept
+{
+    g_columnOverlay[column] = {layout, band, imageWidth, imageHeight};
+    g_columnSeen[column]    = true;
+    if (column != 0)
+    {
+        return;
+    }
+    // Without column 0's band the conversion's size reads keep each pass's own size (below), so no column's box would
+    // match: none then.
+    const LayoutPoint anchor      = root_placement::GlowAnchor();
+    const bool        columnZero = band.Height() > 0;
+    for (int i = 0; i < kMaxColumns; ++i)
+    {
+        if (!g_columnSeen[i])
+        {
+            continue;
+        }
+        const ColumnOverlay& seen = g_columnOverlay[i];
+        const auto           box  = columnZero && seen.band.Height() > 0
+                                        ? EffectViewport(layout, seen.layout, seen.band, seen.imageWidth, seen.imageHeight, anchor)
+                                        : std::nullopt;
+        ui_effect_pass::PublishColumnViewport(i, box.value_or(EffectBox{}), box.has_value());
+        g_columnSeen[i] = false;
+    }
+    g_boxesPublished = true;
+}
+
+/// No split shown: every column's box withdrawn, once, so the UI particles are drawn as the game draws them.
+void DropBoxes() noexcept
+{
+    if (!g_boxesPublished)
+    {
+        return;
+    }
+    g_boxesPublished = false;
+    for (int i = 0; i < kMaxColumns; ++i)
+    {
+        ui_effect_pass::PublishColumnViewport(i, EffectBox{}, false);
+        g_columnSeen[i] = false;
+    }
+}
+
+/// Replaces the UI effects' conversion's two reads of the overlay's UI size (same signature): player 1's column's
+/// size during a further column's pass (its last band's), so every effect is converted in one layout, player 1's,
+/// whichever pass placed it; the game's own read otherwise.
+Size2D* UiSizeForEffects(Size2D* out)
+{
+    if (out != nullptr && g_gameThread.Here() && overlay_pass::Further() && g_hostSet[0].valid)
+    {
+        *out = {g_hostSet[0].values.ui[0], g_hostSet[0].values.ui[1]};
+        return out;
+    }
+    return reinterpret_cast<UiSizeFn>(g_effectSizeCalls[0].Original())(out);
+}
+
 /// Replaces the render's call to EndUI__GetInGameUIRect (same signature).
 IntRect* LayoutRect(IntRect* out)
 {
@@ -222,6 +301,10 @@ IntRect* LayoutRect(IntRect* out)
     g_bandApplies    = 0;
     if (!g_splitShown || !g_gameThread.Here())
     {
+        if (g_gameThread.Here())
+        {
+            DropBoxes();
+        }
         return result;  // one view (its sets dropped by Tick), or another thread: the engine's own result
     }
     // The single render (the mirror in, no further pass) lays out for column 0, player 1's, as its own pass does.
@@ -230,6 +313,7 @@ IntRect* LayoutRect(IntRect* out)
     if (out == nullptr || out->minX != 0 || out->minY != 0 || overlay == 0)
     {
         g_hostSet[column].valid = false;  // an unexpected rect or no overlay: no band in this pass either
+        RecordColumn(column, kSoloLayout, IntRect{}, 0, 0);
         return result;
     }
     // The host size the render stored just before this call: the game viewport widget's size, in window pixels.
@@ -280,6 +364,7 @@ IntRect* LayoutRect(IntRect* out)
     {
         g_hostSet[column].valid = false;  // no band in this pass: nothing is placed outside the render with its set
     }
+    RecordColumn(column, applied ? LayoutSizeOf(band) : kSoloLayout, applied ? band : IntRect{}, image.Width(), image.Height());
     return result;
 }
 
@@ -766,6 +851,19 @@ bool Install(const platform::GameImage& image) noexcept
               },
               .get = [] { return Value{static_cast<std::int64_t>(g_clipLogRenders.load(std::memory_order_relaxed))}; }});
     platform::Log(L"HUD layout: installed (hud-band on); the rect call follows on the game thread");
+    // The UI effects' conversion in player 1's layout in every pass (hud/ui_effect_pass.h): both of its size reads, or neither.
+    const auto sizeOne = image.Rebase(facts::kEffectUiSizeCallOne, 5);
+    const auto sizeTwo = image.Rebase(facts::kEffectUiSizeCallTwo, 5);
+    const auto sizeFn  = platform::FindFunction(image, facts::kOverlayUiSizeGetter);
+    bool       effects = sizeOne && sizeTwo && sizeFn &&
+                   g_effectSizeCalls[0].Install(*sizeOne, *sizeFn, reinterpret_cast<std::uintptr_t>(&UiSizeForEffects));
+    if (effects && !g_effectSizeCalls[1].Install(*sizeTwo, *sizeFn, reinterpret_cast<std::uintptr_t>(&UiSizeForEffects)))
+    {
+        g_effectSizeCalls[0].Restore();
+        effects = false;
+    }
+    platform::Log(L"HUD layout: the UI effects' layout conversion {}",
+                  effects ? L"reads player 1's column's size in every pass" : L"keeps each pass's own size (its calls are not as the research read)");
     InstallFrameCode(image);
     InstallArrowCode(image);
     InstallBattleArrowCode(image);
@@ -813,6 +911,13 @@ void Remove() noexcept
     if (g_battleArrowCode.IsInstalled() && !g_battleArrowCode.Restore())
     {
         platform::Log(L"HUD layout: the battle arrows' edge code was changed after us; left in place (it acts only in a band)");
+    }
+    for (platform::CallRedirect& call : g_effectSizeCalls)
+    {
+        if (call.IsInstalled() && !call.Restore())
+        {
+            platform::Log(L"HUD layout: a UI effects' size call was changed after us; left in place (it passes the game's size through)");
+        }
     }
     // A call crossing two blocks is restored only from the game thread; elsewhere it stays and passes the engine's
     // rect through (the split is off).

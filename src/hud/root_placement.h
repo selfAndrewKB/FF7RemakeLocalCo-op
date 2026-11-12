@@ -17,6 +17,8 @@
 // back through the same setters when the split ends; a root whose layout the game set since is left with the game's.
 // Game thread only.
 
+#include "hud/overlay_band.h"
+
 namespace lss::hud::root_placement {
 
 /// Game thread, every tick, before the frame's render: whether the band lays the HUD out in a split half. Places the
@@ -25,5 +27,9 @@ void Tick(bool bandApplies) noexcept;
 
 /// Sets every placed root back (unload).
 void Remove() noexcept;
+
+/// The corner of the frame the summon gauge (the widget whose tick places the glow) is anchored to in a split half: the
+/// UI particles' boxes follow it (hud/overlay_band.h EffectViewport).
+LayoutPoint GlowAnchor() noexcept;
 
 }  // namespace lss::hud::root_placement

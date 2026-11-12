@@ -20,6 +20,7 @@
 // model of it.
 
 #include <cstdint>
+#include <optional>
 
 namespace lss::hud {
 
@@ -93,5 +94,37 @@ struct EntryPlacement
     float translateY = 0.0f;  // row 3 y
 };
 EntryPlacement PlaceInBand(const IntRect& band, std::int32_t imageWidth, std::int32_t imageHeight) noexcept;
+
+/// A point in layout units (an FVector2D).
+struct LayoutPoint
+{
+    float x = 0.0f;
+    float y = 0.0f;
+
+    bool operator==(const LayoutPoint&) const = default;
+};
+
+/// The UI particle draw's viewport in one column's image, as fractions of the image: a box's centre and width (its
+/// height follows from the target's shape at the draw).
+struct EffectBox
+{
+    float centreX = 0.0f;
+    float centreY = 0.0f;
+    float width   = 0.0f;
+
+    bool operator==(const EffectBox&) const = default;
+};
+
+/// Where the UI particle draw's viewport goes in one column's image so that column's UI particles land where its HUD
+/// is (hud/ui_effect_pass.h). The game converts each effect's layout point once, centred in `tickLayout` (the layout
+/// the overlay holds at the widget tick that places them: player 1's column's) and in its half-widths, and every
+/// column's draw puts that one result over its whole image. The box makes `tickLayout`'s half-width the band's drawing
+/// of this column's `layout` units (its width = the band's scale times tickLayout's width) and puts the centre where
+/// `tickLayout`'s centre falls in this column's band, moved by the distance the widget the points belong to (anchored
+/// at `anchor` of the 1920x1080 frame) stands from its design place in `layout`. The image's centre and width for a
+/// 16:9 column while `tickLayout` is 16:9 too; past an edge of the image for a wide or tall column, or for a 16:9 one
+/// beside a wide `tickLayout`. Nullopt for an unknown layout, band or image.
+std::optional<EffectBox> EffectViewport(const LayoutSize& tickLayout, const LayoutSize& layout, const IntRect& band,
+                                        std::int32_t imageWidth, std::int32_t imageHeight, const LayoutPoint& anchor) noexcept;
 
 }  // namespace lss::hud
