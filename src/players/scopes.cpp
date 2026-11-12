@@ -173,10 +173,14 @@ void BindMember(int player, void* member, std::uint8_t type) noexcept
         p.leader.Clear();
         return;
     }
+    // Held, not set: the game's one leader is player 1's between the player's calls. A player's own battle switch makes
+    // the game write the new member here inside the player's call (the session hears that write through the leader
+    // funnel and takes the member); kept, the write would leave the player's member as the game's leader for every
+    // leader-bound system, player 1's character with no controls.
     const std::uintptr_t     manager = PartyManager();
     const ByteContext::Range ranges[] = {
-        {manager + facts::kPartyLeaderWeak, sizeof(weak), Kind::Set},
-        {manager + facts::kPartyLeaderType, 1, Kind::Set},
+        {manager + facts::kPartyLeaderWeak, sizeof(weak), Kind::Hold},
+        {manager + facts::kPartyLeaderType, 1, Kind::Hold},
     };
     if (manager == 0 || !p.leader.Define(ranges))
     {
@@ -330,8 +334,9 @@ Scope::~Scope()
     {
         if ((opened_ & entry.bit) != 0 && entry.context->Close() != 0)
         {
-            platform::LogDebug(L"scopes: player {}'s {} slot was changed by the game inside a scope; the game's value kept",
-                               player_ + 1, entry.bit == Primary ? L"primary" : entry.bit == Operator ? L"operator" : entry.bit == Leader ? L"leader" : L"UI");
+            platform::LogDebug(L"scopes: player {}'s {} slot was changed by the game inside a scope; {}", player_ + 1,
+                               entry.bit == Primary ? L"primary" : entry.bit == Operator ? L"operator" : entry.bit == Leader ? L"leader" : L"UI",
+                               entry.bit == Leader ? L"player 1's put back (the game's leader stays player 1's)" : L"the game's value kept");
         }
     }
 }
@@ -340,7 +345,11 @@ LeaderPause::LeaderPause(int player) noexcept : player_(player)
 {
     if (ValidPlayer(player) && g_players[player].leader.IsOpen())
     {
-        g_players[player].leader.Close();  // the game's (player 1's) leader bytes back
+        if (g_players[player].leader.Close() != 0)  // the game's (player 1's) leader bytes back
+        {
+            platform::LogDebug(L"scopes: the game wrote the leader slot inside player {}'s call before a pause; player 1's put back",
+                               player + 1);
+        }
         paused_ = true;
     }
 }

@@ -6,9 +6,13 @@
 // leader, the UI system's command controller, the input object's focus context, the battle system's target
 // fields. The mod makes the game's own calls for a further player with that player's values in those slots
 // and the game's values put back after. A ByteContext is one player's values for a set of live byte ranges; a
-// ByteScope installs them on construction and restores on destruction. Two kinds of range:
+// ByteScope installs them on construction and restores on destruction. Three kinds of range:
 //   - Set: a fixed value (a pointer, a type byte). It is written in; the saved live bytes go back out, unless
 //     the game wrote the slot inside the scope, in which case the game's newer value is kept (Close reports it).
+//   - Hold: a fixed value too, but the saved live bytes always go back out: a write of the game's inside the scope
+//     is counted (Close reports it) and undone, so the slot is player 1's between the player's calls whatever the
+//     game wrote for the player (the party leader a player's own battle switch makes the game write: the player
+//     hears that write through the game's funnel and takes the member; the game's one leader stays player 1's).
 //   - Exchange: the player's own copy of state the game keeps there (a focus path, a lock). The copy is
 //     exchanged with the live bytes both ways, so what the game wrote inside the scope stays the player's.
 // No engine dependency: the host test exercises it on plain memory. The reads and writes are guarded against
@@ -27,6 +31,7 @@ public:
     enum class Kind : std::uint8_t
     {
         Set,
+        Hold,
         Exchange,
     };
 
@@ -53,8 +58,8 @@ public:
 
     /// Writes every value in. False (nothing left changed) if already open, undefined, or a range faulted.
     bool Open() noexcept;
-    /// Puts the live bytes back. Returns the number of Set ranges the game had changed inside (left as the game
-    /// wrote them); 0 when everything was still the scope's own.
+    /// Puts the live bytes back. Returns the number of Set and Hold ranges the game had changed inside (a Set one left
+    /// as the game wrote it, a Hold one put back); 0 when everything was still the scope's own.
     unsigned Close() noexcept;
 
 private:

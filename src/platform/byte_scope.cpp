@@ -94,10 +94,13 @@ unsigned ByteContext::Close() noexcept
         std::vector<std::uint8_t> now(slot.range.size);
         if (CopyGuarded(now.data(), live, slot.range.size) && std::memcmp(now.data(), slot.value.data(), slot.range.size) != 0)
         {
-            ++changed;  // the game wrote the slot inside the scope: its newer value is kept
-            continue;
+            ++changed;  // the game wrote the slot inside the scope
+            if (slot.range.kind == Kind::Set)
+            {
+                continue;  // its newer value is kept
+            }
         }
-        WriteGuarded(live, slot.saved.data(), slot.range.size);
+        WriteGuarded(live, slot.saved.data(), slot.range.size);  // a Hold range: player 1's back whatever the game wrote
     }
     open_ = false;
     return changed;

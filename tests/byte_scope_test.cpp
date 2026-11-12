@@ -71,6 +71,27 @@ int main()
     context.Close();
     EXPECT(context.Clear() && !context.Defined() && !context.Open());
 
+    // A Hold slot: untouched inside, nothing reported and the saved bytes back; written inside, the write counted and
+    // the saved bytes back all the same; a wide range with one byte written goes back whole.
+    std::uint64_t              leader = 0x1111;
+    std::array<std::uint8_t, 8> wide{1, 2, 3, 4, 5, 6, 7, 8};
+    const ByteContext::Range   held[] = {
+        {reinterpret_cast<std::uintptr_t>(&leader), sizeof(leader), Kind::Hold},
+        {reinterpret_cast<std::uintptr_t>(wide.data()), 8, Kind::Hold},
+    };
+    EXPECT(context.Define(held));
+    const std::uint64_t seats = 0x4444;
+    std::memcpy(context.Value(0).data(), &seats, sizeof(seats));
+    context.Value(1)[0] = 9;
+    EXPECT(context.Open() && leader == 0x4444 && wide[0] == 9 && wide[1] == 0);
+    EXPECT(context.Close() == 0 && leader == 0x1111 && wide[0] == 1 && wide[7] == 8);
+    EXPECT(context.Open());
+    leader  = 0x3333;  // the game writes the slot inside the call
+    wide[5] = 0x55;
+    EXPECT(context.Close() == 2);
+    EXPECT(leader == 0x1111 && wide[5] == 6 && wide[0] == 1);  // player 1's back, the write counted
+    EXPECT(context.Clear());
+
     // An unreadable range opens nothing and leaves the readable ones as they were.
     const ByteContext::Range bad[] = {
         {reinterpret_cast<std::uintptr_t>(&primary), sizeof(primary), Kind::Set},
