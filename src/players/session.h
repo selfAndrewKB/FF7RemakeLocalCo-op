@@ -250,7 +250,8 @@ private:
     void ReturnFromHold(Seat& seat, void* member) noexcept;
     /// The party order, the member's existence and its AI's hold, checked while the seat holds a member.
     void FollowSlot(Seat& seat) noexcept;
-    /// The seat's own field camera operator spawned on `member` (the join's take and the own switch alike).
+    /// The seat's own field camera operator spawned on `member` (the join's take; a seat's own switch keeps its operator,
+    /// which the game moves onto the new member with its own transition).
     void StartSeatCamera(Seat& seat, RC::Unreal::UObject* playerOneController, RC::Unreal::UObject* controller, void* member) noexcept;
     /// The seat's own d-pad switch in a fight (battle/party_switch.h): each tick, the adoption of the member the game moved
     /// its controller onto, and the fight's end, when its row decides again.

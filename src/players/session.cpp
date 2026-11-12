@@ -1117,7 +1117,9 @@ try
         return;
     }
     EndMemberModules(seat);  // the menu, lock and target let go of the old member; set up again for the new one by their own ticks
-    DestroyOperator(seat);
+    // The seat's camera operator stays: the game's switch broadcast the change on the seat's controller, whose
+    // leader-changed delegate the operator holds, so the operator is already playing its own leader-change transition
+    // onto the new member. A fresh operator would start on the new member with no transition (a cut).
     seat.ResetMember();
     party_seat::Adopt(seat.index, controller, character, type);  // the controller names the character: checked above
     if (!weak_object::WeakPairOf(character, seat.memberWeak))
@@ -1130,7 +1132,11 @@ try
     platform::Log(L"{} switches from member type {} to type {} (their own d-pad switch in the fight, the game's own cycle); back on "
                   L"their row's member when the fight ends",
                   seat.Name(), was, type);
-    StartSeatCamera(seat, Field((*players)[0], facts::kLocalPlayerController), controller, character);
+    if (seat_objects::Operator(seat.index) == nullptr)
+    {
+        // A seat on a still camera (its spawn failed at the join) gets an operator on the new member.
+        StartSeatCamera(seat, Field((*players)[0], facts::kLocalPlayerController), controller, character);
+    }
     Report();
 }
 catch (...)
