@@ -43,6 +43,10 @@ constexpr Placement kPlacements[] = {
     {L"Compass_C", 0.5f, 0.0f},  // top centre: the compass the minimap toggle swaps in for the minimap
     {L"Command_C", 0.0f, 1.0f},  // bottom left: the command menu and its prompt row
     {L"Status_C", 1.0f, 1.0f},   // bottom right: the party panel
+    // Bottom right, above the party panel: the summon gauges, two roots the field command controller makes at a summon's
+    // first show, ordinary default-fill roots placed by their Blueprint design alone (research/RE-hud-families.md).
+    {L"SummonChantGauge_C", 1.0f, 1.0f},  // the "SUMMON" bar that fills during a fight
+    {L"SummonTimeGauge_C", 1.0f, 1.0f},   // the summoned creature's name and its time left
 };
 constexpr std::uint32_t kScanTicks = 30;  // new roots are looked for this often; placed ones are checked every tick
 

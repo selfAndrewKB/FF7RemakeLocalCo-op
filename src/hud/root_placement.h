@@ -2,7 +2,8 @@
 
 // Where the HUD's main roots sit in a split half: as in single player, each in its corner of the half
 // (research/RE-hud-band-3d.md): minimap top right, compass top centre, command menu bottom
-// left, party panel bottom right.
+// left, party panel bottom right, and the two summon gauges (the "SUMMON" bar and the summoned creature's name and
+// time) with the party panel, where their design puts them above it.
 //
 // The roots' Blueprints design their contents for a 1920x1080 frame inside a widget that fills the layout. In single
 // player the layout is that frame, so the contents land in its corners; in a split half's 3840x1080 (or 1920x2160)

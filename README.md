@@ -265,7 +265,7 @@ src/
                             talk and examine cursor shows in every other player's view
     root_placement          Where the HUD's main roots sit in a split half: as in single player, each in its corner of
                             the half: minimap top right, compass top centre, command menu bottom left, party panel
-                            bottom right
+                            bottom right, and the two summon gauges (the …
     second_image            The further columns' HUD images: the game's own overlay rendered again each frame for each
                             further column (hud/overlay_pass.h), before the game's own render, into a layer entry per
                             column of the same pool-2 ring slot
