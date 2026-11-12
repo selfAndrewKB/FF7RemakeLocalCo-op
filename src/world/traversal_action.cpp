@@ -102,6 +102,7 @@ platform::CallRedirect  g_ladderPhase;
 platform::EntryRedirect g_gapJumpFinish, g_poleFinish;
 platform::VTableEntry   g_fenceStart, g_fenceExit;
 platform::CallRedirect  g_fenceEndSignals, g_fenceBaseStart;
+platform::VTableEntry   g_boardExit;  // the operation board's Exit: its end trigger as the seat's leader's (the level listens for it)
 bool                    g_poleReady = false;  // the pole's finish fix and its camera leave installed
 
 platform::GameThreadMark g_gameThread;
@@ -588,6 +589,10 @@ std::uint64_t WireFenceEndSignals(void* actor, void* list, char reached)
 void MonkeyBarsStart(void* state) { WithSeatLeader(g_monkeyBarsStart, state, L"monkey-bars start"); }
 void MonkeyBarsExit(void* state) { WithSeatLeader(g_monkeyBarsExit, state, L"monkey-bars exit"); }
 void BalanceStart(void* state) { WithSeatLeader(g_balanceStart, state, L"balance-beam start"); }
+/// The operation board's Exit (a switch board's quick press): unlike the other actions' ends, its end trigger is what the
+/// level listens for (a door opening), and the game sends it only as the party leader's, so a seat's runs with the seat's
+/// leader (world/push_events.h).
+void BoardExit(void* state) { WithSeatLeader(g_boardExit, state, L"switch board's exit (its end trigger sent as the seat's)"); }
 
 /// Points a state's vtable slot at `thunk` if it holds the function the research read. False (nothing changed) otherwise.
 bool ReplaceStateSlot(const platform::GameImage& image, std::uintptr_t slotFact, const platform::FunctionFact& target,
@@ -1426,6 +1431,11 @@ bool Install(const platform::GameImage& image) noexcept
         platform::LogWarning(L"traversal: the balance beam's start is not as the research read it; a further player on a beam keeps "
                              L"the follow camera");
     }
+    if (!ReplaceStateSlot(image, facts::kBoardExitSlot, facts::kBoardExit, g_boardExit, &BoardExit))
+    {
+        platform::LogWarning(L"traversal: the switch board's exit is not as the research read it; a further player's press of a board "
+                             L"plays its animation but the board's door or lift does not answer");
+    }
     g_installed = true;
     control::Register({.name  = L"traversal.action",
                        .shape = control::Shape::Text,
@@ -1564,6 +1574,7 @@ void Remove() noexcept
 {
     // The four lock calls stay redirected (see the header): with the component tick restored no seat's component ticks
     // scoped again, so they pass straight through.
+    g_boardExit.Restore();
     g_balanceStart.Restore();
     g_monkeyBarsExit.Restore();
     g_monkeyBarsStart.Restore();

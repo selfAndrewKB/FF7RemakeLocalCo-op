@@ -37,6 +37,7 @@
 #include "battle/party_switch_rules.h"
 #include "battle/targeting.h"
 #include "battle/lock_camera.h"
+#include "world/push_events.h"
 #include "world/run_catch_up.h"
 #include "world/talk_gather.h"
 #include "world/traversal_action.h"
@@ -558,6 +559,7 @@ void Session::Forget(Seat& seat) noexcept
 {
     seat.localPlayer = nullptr;
     seat.standIn     = facts::kPlayerTypeNone;  // out of the game: back to its own row when it joins again
+    world::push_events::OnSeatLeaving(seat.index);
     EndMemberModules(seat);
     scopes::Unbind(seat.index);
     seat_objects::Forget(seat.index);
@@ -895,6 +897,7 @@ try
     // While the seat's controller and member still exist, and the member still the seat's (the modules end the seat's
     // lock and menu in its own scopes). A leave the funnel refuses below costs one lock and one menu rebuild: the
     // command menu sets the seat up again on its next tick, the lock is pressed again.
+    world::push_events::OnSeatLeaving(seat.index);  // a lever event of the seat's ends while its scopes still answer for it
     EndMemberModules(seat);
     // The seat's member goes back to its AI first, through the game's leader funnel.
     if (seatInstalled_ && !party_seat::Unseat(seat.index, Field((*players)[0], facts::kLocalPlayerController), controller))

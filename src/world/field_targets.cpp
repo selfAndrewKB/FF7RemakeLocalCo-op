@@ -18,6 +18,8 @@
 #include "players/party_member.h"
 #include "players/scopes.h"
 #include "players/seats.h"
+#include "world/push_event_rules.h"
+#include "world/push_events.h"
 #include "world/target_icons.h"
 #include "world/talk_presses.h"
 #include "world/traversal_action.h"
@@ -59,7 +61,8 @@ enum class Kind : std::uint8_t
 {
     None,
     Situation,  // a SituationTrigger row on its state: the situation system (player 1's)
-    Layout,     // an ObjectLayout row: examine points, push-button events, battle starts (player 1's)
+    Layout,     // an ObjectLayout row: examine points, battle starts, the story's push-button events (player 1's)
+    Lever,      // an ObjectLayout row naming a push-button row a player may work: a lever, a switch (world/push_events.h)
     Npc,        // an ObjectActor row: an NPC's talk (quest NPCs, shopkeepers): its state trigger
     Enemy,      // an ObjectEnemy row (player 1's)
     Chest,      // an ObjectTreasure row: a chest or a shining item on the ground
@@ -68,6 +71,8 @@ enum class Kind : std::uint8_t
     Swing,     // TarzanJump_ with the member's own tag: its swing's press
     HookShot,  // HookShot_: the grappling hook (its target shows only while the member stands in its hook area)
     Curtain,   // Curtain_: a door-like pass-through (admitted as an experiment)
+    Board,     // OperationBoard_: a quick-press switch board (a wall or floor button, a key console), the member's own field action
+    ElevatorBoard,  // OperationBoard_ ... ELVSwitch: an elevator's (player 1's: the cabin may carry the party)
     Other,
 };
 
@@ -78,6 +83,7 @@ const wchar_t* KindName(Kind kind) noexcept
         case Kind::None: return L"nothing";
         case Kind::Situation: return L"a situation";
         case Kind::Layout: return L"an examine point or object event";
+        case Kind::Lever: return L"a lever or switch";
         case Kind::Npc: return L"an NPC";
         case Kind::Enemy: return L"an enemy object";
         case Kind::Chest: return L"a chest or item";
@@ -86,15 +92,27 @@ const wchar_t* KindName(Kind kind) noexcept
         case Kind::Swing: return L"a swing";
         case Kind::HookShot: return L"a grappling-hook point";
         case Kind::Curtain: return L"a curtain";
+        case Kind::Board: return L"a switch board";
+        case Kind::ElevatorBoard: return L"an elevator's switch board";
         case Kind::Other: return L"another target";
     }
     return L"?";
 }
 
+/// The seat's member has the switch-board animation pack (Cloud, Barret and Tifa ship it; a character without one would
+/// stand at the board with nothing to finish its action).
+bool BoardMember(int seat) noexcept
+{
+    const std::uint8_t type = players::scopes::MemberType(seat);
+    return type == facts::kPlayerTypeCloud || type == facts::kPlayerTypeBarret || type == facts::kPlayerTypeTifa;
+}
+
 /// Pressed for a further player now: a chest and an NPC always; a door, a curtain or the member's own swing only while
-/// the member's field actions run as its player's (world/traversal_action.h), the grappling hook only while its three
-/// lock calls are also redirected (traversal_action::HookShotReady); read at each use (a level change can stop that).
-bool Admitted(Kind kind) noexcept
+/// the member's field actions run as its player's (world/traversal_action.h), a switch board the same and only for a member
+/// with its animation, the grappling hook only while its three lock calls are also redirected
+/// (traversal_action::HookShotReady), a lever only while its event calls are placed and no event runs
+/// (push_events::Admitted); read at each use (a level change can stop that).
+bool Admitted(Kind kind, int seat) noexcept
 {
     switch (kind)
     {
@@ -103,7 +121,9 @@ bool Admitted(Kind kind) noexcept
         case Kind::Door:
         case Kind::Swing:
         case Kind::Curtain: return traversal_action::Scoping();
+        case Kind::Board: return traversal_action::Scoping() && BoardMember(seat);
         case Kind::HookShot: return traversal_action::HookShotReady();
+        case Kind::Lever: return push_events::Admitted(seat);
         default: return false;
     }
 }
@@ -284,8 +304,7 @@ std::size_t ExchangeWasCurrent(std::uint8_t* mgr, std::uint8_t* own, std::size_t
 
 bool Found(std::size_t table, std::uint64_t name) noexcept
 {
-    void* row = nullptr;
-    return name != 0 && platform::CallGuarded(g_findRow, row, reinterpret_cast<const void*>(g_tables[table]), name) && row != nullptr;
+    return RowIn(g_tables[table], name) != nullptr;
 }
 
 bool StartsWith(std::uint64_t name, const char* prefix) noexcept
@@ -300,11 +319,8 @@ using platform::Lower;
 bool OwnSwing(std::uint64_t name, const void* member) noexcept
 try
 {
-    const auto*   tags  = static_cast<const std::uint8_t*>(ReadPointer(member, facts::kActorTags));
-    std::int32_t  count = 0;
-    std::uint64_t tag   = 0;
-    return tags != nullptr && Read(static_cast<const std::uint8_t*>(member) + facts::kActorTags + 8, count) && count > 0 &&
-           Read(tags, tag) && tag != 0 && Lower(Name(name)) == Lower(L"TarzanJump_" + Name(tag));
+    const std::uint64_t tag = FirstTag(member);
+    return tag != 0 && Lower(Name(name)) == Lower(L"TarzanJump_" + Name(tag));
 }
 catch (...)
 {
@@ -324,7 +340,7 @@ Kind Classify(std::uint64_t name, std::uint64_t state, const void* member) noexc
     }
     if (Found(1, name))
     {
-        return Kind::Layout;
+        return push_events::LeverRow(name, member) ? Kind::Lever : Kind::Layout;
     }
     if (Found(2, name))
     {
@@ -358,6 +374,10 @@ Kind Classify(std::uint64_t name, std::uint64_t state, const void* member) noexc
     {
         return Kind::Curtain;
     }
+    if (StartsWith(name, "OperationBoard_"))
+    {
+        return push_event_rules::ElevatorBoard(Name(name)) ? Kind::ElevatorBoard : Kind::Board;
+    }
     return Kind::Other;
 }
 
@@ -386,7 +406,7 @@ void NoteTarget(int seat, SeatState& state) noexcept
 class LeftToPlayerOne
 {
 public:
-    LeftToPlayerOne(SeatState& state, std::uint8_t* mgr) noexcept : mgr_(mgr)
+    LeftToPlayerOne(int seat, SeatState& state, std::uint8_t* mgr) noexcept : mgr_(mgr)
     {
         std::bitset<kItems> active;
         if (!target_icons::ActiveItems(mgr, active))
@@ -409,7 +429,7 @@ public:
                 state.itemKind[i]  = Classify(name, named, state.member);
             }
             constexpr std::uint8_t disabled = 1;
-            if (name == 0 || Admitted(state.itemKind[i]) || !Read(item + facts::kTargetsItemDisabled, off) || off != 0 ||
+            if (name == 0 || Admitted(state.itemKind[i], seat) || !Read(item + facts::kTargetsItemDisabled, off) || off != 0 ||
                 !platform::WriteGuarded(item + facts::kTargetsItemDisabled, &disabled, 1))
             {
                 continue;
@@ -508,7 +528,7 @@ void PickFor(int seat, void* mgr, float dt, TickFn original) noexcept
         }
         {
             // The seat's own icons (its far-icon sweep, in its copy's timer, meets only those), its targets only.
-            const LeftToPlayerOne        leftOut(state, live);
+            const LeftToPlayerOne        leftOut(seat, state, live);
             const target_icons::SeatSwap icons(seat, mgr, state.localPlayer, true);
             const platform::ByteScope    swapped(state.copy);
             if (swapped.Held() && icons.Held())
@@ -696,7 +716,7 @@ void PressFor(int seat, void* mgr, float dt, TickFn original) noexcept
         std::uint8_t latch = 0;
         Read(live + facts::kTargetsLatch, latch);
         // Released too: the game's press then resets the hold timer.
-        if (ok && Admitted(state.kind))
+        if (ok && Admitted(state.kind, seat))
         {
             std::uint8_t pushHeld = 0;
             const bool   kept     = push != nullptr && Read(push + facts::kPushButtonsHeld, pushHeld);
@@ -1122,6 +1142,35 @@ try
 catch (...)
 {
     return L"?";
+}
+
+bool ActionHeld(bool& held) noexcept
+{
+    return g_installed && players::action_key::Test(g_held, g_key, held);
+}
+
+void* RowIn(std::uintptr_t tables, std::uint64_t name) noexcept
+{
+    void* row = nullptr;
+    return name != 0 && tables != 0 && g_findRow != nullptr &&
+                   platform::CallGuarded(g_findRow, row, reinterpret_cast<const void*>(tables), name)
+               ? row
+               : nullptr;
+}
+
+void* LayoutRow(std::uint64_t name) noexcept
+{
+    return RowIn(g_tables[1], name);
+}
+
+std::uint64_t FirstTag(const void* member) noexcept
+{
+    const auto*   tags  = static_cast<const std::uint8_t*>(ReadPointer(member, facts::kActorTags));
+    std::int32_t  count = 0;
+    std::uint64_t tag   = 0;
+    return tags != nullptr && Read(static_cast<const std::uint8_t*>(member) + facts::kActorTags + 8, count) && count > 0 && Read(tags, tag)
+               ? tag
+               : 0;
 }
 
 std::wstring Reading() noexcept

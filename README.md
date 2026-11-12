@@ -465,6 +465,12 @@ src/
                             away
     party_warp_rules.h      A further player's character brought back beside player 1's in the field (world/party_warp.h
                             applies it), as pure rules: when the ask is refused, and where the character is put
+    push_event_rules.h      Which push-button rows (a switch, a lever, a terminal; world/push_events.h) a player beyond
+                            player 1 may work, and how the row is run for that player's character, as pure functions
+                            over the row's names
+    push_events             Players 2 and 3 work the game's levers and switches with their own pad, as player 1 does: a
+                            push-button event (a hold while a gauge fills: the game's own event on the game's own data)
+                            runs in that player's identity, on that …
     referenced_actor        The game's read through a character's referenced actor, guarded where that actor is not an
                             End actor (research/RE-referenced-actor-crash.md)
     run_catch_up            A companion a further player walked past its own story box is brought back beside player 1's
@@ -639,5 +645,5 @@ src/
                             game
     title_row_rules.h       Where the title menu's Co-op row goes among its rows' kinds (research/RE-title-menu.md):
                             directly below Options, so the rows through Options keep their places
-tests/                      67 host-side test programs (ctest), one per pure header or code stub; run without the game
+tests/                      68 host-side test programs (ctest), one per pure header or code stub; run without the game
 ```

@@ -83,6 +83,7 @@
 #include "world/env_sets.h"
 #include "world/level_watch.h"
 #include "world/field_targets.h"
+#include "world/push_events.h"
 #include "world/forced_walk.h"
 #include "world/npc_crowd.h"
 #include "world/npc_detail.h"
@@ -400,6 +401,9 @@ constexpr std::array kModules{
     // without it further players cannot open chests or doors
     Module{.name = L"field targets", .install = Call<&world::field_targets::Install>, .remove = &world::field_targets::Remove,
            .removal = Removal::WithPlayersOut},
+    // without it further players press no levers or switches of their own
+    Module{.name = L"levers", .install = Call<&world::push_events::Install>, .remove = &world::push_events::Remove,
+           .removal = Removal::WithPlayersOut, .needs = {Need<&world::field_targets::Install>()}},
     // without it a further player's shop is player 1's (camera, facing)
     Module{.name = L"shop act", .install = Call<&world::shop_act::Install>, .remove = &world::shop_act::Remove,
            .removal = Removal::WithPlayersOut, .needs = {Need<&world::field_targets::Install>()}},
@@ -646,6 +650,7 @@ void TickWorld(const Frame& frame) noexcept
         world::story_boxes::TickSeat(seat, member);
         players::nav_area::TickSeat(seat, member);
         world::field_targets::TickSeat(seat, localPlayer, member);
+        world::push_events::TickSeat(seat, localPlayer, member);
         world::search_arrows::TickSeat(seat, localPlayer);
         audio::listeners::TickSeat(seat, controller);
     }
@@ -653,6 +658,7 @@ void TickWorld(const Frame& frame) noexcept
     players::ai_move_guard::Tick();
     world::story_boxes::Tick(frame.pawnOne);
     world::field_targets::Tick();
+    world::push_events::Tick();
     world::search_arrows::Tick();
     world::anim_views::Tick();
     world::npc_crowd::Tick();

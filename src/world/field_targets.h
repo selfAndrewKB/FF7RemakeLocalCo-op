@@ -87,4 +87,16 @@ bool TalkPressSpot(std::uint64_t object, float (&out)[3]) noexcept;
 /// An FName's text for a log line (the name's number when it cannot be read).
 std::wstring NameOf(std::uint64_t name) noexcept;
 
+/// The FieldAction key held, as the game's getter answers it (inside a pad's button scope, that pad's). False when the
+/// read could not be made (`held` unchanged).
+bool ActionHeld(bool& held) noexcept;
+
+/// The game's own row lookup over a set of three row tables (`tables`: the set's live address), guarded; null when the
+/// name is in none. The ObjectLayout row of a target name (the dispatch's second table).
+void* RowIn(std::uintptr_t tables, std::uint64_t name) noexcept;
+void* LayoutRow(std::uint64_t name) noexcept;
+
+/// A character's first actor tag (the name the field's rows and events key a party member on); 0 when unread.
+std::uint64_t FirstTag(const void* member) noexcept;
+
 }  // namespace lss::world::field_targets

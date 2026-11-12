@@ -863,6 +863,7 @@ inline constexpr std::uint32_t  kPartyPrimaryController = 0x00;  // AEndPartyMan
 inline constexpr std::uint32_t  kPartySlotTypes        = 0x230;  // u8[3]: the deployed members' player types by ordinal
 inline constexpr std::uint32_t  kPartyLeaderType       = 0x233;  // the leader's player type byte
 inline constexpr std::uint8_t   kPlayerTypeNone        = 9;      // EPlayerType::NONE (an empty row, no member)
+inline constexpr std::uint8_t   kPlayerTypeCloud = 0, kPlayerTypeBarret = 1, kPlayerTypeTifa = 2;  // the three with the switch-board animation pack
 
 // ULocalPlayer's split-screen view as fractions of the viewport (stock 4.18, not reflected: between ViewportClient
 // +0x58 and LastViewLocation, before AspectRatioAxisConstraint +0x7C).
@@ -2962,6 +2963,47 @@ inline constexpr std::array<std::uint8_t, 16> kChestOpenBeginEntry{
 inline constexpr platform::SlotFact kChestOpenBegin{L"the chest open's Begin", kChestOpenBeginSlot,
                                                     {L"ActTreasure_Begin_ActorNamedElseLeader", 0x140E16E60, kChestOpenBeginEntry}};
 inline constexpr std::uint32_t kChestRunnerName = 0x6C, kChestRunnerActor = 0x28, kChestRunnerOpenerIsLeader = 0x8C;
+
+// --- Push-button events for a further player (RE-further-player-levers.md) -----------------------------------------------
+/// The push-button manager (g_EndGameRoot+0x1C8): 64 event objects (0xA0 bytes each from +0x10), its active list (a linked
+/// list: the head at +0x3038, 0 when empty; a node's next at +8 and its slot at +0x18) and the lock its dispatcher takes.
+inline constexpr std::uint32_t  kPushButtonsObjects    = 0x10;
+inline constexpr std::uint32_t  kPushObjStride         = 0xA0;
+inline constexpr std::int32_t   kPushSlotCount         = 64;
+inline constexpr std::uint32_t  kPushButtonsActiveHead = 0x3038;
+inline constexpr std::uint32_t  kPushNodeNext          = 0x08;
+inline constexpr std::uint32_t  kPushNodeSlot          = 0x18;
+inline constexpr std::uintptr_t kPushButtonsLock       = 0x14584E0B0;  // a CRITICAL_SECTION
+/// An event object: its step (the game's switch), its request name (the row's id, the key of the finished-animation
+/// notify) and its held byte (copied from the manager's FieldAction byte before each step).
+inline constexpr std::uint32_t kPushObjStep     = 0x0C;
+inline constexpr std::uint32_t kPushObjActionId = 0x2C;
+inline constexpr std::uint32_t kPushObjHeld     = 0x90;
+inline constexpr std::int32_t kPushStepLevelWait = 5, kPushStepPhaseZero = 6, kPushStepHold = 7, kPushStepPress = 8, kPushStepPhaseTwoWait = 9,
+                              kPushStepCancelWait = 11, kPushStepEnd = 12, kPushStepFreed = 13;
+/// An ObjectLayout row's PushButtonActionID (FName), the push-button table set (three UEndDataTable*, the dispatch's
+/// shape) and its row: the actor names (TArray<FName>) and the actions (TArray<FName>, four per actor).
+inline constexpr std::uint32_t  kLayoutPushButtonId    = 0x68;
+inline constexpr std::uintptr_t kTablePushButtonAction = 0x145843590;
+inline constexpr std::uint32_t  kPushRowActorNames = 0x18, kPushRowActorCount = 0x20, kPushRowActions = 0x28, kPushRowActionCount = 0x30;
+/// The four calls: the press's Init of an event (in FieldActionMgr__TickPressed_LeaderBased), the field step's step and free
+/// of each active event, and the dispatcher's finished-animation notify; each inside one 16-byte block.
+inline constexpr std::uintptr_t kPushInitCall   = 0x14101C0B9;  // E8 B2 28 10 00
+inline constexpr std::uintptr_t kPushStepCall   = 0x140FF5AA1;  // E8 4A 97 12 00
+inline constexpr std::uintptr_t kPushNotifyCall = 0x140FF71C7;  // E8 B4 9B 12 00
+inline constexpr std::uintptr_t kPushFreeCall   = 0x140FF5AE7;  // E8 C4 94 12 00
+inline constexpr std::array<std::uint8_t, 16> kPushInitEntry{0x40, 0x55, 0x53, 0x56, 0x57, 0x41, 0x54, 0x41, 0x56, 0x41, 0x57, 0x48, 0x8D, 0xAC, 0x24, 0x40};
+inline constexpr platform::FunctionFact kPushInit{L"PushButtonEvent_Init_StoreLeaderWeak", 0x14111E970, kPushInitEntry};
+inline constexpr std::array<std::uint8_t, 16> kPushStepEntry{0x40, 0x55, 0x41, 0x56, 0x48, 0x8D, 0xAC, 0x24, 0x48, 0xFF, 0xFF, 0xFF, 0x48, 0x81, 0xEC, 0xB8};
+inline constexpr platform::FunctionFact kPushStep{L"EventControl_TickSteps_PushButton", 0x14111F1F0, kPushStepEntry};
+inline constexpr std::array<std::uint8_t, 16> kPushNotifyEntry{0x48, 0x89, 0x5C, 0x24, 0x10, 0x48, 0x89, 0x6C, 0x24, 0x18, 0x56, 0x57, 0x41, 0x54, 0x41, 0x56};
+inline constexpr platform::FunctionFact kPushNotify{L"EventControl_OnActorRequestFinished", 0x141120D80, kPushNotifyEntry};
+inline constexpr std::array<std::uint8_t, 16> kPushFreeEntry{0x40, 0x57, 0x41, 0x54, 0x48, 0x83, 0xEC, 0x38, 0x48, 0x63, 0x81, 0x88, 0x00, 0x00, 0x00, 0x45};
+inline constexpr platform::FunctionFact kPushFree{L"PushButtonEvent_Free_OnOffsOff", 0x14111EFB0, kPushFreeEntry};
+/// The operation board state's Exit (a vtable slot): its end triggers go to the level as the party leader's.
+inline constexpr std::uintptr_t kBoardExitSlot = 0x144BB75C8;
+inline constexpr std::array<std::uint8_t, 16> kBoardExitEntry{0x48, 0x89, 0x5C, 0x24, 0x10, 0x57, 0x48, 0x83, 0xEC, 0x60, 0x48, 0x8B, 0xD9, 0xE8, 0x1E, 0xD2};
+inline constexpr platform::FunctionFact kBoardExit{L"FieldActionOperationBoardState_Exit_ClearCtrlFlags3000", 0x1410592E0, kBoardExitEntry};
 /// The pool's items as the pick and the target removal read them (item = entry - 0x18): the target name (entry +0x0C),
 /// its state-object name (entry +0x14, the dispatch's SituationTrigger key), the icon widget (entry +0x60), the location
 /// dirty byte (entry +0x92: posted outside the pick, consumed by the first pick that meets it) and the disabled byte

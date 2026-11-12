@@ -169,6 +169,7 @@ add_library(LocalSplitScreen SHARED
     src/world/talk_gather.cpp
     src/render/area_blend.cpp
     src/world/field_targets.cpp
+    src/world/push_events.cpp
     src/world/target_icons.cpp
     src/world/traversal_action.cpp
     src/world/traversal_walkup.cpp
@@ -349,6 +350,13 @@ add_executable(PartySwitchRulesTests
 target_include_directories(PartySwitchRulesTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_compile_features(PartySwitchRulesTests PRIVATE cxx_std_20)
 add_test(NAME party_switch_rules COMMAND PartySwitchRulesTests)
+
+add_executable(PushEventRulesTests
+    tests/push_event_rules_test.cpp
+)
+target_include_directories(PushEventRulesTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(PushEventRulesTests PRIVATE cxx_std_20)
+add_test(NAME push_event_rules COMMAND PushEventRulesTests)
 
 add_executable(SunOwnerTests
     tests/sun_owner_test.cpp
