@@ -104,13 +104,13 @@ struct LayoutPoint
     bool operator==(const LayoutPoint&) const = default;
 };
 
-/// The UI particle draw's viewport in one column's image, as fractions of the image: a box's centre and width (its
-/// height follows from the target's shape at the draw).
+/// The UI particle draw's viewport in one column's image, as fractions of the image: a box's centre, width and height.
 struct EffectBox
 {
     float centreX = 0.0f;
     float centreY = 0.0f;
     float width   = 0.0f;
+    float height  = 0.0f;
 
     bool operator==(const EffectBox&) const = default;
 };
@@ -121,10 +121,14 @@ struct EffectBox
 /// column's draw puts that one result over its whole image. The box makes `tickLayout`'s half-width the band's drawing
 /// of this column's `layout` units (its width = the band's scale times tickLayout's width) and puts the centre where
 /// `tickLayout`'s centre falls in this column's band, moved by the distance the widget the points belong to (anchored
-/// at `anchor` of the 1920x1080 frame) stands from its design place in `layout`. The image's centre and width for a
-/// 16:9 column while `tickLayout` is 16:9 too; past an edge of the image for a wide or tall column, or for a 16:9 one
-/// beside a wide `tickLayout`. Nullopt for an unknown layout, band or image.
+/// at `anchor` of the 1920x1080 frame) stands from its design place in `layout`. Its height is the width over the
+/// column's view's shape (`viewWidth` x `viewHeight`, window pixels): the draw scales the vertical axis by the scene
+/// view's aspect, not the viewport's, so a box of the view's shape puts one half-width on both axes, as the game's
+/// conversion made them. The image's centre and size for a 16:9 column while `tickLayout` is 16:9 too; past an edge of
+/// the image for a wide or tall column, or for a 16:9 one beside a wide `tickLayout`. Nullopt for an unknown layout,
+/// band, image or view.
 std::optional<EffectBox> EffectViewport(const LayoutSize& tickLayout, const LayoutSize& layout, const IntRect& band,
-                                        std::int32_t imageWidth, std::int32_t imageHeight, const LayoutPoint& anchor) noexcept;
+                                        std::int32_t imageWidth, std::int32_t imageHeight, float viewWidth, float viewHeight,
+                                        const LayoutPoint& anchor) noexcept;
 
 }  // namespace lss::hud

@@ -110,25 +110,28 @@ EntryPlacement PlaceInBand(const IntRect& band, std::int32_t imageWidth, std::in
 }
 
 std::optional<EffectBox> EffectViewport(const LayoutSize& tickLayout, const LayoutSize& layout, const IntRect& band,
-                                        std::int32_t imageWidth, std::int32_t imageHeight, const LayoutPoint& anchor) noexcept
+                                        std::int32_t imageWidth, std::int32_t imageHeight, float viewWidth, float viewHeight,
+                                        const LayoutPoint& anchor) noexcept
 {
     if (!(tickLayout.width > 0.0f) || !(tickLayout.height > 0.0f) || !(layout.width > 0.0f) || !(layout.height > 0.0f) ||
-        band.Width() <= 0 || band.Height() <= 0 || imageWidth <= 0 || imageHeight <= 0 || !std::isfinite(anchor.x) ||
+        band.Width() <= 0 || band.Height() <= 0 || !Usable(imageWidth, imageHeight, viewWidth, viewHeight) || !std::isfinite(anchor.x) ||
         !std::isfinite(anchor.y))
     {
         return std::nullopt;
     }
     // The band's drawing: layout units onto the band's pixels. The game's result is in half-widths of `tickLayout`, and
-    // the draw puts one half-width at half the box, so the box is tickLayout's width in the band's pixels per unit. The
-    // game converts the design point against `tickLayout`'s centre, so a point at that centre lands at the box's centre;
-    // in this column the widget the points belong to stands anchor * (layout - frame) from its design place, so the
-    // centre goes there too.
+    // the draw puts one half-width at half the box's width, so the box is tickLayout's width in the band's pixels per
+    // unit; the draw scales the vertical axis by the view's aspect, so a box of the view's shape puts the same
+    // half-width on it. The game converts the design point against `tickLayout`'s centre, so a point at that centre
+    // lands at the box's centre; in this column the widget the points belong to stands anchor * (layout - frame) from
+    // its design place, so the centre goes there too.
     const float scale   = static_cast<float>(band.Height()) / layout.height;
     const float centreX = static_cast<float>(band.minX) + (tickLayout.width / 2.0f + anchor.x * (layout.width - 1920.0f)) * scale;
     const float centreY = static_cast<float>(band.minY) + (tickLayout.height / 2.0f + anchor.y * (layout.height - 1080.0f)) * scale;
     const float width   = tickLayout.width * scale;
+    const float height  = width * viewHeight / viewWidth;
     return EffectBox{centreX / static_cast<float>(imageWidth), centreY / static_cast<float>(imageHeight),
-                     width / static_cast<float>(imageWidth)};
+                     width / static_cast<float>(imageWidth), height / static_cast<float>(imageHeight)};
 }
 
 }  // namespace lss::hud

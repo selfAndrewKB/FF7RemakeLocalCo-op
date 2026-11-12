@@ -117,6 +117,8 @@ struct ColumnOverlay
     IntRect      band{};
     std::int32_t imageWidth  = 0;
     std::int32_t imageHeight = 0;
+    float        viewWidth   = 0.0f;  // the column's view, window pixels (the box takes its shape)
+    float        viewHeight  = 0.0f;
 };
 ColumnOverlay g_columnOverlay[kMaxColumns];
 bool          g_columnSeen[kMaxColumns] = {};
@@ -236,9 +238,10 @@ std::uintptr_t Overlay() noexcept
 /// Column 0's pass is the frame's last, so the overlay holds its layout at the widget tick that places the UI particles
 /// (and the conversion's size reads answer it in the further passes, below): each column recorded this frame gets its
 /// box against it; a column whose band did not apply gets none; one not recorded keeps its last.
-void RecordColumn(int column, const LayoutSize& layout, const IntRect& band, std::int32_t imageWidth, std::int32_t imageHeight) noexcept
+void RecordColumn(int column, const LayoutSize& layout, const IntRect& band, std::int32_t imageWidth, std::int32_t imageHeight, float viewWidth,
+                  float viewHeight) noexcept
 {
-    g_columnOverlay[column] = {layout, band, imageWidth, imageHeight};
+    g_columnOverlay[column] = {layout, band, imageWidth, imageHeight, viewWidth, viewHeight};
     g_columnSeen[column]    = true;
     if (column != 0)
     {
@@ -256,7 +259,8 @@ void RecordColumn(int column, const LayoutSize& layout, const IntRect& band, std
         }
         const ColumnOverlay& seen = g_columnOverlay[i];
         const auto           box  = columnZero && seen.band.Height() > 0
-                                        ? EffectViewport(layout, seen.layout, seen.band, seen.imageWidth, seen.imageHeight, anchor)
+                                        ? EffectViewport(layout, seen.layout, seen.band, seen.imageWidth, seen.imageHeight, seen.viewWidth,
+                                                         seen.viewHeight, anchor)
                                         : std::nullopt;
         ui_effect_pass::PublishColumnViewport(i, box.value_or(EffectBox{}), box.has_value());
         g_columnSeen[i] = false;
@@ -313,7 +317,7 @@ IntRect* LayoutRect(IntRect* out)
     if (out == nullptr || out->minX != 0 || out->minY != 0 || overlay == 0)
     {
         g_hostSet[column].valid = false;  // an unexpected rect or no overlay: no band in this pass either
-        RecordColumn(column, kSoloLayout, IntRect{}, 0, 0);
+        RecordColumn(column, kSoloLayout, IntRect{}, 0, 0, 0.0f, 0.0f);
         return result;
     }
     // The host size the render stored just before this call: the game viewport widget's size, in window pixels.
@@ -364,7 +368,7 @@ IntRect* LayoutRect(IntRect* out)
     {
         g_hostSet[column].valid = false;  // no band in this pass: nothing is placed outside the render with its set
     }
-    RecordColumn(column, applied ? LayoutSizeOf(band) : kSoloLayout, applied ? band : IntRect{}, image.Width(), image.Height());
+    RecordColumn(column, applied ? LayoutSizeOf(band) : kSoloLayout, applied ? band : IntRect{}, image.Width(), image.Height(), viewW, viewH);
     return result;
 }
 

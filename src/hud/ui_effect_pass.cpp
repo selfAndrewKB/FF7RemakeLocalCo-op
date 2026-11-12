@@ -51,10 +51,10 @@ enum Outcome : int
     kSet
 };
 
-/// A column's viewport as published: the box's centre and width as fractions of the image, and whether it applies (1)
-/// or not (0). A column's box is the last the overlay published for it: one whose band did not apply this frame gets
-/// none; one not recorded this frame keeps its last.
-std::array<platform::SeqFloats<4>, kMaxColumns> g_boxes;
+/// A column's viewport as published: the box's centre, width and height as fractions of the image, and whether it
+/// applies (1) or not (0). A column's box is the last the overlay published for it: one whose band did not apply this
+/// frame gets none; one not recorded this frame keeps its last.
+std::array<platform::SeqFloats<5>, kMaxColumns> g_boxes;
 
 // Set at install, then only read.
 platform::CallRedirect g_call;
@@ -116,14 +116,13 @@ bool AppendViewport(std::uint8_t* list, const Viewport& viewport) noexcept
            platform::WriteGuarded(list + facts::kRhiListCommandCount, &count, sizeof(count));
 }
 
-/// The box on the image, in whole pixels: the published width and centre, the image's shape for its height. A box
-/// starting above or left of the image is cut at its edge (this build's viewport cannot start there: the box then
-/// draws smaller, the particles' place in that column approximate), counted and logged with the box. False for a box
-/// without area.
-bool BoxViewport(const std::array<float, 4>& box, std::uint32_t imageW, std::uint32_t imageH, int column, Viewport& out) noexcept
+/// The box on the image, in whole pixels: the published centre, width and height. A box starting above or left of the
+/// image is cut at its edge (this build's viewport cannot start there: the box then draws smaller, the particles'
+/// place in that column approximate), counted and logged with the box. False for a box without area.
+bool BoxViewport(const std::array<float, 5>& box, std::uint32_t imageW, std::uint32_t imageH, int column, Viewport& out) noexcept
 {
     const float width   = box[2] * static_cast<float>(imageW);
-    const float height  = width * static_cast<float>(imageH) / static_cast<float>(imageW);
+    const float height  = box[3] * static_cast<float>(imageH);
     const float centreX = box[0] * static_cast<float>(imageW);
     const float centreY = box[1] * static_cast<float>(imageH);
     const long  minX    = std::lround(centreX - width / 2.0f);
@@ -163,7 +162,7 @@ std::uint64_t Draw(void* renderer, void* view, void* commandList) noexcept
     g_calls.fetch_add(1, std::memory_order_relaxed);
     g_lastColumn.store(column, std::memory_order_relaxed);
     int                  outcome = kSet;
-    std::array<float, 4> box{};
+    std::array<float, 5> box{};
     std::uint32_t        imageW = 0, imageH = 0;
     Viewport             viewport{};
     if (column < 0 || column >= kMaxColumns)
@@ -178,7 +177,7 @@ std::uint64_t Draw(void* renderer, void* view, void* commandList) noexcept
     {
         outcome = kNoBand;
     }
-    else if (box[3] < 0.5f)
+    else if (box[4] < 0.5f)
     {
         outcome = kBandNotApplying;
     }
@@ -295,12 +294,13 @@ void PublishColumnViewport(int column, const EffectBox& box, bool applies) noexc
     {
         return;
     }
-    // The box within reason: a width of up to two images (a wide layout beside a narrow column's), a centre at most an
-    // image away.
-    const bool usable = applies && std::isfinite(box.centreX) && std::isfinite(box.centreY) && std::isfinite(box.width) && box.width > 0.0f &&
-                        box.width <= 2.0f && box.centreX > -1.0f && box.centreX < 2.0f && box.centreY > -1.0f && box.centreY < 2.0f;
-    g_boxes[static_cast<std::size_t>(column)].Publish(usable ? std::array<float, 4>{box.centreX, box.centreY, box.width, 1.0f}
-                                                             : std::array<float, 4>{0.5f, 0.5f, 1.0f, 0.0f});
+    // The box within reason: a width and height of up to two images (a wide layout beside a narrow column's), a centre at
+    // most an image away.
+    const bool usable = applies && std::isfinite(box.centreX) && std::isfinite(box.centreY) && std::isfinite(box.width) &&
+                        std::isfinite(box.height) && box.width > 0.0f && box.width <= 2.0f && box.height > 0.0f && box.height <= 2.0f &&
+                        box.centreX > -1.0f && box.centreX < 2.0f && box.centreY > -1.0f && box.centreY < 2.0f;
+    g_boxes[static_cast<std::size_t>(column)].Publish(usable ? std::array<float, 5>{box.centreX, box.centreY, box.width, box.height, 1.0f}
+                                                             : std::array<float, 5>{0.5f, 0.5f, 1.0f, 1.0f, 0.0f});
 }
 
 void NoteUiPass(int column) noexcept

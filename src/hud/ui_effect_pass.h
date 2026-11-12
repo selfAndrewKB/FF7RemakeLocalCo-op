@@ -6,9 +6,10 @@
 // (hud/ui_targets.h), so once per column. The particle itself is one per effect (one position, one size for every
 // column: the game converts its layout point once, centred in the layout the overlay holds at that conversion and in
 // its half-widths), and a viewport is the one map every vertex goes through: set to a box of that layout's width at the
-// column's band's scale and the image's shape, centred where that layout's centre and the widget's own move land in the
-// column, it moves and scales every UI particle to the column's HUD at the band's scale, positions and sprite sizes
-// together, whatever the shader did before (hud/overlay_band.h EffectViewport). The glow's design points and the
+// column's band's scale and the column's view's shape (the draw scales the vertical axis by the scene view's aspect),
+// centred where that layout's centre and the widget's own move land in the column, it moves and scales every UI
+// particle to the column's HUD at the band's scale, positions and sprite sizes together, whatever the shader did before
+// (hud/overlay_band.h EffectViewport). The glow's design points and the
 // effect's own sizes stay the game's; without the pass (a build whose call is not found) the glow is drawn where the
 // game draws it. No engine call appends a viewport for this draw, so the replacement appends the game's own viewport
 // command with the box (the command AllocBind appends, allocated as AllocBind allocates it), calls the game's draw, and
@@ -36,8 +37,8 @@ bool Install(const platform::GameImage& image) noexcept;
 void Remove() noexcept;
 
 /// Game thread, from the overlay's rect call of the frame's last pass: the viewport of one column's UI particles
-/// (hud/overlay_band.h EffectViewport: a box's centre and width as fractions of the column's image, its height the
-/// image's shape), or none when the band does not apply to that column this frame. The box may reach past the image's
+/// (hud/overlay_band.h EffectViewport: a box's centre, width and height as fractions of the column's image), or none
+/// when the band does not apply to that column this frame. The box may reach past the image's
 /// right or bottom edge (the draw is clipped to the image).
 void PublishColumnViewport(int column, const EffectBox& box, bool applies) noexcept;
 
