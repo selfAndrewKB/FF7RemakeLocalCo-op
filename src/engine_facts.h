@@ -1639,6 +1639,34 @@ inline constexpr platform::FunctionFact kCycleLeader{L"BattleSystem_CycleLeader"
 /// E8 9F D0 59 FF). Both cross their 16-byte block (placed from the game thread, outside the tick).
 inline constexpr std::uintptr_t kDpadSwitchNextCall     = 0x14141D98E;
 inline constexpr std::uintptr_t kDpadSwitchPreviousCall = 0x14141D9DC;
+/// The command controller's input poll (FieldCommandCtrl_Tick_PollInputToRequests 0x14141C7B0, the one writer of the
+/// switch requests; RE-battle-switch.md §15) reads no key at all while the member at the controller's cached leader
+/// ordinal lies knocked out: its call of Party_IsMemberKOByType_State13(unused, u8 type) at 0x14141C9F5 (E8 A6 0D EA FF,
+/// inside its block) answering true leaves the poll. Single player never needs that poll then (the forced switch
+/// moves the leader off the body); with the forced switch refused, the d-pad is the only way off. The poll reads the
+/// d-pad with FieldCommandCtrl_IsKeyPressed(const FKey*, widget), bool, a lookup in the widget's key maps that consumes
+/// nothing, on the controller's command menu widget (FieldCommandCtrl_GetInputCommandMenuWidget(ctrl), null while the
+/// widget is not up: the read would then fall back to the merged input, player 1's); d-pad Left/Right switch members
+/// too unless the save data's byte at +0xB69BE is 1 (then they switch targets).
+inline constexpr std::uintptr_t kKoPollGateCall = 0x14141C9F5;
+inline constexpr std::array<std::uint8_t, 16> kMemberKnockedOutByTypeEntry{
+    0x40, 0x53, 0x48, 0x83, 0xEC, 0x20, 0x0F, 0xB6, 0xDA, 0xE8, 0x12, 0xA3, 0x39, 0xFF, 0x48, 0x8B};
+inline constexpr platform::FunctionFact kMemberKnockedOutByType{L"Party_IsMemberKOByType_State13", 0x1412BD7A0, kMemberKnockedOutByTypeEntry};
+inline constexpr std::array<std::uint8_t, 16> kCommandKeyPressedEntry{
+    0x48, 0x83, 0xEC, 0x48, 0x4C, 0x8B, 0xC2, 0x48, 0x85, 0xD2, 0x74, 0x39, 0x48, 0x8B, 0x01, 0x48};
+inline constexpr platform::FunctionFact kCommandKeyPressed{L"FieldCommandCtrl_IsKeyPressed", 0x141412250, kCommandKeyPressedEntry};
+inline constexpr std::array<std::uint8_t, 16> kCommandInputWidgetEntry{
+    0x40, 0x53, 0x48, 0x83, 0xEC, 0x20, 0x8B, 0x91, 0x04, 0x03, 0x00, 0x00, 0x85, 0xD2, 0x74, 0x5B};
+inline constexpr platform::FunctionFact kCommandInputWidget{L"FieldCommandCtrl_GetInputCommandMenuWidget", 0x141421F50, kCommandInputWidgetEntry};
+inline constexpr std::array<std::uint8_t, 16> kSaveDataGetEntry{
+    0x48, 0x83, 0xEC, 0x28, 0x48, 0x8B, 0x05, 0xAD, 0xBF, 0xE9, 0x04, 0x48, 0x85, 0xC0, 0x75, 0x46};
+inline constexpr platform::FunctionFact kSaveDataGet{L"SaveDataMgr_Get_cand", 0x14094D7B0, kSaveDataGetEntry};
+inline constexpr std::uint32_t  kSaveDataSidewaysTargets = 0xB69BE;    // u8 1: d-pad Left/Right switch targets, not members
+/// The d-pad's four FKey globals (each 24 bytes, its FName first), filled by the engine's static initialisers.
+inline constexpr std::uintptr_t kKeyDPadUp    = 0x145920758;  // EKeys::Gamepad_DPad_Up
+inline constexpr std::uintptr_t kKeyDPadDown  = 0x145920770;  // EKeys::Gamepad_DPad_Down
+inline constexpr std::uintptr_t kKeyDPadRight = 0x145920788;  // EKeys::Gamepad_DPad_Right
+inline constexpr std::uintptr_t kKeyDPadLeft  = 0x1459207A0;  // EKeys::Gamepad_DPad_Left
 
 // --- The battle warps (RE-battle-warp.md §3) --------------------------------------------------------------------
 // EncountMgr_BattleIn_DefaultLeaderAndTeleport's member loop fetches each present member with
@@ -3556,9 +3584,7 @@ inline constexpr platform::SlotFact kOptionsActionDown{
     {L"UEndNewOptionsMenu action down (pass 1)", 0x1412D4FB0, kOptionsActionDownEntry}};
 inline constexpr std::uint8_t   kOptionsStateRangeEdit = 5;      // kOptionsState: a Range row's gauge open
 inline constexpr std::uint32_t  kActionEventRepeat     = 0x10;   // SquareInput's action event: u8 1 for a held button's repeat
-inline constexpr std::uint32_t  kActionEventKey        = 0x20;   // its key's FName (8 bytes)
-inline constexpr std::uintptr_t kKeyDPadLeft           = 0x1459207A0;  // EKeys::Gamepad_DPad_Left (its FName)
-inline constexpr std::uintptr_t kKeyDPadRight          = 0x145920788;  // EKeys::Gamepad_DPad_Right
+inline constexpr std::uint32_t  kActionEventKey        = 0x20;   // its key's FName (8 bytes); the d-pad keys: kKeyDPadLeft, kKeyDPadRight
 /// The reflected functions the slider drives (ProcessEvent; the same calls the game's shop list makes).
 inline constexpr const wchar_t* kScrollBoxSetDesiredCount = L"/Script/EndGame.EndVirtualScrollBox:SetDesiredCount";
 inline constexpr const wchar_t* kScrollBoxSetScrollOffset = L"/Script/EndGame.EndVirtualScrollBox:SetScrollOffset";
