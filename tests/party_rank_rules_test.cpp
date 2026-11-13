@@ -32,6 +32,19 @@ void TheNextFreeMember()
     EXPECT(Lowest(0, 5) == 1 && Lowest(Bit(1) | Bit(2), 5) == 0);  // never past a formation's rows
 }
 
+/// A joiner takes the first free member no other player plays; with none free, the next one, and waits for it.
+void AJoinTakesAFreeMember()
+{
+    EXPECT(JoiningRank(0, Bit(2), 2) == 2);           // rank 1's member busy in a story moment: rank 2's is taken
+    EXPECT(JoiningRank(0, Bit(1) | Bit(2), 2) == 1);  // both free: the lowest
+    EXPECT(JoiningRank(0, 0, 2) == 1);                // none free: the lowest, waited on
+    EXPECT(JoiningRank(Bit(2), Bit(2), 2) == 1);      // the free one is another player's: the lowest left, waited on
+    EXPECT(JoiningRank(Bit(1), Bit(2), 2) == 2);
+    EXPECT(JoiningRank(Bit(1) | Bit(2), Bit(1), 2) == 0);  // every rank another player's
+    EXPECT(JoiningRank(0, Bit(2), 1) == 1);           // a party of two: rank 2 is not the party's
+    EXPECT(JoiningRank(0, 0, 0) == 1);                // no party read: the lowest, as before
+}
+
 /// The arrows step over every rank, wrapping; a rank another player holds is stepped onto too (the session trades).
 void TheArrows()
 {
@@ -60,6 +73,7 @@ void AShrunkParty()
 int main()
 {
     TheNextFreeMember();
+    AJoinTakesAFreeMember();
     TheArrows();
     AShrunkParty();
     if (g_failures != 0)

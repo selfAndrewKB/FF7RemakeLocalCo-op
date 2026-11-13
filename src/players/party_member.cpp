@@ -307,6 +307,11 @@ bool Install(const platform::GameImage& image) noexcept
 
 Choice Choose(int seat, void* playerOneController, void* taker, bool log, std::uint8_t standIn) noexcept
 {
+    return ChooseAt(seat, Rank(seat), playerOneController, taker, log, standIn);
+}
+
+Choice ChooseAt(int seat, int rank, void* playerOneController, void* taker, bool log, std::uint8_t standIn) noexcept
+{
     Choice choice;
     Party  party;
     if (seat < 1 || g_getPlayerActor == nullptr || !ReadParty(playerOneController, party))
@@ -340,7 +345,6 @@ Choice Choose(int seat, void* playerOneController, void* taker, bool log, std::u
     // Otherwise the row at the seat's rank (FreeRowsOf; a temporary state is waited on, never stepped over). A rank
     // whose row is player 1's now (player 1 away from the field leader) gives the field leader's character instead.
     const FreeRows rows    = FreeRowsOf(party);
-    const int      rank    = Rank(seat);
     const bool     support = rows.support;  // a row skipped for its battle-support status (the wait's reason with no row)
     bool           toField = false;
     if (target < 0 && rank >= 1 && rank <= rows.count)

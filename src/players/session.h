@@ -214,6 +214,11 @@ private:
     std::uint32_t RanksHeldBesides(int index) const noexcept;
     /// The seat other than `besides` that holds `rank` (in, waiting, or to rejoin), or 0.
     int SeatHoldingRank(int rank, int besides) const noexcept;
+    /// Rank `rank`'s member is one seat `index` would take now (party_member::ChooseAt gives a member: free, or in a walk
+    /// a join takes it through); not while its AI holds it in a scene, an animation or a script, or another player has it.
+    bool RankFree(int index, int rank, void* playerOneController) const noexcept;
+    /// The ranks RankFree holds for, as party_rank_rules' bits.
+    std::uint32_t FreeRanks(int index, void* playerOneController) const noexcept;
     /// Where a step of `index`'s rank in `dir` would land: the rank (`next`), the seat holding it (`holder`, 0 for none) and
     /// the party's rank count. False when the seat cannot step (CanStepMember's conditions).
     bool StepTarget(int index, int dir, int& next, int& holder, int& count) const noexcept;

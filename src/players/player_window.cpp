@@ -46,6 +46,7 @@ namespace text  = player_window_text;
 
 constexpr int kSeats = rules::kSeats;
 constexpr int kTitleClaimedSeconds = 4;  // the notice after a press on the title: which controller plays player 1
+constexpr unsigned kStepCheckTicks = 15;  // ticks between re-checks of an open window's character arrows
 
 struct Event
 {
@@ -88,6 +89,8 @@ std::array<bool, pad::kSlots>    g_bSeen{};               // by pad: B went down
 std::array<JoinAsk, kSeats>      g_joins{};               // asked, not yet made
 std::array<int, kSeats>          g_leaves{-1, -1, -1};    // players asked to leave, not yet out
 std::array<bool, kSeats>         g_waiting{};             // by seat: a join that waits; its window opens once in
+std::array<bool, kSeats>         g_stepShown{};           // by seat: the window shows the character arrows
+unsigned                         g_stepCheckTicks = 0;    // ticks since the arrows were last checked
 int                              g_startWhenSplit = -1;   // a spare pad's Start during one view: joins once split
 bool                             g_redraw         = false;
 bool                             g_title          = false;
@@ -246,7 +249,8 @@ void ShowWindows(const Frame& frame)
         w.note       = note.note;
         w.about      = note.about;
         const text::ScreenText t = text::TextFor(w);
-        shown[static_cast<std::size_t>(seat)] = true;
+        shown[static_cast<std::size_t>(seat)]       = true;
+        g_stepShown[static_cast<std::size_t>(seat)] = w.canStep;
         if (!hud::view_window::Show(seat, t.markup))
         {
             hud::view_prompt::Prompt p;
@@ -688,6 +692,19 @@ try
     {
         g_gameClosedSeen = hud::view_window::ClosedByGame();
         g_redraw         = true;
+    }
+    // A member that cannot be taken now, or can again, under an open window: the arrows follow, a few times a second.
+    if (++g_stepCheckTicks >= kStepCheckTicks && g_session != nullptr)
+    {
+        g_stepCheckTicks = 0;
+        for (int seat = 1; seat < kSeats; ++seat)
+        {
+            const auto at = static_cast<std::size_t>(seat);
+            if (g_open[at] && Plays(seat) && g_session->CanStepMember(seat) != g_stepShown[at])
+            {
+                g_redraw = true;
+            }
+        }
     }
     SetIdlePads();
     if (std::exchange(g_redraw, false))

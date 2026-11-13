@@ -631,13 +631,18 @@ void Session::Join(int index) noexcept
         Seat& seat = seats_[index];
         if (!ClaimsRank(seat))
         {
-            // The next party member no other player plays (party_rank_rules::Lowest; none free: its own number, and the
-            // member test below says why it waits).
-            const int lowest = party_rank_rules::Lowest(RanksHeldBesides(index), party_rank_rules::kMaxRanks);
-            const int rank   = lowest != 0 ? lowest : index;
+            // The first party member no other player plays that is free now, else the next one, waited on
+            // (party_rank_rules::JoiningRank; none: its own number, and the member test below says why it waits).
+            void* const         playerOne = PlayerOneController();
+            const std::uint32_t freeRanks = FreeRanks(index, playerOne);
+            const int joining = party_rank_rules::JoiningRank(RanksHeldBesides(index), freeRanks, party_member::Ranks(playerOne));
+            const int rank    = joining != 0 ? joining : index;
             if (rank != party_member::Rank(index))
             {
-                platform::Log(L"{} takes rank {} of the party order (the next member no other player plays)", seat.Name(), rank);
+                platform::Log(L"{} takes rank {} of the party order ({})", seat.Name(), rank,
+                              joining == 0                              ? L"every rank another player's: its own number"
+                              : party_rank_rules::Used(freeRanks, rank) ? L"the first member no other player plays that is free now"
+                                                                        : L"the next member no other player plays; none is free now");
             }
             party_member::SetRank(index, rank);
         }
@@ -663,6 +668,28 @@ int Session::SeatHoldingRank(int rank, int besides) const noexcept
     return 0;
 }
 
+bool Session::RankFree(int index, int rank, void* playerOneController) const noexcept
+{
+    // The member a join would take there now: free, or in a walk the join takes it through. The seat's own controller
+    // as the taker, so a member it holds already counts as free.
+    return party_member::ChooseAt(index, rank, playerOneController, ControllerOf(seats_[index].localPlayer), false,
+                                  facts::kPlayerTypeNone)
+               .member != nullptr;
+}
+
+std::uint32_t Session::FreeRanks(int index, void* playerOneController) const noexcept
+{
+    std::uint32_t freeRanks = 0;
+    for (int rank = 1; rank <= party_rank_rules::kMaxRanks; ++rank)
+    {
+        if (RankFree(index, rank, playerOneController))
+        {
+            freeRanks |= party_rank_rules::Bit(rank);
+        }
+    }
+    return freeRanks;
+}
+
 bool Session::StepTarget(int index, int dir, int& next, int& holder, int& count) const noexcept
 {
     // In the field only: a swap in a fight is not supported. A step onto another player's rank trades with that player,
@@ -671,15 +698,22 @@ bool Session::StepTarget(int index, int dir, int& next, int& holder, int& count)
     {
         return false;
     }
-    const int rank = party_member::Rank(index);
-    count          = party_member::Ranks(PlayerOneController());
-    next           = party_rank_rules::Step(rank, dir, RanksHeldBesides(index), count);
+    void* const playerOne = PlayerOneController();
+    const int   rank      = party_member::Rank(index);
+    count                 = party_member::Ranks(playerOne);
+    next                  = party_rank_rules::Step(rank, dir, RanksHeldBesides(index), count);
     if (next == rank)
     {
         return false;
     }
     holder = SeatHoldingRank(next, index);
-    return holder == 0 || !HandedToAi(holder);
+    if (holder != 0 && Seated(holder))
+    {
+        return !HandedToAi(holder);
+    }
+    // A rank no player plays now (no one's, or a waiting player's): only onto a member a join would take now. A step onto
+    // one that is not would give the player's own member back and leave the player out until that one is free.
+    return RankFree(index, next, playerOne);
 }
 
 bool Session::CanStepMember(int index) const noexcept

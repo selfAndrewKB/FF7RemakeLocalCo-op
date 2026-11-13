@@ -101,6 +101,10 @@ struct Choice
 /// deployed and not player 1's, whatever the rank. Logged at Debug when `log` is set.
 Choice Choose(int seat, void* playerOneController, void* taker, bool log, std::uint8_t standIn) noexcept;
 
+/// Choose at rank `rank` in place of the seat's own: the member the seat would play there now, or why it would wait
+/// (a join's pick and a player window's step test a rank before taking it).
+Choice ChooseAt(int seat, int rank, void* playerOneController, void* taker, bool log, std::uint8_t standIn) noexcept;
+
 /// The seat's rank: its place among the rows a further player may play, counted from the field leader's in the
 /// formation's order (players/party_rank_rules.h; 1 the first). The seat's own number until the session sets it. A
 /// changed rank makes the seat's member no longer its row (WhyNotInSlot), so the session gives it back and seats the
