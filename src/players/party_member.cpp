@@ -11,9 +11,11 @@
 #include "players/field_root.h"
 #include "players/game_globals.h"
 #include "players/lead_gate.h"
+#include "world/actor_place.h"
 #include "world/catch_up_move.h"
 
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <format>
 #include <string>
@@ -567,21 +569,57 @@ bool LeaderWithPlayer() noexcept
     return leader != nullptr && actor_fields::PlayerSlot(leader) != nullptr;
 }
 
-bool HandToAi(void* member) noexcept
+namespace {
+
+/// The PLAYER slot set to `controller` (null: none), then the game's reconcile, which possesses the character with
+/// the slot's controller or, empty, its AI.
+bool SetPlayerSlot(void* member, void* controller) noexcept
 {
-    void*        none    = nullptr;
     std::int64_t ignored = 0;
     return member != nullptr &&
-           platform::WriteGuarded(static_cast<std::uint8_t*>(member) + facts::kCharacterPlayerSlot, &none, sizeof(none)) &&
+           platform::WriteGuarded(static_cast<std::uint8_t*>(member) + facts::kCharacterPlayerSlot, &controller, sizeof(controller)) &&
            platform::CallGuarded(g_reconcile, ignored, static_cast<void*>(static_cast<std::uint8_t*>(member) + facts::kCharacter800));
+}
+
+}  // namespace
+
+bool SetActorType(void* member, std::uint8_t type) noexcept
+{
+    return member != nullptr &&
+           platform::CallGuarded(g_setActorType, static_cast<void*>(static_cast<std::uint8_t*>(member) + facts::kCharacter800), type);
+}
+
+bool HandToAi(void* member) noexcept
+{
+    // As the game's give back of a leader: the actor type PARTY, then the slot emptied. A PLAYER-typed member under its
+    // AI walks its scripted move to within a metre of the point and stands there, so a move that must arrive exactly
+    // never signals. The slot decides the hand; a type the setter refused is logged, and a hand that failed puts the
+    // type back.
+    if (!SetActorType(member, facts::kActorTypeParty))
+    {
+        platform::Log(L"party member: the actor type PARTY was refused at the hand (the setter faulted)");
+    }
+    const bool handed = SetPlayerSlot(member, nullptr);
+    if (!handed)
+    {
+        SetActorType(member, facts::kActorTypePlayer);
+    }
+    return handed;
 }
 
 bool ReturnTo(void* member, void* controller) noexcept
 {
-    std::int64_t ignored = 0;
-    return member != nullptr && controller != nullptr &&
-           platform::WriteGuarded(static_cast<std::uint8_t*>(member) + facts::kCharacterPlayerSlot, &controller, sizeof(controller)) &&
-           platform::CallGuarded(g_reconcile, ignored, static_cast<void*>(static_cast<std::uint8_t*>(member) + facts::kCharacter800));
+    // As the game's switch onto a new leader: the actor type PLAYER, then the slot naming the controller. The slot
+    // decides the return; a type left PARTY is every other member's and is logged.
+    if (controller == nullptr)
+    {
+        return false;
+    }
+    if (!SetActorType(member, facts::kActorTypePlayer))
+    {
+        platform::Log(L"party member: the actor type PLAYER was refused at the return (the setter faulted)");
+    }
+    return SetPlayerSlot(member, controller);
 }
 
 bool HandedToAi(void* member) noexcept
@@ -593,10 +631,36 @@ bool ReassertPlayerType(void* member) noexcept
 {
     std::uint8_t type = 0xFF;
     Read(static_cast<const std::uint8_t*>(ReadPointer(member, facts::kCharacterActorMode)) + facts::kActorModeType, type);
-    return member != nullptr &&
-           (type == facts::kActorTypePlayer ||
-            platform::CallGuarded(g_setActorType, static_cast<void*>(static_cast<std::uint8_t*>(member) + facts::kCharacter800),
-                                  facts::kActorTypePlayer));
+    return member != nullptr && (type == facts::kActorTypePlayer || SetActorType(member, facts::kActorTypePlayer));
+}
+
+std::wstring MotionDetail(void* member) noexcept
+try
+{
+    float place[3]{};
+    world::actor_place::ActorLocation(member, place);
+    const auto*  movement = static_cast<const std::uint8_t*>(ReadPointer(member, facts::kCharacterMovement));
+    float        velocity[3]{};
+    std::uint8_t mode = 0xFF;
+    Read(movement + facts::kMovementVelocity, velocity);
+    Read(movement + facts::kMovementMode, mode);
+    const std::uint8_t* ai    = FieldAiController(member);
+    std::uint8_t        armed = 0xFF;
+    std::int32_t        link  = -1;
+    Read(ai + facts::kFieldAiLinkArmed, armed);
+    Read(ai + facts::kFieldAiLinkId, link);
+    const auto*  component = actor_fields::FieldAction(member);
+    std::uint8_t action = 0xFF, running = 0xFF;
+    Read(component + facts::kFieldActionState, action);
+    Read(component + facts::kFieldActionRunning, running);
+    return std::format(L"at ({:.2f}, {:.2f}, {:.2f}) m, speed {:.2f} m/s, movement mode {}; link armed {} (id {}); field action {} "
+                       L"running {}",
+                       place[0] / 100, place[1] / 100, place[2] / 100, std::hypot(velocity[0], velocity[1]) / 100, mode, armed,
+                       link, action, running);
+}
+catch (...)
+{
+    return L"unread";
 }
 
 std::wstring AiDetail(void* member) noexcept

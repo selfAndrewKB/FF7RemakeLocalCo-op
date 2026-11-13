@@ -16,6 +16,7 @@
 #include "players/nav_area.h"
 #include "players/operator_battle_mode.h"
 #include "players/pad_buttons.h"
+#include "players/party_member.h"
 #include "players/scopes.h"
 #include "players/seat_objects.h"
 #include "players/seats.h"
@@ -89,6 +90,7 @@ bool  g_spawning = false;
 struct SeatCamera
 {
     bool noPlayerInputLogged = false;
+    bool moveHeldOff         = false;  // the field move is held off: the seat's member is with its AI
 };
 std::array<SeatCamera, kPlayers> g_seats;  // index = seat; [0] unused (player 1 is the game's)
 
@@ -449,9 +451,10 @@ void ProcessPlayerInput(void* self, float deltaSeconds, bool gamePaused)
     battle::lock_camera::AfterInput(seat, self);
 }
 
-/// AEndPlayerController::Tick_FieldMove: each player's left stick moves only that player's character. A seat's
-/// movement also takes its direction from the seat's camera (the game reads the primary controller's camera
-/// manager for the basis) and marks the seat's operator (the game writes flags on "the" operator).
+/// AEndPlayerController::Tick_FieldMove: each player's left stick moves only that player's character, and a seat's
+/// member with its AI is left to the AI. A seat's movement also takes its direction from the seat's camera (the game
+/// reads the primary controller's camera manager for the basis) and marks the seat's operator (the game writes flags
+/// on "the" operator).
 void FieldMove(void* self, float deltaSeconds)
 {
     if (!AnySeatIn())
@@ -470,6 +473,23 @@ void FieldMove(void* self, float deltaSeconds)
     if (seat == 0)
     {
         g_fieldMove(self, deltaSeconds);
+        return;
+    }
+    // A member with its AI (a scripted hold: its PLAYER slot empty, the controller still naming it as its character) is
+    // the AI's to move. The field move drives whatever character the controller names, possessed or not, adding the
+    // seat's stick and writing the gait the AI's path following writes too; the game's own give back leaves the
+    // controller naming no one, so nothing of the player's moves it. Held off here for the same state, as a guard: the
+    // game was not seen calling it for a seat during a hold.
+    const bool withAi = party_member::HandedToAi(actor_fields::LeaderCharacter(self));
+    if (withAi != g_seats[seat].moveHeldOff)
+    {
+        g_seats[seat].moveHeldOff = withAi;
+        platform::LogDebug(L"{}'s field move {}", SeatName(seat),
+                           withAi ? L"held off: its member is with its AI, which alone moves it"
+                                  : L"runs again: its member is the player's");
+    }
+    if (withAi)
+    {
         return;
     }
     ++g_counts[seat].move;

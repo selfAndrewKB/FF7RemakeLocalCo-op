@@ -85,6 +85,7 @@ constexpr int                  kRejoinFailures = 3;
 constexpr std::uint32_t kSeatRetryTicks  = 60;
 constexpr std::uint32_t kSwapGraceTicks  = 30;  // after a leader change or a trade: the seat's next character may still be another seat's for a moment
 constexpr std::uint32_t kFollowSlotTicks = 10;
+constexpr std::uint32_t kHandWatchTicks  = 240;  // a member with its AI is logged this often (about every two seconds)
 
 UObject* Field(const void* object, std::uint32_t offset) noexcept
 {
@@ -395,6 +396,14 @@ try
             if (ticks_ % kFollowSlotTicks == 0)
             {
                 FollowSlot(seat);
+            }
+            if (seat.handedToAi && ticks_ % kHandWatchTicks == 0)
+            {
+                // Whether a member with its AI moves at all, and what holds it (a walk the level waits on that never
+                // arrives shows here as a member standing still).
+                void* const member = party_seat::Member(seat.index);
+                platform::LogDebug(L"{}'s member with its AI: {}; {}", seat.Name(), party_member::MotionDetail(member),
+                                   party_member::AiDetail(member));
             }
         }
     }
@@ -1411,9 +1420,17 @@ void Session::OnStreamFinished(void* self) noexcept
         {
             continue;
         }
-        // The rebuild typed every member PARTY; the game re-types only its own leader PLAYER.
-        platform::LogDebug(L"{}'s member keeps the PLAYER actor type after the formation rebuild: {}", seat.Name(),
-                           party_member::ReassertPlayerType(member) ? L"set" : L"NOT set (the setter faulted)");
+        // The rebuild typed every member PARTY; the game re-types only its own leader PLAYER. A member with its AI stays
+        // PARTY, as the hand made it (party_member::HandToAi); its return types it PLAYER again.
+        if (party_member::HandedToAi(member))
+        {
+            platform::LogDebug(L"{}'s member stays PARTY after the formation rebuild: it is with its AI", seat.Name());
+        }
+        else
+        {
+            platform::LogDebug(L"{}'s member keeps the PLAYER actor type after the formation rebuild: {}", seat.Name(),
+                               party_member::ReassertPlayerType(member) ? L"set" : L"NOT set (the setter faulted)");
+        }
         session->FollowSlot(seat);
     }
 }

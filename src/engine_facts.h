@@ -1756,11 +1756,22 @@ inline constexpr std::uint32_t  kCharacterAiModel      = 0x820;  // the characte
 inline constexpr std::uintptr_t kAiModelCanRequestBehavior = 0x14064D790;
 inline constexpr std::array<std::uint8_t, 7> kAiModelCanRequestBehaviorFirst{0x4C, 0x8B, 0xDC, 0x45, 0x88, 0x43, 0x18};
 inline constexpr std::uint32_t  kCharacterFieldAi      = 0xC88;
+/// The field AI controller's navigation-link arm (End AEndFieldAIController, RE-ladder-spot-offer.md §10.5): set within
+/// a metre of a link's start on the member's path, with the link's id; the component's tick then starts the action by
+/// it. Cleared at an unpossess. [CONFIRMED code]
+inline constexpr std::uint32_t  kFieldAiLinkArmed      = 0x5630;  // u8
+inline constexpr std::uint32_t  kFieldAiLinkId         = 0x5620;  // i32
+/// Stock 4.18 movement (the reflection dump): ACharacter::CharacterMovement, UMovementComponent::Velocity,
+/// UCharacterMovementComponent::MovementMode (EMovementMode: 1 walking, 2 nav walking, 3 falling, 5 flying, 6 custom).
+inline constexpr std::uint32_t  kCharacterMovement     = 0x3E0;
+inline constexpr std::uint32_t  kMovementVelocity      = 0x10C;  // FVector
+inline constexpr std::uint32_t  kMovementMode          = 0x1B4;  // u8
 inline constexpr std::uint32_t  kCharacter800          = 0x800;   // the EndCharacter800 interface the game's calls take
 inline constexpr std::uint32_t  kCharacterActorMode    = 0x1200;  // the actor-mode object
 inline constexpr std::uint32_t  kActorModeType         = 0xB8;
 inline constexpr std::uint32_t  kActorModeMode         = 0xBA;
 inline constexpr std::uint8_t   kActorTypePlayer       = 0;
+inline constexpr std::uint8_t   kActorTypeParty        = 1;
 inline constexpr std::uint8_t   kActorModeField        = 1;
 inline constexpr std::uint8_t   kActorModeFieldCinema  = 3;
 inline constexpr std::uint8_t   kActorModeCaution      = 4;

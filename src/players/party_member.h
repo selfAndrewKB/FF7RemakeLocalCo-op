@@ -199,11 +199,16 @@ bool HandedToAi(void* member) noexcept;
 
 /// The actor type PLAYER set again with the game's setter (the formation rebuild types every member PARTY).
 bool ReassertPlayerType(void* member) noexcept;
+/// The member's actor type set with the game's setter (facts::kActorTypePlayer, facts::kActorTypeParty).
+bool SetActorType(void* member, std::uint8_t type) noexcept;
 
 const wchar_t* Describe(Wait wait) noexcept;
 
 /// The member's actor mode, its field AI's active layer and kind, and the kind byte of each of the 15 layers
 /// (for the log: what the take test saw).
 std::wstring AiDetail(void* member) noexcept;
+/// The member's place, ground speed and movement mode, its field AI's navigation-link arm, and its field-action bytes
+/// (for the log: whether a member with its AI moves at all).
+std::wstring MotionDetail(void* member) noexcept;
 
 }  // namespace lss::players::party_member
