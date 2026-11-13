@@ -2199,7 +2199,6 @@ inline constexpr std::uint32_t  kBattleCompFlags        = 0x168;   // the battle
 inline constexpr std::uint8_t   kBattleActionKo         = 13;
 inline constexpr std::uint8_t   kBattleActionLocked     = 2;     // RE-battle-switch.md: the leader may not be left
 inline constexpr std::uint8_t   kBattleCompMayLeave     = 0x81;  //   ... unless these flags are set
-inline constexpr std::uint32_t  kFieldActionBusy        = 0x159;   // u8 on the field-action component: an action runs
 inline constexpr std::uintptr_t kNameWarpDistanceCache  = 0x1459C5278;  // FName BattleTeleportNavDistanceChangeCharacter
 inline constexpr std::uintptr_t kTableGameParam         = 0x145843650;  // three UDataTable*
 inline constexpr std::uint32_t  kTableFindRowSlot       = 0x250;

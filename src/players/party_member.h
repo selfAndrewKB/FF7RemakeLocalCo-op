@@ -53,6 +53,8 @@ enum class Wait : std::uint8_t
     AtMark,       // its player brought a kept move to its point: its AI finishes the arrival (lead_keep_rules.h)
     SceneLeadIn,  // the level's scene lead-in on it, a run and a stand a scene opens on: its AI plays it through, whatever
                   // the lead rule would say (lead_keep_rules.h kSceneLeadIns, lead_gate.h)
+    FieldAction,  // no player holds it and it is inside a field action (a ladder, a squeeze, a crawl, a step) its AI began:
+                  // a take now would run the rest of the action as the player's and end it where it stands
     NoFieldAi,    // its field AI has no state yet
     Unread,       // the party could not be read
 };
@@ -76,6 +78,12 @@ constexpr bool ScriptHold(Wait wait) noexcept
 constexpr bool JoinsThroughHold(Wait wait) noexcept
 {
     return wait == Wait::Guide || wait == Wait::AtMark || wait == Wait::SceneLeadIn;
+}
+
+/// A take may go ahead on this wait: none, or a walk the join rides through.
+constexpr bool Takeable(Wait wait) noexcept
+{
+    return wait == Wait::None || JoinsThroughHold(wait);
 }
 
 /// The walks the member's AI makes under a hold the lead gate judged: their judgment goes with the hold

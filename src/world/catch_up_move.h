@@ -35,6 +35,9 @@ bool Move(void* character, const platform::GameVector& point, float yawDegrees) 
 
 /// The character runs a field action (a ladder, a crawl, the grappling hook): not to be moved out of it.
 bool InFieldAction(const void* character) noexcept;
+/// The character runs a field action by either of the game's two bytes: InFieldAction's, which the follower's catch-up
+/// warp gates on, and the component's action, which the placing acts abort by and a ladder climb holds from its start.
+bool FieldActionUnderway(const void* character) noexcept;
 
 /// A following companion's distance from the character it is brought to.
 inline constexpr float kFollowerCm = 150.0f;

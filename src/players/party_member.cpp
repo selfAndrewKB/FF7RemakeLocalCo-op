@@ -11,6 +11,7 @@
 #include "players/field_root.h"
 #include "players/game_globals.h"
 #include "players/lead_gate.h"
+#include "world/catch_up_move.h"
 
 #include <array>
 #include <cstdint>
@@ -374,7 +375,14 @@ Choice ChooseAt(int seat, int rank, void* playerOneController, void* taker, bool
         else
         {
             choice.wait = FieldWait(actor);
-            if (choice.wait == Wait::None || JoinsThroughHold(choice.wait))
+            // An action its AI runs (no player holds the member) ends the way it began: taken now, its rest would run as
+            // the player's and stop where it stands (a ladder climb cut off at its foot, the walk it was part of never
+            // arriving). The take waits the action out; a member the taker already holds is the player's own action.
+            if (Takeable(choice.wait) && holder == nullptr && world::catch_up_move::FieldActionUnderway(actor))
+            {
+                choice.wait = Wait::FieldAction;
+            }
+            if (Takeable(choice.wait))
             {
                 choice.member = actor;
             }
@@ -647,6 +655,8 @@ const wchar_t* Describe(Wait wait) noexcept
     case Wait::SceneLeadIn:
         return L"the level's scene lead-in is on it (a run and a stand a scene opens on, excluded from the lead rule by name): its AI "
                L"plays it through to the scene";
+    case Wait::FieldAction:
+        return L"its AI is inside a field action (a ladder, a squeeze, a crawl, a step); the take waits for its end";
     case Wait::NoFieldAi:
         return L"its field AI has no state yet";
     case Wait::Unread:

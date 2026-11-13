@@ -215,12 +215,15 @@ private:
     /// The seat other than `besides` that holds `rank` (in, waiting, or to rejoin), or 0.
     int SeatHoldingRank(int rank, int besides) const noexcept;
     /// Rank `rank`'s member is one seat `index` would take now (party_member::ChooseAt gives a member: free, or in a walk
-    /// a join takes it through); not while its AI holds it in a scene, an animation or a script, or another player has it.
+    /// a join takes it through); not while its AI holds it in a scene, an animation, a script or a field action, or another
+    /// player has it. For a seat that holds no member (a join's pick, a step): a member of its own handed to its AI reads as
+    /// another's.
     bool RankFree(int index, int rank, void* playerOneController) const noexcept;
     /// The ranks RankFree holds for, as party_rank_rules' bits.
     std::uint32_t FreeRanks(int index, void* playerOneController) const noexcept;
     /// Where a step of `index`'s rank in `dir` would land: the rank (`next`), the seat holding it (`holder`, 0 for none) and
-    /// the party's rank count. False when the seat cannot step (CanStepMember's conditions).
+    /// the party's rank count. False when the seat cannot step (CanStepMember's conditions), among them either member inside
+    /// a field action.
     bool StepTarget(int index, int dir, int& next, int& holder, int& count) const noexcept;
     /// The seat plays its member: seated, not handed to its AI, standing in for no one.
     bool PlaysMember(int index) const noexcept;

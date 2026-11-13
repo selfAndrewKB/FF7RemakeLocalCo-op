@@ -15,6 +15,7 @@
 #include "players/scopes.h"
 #include "players/seats.h"
 #include "players/weak_object.h"
+#include "world/catch_up_move.h"
 #include "world/party_warp.h"
 
 #include <array>
@@ -113,9 +114,7 @@ const wchar_t* Refusal(void* battleSystem, void* member) noexcept
     {
         return L"it is in the middle of an action";
     }
-    const auto*  fieldAction = players::actor_fields::FieldAction(member);
-    std::uint8_t busy        = 0;
-    if (fieldAction != nullptr && Read(fieldAction + facts::kFieldActionBusy, busy) && busy != 0)
+    if (world::catch_up_move::FieldActionUnderway(member))
     {
         return L"it is in a field action (a ladder, a crawl)";
     }

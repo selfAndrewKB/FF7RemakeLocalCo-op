@@ -94,6 +94,15 @@ bool InFieldAction(const void* character) noexcept
            platform::Read(static_cast<const std::uint8_t*>(component) + facts::kFieldActionRunning, running) && running != 0;
 }
 
+bool FieldActionUnderway(const void* character) noexcept
+{
+    const void*  component = players::actor_fields::FieldAction(character);
+    std::uint8_t busy      = 0;
+    return InFieldAction(character) ||
+           (component != nullptr && platform::Read(static_cast<const std::uint8_t*>(component) + facts::kFieldActionState, busy) &&
+            busy != 0);
+}
+
 bool SpotTaken(const GameVector& at, const void* except) noexcept
 {
     for (int seat = 1; seat <= players::kSeatsBuilt; ++seat)

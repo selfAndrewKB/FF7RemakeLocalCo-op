@@ -38,6 +38,7 @@
 #include "battle/party_switch_rules.h"
 #include "battle/targeting.h"
 #include "battle/lock_camera.h"
+#include "world/catch_up_move.h"
 #include "world/push_events.h"
 #include "world/run_catch_up.h"
 #include "world/talk_gather.h"
@@ -707,9 +708,15 @@ bool Session::StepTarget(int index, int dir, int& next, int& holder, int& count)
         return false;
     }
     holder = SeatHoldingRank(next, index);
+    // Neither member mid-action (a ladder, a crawl): given back inside one, its rest would run as the other player's
+    // and stop where it stands.
+    if (world::catch_up_move::FieldActionUnderway(RowActor(index)))
+    {
+        return false;
+    }
     if (holder != 0 && Seated(holder))
     {
-        return !HandedToAi(holder);
+        return !HandedToAi(holder) && !world::catch_up_move::FieldActionUnderway(RowActor(holder));
     }
     // A rank no player plays now (no one's, or a waiting player's): only onto a member a join would take now. A step onto
     // one that is not would give the player's own member back and leave the player out until that one is free.

@@ -3,10 +3,8 @@
 #include "control/registry.h"
 #include "engine_facts.h"
 #include "platform/game_vectors.h"
-#include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
-#include "players/actor_fields.h"
 #include "players/field_root.h"
 #include "players/game_state.h"
 #include "players/party_member.h"
@@ -26,7 +24,6 @@ namespace lss::world::party_warp {
 namespace {
 
 using platform::GameVector;
-using platform::Read;
 using players::SeatName;
 namespace rules = party_warp_rules;
 
@@ -34,16 +31,6 @@ namespace rules = party_warp_rules;
 bool          g_installed = false;
 std::uint32_t g_asks = 0, g_moved = 0, g_refused = 0, g_noPoint = 0, g_raised = 0;
 std::wstring  g_last = L"none yet";
-
-/// The character runs a field action by either of the game's two bytes: the one its follower's catch-up warp gates on
-/// and the one its placing acts abort by.
-bool Busy(const void* character) noexcept
-{
-    const auto*  component = players::actor_fields::FieldAction(character);
-    std::uint8_t busy      = 0;
-    return catch_up_move::InFieldAction(character) ||
-           (component != nullptr && Read(component + facts::kFieldActionBusy, busy) && busy != 0);
-}
 
 std::wstring Reading()
 {
@@ -150,8 +137,8 @@ try
     const std::uint8_t mode = players::party_member::ActorMode(member);
     seen.memberWithPlayer   = !players::party_member::HandedToAi(member);
     seen.memberInField      = mode == facts::kActorModeField || mode == facts::kActorModeCaution;
-    seen.memberBusy         = Busy(member);
-    seen.leaderBusy         = Busy(one);
+    seen.memberBusy         = catch_up_move::FieldActionUnderway(member);
+    seen.leaderBusy         = catch_up_move::FieldActionUnderway(one);
     seen.beside             = rules::Beside(actor_place::FlatDistance(at, oneAt), at.z - oneAt.z);
     const float away        = actor_place::FlatDistance(at, oneAt) / 100.0f;
     if (const wchar_t* why = rules::Refusal(seen))
