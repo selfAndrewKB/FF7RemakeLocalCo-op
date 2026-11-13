@@ -23,6 +23,7 @@
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
+#include "platform/steady_ms.h"
 #include "platform/verified_code.h"
 #include "platform/vtable_entry.h"
 #include "players/actor_fields.h"
@@ -327,8 +328,7 @@ const wchar_t* OccasionText(Occasion when) noexcept
 
 std::uint32_t NowMs32() noexcept
 {
-    return static_cast<std::uint32_t>(
-        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
+    return static_cast<std::uint32_t>(platform::NowMs());
 }
 
 /// Tosses `controller`'s coin and keeps it: the player it names (1..4), or 0 (the game's own answer). Its Debug line

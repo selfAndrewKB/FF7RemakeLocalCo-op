@@ -9,6 +9,7 @@
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
+#include "platform/steady_ms.h"
 #include "platform/verified_code.h"
 
 #include <array>
@@ -66,10 +67,7 @@ std::atomic<bool>       g_installed{false};
 std::atomic<bool>       g_on{true};
 std::chrono::steady_clock::time_point g_lastSummary{};  // game thread
 
-std::int64_t NowMs() noexcept
-{
-    return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
-}
+using platform::NowMs;
 
 void Count(std::atomic<unsigned>& since, std::atomic<unsigned>& total) noexcept
 {

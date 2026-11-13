@@ -29,6 +29,7 @@
 #include "hud/overlay_layout.h"
 #include "hud/overlay_pass.h"
 #include "hud/root_placement.h"
+#include "hud/save_notice.h"
 #include "hud/second_image.h"
 #include "hud/ui_effect_pass.h"
 #include "hud/ui_targets.h"
@@ -275,6 +276,8 @@ constexpr std::array kModules{
     Module{.name = L"view prompts", .install = Call<&hud::view_prompt::Install>, .remove = &hud::view_prompt::Remove},
     // without it the player windows are drawn in the engine's own font (the view prompts) instead of the game's window
     Module{.name = L"view windows", .install = Call<&hud::view_window::Install>, .remove = &hud::view_window::Remove},
+    // without it the title screen does not say which controller plays player 1 (the game's save-data notice)
+    Module{.name = L"save notice", .install = Call<&hud::save_notice::Install>, .remove = &hud::save_notice::Remove},
     // without it the pads can be changed only from the console (pad-table)
     Module{.name = L"player windows", .install = Call<&players::player_window::Install>, .remove = &players::player_window::Remove,
            .needs = {Need<&players::pad_table::Install>(), Need<&hud::view_prompt::Install>()}},

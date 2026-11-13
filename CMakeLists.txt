@@ -56,6 +56,7 @@ add_library(LocalSplitScreen SHARED
     src/render/shadows_per_view.cpp
     src/hud/overlay_pass.cpp
     src/hud/pass_hide.cpp
+    src/hud/save_notice.cpp
     src/hud/second_image.cpp
     src/hud/overlay_band.cpp
     src/hud/overlay_layout.cpp

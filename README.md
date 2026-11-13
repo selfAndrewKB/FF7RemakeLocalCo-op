@@ -224,6 +224,7 @@ src/
                             are the code's own and never a stale copy
     sparse_array.h          Walks the allocated elements of an Unreal TSparseArray (the element array of a TSet or TMap)
                             by reading memory only
+    steady_ms.h             The steady clock in milliseconds, for the modules' timeouts and rate windows
     text.h                  Small text helpers with no home of their own
     verified_code           Finding engine functions and vtable slots only where the research says they are
     vtable_entry            Replaces one entry of an engine vtable with a function of our own, and puts it back
@@ -271,6 +272,8 @@ src/
     root_placement          Where the HUD's main roots sit in a split half: as in single player, each in its corner of
                             the half: minimap top right, compass top centre, command menu bottom left, party panel
                             bottom right, and the two summon gauges (the …
+    save_notice             A line of the mod's in the game's save-data notice, the box at the top right: the one notice
+                            the game draws on the title screen
     second_image            The further columns' HUD images: the game's own overlay rendered again each frame for each
                             further column (hud/overlay_pass.h), before the game's own render, into a layer entry per
                             column of the same pool-2 ring slot
@@ -289,6 +292,9 @@ src/
                             a copy of an action key, as the game calls them: the key is 24 bytes (FName, details object,
                             reference controller), passed by value, and …
     action_tables.h         A pad's own copy of the game's action state (research/RE-input.md, RE-input-p2.md)
+    actor_fields.h          The fields of the game's actors that several modules read, one reader each: a character's
+                            components, mesh, player slot and tags, an actor's root component, a component's owner, a
+                            controller's camera manager and leader
     ai_move_guard           A further player's member is never given an AI-only move while its player holds it: handed
                             to its AI, an interest walk can loop on a ladder for minutes, and that loop must never
                             happen
@@ -303,6 +309,7 @@ src/
     field_root              The field root and what the modules read off it, in one place: the game's field root object
                             (facts::kEndGameRootGlobal), its state manager (the field control lock's mask and counter
                             live there, as do the on/off table and the …
+    game_globals            The game's globals that more than one module reads, rebased once
     game_state              The game's own state, read for the console and the log: Square Enix's EGameState byte on
                             AEndGameState (title, loading, play, pause, menu, leaving), its menu kind and pause flag,
                             and the field step machine on the field root (13 = …
@@ -647,9 +654,9 @@ src/
                             windows
     coop_slider             The Co-op page's sliders: a list of a hundred values runs past the screen's bottom, so an
                             option with that many is a slider of the game's own, made to scroll
-    game_ui                 The game's UI pieces the Co-op menu's modules share: the UI system's managers, the main
-                            menu's first page, weak pointers held in the game's widgets, and FStrings read and copied
-                            the game's way
+    game_ui                 The game's UI pieces the Co-op menu's modules share: the main menu's first page, weak
+                            pointers held in the game's widgets, and FStrings read and copied the game's way (the UI
+                            system's managers are players/game_globals' UiSlot)
     title_row               The Co-op row of the title menu, directly below Options, so a player sees it on starting the
                             game
     title_row_rules.h       Where the title menu's Co-op row goes among its rows' kinds (research/RE-title-menu.md):

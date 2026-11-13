@@ -3825,4 +3825,24 @@ inline constexpr std::uint32_t  kParamRowFloat = 0x0C;
 inline constexpr std::size_t    kTableSlots    = 3;
 inline constexpr std::size_t    kTableSlotResident = 1;
 
+// --- The save-data notice, the title screen's one notice (RE-title-notice.md) ----------------------------------------
+/// EndUI31_ShowSaveIcon_Static(UWorld*, u8 isSave): 0 shows the "Checking saved data" look (no timer, no text swap; a
+/// hide ends it at once), anything else "Saving"; a show while shown changes nothing on the widget.
+inline constexpr std::array<std::uint8_t, 16> kShowSaveIconEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x74, 0x24, 0x10, 0x57, 0x48, 0x83, 0xEC, 0x20, 0x0F};
+inline constexpr platform::FunctionFact kShowSaveIcon{L"EndUI31_ShowSaveIcon_Static", 0x141396DE0, kShowSaveIconEntry};
+inline constexpr std::uint32_t kSaveIconSlot      = 31;     // EndUISystem[31]: the save icon's manager
+inline constexpr std::uint32_t kSaveIconWidget    = 0x00;   // the manager: the SaveIcon_C widget (an FWeakObjectPtr)
+inline constexpr std::uint32_t kSaveIconErrorOnce = 0x09;   //   set once the network notice was shown: a hide shows it again
+inline constexpr std::uint32_t kSaveIconShown     = 0x10;   //   the notice is up
+inline constexpr std::uint32_t kSaveIconText      = 0x3B0;  // SaveIcon_C.Txt_Info, the widget's one text block
+/// The save system (the data singleton): the running job's type (u8, 0 for none) and the queued jobs' count (i32). The
+/// title's press queues a job that shows the notice and hides it at its end.
+inline constexpr std::uint32_t kSaveSystemRunningJob = 0x1F0;
+inline constexpr std::uint32_t kSaveSystemQueuedJobs = 0x210;
+/// The game's own hide with no next notice (UEndMenuAPI::BPHideDataAccessIcon, no parameters, called on the class's
+/// default object).
+inline constexpr const wchar_t* kEndMenuApiClassPath    = L"/Script/EndGame.EndMenuAPI";
+inline constexpr const wchar_t* kHideDataAccessIconPath = L"/Script/EndGame.EndMenuAPI:BPHideDataAccessIcon";
+
 }  // namespace lss::facts

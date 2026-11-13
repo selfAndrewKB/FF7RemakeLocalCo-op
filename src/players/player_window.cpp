@@ -6,11 +6,13 @@
 #include <Unreal/UObject.hpp>
 
 #include "engine_facts.h"
+#include "hud/save_notice.h"
 #include "hud/view_prompt.h"
 #include "hud/view_window.h"
 #include "platform/guarded.h"
 #include "platform/log.h"
 #include "platform/settings.h"
+#include "platform/steady_ms.h"
 #include "players/field_root.h"
 #include "players/game_state.h"
 #include "players/pad_rules.h"
@@ -27,7 +29,6 @@
 
 #include <algorithm>
 #include <array>
-#include <chrono>
 #include <cstdint>
 #include <cwctype>
 #include <format>
@@ -44,6 +45,7 @@ namespace rules = player_window_rules;
 namespace text  = player_window_text;
 
 constexpr int kSeats = rules::kSeats;
+constexpr int kTitleClaimedSeconds = 4;  // the notice after a press on the title: which controller plays player 1
 
 struct Event
 {
@@ -89,16 +91,14 @@ std::array<bool, kSeats>         g_waiting{};             // by seat: a join tha
 int                              g_startWhenSplit = -1;   // a spare pad's Start during one view: joins once split
 bool                             g_redraw         = false;
 bool                             g_title          = false;
+int                              g_titleClaimed   = -1;   // the pad the title's notice last said (-1: none this visit)
 std::uint32_t                    g_playing        = 1;    // the slots a player holds, as of the last tick
 std::uint32_t                    g_idleUsers      = 0;    // the pads read idle now (the open windows' pads)
 unsigned long long               g_gameClosedSeen = 0;    // view_window's count of windows the game closed
 int                              g_lastScreens    = 0;    // the views as last shown
 views::column_rules::ListSeats   g_lastList{};
 
-std::int64_t NowMs() noexcept
-{
-    return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
-}
+using platform::NowMs;
 
 void Note(int user, std::uint16_t pressed, bool open, bool bTap, bool bHeld) noexcept
 {
@@ -399,15 +399,21 @@ void HoldLeave(int seat, int user)
     }
 }
 
-/// On the title screen: the pad that pressed becomes player 1's.
+/// On the title screen: the pad that pressed becomes player 1's, said on the game's save-data notice (the title's one
+/// notice) for a few seconds, once per pad that takes the place (its own later presses, the title menu's, say nothing
+/// more; another pad's press says that pad).
 void TitlePress(int user)
 {
     const auto table = pad_table::Table();
-    if (pad::SlotOf(table, user) == 0)
+    if (pad::SlotOf(table, user) != 0)
     {
-        return;
+        pad_table::Set(rules::WithPlayerOne(table, user), L"a pad pressed on the title screen: it plays player 1");
     }
-    pad_table::Set(rules::WithPlayerOne(table, user), L"a pad pressed on the title screen: it plays player 1");
+    if (user != g_titleClaimed)
+    {
+        g_titleClaimed = user;
+        hud::save_notice::Show(text::TitleClaimed(user), kTitleClaimedSeconds);
+    }
 }
 
 /// One pad's input while its player's window is open.
@@ -554,11 +560,17 @@ try
         g_dropped = 0;
     }
     g_playing = frame.seatIds | 1u;
+    hud::save_notice::Tick();  // the title's notice of which controller plays player 1, while it is due
     const players::game_state::Snapshot& state = players::game_state::Current();
     const bool title = state.valid && views::whole_screen::IsTitle(state.location);
     if (title != g_title)
     {
-        g_title = title;
+        g_title         = title;
+        g_titleClaimed  = -1;  // the next visit's first press is said again
+        if (!title)
+        {
+            hud::save_notice::End();
+        }
         platform::LogDebug(L"player window: {} the title screen", title ? L"on" : L"off");
     }
 

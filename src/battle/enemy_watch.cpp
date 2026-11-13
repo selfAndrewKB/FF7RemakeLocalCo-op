@@ -14,6 +14,7 @@
 #include "platform/image.h"
 #include "platform/log.h"
 #include "platform/name_text.h"
+#include "platform/steady_ms.h"
 #include "platform/verified_code.h"
 #include "players/actor_fields.h"
 #include "players/scopes.h"
@@ -22,7 +23,6 @@
 
 #include <array>
 #include <atomic>
-#include <chrono>
 #include <climits>
 #include <cstddef>
 #include <cstdint>
@@ -121,10 +121,7 @@ std::array<std::atomic<void*>, players::scopes::kMaxPlayers> g_members{};
 std::array<int, players::scopes::kMaxPlayers> g_areaPoints{};  // filled with kAreaUnset at install
 std::int64_t                                  g_areaReadMs = 0;
 
-std::int64_t NowMs() noexcept
-{
-    return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
-}
+using platform::NowMs;
 
 std::wstring ActionName(std::uint64_t bits) noexcept
 {

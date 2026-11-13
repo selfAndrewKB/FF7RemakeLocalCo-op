@@ -2,7 +2,6 @@
 
 #define RC_UNREAL_DISABLE_PROPERTY_DEPRECATION_WARNINGS
 #define RC_UNREAL_DISABLE_CLASS_DEPRECATION_WARNINGS
-#include <Unreal/CoreUObject/UObject/Class.hpp>
 #include <Unreal/UFunction.hpp>
 #include <Unreal/UObject.hpp>
 #include <Unreal/UObjectGlobals.hpp>
@@ -39,7 +38,6 @@ using platform::Read;
 using players::kSeatsBuilt;
 using players::SeatBuilt;
 using players::SeatName;
-using RC::Unreal::UClass;
 using RC::Unreal::UFunction;
 using RC::Unreal::UObject;
 namespace UObjectGlobals = RC::Unreal::UObjectGlobals;
@@ -150,8 +148,7 @@ try
     }
     g_hideLookedUp = true;
     g_hide         = UObjectGlobals::StaticFindObject<UFunction*>(nullptr, nullptr, STR("/Script/EndGame.EndMenuAPI:HideBattleTargetIcon"));
-    auto* type     = UObjectGlobals::StaticFindObject<UClass*>(nullptr, nullptr, STR("/Script/EndGame.EndMenuAPI"));
-    g_api          = type == nullptr ? nullptr : static_cast<UObject*>(type->GetClassDefaultObject());
+    g_api          = players::ClassDefaultOf(facts::kEndMenuApiClassPath);
     if (g_hide == nullptr || g_api == nullptr || g_hide->GetParmsSize() != sizeof(void*))
     {
         g_hide = nullptr;

@@ -12,6 +12,7 @@
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
+#include "platform/steady_ms.h"
 #include "platform/verified_code.h"
 #include "players/actor_fields.h"
 #include "players/field_root.h"
@@ -27,7 +28,6 @@
 
 #include <array>
 #include <atomic>
-#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <format>
@@ -101,10 +101,7 @@ std::vector<Waiting> g_waiting;
 // Counts for the reading.
 std::uint32_t g_heldBack = 0, g_replayed = 0, g_replayedOff = 0, g_lost = 0, g_overflow = 0, g_taken = 0;
 
-std::int64_t NowMs() noexcept
-{
-    return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
-}
+using platform::NowMs;
 
 /// Whether the run `w` waits on is over (story_box_rules RunOver), keeping the member's last moving place in `w`. The cap
 /// holds even when the member's place cannot be read.
