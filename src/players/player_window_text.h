@@ -68,10 +68,10 @@ struct Window
     int          about      = 0;      // the note's player
 };
 
-/// The notice after a press on the title screen: which controller is set as player 1 (`user` the physical pad, 0-based).
+/// The notice after a press on the title screen: which controller is set as Player 1 (`user` the physical pad, 0-based).
 inline std::wstring TitleClaimed(int user)
 {
-    return L"Controller " + std::to_wstring(user + 1) + L" is set as player 1";
+    return L"Controller " + std::to_wstring(user + 1) + L" is set as Player 1";
 }
 
 /// "PLAYER 2" for seat 1.
