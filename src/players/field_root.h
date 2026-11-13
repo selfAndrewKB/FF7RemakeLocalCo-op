@@ -4,9 +4,9 @@
 // RE-script-release.md): the game's field root object (facts::kEndGameRootGlobal), its state manager (the field
 // control lock's mask and counter live there, as do the on/off table and the owner of each id), the root's object
 // that holds the character registry and the field battle state, the battle system global (null outside battle), the
-// party manager and the game's own party leader getter. One header for them, so no module rebases the same globals
-// and walks the same pointers itself. Rebased and verified once at install, which runs right after weak_object's and before
-// every module that reads them; a module that needs them checks Installed() at its own install. Every read is
+// UI system's slot for the field command controller, the party manager and the game's own party leader getter. One
+// header for them, so no module rebases the same globals and walks the same pointers itself. Rebased and verified
+// once at install, which runs right after weak_object's and before every module that reads them; a module that needs them checks Installed() at its own install. Every read is
 // guarded and answers null or 0 while the game has no root (the boot, the title's first frames) or no battle; a
 // module keeps gating its own readers and ticks on its own install, as before (this module says nothing about
 // those). The globals are the game's own fixed addresses, so any thread may call these; what they point at belongs
@@ -55,6 +55,12 @@ bool InBattle() noexcept;
 
 /// The battle system (`sys`), null outside battle or unread.
 void* BattleSystem() noexcept;
+
+/// The field command controller in the UI system's slot (facts::kCommandCtrlSlotGlobal): player 1's outside every scope,
+/// a seat's own inside that seat's scopes (players/scopes.h puts it there); null when unread or empty.
+std::uint8_t* CommandController() noexcept;
+/// The slot's live address, for the scopes that hold a seat's controller in it; 0 before install.
+std::uintptr_t CommandControllerSlot() noexcept;
 
 /// PartyManager_GetPartyLeader on the party manager with the game's selector (facts::kLeaderCurrent, kLeaderDefault
 /// or a Blueprint act's own), guarded; null without a manager, when the call raises, or when the game answers none.

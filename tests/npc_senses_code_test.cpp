@@ -270,6 +270,7 @@ int main()
 {
     TestCellRule();
     TestChooseCentre();
+    TestChooseCentreThree();
     TestCentreCode();
     if (g_failures != 0)
     {

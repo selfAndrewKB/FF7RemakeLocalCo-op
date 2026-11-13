@@ -8,6 +8,7 @@
 // player 1's character first, as the game's own catch-up warps place a follower, then either side, then in front.
 // Host-tested (tests/party_warp_rules_test.cpp).
 
+#include "platform/game_vectors.h"
 #include "world/actor_place.h"
 
 #include <array>
@@ -18,7 +19,7 @@
 
 namespace lss::world::party_warp_rules {
 
-using actor_place::Vec3;
+using platform::GameVector;
 
 /// What the ask is judged by, as read at the engine tick. The defaults are free play's: a caller fills every field it
 /// reads, and judges the fields it has not read yet as free (world/party_warp.cpp asks twice: the pause and the scene
@@ -78,12 +79,12 @@ constexpr std::size_t kTries = 4;
 
 /// The flat unit directions from player 1's character to try for a navmesh point, in order: behind it, to its left, to
 /// its right, in front. `yawDegrees` is its facing (an FRotator's yaw: 0 along +X, 90 along +Y).
-inline std::array<Vec3, kTries> Spots(float yawDegrees) noexcept
+inline std::array<GameVector, kTries> Spots(float yawDegrees) noexcept
 {
-    const float yaw = yawDegrees * std::numbers::pi_v<float> / 180.0f;
-    const Vec3  forward{std::cos(yaw), std::sin(yaw), 0.0f};
-    const Vec3  right{-forward.y, forward.x, 0.0f};
-    return {Vec3{-forward.x, -forward.y, 0.0f}, Vec3{-right.x, -right.y, 0.0f}, right, forward};
+    const float      yaw = yawDegrees * std::numbers::pi_v<float> / 180.0f;
+    const GameVector forward{std::cos(yaw), std::sin(yaw), 0.0f};
+    const GameVector right{-forward.y, forward.x, 0.0f};
+    return {GameVector{-forward.x, -forward.y, 0.0f}, GameVector{-right.x, -right.y, 0.0f}, right, forward};
 }
 
 /// The try's name for the log line.

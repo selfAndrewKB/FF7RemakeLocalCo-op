@@ -202,6 +202,8 @@ src/
     game_array.h            An FString or TArray as the engine lays them out (Data, Num, Max), and a source FString over
                             the mod's own text for the game's string copies to read
     game_thread             The game thread: the one the engine ticks on
+    game_vectors.h          The engine's FVector and FVector2D as this engine lays them out: 4-byte floats, packed, no
+                            padding
     guarded                 Structured-exception guards for touching engine memory and calling engine code
     image                   The game's executable image in memory, and the translation from IDA addresses to live ones
                             and back (the IDA form of a live address, for log lines)
@@ -292,6 +294,8 @@ src/
                             happen
     camera_override         A seat's member's camera overrides reach that seat's camera
                             (research/RE-lock-camera-ledger.md)
+    dpad_keys               The d-pad's four keys as the engine names them (EKeys::Gamepad_DPad_*, facts::kKeyDPad*), in
+                            one place
     field_exit              Every further player leaves before the game leaves the field
                             (research/RE-lifecycle-world.md)
     field_hold.h            When a party member's field AI state leaves it a further player's to hold, and when a script

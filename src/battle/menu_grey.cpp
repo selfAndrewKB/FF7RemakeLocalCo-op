@@ -10,6 +10,7 @@
 #include "platform/image.h"
 #include "platform/log.h"
 #include "platform/verified_code.h"
+#include "players/field_root.h"
 #include "players/scopes.h"
 #include "players/seats.h"
 
@@ -32,7 +33,6 @@ using SoundEventFn = void (*)(std::uint8_t id);
 
 // Set at install, then only read.
 std::uintptr_t g_filtersGlobal = 0;  // EndUISystem[37]: the UI filter manager
-std::uintptr_t g_commandGlobal = 0;  // EndUISystem[19]: player 1's command controller
 std::uintptr_t g_seadCount = 0, g_seadArray = 0, g_seadMixer = 0;  // the mix's state, for the reading
 ActivateFn     g_activate      = nullptr;
 DeactivateFn   g_deactivate    = nullptr;
@@ -83,20 +83,17 @@ bool Waits(const void* controller) noexcept
            (state == facts::kCommandWaitOpening || state == facts::kCommandWaitOpen);
 }
 
-/// Player 1's or any further player's battle menu waits. Inside a seat's UI slot scope EndUISystem[19] holds the
-/// seat's controller: player 1's is then the one noted at the engine tick.
+/// Player 1's command controller. Inside a seat's UI slot scope the slot holds the seat's, so player 1's is then the one
+/// noted at the engine tick (a plain game object, no UObject: read guarded, noted again every engine tick).
+void* PlayerOneController() noexcept
+{
+    return players::scopes::OpenPlayer(players::scopes::UiSlot) != 0 ? g_playerOne : players::field_root::CommandController();
+}
+
+/// Player 1's or any further player's battle menu waits.
 bool BattleMenuWaits() noexcept
 {
-    void* playerOne = nullptr;
-    if (players::scopes::OpenPlayer(players::scopes::UiSlot) != 0)
-    {
-        playerOne = g_playerOne;  // a plain game object (no UObject): read guarded, noted again every engine tick
-    }
-    else
-    {
-        Read(reinterpret_cast<const void*>(g_commandGlobal), playerOne);
-    }
-    if (Waits(playerOne))
+    if (Waits(PlayerOneController()))
     {
         return true;
     }
@@ -111,7 +108,7 @@ bool BattleMenuWaits() noexcept
 }
 
 /// Every player's wait state by place (0 player 1, then the seats), 0 for a player with no menu ready. An i32, its low byte
-/// read. Inside a seat's UI slot scope player 1's controller is the one noted at the engine tick.
+/// read.
 std::array<std::int32_t, players::kSeatsBuilt + 1> WaitStates() noexcept
 {
     std::array<std::int32_t, players::kSeatsBuilt + 1> waits{};
@@ -121,16 +118,7 @@ std::array<std::int32_t, players::kSeatsBuilt + 1> WaitStates() noexcept
                    ? state
                    : 0;
     };
-    void* playerOne = nullptr;
-    if (players::scopes::OpenPlayer(players::scopes::UiSlot) != 0)
-    {
-        playerOne = g_playerOne;
-    }
-    else
-    {
-        Read(reinterpret_cast<const void*>(g_commandGlobal), playerOne);
-    }
-    waits[0] = read(playerOne);
+    waits[0] = read(PlayerOneController());
     for (int seat = 1; seat <= players::kSeatsBuilt; ++seat)
     {
         waits[static_cast<std::size_t>(seat)] = command_menu::Ready(seat) ? read(command_menu::Controller(seat)) : 0;
@@ -339,18 +327,16 @@ std::wstring Reading()
 bool Install(const platform::GameImage& image) noexcept
 {
     const auto filters    = image.Rebase(facts::kUiFilterSlotGlobal, sizeof(void*));
-    const auto command    = image.Rebase(facts::kCommandCtrlSlotGlobal, sizeof(void*));
     const auto activate   = platform::FindFunction(image, facts::kUiFilterActivate);
     const auto deactivate = platform::FindFunction(image, facts::kUiFilterDeactivate);
     const auto openSite   = image.Rebase(facts::kUiFilterWaitOpenCall, 5);
-    if (!filters || !command || !activate || !deactivate || !openSite)
+    if (!filters || !players::field_root::Installed() || !activate || !deactivate || !openSite)
     {
         platform::Log(L"menu grey: an engine check failed; an open battle menu greys the screen and muffles the sound even with the "
                       L"slow-down off");
         return false;
     }
     g_filtersGlobal = *filters;
-    g_commandGlobal = *command;
     g_activate      = reinterpret_cast<ActivateFn>(*activate);
     g_deactivate    = reinterpret_cast<DeactivateFn>(*deactivate);
     if (!g_open.Install(*openSite, *activate, reinterpret_cast<std::uintptr_t>(&Open)))
@@ -446,7 +432,7 @@ void Tick() noexcept
     {
         return;
     }
-    Read(reinterpret_cast<const void*>(g_commandGlobal), g_playerOne);  // outside every scope: player 1's own
+    g_playerOne = players::field_root::CommandController();  // outside every scope: player 1's own
     if (const bool slows = command_menu_tick::MenuSlow(); slows != g_slows)
     {
         g_slows = slows;

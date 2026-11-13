@@ -30,7 +30,7 @@ namespace {
 
 using namespace lss::world::party_warp_rules;
 
-bool Near(const Vec3& a, float x, float y)
+bool Near(const GameVector& a, float x, float y)
 {
     return std::fabs(a.x - x) < 1e-4f && std::fabs(a.y - y) < 1e-4f && a.z == 0.0f;
 }
@@ -112,7 +112,7 @@ void SpotsFacingBetween()
     EXPECT(Near(spots[0], -h, -h));
     EXPECT(Near(spots[1], h, -h));
     EXPECT(Near(spots[2], -h, h));
-    for (const Vec3& spot : spots)
+    for (const GameVector& spot : spots)
     {
         EXPECT(std::fabs(std::hypot(spot.x, spot.y) - 1.0f) < 1e-4f);
     }

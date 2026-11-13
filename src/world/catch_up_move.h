@@ -12,6 +12,7 @@
 // The move reads "the party leader" (a leader gets the leader-only steps): call it outside every player's scope.
 // Found and verified once at install; the callers check Installed() at theirs. Game thread.
 
+#include "platform/game_vectors.h"
 #include "world/actor_place.h"
 
 namespace lss::platform {
@@ -26,11 +27,11 @@ bool Install(const platform::GameImage& image) noexcept;
 bool Installed() noexcept;
 
 /// A navmesh point `distanceCm` from `origin` along the flat `dir`; false when the game finds none or the call raises.
-bool NavPoint(const actor_place::Vec3& origin, const actor_place::Vec3& dir, float distanceCm, actor_place::Vec3& out) noexcept;
+bool NavPoint(const platform::GameVector& origin, const platform::GameVector& dir, float distanceCm, platform::GameVector& out) noexcept;
 
 /// Moves `character` to stand on `point`, facing `yawDegrees`, with the game's fade-in. False when the call raised
 /// (the character may stand where it was).
-bool Move(void* character, const actor_place::Vec3& point, float yawDegrees) noexcept;
+bool Move(void* character, const platform::GameVector& point, float yawDegrees) noexcept;
 
 /// The character runs a field action (a ladder, a crawl, the grappling hook): not to be moved out of it.
 bool InFieldAction(const void* character) noexcept;
@@ -41,6 +42,6 @@ inline constexpr float kFollowerCm = 150.0f;
 /// A further player's character other than `except` stands within 1 m of `at`: not a spot to bring `except` to. The
 /// query keeps its point off every character it finds; this second test covers a character moved earlier in the same
 /// tick, which the query may not count yet [ASSUMPTION].
-bool SpotTaken(const actor_place::Vec3& at, const void* except) noexcept;
+bool SpotTaken(const platform::GameVector& at, const void* except) noexcept;
 
 }  // namespace lss::world::catch_up_move

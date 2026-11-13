@@ -9,6 +9,7 @@
 #include "control/registry.h"
 #include "engine_facts.h"
 #include "platform/entry_redirect.h"
+#include "platform/game_vectors.h"
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
@@ -16,12 +17,12 @@
 #include "platform/verified_code.h"
 #include "players/scopes.h"
 #include "players/weak_object.h"
+#include "world/actor_place.h"
 
 #include <array>
 #include <atomic>
 #include <chrono>
 #include <climits>
-#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <format>
@@ -192,28 +193,15 @@ void* OwnerOf(void* component) noexcept
                : nullptr;
 }
 
-struct Point
-{
-    float x = 0, y = 0, z = 0;
-};
-
-/// A character's location (its root component's world translation).
-bool LocationOf(const void* actor, Point& at) noexcept
-{
-    const void* root = actor != nullptr ? platform::ReadPointer(actor, facts::kActorRootComponent) : nullptr;
-    return root != nullptr && Read(static_cast<const std::uint8_t*>(root) + facts::kComponentWorldLocation, at);
-}
-
 /// The 3D distance between two characters in metres, as text.
 std::wstring Metres(const void* from, const void* to) noexcept
 {
-    Point a, b;
-    if (!LocationOf(from, a) || !LocationOf(to, b))
+    platform::GameVector a, b;
+    if (!world::actor_place::ActorLocation(from, a) || !world::actor_place::ActorLocation(to, b))
     {
         return L"an unread distance";
     }
-    const double dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z;
-    return std::format(L"{:.1f} m", std::sqrt(dx * dx + dy * dy + dz * dz) / 100.0);
+    return std::format(L"{:.1f} m", platform::Length(b - a) / 100.0f);
 }
 
 /// A caller of the target call, as IDA names it: a known setter by name, else the IDA address of the return.

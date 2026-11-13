@@ -78,6 +78,7 @@ add_library(LocalSplitScreen SHARED
     src/platform/game_thread.cpp
     src/platform/verified_code.cpp
     src/platform/vtable_entry.cpp
+    src/players/dpad_keys.cpp
     src/players/field_exit.cpp
     src/players/field_root.cpp
     src/players/game_state.cpp

@@ -74,15 +74,19 @@ you set aside.
 - **One helper, one predicate, not copies.** Before writing a reader, a walk, a condition or a utility, search for an
   existing one (`players/`, `platform/`, the module's own file). The same condition written in two places, the same
   walk written twice, the same expression in a header and a test: each is a second point of failure and a cleanup
-  commit later. Write it once and call it.
+  commit later. Write it once and call it. A game fact has one reader: a global is rebased in one module
+  (`players/field_root` holds the shared ones), a pointer hop through an offset has one accessor, and an engine type
+  has one mirror (`platform/game_vectors.h`, `platform/game_array.h`).
 - **Delete what has served.** A one-shot instrument (a memory dump, a probe written to find one fact) comes out in the
   same change that uses its answer, or at the latest in the fix it led to. Dead code is deleted, never kept "just in
   case". A development watch is not a one-shot instrument: it stays.
 - A commit hook checks the staged source for these (`.claude/hooks/code_hygiene_commit.py` in the workspace): a raw
-  offset outside the facts header, a line or a predicate that already exists elsewhere, a function nothing calls. It
-  blocks the commit; fix the findings, or name each in the commit message with its reason and put
-  `LSS_HYGIENE_REVIEWED=1` before the git call. The hook is a backstop, not the rule: the rule is the two points
-  above, kept while writing.
+  offset outside the facts header; a line, a value or a predicate that already exists elsewhere (compared with the
+  spacing collapsed and the facts alias read as `facts::`); a game global rebased, or a pointer hop written, in a
+  second place; a struct another file already has; a function nothing calls. It blocks the commit; fix the findings,
+  or name each in the commit message with its reason and put `LSS_HYGIENE_REVIEWED=1` before the git call.
+  `python .claude/hooks/code_hygiene_commit.py census <repo>` lists what it finds in the whole tree. The hook is a
+  backstop, not the rule: the rule is the two points above, kept while writing.
 - **Nothing kept by hand that restates the code.** Generate it from the source or drop it. The settings file is
   written by the mod from `src/platform/settings.h`. The README's Layout section is made by `../tools/layout_doc.py`
   and checked by a test.

@@ -13,6 +13,7 @@
 #include "players/weak_object.h"
 #include "players/scopes.h"
 #include "players/field_hold.h"
+#include "players/field_root.h"
 #include "players/party_member.h"
 #include "players/party_seat.h"
 #include "players/seats.h"
@@ -35,6 +36,7 @@ using platform::Read;
 using players::kSeatsBuilt;
 using players::SeatBuilt;
 using players::SeatName;
+using players::field_root::CommandController;
 
 using MallocFn        = void* (*)(void* allocator, std::uint64_t size, std::uint32_t alignment);
 using CtorFn          = void* (*)(void* controller);
@@ -60,7 +62,6 @@ constexpr std::array<std::uint32_t, 2> kRoots{facts::kCommandCtrlMenuWeak, facts
 // Set once at install.
 void**            g_gmalloc  = nullptr;
 void**            g_gameMode = nullptr;
-std::uintptr_t    g_slot     = 0;  // EndUISystem[19]
 CtorFn            g_ctor         = nullptr;
 SetupFn           g_setup        = nullptr;
 CtrlFn            g_resetAll     = nullptr;
@@ -93,12 +94,6 @@ int           g_column        = hud::overlay_pass::kSingle;  // the column whose
 int           g_passSeat      = 0;                           // that column's seat (0: player 1's pass, or none)
 bool          g_skippedLogged = false;
 std::uint32_t g_skipped       = 0;  // command menu NativeTicks skipped in the further columns' passes
-
-std::uint8_t* Ctrl1() noexcept
-{
-    std::uint8_t* ctrl = nullptr;
-    return Read(reinterpret_cast<const void*>(g_slot), ctrl) ? ctrl : nullptr;
-}
 
 std::uint8_t Byte(const void* object, std::uint32_t offset) noexcept
 {
@@ -264,10 +259,18 @@ void CatchUp(int seat, Seat& s) noexcept
 
 // --- The game's calls, each made again on every seat's controller -------------------------------------------------
 
+/// The seats' menus are on and the game's call ran on the controller in the UI slot: `object` is that controller, or
+/// its member at `field`.
+bool OnSlotController(const void* object, std::uint32_t field = 0) noexcept
+{
+    const std::uint8_t* controller = CommandController();
+    return g_enabled && controller != nullptr && object == controller + field;
+}
+
 std::uint64_t Setup(void* controller, void* world)
 {
     const std::uint64_t result = g_setup(controller, world);
-    if (controller == Ctrl1() && g_enabled)
+    if (OnSlotController(controller))
     {
         for (int seat = 1; seat <= kSeatsBuilt; ++seat)
         {
@@ -285,7 +288,7 @@ std::uint64_t Setup(void* controller, void* world)
 void ResetAll(void* controller)
 {
     g_resetAll(controller);
-    if (controller != Ctrl1() || !g_enabled)
+    if (!OnSlotController(controller))
     {
         return;
     }
@@ -307,7 +310,7 @@ void ResetAll(void* controller)
 void SetHudMode(void* controller, std::uint8_t mode)
 {
     reinterpret_cast<HudModeFn>(g_hudMode.Original())(controller, mode);
-    if (controller != Ctrl1() || !g_enabled)
+    if (!OnSlotController(controller))
     {
         return;
     }
@@ -324,7 +327,7 @@ void SetHudMode(void* controller, std::uint8_t mode)
 std::uint64_t Rebuild(void* partyList, std::uint64_t a2)
 {
     const std::uint64_t result = reinterpret_cast<RebuildFn>(g_rebuildCall.Original())(partyList, a2);
-    if (Ctrl1() == nullptr || partyList != Ctrl1() + facts::kCommandCtrlPartyList || !g_enabled)
+    if (!OnSlotController(partyList, facts::kCommandCtrlPartyList))
     {
         return result;
     }
@@ -342,7 +345,7 @@ std::uint64_t Rebuild(void* partyList, std::uint64_t a2)
 void RebuildLists(void* commandLists, std::uint64_t a2)
 {
     reinterpret_cast<ListsFn>(g_lists.Original())(commandLists, a2);
-    if (Ctrl1() == nullptr || commandLists != Ctrl1() + facts::kCommandCtrlCommandLists || !g_enabled)
+    if (!OnSlotController(commandLists, facts::kCommandCtrlCommandLists))
     {
         return;
     }
@@ -359,7 +362,7 @@ void RebuildLists(void* commandLists, std::uint64_t a2)
 double SetMenuAllowed(void* controller, std::uint8_t on, std::uint8_t keep, std::uint8_t a4)
 {
     const double result = reinterpret_cast<MenuAllowedFn>(g_menuAllowed.Original())(controller, on, keep, a4);
-    if (controller != Ctrl1() || !g_enabled)
+    if (!OnSlotController(controller))
     {
         return result;
     }
@@ -426,7 +429,7 @@ std::wstring GatesReading()
     {
         Read(state + facts::kGameStatePauseCounter, paused);
     }
-    std::wstring text = std::format(L"player 1 {}", fields(Ctrl1()));
+    std::wstring text = std::format(L"player 1 {}", fields(CommandController()));
     for (int seat = 1; seat <= kSeatsBuilt; ++seat)
     {
         text += std::format(L"; {} {}", SeatName(seat), fields(g_seats[seat].ctrl));
@@ -448,7 +451,7 @@ std::wstring LeaderReading()
     };
     std::uint8_t slots[3]{9, 9, 9};
     Read(reinterpret_cast<const void*>(players::scopes::PartyManagerAddress() + facts::kPartySlotTypes), slots);
-    std::wstring text = std::format(L"player 1 {}", fields(Ctrl1()));
+    std::wstring text = std::format(L"player 1 {}", fields(CommandController()));
     for (int seat = 1; seat <= kSeatsBuilt; ++seat)
     {
         text += std::format(L", {} {}", SeatName(seat), fields(g_seats[seat].ctrl));
@@ -479,7 +482,6 @@ bool Install(const platform::GameImage& image) noexcept
     }
     const auto gmalloc  = image.Rebase(facts::kGMallocGlobal, sizeof(void*));
     const auto gameMode = image.Rebase(facts::kGameModeGlobal, sizeof(void*));
-    const auto slot     = image.Rebase(facts::kCommandCtrlSlotGlobal, sizeof(void*));
     const auto hudMode  = platform::FindFunction(image, facts::kCommandCtrlSetHudMode);
     const auto lists    = platform::FindFunction(image, facts::kCommandListsRebuild);
     const auto allowed  = platform::FindFunction(image, facts::kCommandCtrlSetMenuAllowed);
@@ -493,8 +495,8 @@ bool Install(const platform::GameImage& image) noexcept
     {
         resetCalls[i] = image.Rebase(facts::kCommandCtrlResetAllCalls[i], 5);
     }
-    if (!gmalloc || !gameMode || !slot || !hudMode || !lists || !allowed || !rebuild || !setColor || !setupCall ||
-        !setupJump || !rebuildCall || !resetCalls[0] || !resetCalls[1] || !resetCalls[2] ||
+    if (!gmalloc || !gameMode || !players::field_root::Installed() || !hudMode || !lists || !allowed || !rebuild ||
+        !setColor || !setupCall || !setupJump || !rebuildCall || !resetCalls[0] || !resetCalls[1] || !resetCalls[2] ||
         !FindInto(image, facts::kCommandCtrlCtor, g_ctor) || !FindInto(image, facts::kCommandCtrlSetup, g_setup) ||
         !FindInto(image, facts::kCommandCtrlResetAll, g_resetAll) || !FindInto(image, facts::kCommandCtrlRefresh, g_refresh) ||
         !FindInto(image, facts::kCommandCtrlSetInputLive, g_setInputLive) ||
@@ -505,7 +507,6 @@ bool Install(const platform::GameImage& image) noexcept
     }
     g_gmalloc  = reinterpret_cast<void**>(*gmalloc);
     g_gameMode = reinterpret_cast<void**>(*gameMode);
-    g_slot     = *slot;
     g_setColor = reinterpret_cast<SetColorFn>(*setColor);
 
     const auto setupTarget = reinterpret_cast<std::uintptr_t>(g_setup);
@@ -582,7 +583,7 @@ void Tick(int seat, bool seatPlays) noexcept
         return;
     }
     const wchar_t* name  = SeatName(seat);
-    std::uint8_t*  ctrl1 = Ctrl1();
+    std::uint8_t*  ctrl1 = CommandController();
     if (ctrl1 == nullptr || Byte(ctrl1, facts::kCommandCtrlSetUp) == 0)
     {
         return;  // the game's own controller is not set up yet (a load, the title): neither is the seat's
@@ -734,7 +735,7 @@ void BeginPass(int column) noexcept
     Seat& s = g_seats[seat];
     for (std::size_t i = 0; i < kRoots.size(); ++i)
     {
-        void* one = Root(Ctrl1(), kRoots[i]);
+        void* one = Root(CommandController(), kRoots[i]);
         void* own = Root(s.ctrl, kRoots[i]);
         s.swapped[i] = one != nullptr && own != nullptr && Colour(one, s.colorOne[i]);
         if (!s.swapped[i])
@@ -762,7 +763,7 @@ void EndPass() noexcept
             if (s.swapped[i])
             {
                 s.swapped[i] = false;
-                Tint(Root(Ctrl1(), kRoots[i]), s.colorOne[i]);
+                Tint(Root(CommandController(), kRoots[i]), s.colorOne[i]);
                 Transparent(Root(s.ctrl, kRoots[i]));
             }
         }

@@ -8,6 +8,7 @@
 // facing the presser (research/RE-talk-far.md).
 // Host-tested (tests/talk_gather_rules_test.cpp).
 
+#include "platform/game_vectors.h"
 #include "world/actor_place.h"
 
 #include <array>
@@ -17,7 +18,7 @@
 
 namespace lss::world::talk_gather_rules {
 
-using actor_place::Vec3;
+using platform::GameVector;
 
 constexpr float kFarCm    = 800.0f;  // the game's own "far from the leader" (the battle end's warp threshold)
 constexpr float kBesideCm = 120.0f;  // shoulder to shoulder with the presser: just beside
@@ -25,25 +26,25 @@ constexpr float kPi       = 3.14159265358979f;
 
 struct Beside
 {
-    std::array<Vec3, 3> tries{};         // flat unit directions from the presser, in the order to try
-    bool                withNpc = false;  // the NPC's place counted (known, more than 1 cm and at most kFarCm away)
-    Vec3                face{};           // whom the moved character faces: the NPC, else the presser
+    std::array<GameVector, 3> tries{};         // flat unit directions from the presser, in the order to try
+    bool                      withNpc = false;  // the NPC's place counted (known, more than 1 cm and at most kFarCm away)
+    GameVector                face{};           // whom the moved character faces: the NPC, else the presser
 };
 
 /// The flat unit vector from `from` toward `to`; (1, 0, 0) when they coincide.
-inline Vec3 Toward(const Vec3& from, const Vec3& to) noexcept
+inline GameVector Toward(const GameVector& from, const GameVector& to) noexcept
 {
     const float span = actor_place::FlatDistance(from, to);
-    return span > 0.0f ? Vec3{(to.x - from.x) / span, (to.y - from.y) / span, 0.0f} : Vec3{1.0f, 0.0f, 0.0f};
+    return span > 0.0f ? GameVector{(to.x - from.x) / span, (to.y - from.y) / span, 0.0f} : GameVector{1.0f, 0.0f, 0.0f};
 }
 
 /// The rule. `npc` null when the NPC's place is unknown.
-inline Beside BesideSpot(const Vec3& presser, const Vec3& cloud, const Vec3* npc) noexcept
+inline Beside BesideSpot(const GameVector& presser, const GameVector& cloud, const GameVector* npc) noexcept
 {
-    Beside     beside;
-    const Vec3 toCloud = Toward(presser, cloud);
-    beside.tries       = {toCloud, Vec3{-toCloud.y, toCloud.x, 0.0f}, Vec3{toCloud.y, -toCloud.x, 0.0f}};
-    beside.face        = presser;
+    Beside           beside;
+    const GameVector toCloud = Toward(presser, cloud);
+    beside.tries             = {toCloud, GameVector{-toCloud.y, toCloud.x, 0.0f}, GameVector{toCloud.y, -toCloud.x, 0.0f}};
+    beside.face              = presser;
     if (npc != nullptr)
     {
         const float gap = actor_place::FlatDistance(*npc, presser);
@@ -51,18 +52,18 @@ inline Beside BesideSpot(const Vec3& presser, const Vec3& cloud, const Vec3* npc
     }
     if (beside.withNpc)
     {
-        const Vec3 toNpc     = Toward(presser, *npc);
-        const Vec3 left{-toNpc.y, toNpc.x, 0.0f};
-        const bool cloudLeft = left.x * toCloud.x + left.y * toCloud.y >= 0.0f;
-        const Vec3 nearSide  = cloudLeft ? left : Vec3{-left.x, -left.y, 0.0f};
-        beside.tries         = {nearSide, Vec3{-nearSide.x, -nearSide.y, 0.0f}, Vec3{-toNpc.x, -toNpc.y, 0.0f}};
-        beside.face          = *npc;
+        const GameVector toNpc     = Toward(presser, *npc);
+        const GameVector left{-toNpc.y, toNpc.x, 0.0f};
+        const bool       cloudLeft = left.x * toCloud.x + left.y * toCloud.y >= 0.0f;
+        const GameVector nearSide  = cloudLeft ? left : GameVector{-left.x, -left.y, 0.0f};
+        beside.tries               = {nearSide, GameVector{-nearSide.x, -nearSide.y, 0.0f}, GameVector{-toNpc.x, -toNpc.y, 0.0f}};
+        beside.face                = *npc;
     }
     return beside;
 }
 
 /// The yaw, in degrees (an FRotator's), that faces `toward` from `at`.
-inline float FacingYaw(const Vec3& at, const Vec3& toward) noexcept
+inline float FacingYaw(const GameVector& at, const GameVector& toward) noexcept
 {
     return std::atan2(toward.y - at.y, toward.x - at.x) * 180.0f / kPi;
 }

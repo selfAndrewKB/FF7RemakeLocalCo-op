@@ -7,6 +7,7 @@
 #include "hud/overlay_pass.h"
 #include "platform/call_redirect.h"
 #include "platform/entry_redirect.h"
+#include "platform/game_vectors.h"
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
@@ -25,6 +26,7 @@
 #include <cstdint>
 #include <cstring>
 #include <format>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -32,15 +34,8 @@ namespace lss::hud::marker_replay {
 
 namespace {
 
-struct Vector3
-{
-    float x = 0.0f, y = 0.0f, z = 0.0f;
-};
-struct Vector2
-{
-    float x = 0.0f, y = 0.0f;
-};
-static_assert(sizeof(Vector2) == 8);
+using platform::GameVector;
+using platform::GameVector2D;
 
 /// TWeakPtr (thread-safe): the object and its reference controller (weak count at +0xC).
 struct WeakKey
@@ -50,8 +45,8 @@ struct WeakKey
 };
 static_assert(sizeof(WeakKey) == facts::kEnemyBarDisplayedTargetBytes, "the bar manager's key is one weak pair");
 
-using PlaceUntargetedFn = void (*)(void* manager, void* widget, const Vector3* location);
-using PlaceTargetedFn   = void (*)(void* manager, void* widget, WeakKey* key, const Vector3* location, std::int32_t scratch,
+using PlaceUntargetedFn = void (*)(void* manager, void* widget, const GameVector* location);
+using PlaceTargetedFn   = void (*)(void* manager, void* widget, WeakKey* key, const GameVector* location, std::int32_t scratch,
                                  float halfSize, std::uint8_t skipLeaderClamp);
 /// TSharedPtr, NotThreadSafe (the battle text's Slate pointers: the game copies them with a plain `inc [ctrl+8]`).
 struct SharedPtr
@@ -60,16 +55,16 @@ struct SharedPtr
     void* controller = nullptr;
 };
 
-using PlaceTextFn        = void (*)(Vector2* out, void* controller, const SharedPtr* canvas, const SharedPtr* widget,
-                                    const Vector3* location, Vector2 offset, std::uint8_t clamp, bool* projected);
+using PlaceTextFn        = void (*)(GameVector2D* out, void* controller, const SharedPtr* canvas, const SharedPtr* widget,
+                                    const GameVector* location, GameVector2D offset, std::uint8_t clamp, bool* projected);
 using SharedReleaseFn    = void (*)(SharedPtr* pointer);  // the game's ~TSharedPtr
 using AttributeFn        = void* (*)(void* attribute, const std::uint8_t* visibility);
 using SlateVisibilityFn  = void (*)(void* widget, void* attribute);  // takes the TAttribute by value: it destroys it
 using WidgetVisibilityFn = void (*)(void* widget, std::uint8_t visibility);
-using CursorPlaceFn      = bool (*)(void* controller, void* widget, const Vector3* location);
-using LockonPlaceFn      = void (*)(void* controller, void* widget, const Vector3* location, std::uint8_t show);
+using CursorPlaceFn      = bool (*)(void* controller, void* widget, const GameVector* location);
+using LockonPlaceFn      = void (*)(void* controller, void* widget, const GameVector* location, std::uint8_t show);
 using ManagerTickFn      = void (*)(void* manager);
-using SetPositionFn     = void (*)(void* widget, Vector2 position, bool removeDpiScale);
+using SetPositionFn     = void (*)(void* widget, GameVector2D position, bool removeDpiScale);
 using ContextPcFn       = void* (*)(const void* context);
 // The enemy bar's class per column (hud/bar_class.h; RE-enemy-bar-two-classification.md, -content.md).
 using MainTargetFn      = WeakKey* (*)(WeakKey* out, const WeakKey* key);  // out holds one weak reference
@@ -129,7 +124,7 @@ struct BarCall
     void*        widget  = nullptr;
     std::int32_t weak[2] = {-1, 0};  // the widget's weak pair: it is checked before the replay touches it
     bool         targeted = false;
-    Vector3      location;
+    GameVector   location;
     WeakKey      key;
     float        halfSize = 0.0f;
     std::uint8_t skip     = 0;
@@ -147,8 +142,8 @@ struct TextCall
     void*        controller = nullptr;
     SharedPtr    canvas;  // pinned copies: the tick passes temporaries on its stack
     SharedPtr    widget;
-    Vector3      location;
-    Vector2      offset;
+    GameVector   location;
+    GameVector2D offset;
     std::uint8_t clamp = 0;
     TextKind     kind  = TextKind::Other;
 };
@@ -158,7 +153,7 @@ struct PointCall
     void*        controller = nullptr;
     void*        widget     = nullptr;
     std::int32_t weak[2]    = {-1, 0};
-    Vector3      location;
+    GameVector   location;
     std::uint8_t show = 0;  // lock-on markers only
 };
 
@@ -287,7 +282,7 @@ void Keep(std::vector<Call>& calls, const Call& call) noexcept
     }
 }
 
-void Untargeted(void* manager, void* widget, const Vector3* location)
+void Untargeted(void* manager, void* widget, const GameVector* location)
 {
     if (!g_replaying && g_on && location != nullptr)
     {
@@ -300,7 +295,7 @@ void Untargeted(void* manager, void* widget, const Vector3* location)
     reinterpret_cast<PlaceUntargetedFn>(g_untargeted.Original())(manager, widget, location);
 }
 
-void Targeted(void* manager, void* widget, WeakKey* key, const Vector3* location, std::int32_t scratch, float halfSize,
+void Targeted(void* manager, void* widget, WeakKey* key, const GameVector* location, std::int32_t scratch, float halfSize,
               std::uint8_t skip)
 {
     if (!g_replaying && g_on && location != nullptr && key != nullptr)
@@ -360,8 +355,8 @@ TextKind KindOf(std::uintptr_t returnAddress) noexcept
     return TextKind::Other;
 }
 
-void Text(Vector2* out, void* controller, const SharedPtr* canvas, const SharedPtr* widget, const Vector3* location,
-          Vector2 offset, std::uint8_t clamp, bool* projected)
+void Text(GameVector2D* out, void* controller, const SharedPtr* canvas, const SharedPtr* widget, const GameVector* location,
+          GameVector2D offset, std::uint8_t clamp, bool* projected)
 {
     if (!g_replaying && g_on && location != nullptr && canvas != nullptr && widget != nullptr && canvas->object != nullptr &&
         widget->object != nullptr)
@@ -418,7 +413,7 @@ void KeepPoint(std::vector<PointCall>& calls, const PointCall& call) noexcept
     }
 }
 
-bool Cursor(void* controller, void* widget, const Vector3* location)
+bool Cursor(void* controller, void* widget, const GameVector* location)
 {
     if (!g_replaying && g_on && location != nullptr && widget != nullptr)
     {
@@ -431,7 +426,7 @@ bool Cursor(void* controller, void* widget, const Vector3* location)
     return reinterpret_cast<CursorPlaceFn>(g_cursor.Original())(controller, widget, location);
 }
 
-void Lockon(void* controller, void* widget, const Vector3* location, std::uint8_t show)
+void Lockon(void* controller, void* widget, const GameVector* location, std::uint8_t show)
 {
     if (!g_replaying && g_on && location != nullptr && widget != nullptr)
     {
@@ -808,7 +803,7 @@ void PlaceBar(int column, bool ownColumn, const BarCall& bar, std::uint8_t* p, c
     if (!targeted)
     {
         if (!platform::CallGuarded(reinterpret_cast<PlaceUntargetedFn>(g_untargeted.Original()), bar.manager, bar.widget,
-                                   static_cast<const Vector3*>(&bar.location)))
+                                   static_cast<const GameVector*>(&bar.location)))
         {
             Fault(1, L"an enemy bar");
         }
@@ -822,26 +817,24 @@ void PlaceBar(int column, bool ownColumn, const BarCall& bar, std::uint8_t* p, c
     AddWeakReference(key.controller);  // the placement releases one
     bool      placed = false;
     const int seat   = overlay_pass::SeatOf(column);  // a mirror's column (no seat) clamps against player 1's leader, as the tick
-    if (ownColumn && skip == 0 && seat >= 1)
     {
-        const players::scopes::Scope leader(seat, players::scopes::Leader);
-        if (!leader.Held())
+        std::optional<players::scopes::Scope> leader;  // the seat's own leader for the clamp, held through the call only
+        if (ownColumn && skip == 0 && seat >= 1)
         {
-            static bool told[players::scopes::kMaxPlayers]{};  // once per seat (seat >= 1 here)
-            if (!told[seat])
+            leader.emplace(seat, players::scopes::Leader);
+            if (!leader->Held())
             {
-                told[seat] = true;
-                platform::Log(L"HUD markers: {}'s leader scope is not bound; its target's bar is clamped away from player 1's leader",
-                              players::SeatName(seat));
+                static bool told[players::scopes::kMaxPlayers]{};  // once per seat (seat >= 1 here)
+                if (!told[seat])
+                {
+                    told[seat] = true;
+                    platform::Log(L"HUD markers: {}'s leader scope is not bound; its target's bar is clamped away from player 1's leader",
+                                  players::SeatName(seat));
+                }
             }
         }
         placed = platform::CallGuarded(reinterpret_cast<PlaceTargetedFn>(g_targeted.Original()), bar.manager, bar.widget, &key,
-                                       static_cast<const Vector3*>(&bar.location), std::int32_t{0}, halfSize, skip);
-    }
-    else
-    {
-        placed = platform::CallGuarded(reinterpret_cast<PlaceTargetedFn>(g_targeted.Original()), bar.manager, bar.widget, &key,
-                                       static_cast<const Vector3*>(&bar.location), std::int32_t{0}, halfSize, skip);
+                                       &bar.location, std::int32_t{0}, halfSize, skip);
     }
     if (!placed)
     {
@@ -873,7 +866,7 @@ void PlaceBar(int column, bool ownColumn, const BarCall& bar, std::uint8_t* p, c
     }
     if (have)
     {
-        platform::CallGuarded(g_setPosition, bar.widget, Vector2{point[0], point[1] + ease}, false);
+        platform::CallGuarded(g_setPosition, bar.widget, GameVector2D{point[0], point[1] + ease}, false);
     }
 }
 
@@ -1179,12 +1172,12 @@ void ReplayTexts(int column, void* controller) noexcept
 {
     for (auto& text : g_texts)
     {
-        Vector2 out;
-        bool    projected = false;
+        GameVector2D out;
+        bool         projected = false;
         if (!platform::CallGuarded(reinterpret_cast<PlaceTextFn>(g_text.Original()), &out,
                                    controller != nullptr && text.controller != nullptr ? controller : text.controller,
                                    static_cast<const SharedPtr*>(&text.canvas), static_cast<const SharedPtr*>(&text.widget),
-                                   static_cast<const Vector3*>(&text.location), text.offset, text.clamp, &projected))
+                                   static_cast<const GameVector*>(&text.location), text.offset, text.clamp, &projected))
         {
             Fault(5, L"a battle text");
             continue;
@@ -1224,7 +1217,7 @@ void ReplayPoints(int column, void* controller) noexcept
         void* pc     = controller != nullptr && call.controller != nullptr ? controller : call.controller;
         bool  placed = false;
         if (!platform::CallGuarded(reinterpret_cast<CursorPlaceFn>(g_cursor.Original()), placed, pc, call.widget,
-                                   static_cast<const Vector3*>(&call.location)))
+                                   static_cast<const GameVector*>(&call.location)))
         {
             Fault(6, L"the target cursor");
         }
@@ -1247,7 +1240,7 @@ void ReplayPoints(int column, void* controller) noexcept
         }
         void* pc = controller != nullptr && call.controller != nullptr ? controller : call.controller;
         if (!platform::CallGuarded(reinterpret_cast<LockonPlaceFn>(g_lockon.Original()), pc, call.widget,
-                                   static_cast<const Vector3*>(&call.location), call.show))
+                                   static_cast<const GameVector*>(&call.location), call.show))
         {
             Fault(7, L"a lock-on marker");
         }

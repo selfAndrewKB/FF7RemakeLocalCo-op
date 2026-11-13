@@ -2,6 +2,7 @@
 
 #include "control/registry.h"
 #include "engine_facts.h"
+#include "platform/game_vectors.h"
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
@@ -35,6 +36,7 @@ namespace lss::players::lead_gate {
 
 namespace {
 
+using platform::GameVector;
 using platform::Read;
 using platform::ReadPointer;
 using lead_keep_rules::Verdict;
@@ -87,12 +89,6 @@ constexpr bool ArrivalKindsHaveNames() noexcept
 }
 static_assert(ArrivalKindsHaveNames(), "every arrival kind needs its handler's object/state offsets, and only those");
 
-/// A world location (UE centimetres), as the game's FVector lays it out.
-struct Vec3
-{
-    float x = 0, y = 0, z = 0;
-};
-
 /// A lead or run judged, and the verdict that holds for it.
 struct Judgment
 {
@@ -109,7 +105,7 @@ struct Judgment
     bool          pointKnown = false;  // its destination is a field point of the loaded level (`point`)
     bool          reached    = false;  // measured within the hand radius while the move was needed, kept and signalling (this setting)
     std::int64_t  destination = 0;
-    Vec3          point;
+    GameVector    point;
     std::uint32_t censusTick = 0;
     std::uint32_t calls      = 0;
     std::uint32_t touched    = 0;      // the clock at the last call (the least recently used slot is reused)
@@ -359,12 +355,12 @@ std::vector<std::wstring> NextStates(const std::uint8_t* row) noexcept
 struct MarkerPoint
 {
     std::int64_t target = 0;
-    Vec3         at;
+    GameVector   at;
 };
 
 /// A named point's world location: the level's field point of that name, the lookup the objective marker makes
 /// first (research/RE-lead-arrival-wait.md); false when the name is no field point of the loaded level.
-bool PointLocation(std::int64_t name, Vec3& out) noexcept
+bool PointLocation(std::int64_t name, GameVector& out) noexcept
 {
     std::uint8_t*       root      = field_root::Root();
     void*               points    = root != nullptr ? ReadPointer(root, facts::kRootFieldPoints) : nullptr;
@@ -385,7 +381,7 @@ try
     {
         return L"no destination named";
     }
-    Vec3 at;
+    GameVector at;
     if (!PointLocation(destination, at))
     {
         return std::format(L"{} (not a field point: an actor or route name, or another level's point)", Name(destination));
@@ -1292,7 +1288,7 @@ try
     const bool keeps = g_keeps && g_marking;
     if (needed && keeps && last.pointKnown && last.signals && !last.reached)
     {
-        world::actor_place::Vec3 at;
+        GameVector at;
         if (world::actor_place::ActorLocation(member, at))
         {
             const float dx = at.x - last.point.x, dy = at.y - last.point.y;
@@ -1338,7 +1334,7 @@ namespace {
 /// run), as the hold judges its state: an interest scene on top leaves the move beneath it.
 bool CurrentMove(const void* member, std::uint8_t& kind, std::int64_t& object, std::int64_t& state) noexcept
 {
-    const auto*        ai = static_cast<const std::uint8_t*>(ReadPointer(member, facts::kCharacterFieldAi));
+    const auto*        ai = party_member::FieldAiController(member);
     field_hold::Judged judged;
     if (ai == nullptr || !party_member::JudgedState(member, judged) ||
         field_hold::Of(judged.layer, judged.kind) != field_hold::Hold::Arrival)

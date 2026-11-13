@@ -32,6 +32,7 @@ using platform::Read;
 using players::kSeatsBuilt;
 using players::SeatBuilt;
 using players::SeatName;
+using players::field_root::CommandController;
 
 using TickFn        = void (*)(void* controller, float deltaTime);
 using SetSlotFn     = std::int64_t (*)(std::uint8_t slot, float value);
@@ -42,7 +43,6 @@ std::uintptr_t g_tickCall     = 0;
 std::uintptr_t g_tickTarget   = 0;
 std::uintptr_t g_slowCall     = 0;
 std::uintptr_t g_slowTarget   = 0;
-std::uintptr_t g_slot         = 0;  // EndUISystem[19]
 void**         g_gameMode     = nullptr;
 
 platform::CallRedirect g_tick;  // placed on the game thread (the call crosses a block)
@@ -76,12 +76,6 @@ command_menu_rules::SlowWrites           g_slowWrites;
 std::optional<players::scopes::Scope>    g_eventScope;  // the seat's context around one of its pad's key events
 
 void LogMenuSlow(const wchar_t* why) noexcept;  // the slow-down's state, at Info (below)
-
-std::uint8_t* Ctrl1() noexcept
-{
-    std::uint8_t* ctrl = nullptr;
-    return Read(reinterpret_cast<const void*>(g_slot), ctrl) ? ctrl : nullptr;
-}
 
 /// The game's leader-only input buffer, run for the seat's member under the game's gates (the battle system
 /// exists, the game state's pause counter is 0).
@@ -154,7 +148,7 @@ void TickControllers(void* controller, float deltaTime)
     g_ticking = true;
     reinterpret_cast<TickFn>(g_tickTarget)(controller, deltaTime);
     g_ticking = false;
-    if (!g_enabled || controller != Ctrl1())
+    if (!g_enabled || controller != CommandController())
     {
         return;
     }
@@ -262,9 +256,8 @@ bool Install(const platform::GameImage& image) noexcept
     const auto tick     = platform::FindFunction(image, facts::kCommandCtrlTick);
     const auto slowCall = image.Rebase(facts::kCommandCtrlSlowCall, 5);
     const auto slow     = platform::FindFunction(image, facts::kSetGameSpeedSlot);
-    const auto slot     = image.Rebase(facts::kCommandCtrlSlotGlobal, sizeof(void*));
     const auto gameMode = image.Rebase(facts::kGameModeGlobal, sizeof(void*));
-    if (!tickCall || !tick || !slowCall || !slow || !slot || !players::field_root::Installed() || !gameMode)
+    if (!tickCall || !tick || !slowCall || !slow || !players::field_root::Installed() || !gameMode)
     {
         platform::Log(L"command menu: the tick's engine checks failed; no seat's menu ever ticks, and the menu-slow "
                       L"switch does nothing");
@@ -274,7 +267,6 @@ bool Install(const platform::GameImage& image) noexcept
     g_tickTarget   = *tick;
     g_slowCall     = *slowCall;
     g_slowTarget   = *slow;
-    g_slot         = *slot;
     g_gameMode     = reinterpret_cast<void**>(*gameMode);
     // The menu-slow setting (one of the table's words), set before the redirect is placed: no write reads it yet.
     g_slowWrites.SetSlows(platform::settings::Of(platform::settings::kMenuSlow).word == L"on");

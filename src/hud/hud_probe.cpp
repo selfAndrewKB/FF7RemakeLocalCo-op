@@ -10,6 +10,7 @@
 #include "engine_facts.h"
 #include "hud/overlay_pass.h"
 #include "hud/user_widgets.h"
+#include "platform/game_vectors.h"
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
@@ -41,11 +42,7 @@ bool ReadAt(const void* base, std::uint32_t offset, T& out) noexcept
     return base != nullptr && platform::CopyGuarded(&out, static_cast<const std::uint8_t*>(base) + offset, sizeof(T));
 }
 
-struct Vec2
-{
-    float x = 0.0f;
-    float y = 0.0f;
-};
+using platform::GameVector2D;
 
 const wchar_t* VisibilityName(std::uint8_t visibility) noexcept
 {
@@ -138,7 +135,7 @@ int Dump(Mode mode, std::wstring_view filter)
                           ReadAt(object, facts::kEndWidgetZOrder, zOrder);
         std::uint8_t visibility = 0xFF;
         float        color[4]{};
-        Vec2         position, size, alignment;
+        GameVector2D position, size, alignment;
         float        anchors[4]{};
         std::int32_t context = -1;
         if (!ReadAt(object, facts::kWidgetVisibility, visibility) || !ReadAt(object, facts::kUserWidgetColor, color) ||
@@ -177,7 +174,7 @@ std::wstring OverlayText() noexcept
     {
         return L"no overlay";
     }
-    Vec2         min, origin, uiSize, hostSize;
+    GameVector2D min, origin, uiSize, hostSize;
     float        scale = 0.0f;
     std::int32_t stamp = 0;
     float        fade[5]{};  // alpha, from, to, elapsed, duration (SEndRootOverlay__vf1_AdvanceFade_WorldDelta)

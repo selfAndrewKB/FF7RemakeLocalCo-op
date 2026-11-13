@@ -26,7 +26,6 @@ constexpr std::uint8_t kTypeNone = facts::kPlayerTypeNone;
 void**         g_partyManager = nullptr;
 std::uint8_t** g_input        = nullptr;  // the SquareInput owner
 std::uint8_t** g_uiFilters    = nullptr;  // EndUISystem[37]
-std::uintptr_t g_commandSlot  = 0;        // EndUISystem[19]
 
 struct Player
 {
@@ -113,8 +112,7 @@ bool Install(const platform::GameImage& image) noexcept
     const auto party   = image.Rebase(facts::kPartyManagerGlobal, sizeof(void*));
     const auto input   = image.Rebase(facts::kSquareInputOwnerGlobal, sizeof(void*));
     const auto filters = image.Rebase(facts::kUiFilterSlotGlobal, sizeof(void*));
-    const auto slot    = image.Rebase(facts::kCommandCtrlSlotGlobal, sizeof(void*));
-    if (!party || !field_root::Installed() || !input || !filters || !slot)
+    if (!party || !field_root::Installed() || !input || !filters)
     {
         platform::Log(L"scopes: a global is outside the image; no further player's work can run in its own scopes");
         return false;
@@ -122,7 +120,6 @@ bool Install(const platform::GameImage& image) noexcept
     g_partyManager = reinterpret_cast<void**>(*party);
     g_input        = reinterpret_cast<std::uint8_t**>(*input);
     g_uiFilters    = reinterpret_cast<std::uint8_t**>(*filters);
-    g_commandSlot  = *slot;
     return true;
 }
 
@@ -206,7 +203,7 @@ void BindCommandController(int player, void* controller) noexcept
         p.latches.Clear();
         return;
     }
-    DefineValue(p.uiSlot, g_commandSlot, controller);
+    DefineValue(p.uiSlot, field_root::CommandControllerSlot(), controller);
     DefineFocus(p.focus);
     DefineLatches(p.latches);
 }

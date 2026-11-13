@@ -31,7 +31,7 @@ namespace {
 
 using namespace lss::world::talk_gather_rules;
 
-bool Near(const Vec3& a, float x, float y)
+bool Near(const GameVector& a, float x, float y)
 {
     return std::fabs(a.x - x) < 1e-4f && std::fabs(a.y - y) < 1e-4f && a.z == 0.0f;
 }
@@ -39,7 +39,7 @@ bool Near(const Vec3& a, float x, float y)
 /// Without the NPC's place: toward player 1's character, then its left and right; facing the presser.
 void WithoutNpc()
 {
-    const Vec3   presser{0, 0, 0}, cloud{1000, 0, 0};
+    const GameVector presser{0, 0, 0}, cloud{1000, 0, 0};
     const Beside b = BesideSpot(presser, cloud, nullptr);
     EXPECT(!b.withNpc);
     EXPECT(Near(b.tries[0], 1, 0));
@@ -52,7 +52,7 @@ void WithoutNpc()
 /// then behind (south); facing the NPC.
 void WithNpc()
 {
-    const Vec3   presser{0, 0, 0}, cloud{1000, 0, 0}, npc{0, 200, 0};
+    const GameVector presser{0, 0, 0}, cloud{1000, 0, 0}, npc{0, 200, 0};
     const Beside b = BesideSpot(presser, cloud, &npc);
     EXPECT(b.withNpc);
     EXPECT(Near(b.tries[0], 1, 0));   // the side facing player 1's character
@@ -60,7 +60,7 @@ void WithNpc()
     EXPECT(Near(b.tries[2], 0, -1));  // behind the presser, away from the NPC
     EXPECT(b.face.y == 200);
     // Player 1's character west instead: the sides swap.
-    const Vec3   west{-1000, 0, 0};
+    const GameVector west{-1000, 0, 0};
     const Beside w = BesideSpot(presser, west, &npc);
     EXPECT(Near(w.tries[0], -1, 0) && Near(w.tries[1], 1, 0));
 }
@@ -68,14 +68,14 @@ void WithNpc()
 /// An NPC place too near (another record of the presser itself) or too far (another actor of the name) does not count.
 void NpcOutOfRange()
 {
-    const Vec3 presser{0, 0, 0}, cloud{1000, 0, 0}, same{0.5f, 0, 0}, oneCm{1.0f, 0, 0}, tooFar{0, kFarCm + 1, 0},
+    const GameVector presser{0, 0, 0}, cloud{1000, 0, 0}, same{0.5f, 0, 0}, oneCm{1.0f, 0, 0}, tooFar{0, kFarCm + 1, 0},
         edge{0, kFarCm, 0};
     EXPECT(!BesideSpot(presser, cloud, &same).withNpc);
     EXPECT(!BesideSpot(presser, cloud, &oneCm).withNpc);  // strictly more than 1 cm
     EXPECT(!BesideSpot(presser, cloud, &tooFar).withNpc);
     EXPECT(BesideSpot(presser, cloud, &edge).withNpc);
     // Player 1's character on the presser's line to the NPC (the dot product 0): the left side first.
-    const Vec3   npc{0, 200, 0}, onLine{0, 1000, 0};
+    const GameVector npc{0, 200, 0}, onLine{0, 1000, 0};
     const Beside b = BesideSpot(presser, onLine, &npc);
     EXPECT(b.withNpc && Near(b.tries[0], -1, 0));
 }
@@ -83,15 +83,15 @@ void NpcOutOfRange()
 /// Coinciding points give a direction rather than NaN.
 void Coincident()
 {
-    const Vec3   p{5, 5, 0};
+    const GameVector p{5, 5, 0};
     const Beside b = BesideSpot(p, p, nullptr);
     EXPECT(Near(b.tries[0], 1, 0));
 }
 
 void YawAndNames()
 {
-    EXPECT(std::fabs(FacingYaw(Vec3{0, 0, 0}, Vec3{0, 10, 0}) - 90.0f) < 1e-3f);
-    EXPECT(std::fabs(FacingYaw(Vec3{0, 0, 0}, Vec3{-10, 0, 0}) - 180.0f) < 1e-3f);
+    EXPECT(std::fabs(FacingYaw(GameVector{0, 0, 0}, GameVector{0, 10, 0}) - 90.0f) < 1e-3f);
+    EXPECT(std::fabs(FacingYaw(GameVector{0, 0, 0}, GameVector{-10, 0, 0}) - 180.0f) < 1e-3f);
     EXPECT(std::wcscmp(SpotName(false, 0), L"toward where it stood") == 0);
     EXPECT(std::wcscmp(SpotName(true, 2), L"behind") == 0);
     EXPECT(std::wcscmp(SpotName(true, 3), L"nowhere") == 0);

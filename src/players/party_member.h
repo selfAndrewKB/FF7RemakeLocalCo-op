@@ -138,6 +138,9 @@ const wchar_t* WhyHeldByScript(void* member) noexcept;
 /// session hands a ScriptHold wait's member to its AI keeping its seat, and takes it back at None.
 Wait HoldWait(void* member) noexcept;
 
+/// The character's field AI controller (facts::kCharacterFieldAi), or null. Any thread: one guarded read.
+std::uint8_t* FieldAiController(const void* member) noexcept;
+
 /// The layer and kind `member`'s field AI hold is judged by: its active request, or, for an interest scene while
 /// players/ai_move_guard is active, the one beneath it (field_hold::JudgedState: an interest scene never takes a
 /// member). False when unread.

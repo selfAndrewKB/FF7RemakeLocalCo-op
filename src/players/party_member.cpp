@@ -172,7 +172,7 @@ Wait FieldWait(void* member) noexcept
             return Wait::LeaderHanded;
         }
     }
-    const std::uint8_t* ai = static_cast<const std::uint8_t*>(ReadPointer(member, facts::kCharacterFieldAi));
+    const std::uint8_t* ai = FieldAiController(member);
     field_hold::Judged  state;
     if (!JudgedState(member, state))
     {
@@ -232,9 +232,14 @@ std::uint8_t GameLeaderType() noexcept
                                                                                                                : facts::kPlayerTypeNone;
 }
 
+std::uint8_t* FieldAiController(const void* member) noexcept
+{
+    return static_cast<std::uint8_t*>(ReadPointer(member, facts::kCharacterFieldAi));
+}
+
 bool JudgedState(const void* member, field_hold::Judged& out) noexcept
 {
-    const auto*  ai    = static_cast<const std::uint8_t*>(ReadPointer(member, facts::kCharacterFieldAi));
+    const auto*  ai    = FieldAiController(member);
     std::uint8_t layer = field_hold::kNoLayer, kind = 0;
     if (ai == nullptr || !Read(ai + facts::kFieldAiActiveLayer, layer) || !Read(ai + facts::kFieldAiActiveKind, kind))
     {
@@ -262,7 +267,7 @@ bool JudgedState(const void* member, field_hold::Judged& out) noexcept
 
 bool InterestOnTop(const void* member) noexcept
 {
-    const auto*  ai   = static_cast<const std::uint8_t*>(ReadPointer(member, facts::kCharacterFieldAi));
+    const auto*  ai   = FieldAiController(member);
     std::uint8_t kind = 0;
     return ai != nullptr && Read(ai + facts::kFieldAiActiveKind, kind) && kind == field_hold::kInterest;
 }
@@ -582,7 +587,7 @@ bool ReassertPlayerType(void* member) noexcept
 std::wstring AiDetail(void* member) noexcept
 try
 {
-    const std::uint8_t* ai    = static_cast<const std::uint8_t*>(ReadPointer(member, facts::kCharacterFieldAi));
+    const std::uint8_t* ai    = FieldAiController(member);
     std::uint8_t        layer = 0xFF, kind = 0xFF;
     std::wstring        kinds;
     if (ai != nullptr)

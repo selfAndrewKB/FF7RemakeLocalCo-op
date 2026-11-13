@@ -18,6 +18,7 @@
 #include "platform/settings.h"
 #include "platform/verified_code.h"
 #include "platform/vtable_entry.h"
+#include "players/dpad_keys.h"
 #include "players/unreal_call.h"
 
 #include <cmath>
@@ -31,6 +32,7 @@ namespace {
 
 namespace rules    = coop_menu_rules;
 namespace settings = platform::settings;
+namespace keys     = players::dpad_keys;
 
 using game_ui::At;
 using platform::Read;
@@ -58,7 +60,6 @@ struct Calls
 // Set at install and on the first tick, then only read.
 Calls                  g_calls;
 std::uintptr_t         g_marker = 0, g_fromInt = 0, g_openSite = 0, g_stepSite = 0, g_rowSite = 0;
-std::uintptr_t         g_keyLeft = 0, g_keyRight = 0;  // the d-pad keys' FName globals (live addresses)
 platform::CallRedirect g_open, g_step, g_row;
 platform::VTableEntry  g_hold;
 bool                   g_ready = false;
@@ -245,8 +246,8 @@ std::uint8_t* HeldStep(void* page, void* event) noexcept
     std::uint64_t key = 0, left = 0, right = 0;
     if (!g_ready || event == nullptr || !coop_page::IsPage(page) || !Read(At(page, facts::kOptionsState), state) ||
         state != facts::kOptionsStateRangeEdit || !Read(At(event, facts::kActionEventRepeat), repeat) || repeat != 1 ||
-        !Read(At(event, facts::kActionEventKey), key) || !Read(reinterpret_cast<const void*>(g_keyLeft), left) ||
-        !Read(reinterpret_cast<const void*>(g_keyRight), right) || (key != left && key != right))
+        !Read(At(event, facts::kActionEventKey), key) || !keys::Name(keys::Dpad::Left, left) ||
+        !keys::Name(keys::Dpad::Right, right) || (key != left && key != right))
     {
         return nullptr;
     }
@@ -310,8 +311,7 @@ try
     g_openSite = *openSite;
     g_stepSite = *stepSite;
     g_rowSite  = *rowSite;
-    g_keyLeft  = image.Rebase(f::kKeyDPadLeft, 8).value_or(0);
-    g_keyRight = image.Rebase(f::kKeyDPadRight, 8).value_or(0);
+    keys::Install(image);  // without them a held Left/Right steps once per press (Place)
     return true;
 }
 catch (...)
@@ -331,7 +331,7 @@ bool Place(const platform::GameImage& image) noexcept
         return false;
     }
     // Holding Left/Right is its own: without it each press still steps once.
-    const bool held = g_keyLeft != 0 && g_keyRight != 0 &&
+    const bool held = keys::Key(keys::Dpad::Left) != 0 && keys::Key(keys::Dpad::Right) != 0 &&
                       platform::ReplaceSlot(image, facts::kOptionsActionDown, reinterpret_cast<std::uintptr_t>(&ActionDown),
                                             g_hold);
     platform::Log(L"Co-op slider: the long rows are the game's sliders, a window of {} cells scrolled with the value; {}",

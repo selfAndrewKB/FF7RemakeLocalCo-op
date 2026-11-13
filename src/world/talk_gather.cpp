@@ -3,6 +3,7 @@
 #include "control/registry.h"
 #include "engine_facts.h"
 #include "platform/call_redirect.h"
+#include "platform/game_vectors.h"
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
@@ -40,7 +41,7 @@ using FindActorFn = void* (*)(std::uint64_t level, std::uint64_t name);
 using talk_gather_rules::kBesideCm;
 using talk_gather_rules::kFarCm;
 
-using actor_place::Vec3;
+using platform::GameVector;
 
 // Set at install, then only read.
 std::uintptr_t         g_tick = 0, g_actions = 0, g_namedLevel = 0;
@@ -294,7 +295,7 @@ void OnLeaderHanded() noexcept
     }
     void* const member = Member(seat);
     void* const cloud  = member != nullptr ? players::field_root::PartyLeader(facts::kLeaderCurrent) : nullptr;
-    Vec3        at{}, presser{};
+    GameVector  at{}, presser{};
     if (member == nullptr || cloud == nullptr || cloud == member ||
         !actor_place::ActorLocation(cloud, at) || !actor_place::ActorLocation(member, presser))
     {
@@ -321,7 +322,7 @@ void OnLeaderHanded() noexcept
     // object stood by its target entry at the press (a talk target carries its state object's name, which the character
     // lookup by name does not know: none found live), else that lookup (the lookup is not tried after a noted
     // place: the entry is the surer source).
-    Vec3           npcAt{};
+    GameVector     npcAt{};
     float          spot[3] = {};
     const wchar_t* npcNote = L"; where the NPC stands is unknown, facing that character";
     bool           known   = field_targets::TalkPressSpot(object, spot);
@@ -341,7 +342,7 @@ void OnLeaderHanded() noexcept
     {
         npcNote = L"; where the NPC stands is not within 8 m of that character, facing that character";
     }
-    Vec3        point{};
+    GameVector  point{};
     std::size_t used = beside.tries.size();
     for (std::size_t i = 0; i < beside.tries.size(); ++i)
     {

@@ -4,6 +4,7 @@
 #include "engine_facts.h"
 #include "hud/overlay_pass.h"
 #include "platform/entry_redirect.h"
+#include "platform/game_vectors.h"
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
@@ -22,23 +23,17 @@ namespace lss::hud::field_icons {
 
 namespace {
 
+using platform::GameVector;
+using platform::GameVector2D;
 using platform::Read;
 
-struct Vector3
-{
-    float x = 0.0f, y = 0.0f, z = 0.0f;
-};
-struct Vector2
-{
-    float x = 0.0f, y = 0.0f;
-};
 /// A canvas slot's Offset attribute value: {x, y, width, height}.
 using Offset = std::array<float, 4>;
 static_assert(sizeof(Offset) == 16);
 
-using PlaceFn    = void (*)(void* entry, void* canvas, float dt, void* controller, const Vector3* leader, std::int32_t unused,
-                         const Vector3* icon);
-using ProjectFn  = char (*)(void* controller, const Vector3* world, Vector2* out);
+using PlaceFn    = void (*)(void* entry, void* canvas, float dt, void* controller, const GameVector* leader, std::int32_t unused,
+                         const GameVector* icon);
+using ProjectFn  = char (*)(void* controller, const GameVector* world, GameVector2D* out);
 using ChildrenFn = void* (*)(void* canvas);
 using CountFn    = std::int32_t (*)(void* children);
 
@@ -62,8 +57,8 @@ struct Call
     void*        controller = nullptr;
     float        dt         = 0.0f;
     std::int32_t weak[2]    = {-1, 0};  // the entry's weak widget pair (entry+0): checked before a replay
-    Vector3      leader;
-    Vector3      icon;
+    GameVector   leader;
+    GameVector   icon;
 };
 /// What one view keeps for an icon between frames: its own alpha and the last offset its projection wrote.
 struct View
@@ -182,7 +177,7 @@ bool Listed(const void* entry) noexcept;
 int  OwnerOf(const void* entry) noexcept;
 bool AnyOwned() noexcept;
 
-void Place(void* entry, void* canvas, float dt, void* controller, const Vector3* leader, std::int32_t unused, const Vector3* icon)
+void Place(void* entry, void* canvas, float dt, void* controller, const GameVector* leader, std::int32_t unused, const GameVector* icon)
 {
     if (!g_replaying && g_on && entry != nullptr && canvas != nullptr)
     {
@@ -327,7 +322,7 @@ std::uint8_t* SlotOf(void* canvas, void* widget) noexcept
 }
 
 /// The character's root component's world location (the icons' range gate for that character's column).
-bool MemberLocation(void* member, Vector3& out) noexcept
+bool MemberLocation(void* member, GameVector& out) noexcept
 {
     float at[3]{};
     if (!world::actor_place::ActorLocation(member, at))
@@ -373,13 +368,13 @@ Known* KnownOf(const Call& call) noexcept
 /// the tick's written back around the call; the slot's offset then read back (this view's projection wrote it) or this
 /// view's last one written (it did not). `hidden` (a seat's own icon in another view): alpha 0 swapped in, no step, so
 /// the placement leaves it transparent for this pass. Returns false when the icon stays as the game placed it.
-bool PlaceFor(int column, const Call& call, void* widget, void* controller, const Vector3* leader, float dt, bool hidden, View& view,
+bool PlaceFor(int column, const Call& call, void* widget, void* controller, const GameVector* leader, float dt, bool hidden, View& view,
               bool& projected, std::uint8_t*& slot) noexcept
 {
-    auto*   entry = static_cast<std::uint8_t*>(call.entry);
-    Vector2 point;
-    char    projects = 0;
-    if (!platform::CallGuarded(g_project, projects, controller, static_cast<const Vector3*>(&call.icon), &point))
+    auto*        entry = static_cast<std::uint8_t*>(call.entry);
+    GameVector2D point;
+    char         projects = 0;
+    if (!platform::CallGuarded(g_project, projects, controller, static_cast<const GameVector*>(&call.icon), &point))
     {
         Fault(0, L"an icon's projection");
         return false;
@@ -400,7 +395,7 @@ bool PlaceFor(int column, const Call& call, void* widget, void* controller, cons
     }
     const bool placed = platform::CallGuarded(reinterpret_cast<PlaceFn>(g_place.Original()), call.entry, call.canvas,
                                               hidden ? 0.0f : dt, controller, leader, std::int32_t{0},
-                                              static_cast<const Vector3*>(&call.icon));
+                                              static_cast<const GameVector*>(&call.icon));
     if (swap)
     {
         if (hidden)
@@ -551,7 +546,7 @@ void Replay(int column, void* controller, void* member) noexcept
         return;
     }
     ListEntries(manager);
-    Vector3    memberAt;
+    GameVector memberAt;
     const bool memberKnown = column != 0 && MemberLocation(member, memberAt);
     if (column != 0)
     {
@@ -584,12 +579,12 @@ void Replay(int column, void* controller, void* member) noexcept
         {
             continue;
         }
-        View&          view   = known->views[column];
-        void*          pc     = column != 0 ? controller : call.controller;  // column 0: the tick's own controller
-        const Vector3* leader = column != 0 && memberKnown ? &memberAt : &call.leader;
-        const float    dt     = column != 0 ? call.dt : 0.0f;  // column 0: the tick's step is already taken
-        const bool     sample = &call == &g_calls.front();
-        float          alphaTick = 0.0f;
+        View&             view   = known->views[column];
+        void*             pc     = column != 0 ? controller : call.controller;  // column 0: the tick's own controller
+        const GameVector* leader = column != 0 && memberKnown ? &memberAt : &call.leader;
+        const float       dt     = column != 0 ? call.dt : 0.0f;  // column 0: the tick's step is already taken
+        const bool        sample = &call == &g_calls.front();
+        float             alphaTick = 0.0f;
         if (sample && column != 0)
         {
             Read(static_cast<const std::uint8_t*>(call.entry) + facts::kFieldIconEntryAlpha, alphaTick);

@@ -16,25 +16,14 @@
 // predicted 1.3 turns ahead, the speed, the turn rate. Predict() is the game's formula (AnimBudgetAllocator_Update_SE),
 // fed with a further player's camera manager instead of player 1's: the one recreated piece, the input only.
 
+#include "platform/game_vectors.h"
+
 #include <algorithm>
 #include <cmath>
 
 namespace lss::world::anim_choice {
 
-struct Vec
-{
-    float x = 0.0f, y = 0.0f, z = 0.0f;
-};
-
-inline Vec   operator-(const Vec& a, const Vec& b) noexcept { return {a.x - b.x, a.y - b.y, a.z - b.z}; }
-inline Vec   operator+(const Vec& a, const Vec& b) noexcept { return {a.x + b.x, a.y + b.y, a.z + b.z}; }
-inline Vec   operator*(const Vec& a, float s) noexcept { return {a.x * s, a.y * s, a.z * s}; }
-inline float Dot(const Vec& a, const Vec& b) noexcept { return a.x * b.x + a.y * b.y + a.z * b.z; }
-inline float Length(const Vec& a) noexcept { return std::sqrt(Dot(a, a)); }
-inline Vec   Cross(const Vec& a, const Vec& b) noexcept
-{
-    return {a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x};
-}
+using platform::GameVector;
 
 inline constexpr float kHalfCone = 1.0471976f;  // 60 degrees, in radians
 inline constexpr float kNear     = 500.0f;      // cm
@@ -48,10 +37,10 @@ struct View
     float angle    = 0.0f;
 };
 
-inline View Measure(const Vec& point, const Vec& camera, const Vec& forward) noexcept
+inline View Measure(const GameVector& point, const GameVector& camera, const GameVector& forward) noexcept
 {
-    const Vec   to = point - camera;
-    const float d  = Length(to);
+    const GameVector to = point - camera;
+    const float      d  = Length(to);
     if (d <= 0.0f)
     {
         return {0.0f, 0.0f};
@@ -100,24 +89,24 @@ inline int Best(const View* views, int count) noexcept
 /// The allocator's snapshot block (+0xDC..+0xFB), field for field.
 struct Snapshot
 {
-    Vec   location;  // predicted
-    Vec   forward;   // predicted
-    float speed = 0.0f;
-    float turn  = 0.0f;  // rad/s
+    GameVector location;  // predicted
+    GameVector forward;   // predicted
+    float      speed = 0.0f;
+    float      turn  = 0.0f;  // rad/s
 };
 static_assert(sizeof(Snapshot) == 32, "the allocator's block is 32 bytes");
 
 /// What the prediction keeps between frames (the allocator's +0xC4, +0xD0 and +0xFC, kept per further player).
 struct History
 {
-    Vec  location;
-    Vec  forward;
-    bool cut   = false;
-    bool valid = false;
+    GameVector location;
+    GameVector forward;
+    bool       cut   = false;
+    bool       valid = false;
 };
 
 /// FRotator(pitch, yaw, roll).Vector(), degrees.
-inline Vec ForwardOf(float pitchDegrees, float yawDegrees) noexcept
+inline GameVector ForwardOf(float pitchDegrees, float yawDegrees) noexcept
 {
     constexpr float kRad = 3.14159265f / 180.0f;
     const float     p = pitchDegrees * kRad, y = yawDegrees * kRad;
@@ -125,7 +114,7 @@ inline Vec ForwardOf(float pitchDegrees, float yawDegrees) noexcept
 }
 
 /// This frame's snapshot from the camera's location, forward and cut flag, and `history` moved on: the game's formula.
-inline Snapshot Predict(History& history, const Vec& location, const Vec& forward, bool cut, float dt) noexcept
+inline Snapshot Predict(History& history, const GameVector& location, const GameVector& forward, bool cut, float dt) noexcept
 {
     Snapshot   s;
     const bool reset = cut || history.cut || !history.valid || dt < 1e-8f || Length(history.forward) == 0.0f;
@@ -136,14 +125,14 @@ inline Snapshot Predict(History& history, const Vec& location, const Vec& forwar
     }
     else
     {
-        const Vec velocity = (location - history.location) * (1.0f / dt);
-        s.speed            = Length(velocity);
-        s.location         = location + velocity * 0.1f;
+        const GameVector velocity = (location - history.location) * (1.0f / dt);
+        s.speed                   = Length(velocity);
+        s.location                = location + velocity * 0.1f;
         const float a = Length(history.forward), b = Length(forward);
-        const float theta = std::acos(std::clamp(Dot(history.forward, forward) / (a * b), -1.0f, 1.0f));
-        s.turn            = theta / dt;
-        const Vec   axis  = Cross(history.forward, forward);
-        const float n     = Length(axis);
+        const float      theta = std::acos(std::clamp(Dot(history.forward, forward) / (a * b), -1.0f, 1.0f));
+        s.turn                 = theta / dt;
+        const GameVector axis  = Cross(history.forward, forward);
+        const float      n     = Length(axis);
         if (n < 1e-4f)
         {
             s.forward = forward;
@@ -151,9 +140,9 @@ inline Snapshot Predict(History& history, const Vec& location, const Vec& forwar
         else
         {
             // The previous forward turned 1.3 times this frame's turn about the same axis (perpendicular to it).
-            const Vec   k   = axis * (1.0f / n);
-            const float phi = 1.3f * theta;
-            s.forward       = history.forward * std::cos(phi) + Cross(k, history.forward) * std::sin(phi);
+            const GameVector k   = axis * (1.0f / n);
+            const float      phi = 1.3f * theta;
+            s.forward            = history.forward * std::cos(phi) + Cross(k, history.forward) * std::sin(phi);
         }
     }
     history = {location, forward, cut, true};

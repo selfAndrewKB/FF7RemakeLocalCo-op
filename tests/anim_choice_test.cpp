@@ -35,7 +35,7 @@ int main()
     Check(Tier({12000.0f, 5.0f * kDeg}) == 1, "beyond 100 m in the cone: bones kept, not full");
 
     // The choice: player 1 behind the mesh, player 2 facing it near.
-    const Vec mesh{0, 0, 0};
+    const GameVector mesh{0, 0, 0};
     const View one = Measure(mesh, {-3000, 0, 0}, {-1, 0, 0});  // 30 m, facing away
     const View two = Measure(mesh, {400, 0, 0}, {-1, 0, 0});    // 4 m, facing it
     Check(Near(one.distance, 3000.0f) && Near(one.angle, 180.0f * kDeg, 1e-2f), "measure: behind player 1");

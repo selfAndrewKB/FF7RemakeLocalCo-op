@@ -1,6 +1,7 @@
 #include "world/catch_up_move.h"
 
 #include "engine_facts.h"
+#include "platform/game_vectors.h"
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
@@ -15,7 +16,7 @@ namespace lss::world::catch_up_move {
 
 namespace {
 
-using actor_place::Vec3;
+using platform::GameVector;
 
 using NavPointFn = bool (*)(float* out, const float* origin, const float* dir, float distance, const void* agent,
                             std::uint64_t, std::uint8_t, std::uint32_t, std::uint64_t);
@@ -50,7 +51,7 @@ bool Installed() noexcept
     return g_warp != nullptr;
 }
 
-bool NavPoint(const Vec3& origin, const Vec3& dir, const float distanceCm, Vec3& out) noexcept
+bool NavPoint(const GameVector& origin, const GameVector& dir, const float distanceCm, GameVector& out) noexcept
 {
     if (!Installed())
     {
@@ -72,7 +73,7 @@ bool NavPoint(const Vec3& origin, const Vec3& dir, const float distanceCm, Vec3&
     return true;
 }
 
-bool Move(void* character, const Vec3& point, const float yawDegrees) noexcept
+bool Move(void* character, const GameVector& point, const float yawDegrees) noexcept
 {
     if (!Installed() || character == nullptr)
     {
@@ -92,12 +93,12 @@ bool InFieldAction(const void* character) noexcept
            platform::Read(static_cast<const std::uint8_t*>(component) + facts::kFieldActionRunning, running) && running != 0;
 }
 
-bool SpotTaken(const Vec3& at, const void* except) noexcept
+bool SpotTaken(const GameVector& at, const void* except) noexcept
 {
     for (int seat = 1; seat <= players::kSeatsBuilt; ++seat)
     {
         const void* other = players::scopes::Member(seat);
-        Vec3        there{};
+        GameVector  there{};
         if (other != nullptr && other != except && actor_place::ActorLocation(other, there) &&
             actor_place::FlatDistance(at, there) < 100.0f)
         {

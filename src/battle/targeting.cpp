@@ -45,7 +45,6 @@ constexpr std::uint32_t kLockAt  = facts::kBattleSysLock - facts::kBattleSysTarg
 constexpr std::uint32_t kLatchAt = facts::kBattleSysDummyLatch - facts::kBattleSysTargetFields;
 
 // Set once at install.
-std::uintptr_t g_slot        = 0;        // EndUISystem[19]
 std::uintptr_t g_normalCall  = 0;
 std::uintptr_t g_target      = 0;        // BattleSystem_TickTargeting
 SysFn          g_preTick     = nullptr;
@@ -223,17 +222,15 @@ bool FindInto(const platform::GameImage& image, const platform::FunctionFact& fa
 
 bool Install(const platform::GameImage& image) noexcept
 {
-    const auto slot       = image.Rebase(facts::kCommandCtrlSlotGlobal, sizeof(void*));
     const auto target     = platform::FindFunction(image, facts::kBattleTickTargeting);
     const auto pausedCall = image.Rebase(facts::kTargetingCallPaused, 5);
     const auto normalCall = image.Rebase(facts::kTargetingCallNormal, 5);
-    if (!players::field_root::Installed() || !slot || !target || !pausedCall || !normalCall || !FindInto(image, facts::kBattleTargetPreTick, g_preTick) ||
+    if (!players::field_root::Installed() || !target || !pausedCall || !normalCall || !FindInto(image, facts::kBattleTargetPreTick, g_preTick) ||
         !FindInto(image, facts::kBattleSetLockOn, g_setLock) || !FindInto(image, facts::kBattleClearLockAndTarget, g_clear))
     {
         platform::Log(L"targeting: an engine check failed; no seat has targeting or lock-on");
         return false;
     }
-    g_slot       = *slot;
     g_target     = *target;
     g_normalCall = *normalCall;
     if (!g_pausedCall.Install(*pausedCall, g_target, reinterpret_cast<std::uintptr_t>(&Targeting)))
@@ -287,10 +284,9 @@ void Tick() noexcept
         }
     }
     // The battle's end: the game's own controller leaves its battle HUD mode, or the battle system goes.
-    std::uint8_t* ctrl = nullptr;
-    Read(reinterpret_cast<const void*>(g_slot), ctrl);
-    void*      system   = System();
-    const bool inBattle = ctrl != nullptr && Byte(ctrl, facts::kCommandCtrlBattleHudMode) != 0 && system != nullptr;
+    const std::uint8_t* ctrl     = players::field_root::CommandController();
+    void*               system   = System();
+    const bool          inBattle = ctrl != nullptr && Byte(ctrl, facts::kCommandCtrlBattleHudMode) != 0 && system != nullptr;
     for (int seat = 1; seat <= kSeatsBuilt; ++seat)
     {
         if (g_inBattle && !inBattle)

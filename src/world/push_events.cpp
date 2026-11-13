@@ -375,7 +375,7 @@ void RunMemberAi(float dt) noexcept
         g_aiFirstStep = false;
         return;
     }
-    if (ReadPointer(g_seats[g_event.seat].member, facts::kCharacterFieldAi) != controller)
+    if (players::party_member::FieldAiController(g_seats[g_event.seat].member) != controller)
     {
         ForgetMemberAi();
         return;
@@ -430,7 +430,7 @@ char Init(void* object, const std::uint64_t* targetName, const std::uint64_t* ke
         return 0;
     }
     g_event = Event{.object = object, .seat = seat, .actionId = id, .target = target, .noAnimation = plan.plan.noAnimation};
-    void* aiController = g_aiPlaced ? ReadPointer(g_seats[seat].member, facts::kCharacterFieldAi) : nullptr;
+    void* aiController = g_aiPlaced ? players::party_member::FieldAiController(g_seats[seat].member) : nullptr;
     g_aiFirstStep      = aiController != nullptr;
     g_eventAiController.store(aiController, std::memory_order_release);
     if (g_aiPlaced && aiController == nullptr)

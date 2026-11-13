@@ -2,6 +2,7 @@
 
 #include "control/registry.h"
 #include "engine_facts.h"
+#include "platform/game_vectors.h"
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
@@ -57,9 +58,9 @@ struct Raised
 /// One camera as the evaluator sees it: the cached POV location and its forward.
 struct Camera
 {
-    anim_choice::Vec location;
-    anim_choice::Vec forward;
-    bool             read = false;
+    platform::GameVector location;
+    platform::GameVector forward;
+    bool                 read = false;
 };
 
 /// The further players' views of one entry, in seat order: the seats whose camera read this pass.
@@ -112,7 +113,7 @@ Camera CameraOf(void* manager) noexcept
     return camera;
 }
 
-charapop::EntryView ViewFrom(const Camera& camera, const anim_choice::Vec& at, std::uint8_t category) noexcept
+charapop::EntryView ViewFrom(const Camera& camera, const platform::GameVector& at, std::uint8_t category) noexcept
 {
     const anim_choice::View v = anim_choice::Measure(at, camera.location, camera.forward);
     return {v.distance, v.angle * 57.29578f, category == kCategoryHides, category == kCategoryEnemy};
@@ -373,7 +374,7 @@ void Pass(void* cameraOne) noexcept
         {
             continue;
         }
-        const anim_choice::Vec at{at3[0], at3[1], at3[2]};
+        const platform::GameVector at{at3[0], at3[1], at3[2]};
         const int          index    = Find(record);
         const std::uint8_t level    = index >= 0 ? g_raised[static_cast<std::size_t>(index)].baseLevel
                                                  : Field<std::uint8_t>(record, facts::kCharaPopRecordLevel);

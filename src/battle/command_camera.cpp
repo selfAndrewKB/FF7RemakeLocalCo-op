@@ -8,6 +8,7 @@
 #include "platform/log.h"
 #include "platform/verified_code.h"
 #include "platform/vtable_entry.h"
+#include "players/field_root.h"
 #include "players/seat_camera.h"
 #include "players/seat_objects.h"
 #include "players/seats.h"
@@ -48,7 +49,6 @@ std::array<Seat, players::scopes::kMaxPlayers> g_seats;  // [0] = player 1 (the 
 bool                   g_enabled = true;
 platform::VTableEntry  g_aimSlot;
 AimFn                  g_aim         = nullptr;
-std::uintptr_t         g_commandSlot = 0;  // EndUISystem[19], live
 
 /// The flavor's aim, on whichever operator ticks: counted per seat, the target change logged.
 void Aim(void* flavor, float deltaSeconds, void* a3, void* a4, void* a5)
@@ -62,9 +62,8 @@ void Aim(void* flavor, float deltaSeconds, void* a3, void* a4, void* a5)
     {
         ++s.otherOperator;
     }
-    void* live = nullptr;
-    const bool own = seat != 0 && Read(reinterpret_cast<const void*>(g_commandSlot), live) && live != nullptr &&
-                     live == command_menu::Controller(seat);
+    const void* live = seat != 0 ? players::field_root::CommandController() : nullptr;
+    const bool  own  = live != nullptr && live == command_menu::Controller(seat);
     if (own)
     {
         ++s.ownSlot;
@@ -173,13 +172,11 @@ bool Install(const platform::GameImage& image) noexcept
                        .help = L"the Command camera's per-frame aim by seat: runs, runs with the seat's own UI slot, runs on a "
                                L"foreign operator, target changes, its on/started bytes; the UI scope held and refused",
                        .get  = [] { return control::Value{Reading()}; }});
-    const auto slot = image.Rebase(facts::kCommandCtrlSlotGlobal, sizeof(void*));
-    if (!slot)
+    if (!players::field_root::Installed())
     {
-        platform::Log(L"command camera: the UI slot is outside the image; the aim reading is off, the UI scope stays");
+        platform::Log(L"command camera: the UI slot is not read; the aim reading is off, the UI scope stays");
         return false;
     }
-    g_commandSlot = *slot;
     if (!platform::ReplaceSlot(image, facts::kCommandFlavorAim, reinterpret_cast<std::uintptr_t>(&Aim), g_aimSlot))
     {
         platform::Log(L"command camera: the Command flavor's aim slot differs; the aim reading is off, the UI scope stays");

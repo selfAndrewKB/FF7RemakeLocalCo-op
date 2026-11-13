@@ -4,6 +4,7 @@
 #include "control/registry.h"
 #include "engine_facts.h"
 #include "platform/call_redirect.h"
+#include "platform/game_vectors.h"
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
@@ -89,7 +90,7 @@ const wchar_t* WhoseRest(int seat) noexcept
 /// either cannot be read.
 float FlatMetres(void* a, void* b) noexcept
 {
-    world::actor_place::Vec3 at, bt;
+    platform::GameVector at, bt;
     if (!world::actor_place::ActorLocation(a, at) || !world::actor_place::ActorLocation(b, bt))
     {
         return -1.0f;

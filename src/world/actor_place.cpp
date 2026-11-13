@@ -21,7 +21,7 @@ bool ActorLocation(const void* actor, float (&out)[3]) noexcept
     return true;
 }
 
-bool ActorLocation(const void* actor, Vec3& out) noexcept
+bool ActorLocation(const void* actor, GameVector& out) noexcept
 {
     float at[3]{};
     if (!ActorLocation(actor, at))

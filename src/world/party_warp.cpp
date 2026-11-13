@@ -2,6 +2,7 @@
 
 #include "control/registry.h"
 #include "engine_facts.h"
+#include "platform/game_vectors.h"
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
@@ -23,7 +24,7 @@ namespace lss::world::party_warp {
 
 namespace {
 
-using actor_place::Vec3;
+using platform::GameVector;
 using platform::Read;
 using players::SeatName;
 namespace rules = party_warp_rules;
@@ -136,7 +137,7 @@ try
         return true;
     }
     void* const one = players::field_root::PartyLeader(facts::kLeaderCurrent);
-    Vec3        at{}, oneAt{};
+    GameVector  at{}, oneAt{};
     float       yaw = 0.0f;
     if (one == nullptr || one == member || !actor_place::ActorLocation(member, at) || !actor_place::ActorLocation(one, oneAt) ||
         !actor_place::ActorYaw(one, yaw))
@@ -160,11 +161,11 @@ try
         return true;
     }
     const auto  tries = rules::Spots(yaw);
-    Vec3        point{};
+    GameVector  point{};
     std::size_t used = tries.size();
     for (std::size_t i = 0; i < tries.size() && used == tries.size(); ++i)
     {
-        Vec3 candidate{};
+        GameVector candidate{};
         if (catch_up_move::NavPoint(oneAt, tries[i], catch_up_move::kFollowerCm, candidate) &&
             !catch_up_move::SpotTaken(candidate, member))
         {

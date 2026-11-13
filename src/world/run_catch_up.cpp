@@ -2,6 +2,7 @@
 
 #include "control/registry.h"
 #include "engine_facts.h"
+#include "platform/game_vectors.h"
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
@@ -27,7 +28,7 @@ namespace lss::world::run_catch_up {
 
 namespace {
 
-using actor_place::Vec3;
+using platform::GameVector;
 namespace rules = story_box_rules;
 
 constexpr float kBesideCm = catch_up_move::kFollowerCm;  // from player 1's character
@@ -152,8 +153,8 @@ try
     // Toward the run's point from player 1's character, then 35 degrees to either side, then behind it: the first navmesh
     // point the run passes the box from and no other player's companion stands on (two members may run at once: the Ch. 7
     // and Ch. 9 pairs).
-    const Vec3  from{oneAt[0], oneAt[1], oneAt[2]};
-    const float base = std::atan2(mark.at[1] - oneAt[1], mark.at[0] - oneAt[0]);
+    const GameVector from{oneAt[0], oneAt[1], oneAt[2]};
+    const float      base = std::atan2(mark.at[1] - oneAt[1], mark.at[0] - oneAt[0]);
     if (!std::isfinite(base))
     {
         return false;
@@ -161,13 +162,13 @@ try
     constexpr std::array<float, 4>          kTurns{0.0f, 35.0f, -35.0f, 180.0f};
     constexpr std::array<const wchar_t*, 4> kSides{L"toward the run's point", L"to one side of the run", L"to the other side",
                                                    L"behind it"};
-    Vec3           point{};
+    GameVector     point{};
     const wchar_t* side = nullptr;
     for (std::size_t i = 0; i < kTurns.size() && side == nullptr; ++i)
     {
         const float a = base + kTurns[i] * kPi / 180.0f;
-        Vec3        candidate{};
-        if (!catch_up_move::NavPoint(from, Vec3{std::cos(a), std::sin(a), 0.0f}, kBesideCm, candidate))
+        GameVector  candidate{};
+        if (!catch_up_move::NavPoint(from, GameVector{std::cos(a), std::sin(a), 0.0f}, kBesideCm, candidate))
         {
             continue;
         }

@@ -12,6 +12,7 @@
 #include "platform/call_redirect.h"
 #include "platform/code_redirect.h"
 #include "platform/game_thread.h"
+#include "platform/game_vectors.h"
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
@@ -41,14 +42,9 @@ using GetRectFn        = IntRect* (*)(IntRect* out);
 using FindOrAddEntryFn = void* (*)(void* slot, std::uintptr_t name, const IntRect* rect);
 using SubmitSlotFn     = void (*)(void* renderer, std::uintptr_t pool, void* slot);
 
-/// FVector2D by value: 8 bytes, so the x64 convention passes it packed in rcx, as the game's callers do.
-struct Size2D
-{
-    float x = 0.0f;
-    float y = 0.0f;
-};
-static_assert(sizeof(Size2D) == 8);
-using ContainScaleFn = float (*)(Size2D size);
+using platform::GameVector2D;
+/// The size by value: packed in rcx, as the game's callers pass it (platform/game_vectors.h holds its 8 bytes).
+using ContainScaleFn = float (*)(GameVector2D size);
 
 // Set once at install, then only read.
 platform::CallRedirect g_rectCall;
@@ -125,7 +121,7 @@ bool          g_columnSeen[kMaxColumns] = {};
 bool          g_boxesPublished          = false;
 
 // The UI effects' conversion reads the overlay's UI size twice; both reads answered (or neither).
-using UiSizeFn = Size2D* (*)(Size2D* out);
+using UiSizeFn = GameVector2D* (*)(GameVector2D* out);
 platform::CallRedirect g_effectSizeCalls[2];
 
 /// The entry the layer-entry call placed in this render, for the submit call at its end: the per-child matrices
@@ -286,7 +282,7 @@ void DropBoxes() noexcept
 /// Replaces the UI effects' conversion's two reads of the overlay's UI size (same signature): player 1's column's
 /// size during a further column's pass (its last band's), so every effect is converted in one layout, player 1's,
 /// whichever pass placed it; the game's own read otherwise.
-Size2D* UiSizeForEffects(Size2D* out)
+GameVector2D* UiSizeForEffects(GameVector2D* out)
 {
     if (out != nullptr && g_gameThread.Here() && overlay_pass::Further() && g_hostSet[0].valid)
     {

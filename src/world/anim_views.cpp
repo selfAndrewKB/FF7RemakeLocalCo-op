@@ -66,7 +66,7 @@ double            g_updateMicros = 0.0;
 std::wstring      g_summary      = L"no summary yet";
 
 /// The mesh owner's world location (the judge's own fallback measure point).
-bool OwnerLocation(void* mesh, Vec& out) noexcept
+bool OwnerLocation(void* mesh, GameVector& out) noexcept
 {
     float at[3]{};
     if (!actor_place::ActorLocation(ReadPointer(mesh, facts::kComponentOwner), at))
@@ -97,9 +97,9 @@ void Judge(void* mesh, bool* forceOut, void** leadOut, bool cameraCut) noexcept
         return;
     }
     ++g_judged;
-    auto*    allocator = static_cast<std::uint8_t*>(ReadPointer(mesh, facts::kMeshBudgetAllocator));
-    Snapshot one;
-    Vec      point;
+    auto*      allocator = static_cast<std::uint8_t*>(ReadPointer(mesh, facts::kMeshBudgetAllocator));
+    Snapshot   one;
+    GameVector point;
     if (allocator == nullptr || !Read(allocator + facts::kAllocatorSnapshot, one) || !OwnerLocation(mesh, point))
     {
         NoteJudged(mesh, 1);
@@ -150,7 +150,7 @@ void MakeSnapshots(float dt) noexcept
     {
         Seat&         s       = g_seats[seat];
         const auto*   manager = static_cast<const std::uint8_t*>(s.camera);
-        Vec           location;
+        GameVector    location;
         float         rotation[3]{};
         std::uint32_t flags = 0;
         s.ready             = false;
