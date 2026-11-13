@@ -11,6 +11,7 @@
 #include "platform/verified_code.h"
 #include "platform/vtable_entry.h"
 #include "players/field_root.h"
+#include "players/game_globals.h"
 #include "players/pad_buttons.h"
 #include "players/seat_camera.h"
 #include "players/scopes.h"
@@ -1273,7 +1274,7 @@ bool Install(const platform::GameImage& image) noexcept
         return false;
     };
     const auto fas        = image.Rebase(facts::kFieldActionSystemGlobal, 8);
-    const auto party      = image.Rebase(facts::kPartyManagerGlobal, 8);
+    const auto party      = players::game_globals::Address(players::game_globals::Global::PartyManager);
     const auto compTick   = platform::FindFunction(image, facts::kFieldActionCompTick);
     const auto tickCall   = image.Rebase(facts::kFieldActionCompTickCall, 5);
     const auto startEnd   = platform::FindFunction(image, facts::kActionStartEnd);
@@ -1289,7 +1290,7 @@ bool Install(const platform::GameImage& image) noexcept
         return fail(L"a function, call site or global");
     }
     g_fasGlobal  = *fas;
-    g_party      = *party;
+    g_party      = party;
     g_deactivate = reinterpret_cast<DeactivateFn>(*deactivate);
     if (const auto leave = platform::FindFunction(image, platform::FunctionFact{L"FEndCameraFlavorDuct_BeginLeave", facts::kDuctFlavorLeave,
                                                                                 facts::kDuctFlavorLeaveEntry}))

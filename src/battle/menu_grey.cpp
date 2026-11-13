@@ -11,6 +11,7 @@
 #include "platform/log.h"
 #include "platform/verified_code.h"
 #include "players/field_root.h"
+#include "players/game_globals.h"
 #include "players/scopes.h"
 #include "players/seats.h"
 
@@ -326,7 +327,7 @@ std::wstring Reading()
 
 bool Install(const platform::GameImage& image) noexcept
 {
-    const auto filters    = image.Rebase(facts::kUiFilterSlotGlobal, sizeof(void*));
+    const auto filters    = players::game_globals::UiSlotAddress(facts::kUiFilterSlot);
     const auto activate   = platform::FindFunction(image, facts::kUiFilterActivate);
     const auto deactivate = platform::FindFunction(image, facts::kUiFilterDeactivate);
     const auto openSite   = image.Rebase(facts::kUiFilterWaitOpenCall, 5);
@@ -336,7 +337,7 @@ bool Install(const platform::GameImage& image) noexcept
                       L"slow-down off");
         return false;
     }
-    g_filtersGlobal = *filters;
+    g_filtersGlobal = filters;
     g_activate      = reinterpret_cast<ActivateFn>(*activate);
     g_deactivate    = reinterpret_cast<DeactivateFn>(*deactivate);
     if (!g_open.Install(*openSite, *activate, reinterpret_cast<std::uintptr_t>(&Open)))

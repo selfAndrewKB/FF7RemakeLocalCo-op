@@ -8,6 +8,7 @@
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
+#include "players/game_globals.h"
 
 #include <atomic>
 #include <cstdint>
@@ -186,7 +187,7 @@ bool Install(const platform::GameImage& image) noexcept
     const auto back     = image.Rebase(image_code::kBuffersResume);
     const auto drawCall = image.Rebase(facts::kDrawEntryBatchCall, 5);
     const auto drawFn   = image.Rebase(facts::kDrawEntryBatchToTarget);
-    const auto malloc   = image.Rebase(facts::kGMallocGlobal, sizeof(void*));
+    const auto malloc   = players::game_globals::Address(players::game_globals::Global::Malloc);
     const auto vertex   = image.Rebase(facts::kMenuVertexBufferVtable, 0x30);
     const auto index    = image.Rebase(facts::kMenuIndexBufferVtable, 0x30);
     if (!site || !back || !drawCall || !drawFn || !malloc || !vertex || !index ||
@@ -195,7 +196,7 @@ bool Install(const platform::GameImage& image) noexcept
         platform::Log(L"HUD image: the layer draw is not what the research read; the further players' images stay off");
         return false;
     }
-    g_malloc       = reinterpret_cast<void* const*>(*malloc);
+    g_malloc       = reinterpret_cast<void* const*>(malloc);
     g_vertexVtable = *vertex;
     g_indexVtable  = *index;
     if (!g_drawCall.Install(*drawCall, *drawFn, reinterpret_cast<std::uintptr_t>(&DrawBatch)))

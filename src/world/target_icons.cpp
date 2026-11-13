@@ -8,6 +8,7 @@
 #include "platform/image.h"
 #include "platform/log.h"
 #include "platform/verified_code.h"
+#include "players/game_globals.h"
 #include "players/scopes.h"
 #include "players/seats.h"
 #include "players/weak_object.h"
@@ -464,12 +465,12 @@ bool Install(const platform::GameImage& image) noexcept
         platform::LogWarning(L"target icons: {} is not as the research read it; further players get no prompts and press nothing", what);
         return false;
     };
-    const auto ui15      = image.Rebase(facts::kTargetIconSlotGlobal, 8);
-    const auto gameMode  = image.Rebase(facts::kGameModeGlobal, 8);
+    const auto ui15      = players::game_globals::UiSlotAddress(facts::kTargetIconSlot);
+    const auto gameMode  = players::game_globals::Address(players::game_globals::Global::GameMode);
     const auto showSite  = image.Rebase(facts::kTargetIconShowCall, 5);
     const auto show      = image.Rebase(facts::kTargetIconShow);
     const auto ownerSite = image.Rebase(facts::kWidgetCreateOwnerCall, 5);
-    const auto first     = image.Rebase(facts::kFirstLocalPlayer);
+    const auto first     = platform::FindFunction(image, facts::kFirstLocalPlayer);
     const auto destroy   = platform::FindFunction(image, facts::kTargetIconHideDestroy);
     const auto iconTick  = platform::FindFunction(image, facts::kTargetIconTick);
     const auto remove    = platform::FindFunction(image, facts::kRemoveTarget);
@@ -482,15 +483,15 @@ bool Install(const platform::GameImage& image) noexcept
     {
         return fail(L"the object array (weak pairs)");
     }
-    g_ui15Slot = *ui15, g_gameMode = *gameMode;
+    g_ui15Slot = ui15, g_gameMode = gameMode;
     g_showSite = *showSite, g_show = *show, g_ownerSite = *ownerSite, g_firstLocal = *first, g_removeAt = *remove;
     g_destroy   = reinterpret_cast<DestroyFn>(*destroy);
     g_iconTick  = reinterpret_cast<IconTickFn>(*iconTick);
     g_findEntry = reinterpret_cast<FindEntryFn>(*findEntry);
     // Optional: the icon tick's controller lookup, for a mirror's own HUD pass.
     const auto lookupSite = image.Rebase(facts::kTargetIconTickContextCall, 5);
-    const auto contextAt  = image.Rebase(facts::kPlayerContextController, 16);
-    if (lookupSite && contextAt && image.BytesMatch(facts::kPlayerContextController, facts::kPlayerContextControllerFirst))
+    const auto contextAt  = platform::FindFunction(image, facts::kPlayerContextController);
+    if (lookupSite && contextAt)
     {
         g_lookupSite = *lookupSite;
         g_contextAt  = reinterpret_cast<ContextPcFn>(*contextAt);

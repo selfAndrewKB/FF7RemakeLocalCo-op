@@ -8,6 +8,7 @@
 #include "platform/log.h"
 #include "platform/name_text.h"
 #include "platform/verified_code.h"
+#include "players/game_globals.h"
 #include "players/seats.h"
 #include "views/scene_camera.h"
 #include "world/actor_place.h"
@@ -534,8 +535,8 @@ bool Install(const platform::GameImage& image) noexcept
     const auto resize    = platform::FindFunction(image, facts::kPointerArrayResize);
     const auto attached  = platform::FindFunction(image, facts::kGetAttachedActors);
     const auto release   = platform::FindFunction(image, facts::kGameFree);
-    const auto save      = image.Rebase(facts::kSaveDataGlobal, sizeof(void*));
-    const auto manager   = image.Rebase(facts::kEnvSetManagerGlobal, sizeof(void*));
+    const auto save      = players::game_globals::Address(players::game_globals::Global::DataSingleton);
+    const auto manager   = players::game_globals::Address(players::game_globals::Global::EnvSetManager);
     if (!issueCall || !readCall || !issue || !read || !reset || !findId || !findActor || !resize || !attached ||
         !release || !save || !manager)
     {
@@ -551,8 +552,8 @@ bool Install(const platform::GameImage& image) noexcept
     g_resize    = reinterpret_cast<ResizeFn>(*resize);
     g_attached  = reinterpret_cast<AttachedFn>(*attached);
     g_free      = reinterpret_cast<FreeFn>(*release);
-    g_save      = reinterpret_cast<std::uint8_t**>(*save);
-    g_manager   = reinterpret_cast<std::uint8_t**>(*manager);
+    g_save      = reinterpret_cast<std::uint8_t**>(save);
+    g_manager   = reinterpret_cast<std::uint8_t**>(manager);
     if (!g_readCall.Install(*readCall, *read, reinterpret_cast<std::uintptr_t>(&ReadSet)))
     {
         platform::LogWarning(L"env sets: the read could not be redirected; every further player's view shows what player "

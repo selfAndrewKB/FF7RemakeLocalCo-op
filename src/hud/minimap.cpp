@@ -17,6 +17,8 @@
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
+#include "platform/verified_code.h"
+#include "players/game_globals.h"
 #include "players/scopes.h"
 #include "players/seat_objects.h"
 #include "players/seats.h"
@@ -806,18 +808,18 @@ bool Install(const platform::GameImage& image) noexcept
     g.addRaw         = reinterpret_cast<AddRawFn>(at(f::kMulticastAddRaw));
     g.acquire        = reinterpret_cast<AcquireFn>(at(c::kAcquireLayer));
     g.findOrAdd      = reinterpret_cast<FindOrAddFn>(at(f::kFindOrAddLayerEntry));
-    g.submit         = reinterpret_cast<SubmitFn>(at(f::kSubmitLayerSlot));
-    g.setColor       = reinterpret_cast<SetColorFn>(at(f::kSetColorAndOpacity));
+    g.submit         = reinterpret_cast<SubmitFn>(platform::FindFunction(image, f::kSubmitLayerSlot).value_or(0));
+    g.setColor       = reinterpret_cast<SetColorFn>(platform::FindFunction(image, f::kSetColorAndOpacity).value_or(0));
     g.bannerStart    = at(f::kNaviBannerStart);
     g.bannerEnd      = at(f::kNaviBannerEnd);
-    g.slot29         = reinterpret_cast<void**>(at(f::kNaviSlotGlobal, sizeof(void*)));
-    g.slot35         = reinterpret_cast<void**>(at(f::kBannerSlotGlobal, sizeof(void*)));
-    g.partyManager   = reinterpret_cast<std::uint8_t**>(at(f::kPartyManagerGlobal, sizeof(void*)));
+    g.slot29         = reinterpret_cast<void**>(players::game_globals::UiSlotAddress(f::kNaviSlot));
+    g.slot35         = reinterpret_cast<void**>(players::game_globals::UiSlotAddress(f::kBannerSlot));
+    g.partyManager   = reinterpret_cast<std::uint8_t**>(players::game_globals::Address(players::game_globals::Global::PartyManager));
     const auto site     = at(c::kNaviSite, sizeof(c::kNaviCall));
     const auto back     = at(c::kNaviReturn);
     const auto skipTo   = at(c::kNaviSkipTo);
     if (!g.tick || !g.setupMap || !g.addIcon || !g.removeIcon || !g.firstPc || !g.addToRoot || !g.ctor || !g.acquire ||
-        !g.slot29 || !g.slot35 || !g.partyManager || !site || !back || !skipTo ||
+        !g.submit || !g.setColor || !g.slot29 || !g.slot35 || !g.partyManager || !site || !back || !skipTo ||
         !image.BytesMatch(c::kNaviCheckStart, c::kNaviBytes) || !image.BytesMatch(c::kNaviSubmitStart, c::kNaviSubmitBytes))
     {
         platform::Log(L"HUD minimap: the navi map's code is not what the research read; every player sees player 1's minimap");
@@ -835,7 +837,7 @@ bool Install(const platform::GameImage& image) noexcept
         return redirect.Install(at(siteAddress, 5), at(target), reinterpret_cast<std::uintptr_t>(replacement));
     };
     bool ok = call(g_entryCall, f::kNaviEntryCall, f::kFindOrAddLayerEntry, &FindOrAddPool0) &&
-              call(g_submitCall, f::kNaviSubmitCall, f::kSubmitLayerSlot, &SubmitPool0);
+              call(g_submitCall, f::kNaviSubmitCall, f::kSubmitLayerSlot.address, &SubmitPool0);
     if (!ok)
     {
         g_entryCall.Restore();

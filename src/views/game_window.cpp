@@ -5,6 +5,7 @@
 #include "platform/image.h"
 #include "platform/log.h"
 #include "platform/verified_code.h"
+#include "players/game_globals.h"
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -29,10 +30,9 @@ using GetOSWindowHandleFn = void* (*)(void* self);
 /// FSystemResolution::RequestResolutionChange(width, height, EWindowMode): sets r.SetRes at console priority.
 using RequestResolutionFn = std::uint64_t (*)(std::uint32_t width, std::uint32_t height, std::int32_t mode);
 
-std::uintptr_t      g_engineGlobal = 0;        // GEngine, live
-std::uintptr_t      g_vtable       = 0;        // FWindowsWindow's vtable, live
-RequestResolutionFn g_request      = nullptr;  // live
-const std::int32_t* g_systemRes    = nullptr;  // GSystemResolution, live (read only)
+std::uintptr_t      g_vtable    = 0;        // FWindowsWindow's vtable, live
+RequestResolutionFn g_request   = nullptr;  // live
+const std::int32_t* g_systemRes = nullptr;  // GSystemResolution, live (read only)
 
 template <class Fn>
 Fn Slot(std::size_t index) noexcept
@@ -45,9 +45,9 @@ Fn Slot(std::size_t index) noexcept
 
 bool Install(const platform::GameImage& image) noexcept
 {
-    const auto engineGlobal = image.Rebase(facts::kGEngine, sizeof(std::uintptr_t));
+    const auto engineGlobal = players::game_globals::Address(players::game_globals::Global::Engine);
     const auto vtable       = image.Rebase(facts::kWindowsWindowVTable, 30 * sizeof(std::uintptr_t));
-    const auto systemRes    = image.Rebase(facts::kSystemResolution, 3 * sizeof(std::int32_t));
+    const auto systemRes    = players::game_globals::Address(players::game_globals::Global::SystemResolution);
     const auto reshape      = platform::FindFunction(image, facts::kWindowsWindowReshapeWindow);
     const auto mode         = platform::FindFunction(image, facts::kWindowsWindowGetWindowMode);
     const auto handle       = platform::FindFunction(image, facts::kWindowsWindowGetOSWindowHandle);
@@ -66,10 +66,9 @@ bool Install(const platform::GameImage& image) noexcept
                              request ? L"found" : L"missing", witness ? L"matches" : L"differs");
         return false;
     }
-    g_engineGlobal = *engineGlobal;
-    g_vtable       = *vtable;
-    g_systemRes    = reinterpret_cast<const std::int32_t*>(*systemRes);
-    g_request      = reinterpret_cast<RequestResolutionFn>(*request);
+    g_vtable    = *vtable;
+    g_systemRes = reinterpret_cast<const std::int32_t*>(systemRes);
+    g_request   = reinterpret_cast<RequestResolutionFn>(*request);
     return true;
 }
 
@@ -78,7 +77,8 @@ bool Install(const platform::GameImage& image) noexcept
 std::optional<Window> Find(const wchar_t** why) noexcept
 {
     std::uintptr_t engine = 0, swindow = 0, native = 0, vtable = 0;
-    if (!Read(reinterpret_cast<const void*>(g_engineGlobal), engine) || engine == 0)
+    engine = reinterpret_cast<std::uintptr_t>(players::game_globals::Object(players::game_globals::Global::Engine));
+    if (engine == 0)
     {
         *why = L"GEngine is not set";
         return std::nullopt;
@@ -178,10 +178,10 @@ std::wstring ResolutionText(const Resolution& resolution)
 
 std::wstring ViewportText() noexcept
 {
-    std::uintptr_t engine = 0, client = 0, viewport = 0;
+    std::uintptr_t client = 0, viewport = 0;
     std::int32_t   size[2]{};
-    if (Read(reinterpret_cast<const void*>(g_engineGlobal), engine) && engine != 0 &&
-        Read(reinterpret_cast<const void*>(engine + facts::kEngineGameViewport), client) && client != 0 &&
+    client = reinterpret_cast<std::uintptr_t>(players::game_globals::GameViewportClient());
+    if (client != 0 &&
         Read(reinterpret_cast<const void*>(client + facts::kViewportClientViewport), viewport) && viewport != 0 &&
         platform::CopyGuarded(size, reinterpret_cast<const void*>(viewport + facts::kViewportSizeX), sizeof(size)))
     {

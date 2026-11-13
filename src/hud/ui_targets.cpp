@@ -10,6 +10,7 @@
 #include "platform/image.h"
 #include "platform/log.h"
 #include "hud/ui_effect_pass.h"
+#include "players/game_globals.h"
 #include "render/family_now.h"
 #include "render/movie_frame.h"
 #include "render/view_places.h"
@@ -251,13 +252,13 @@ bool Install(const platform::GameImage& image) noexcept
     const auto allocFn    = image.Rebase(facts::kUiAllocBind);
     const auto post       = image.Rebase(facts::kPostProcessCall, 5);
     const auto postFn     = image.Rebase(facts::kPostProcessProcess);
-    const auto targets    = image.Rebase(facts::kSceneRenderTargetsGlobal + facts::kSceneTargetsInGameUI, sizeof(void*));
+    const auto targets    = players::game_globals::Address(players::game_globals::Global::SceneRenderTargets);
     if (!alloc || !allocClear || !allocFn || !post || !postFn || !targets)
     {
         platform::Log(L"HUD targets: an address is outside the image; both halves keep one UI image");
         return false;
     }
-    g_member = *targets;
+    g_member = targets + facts::kSceneTargetsInGameUI;
     // The post-process call first: alone it only passes the view through.
     if (!g_postCall.Install(*post, *postFn, reinterpret_cast<std::uintptr_t>(&PostProcess)) ||
         !g_allocCall.Install(*alloc, *allocFn, reinterpret_cast<std::uintptr_t>(&UiPassMain)) ||

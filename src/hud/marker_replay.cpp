@@ -11,6 +11,7 @@
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
+#include "players/game_globals.h"
 #include "players/weak_object.h"
 #include "players/scopes.h"
 #include "players/seats.h"
@@ -1327,8 +1328,7 @@ bool Install(const platform::GameImage& image) noexcept
     g_targetedAt   = *targeted;
     g_textAt       = *text;
     g_setPosition  = reinterpret_cast<SetPositionFn>(*position);
-    if (const auto contextPc = image.Rebase(facts::kPlayerContextController, 16);
-        contextPc && image.BytesMatch(facts::kPlayerContextController, facts::kPlayerContextControllerFirst))
+    if (const auto contextPc = platform::FindFunction(image, facts::kPlayerContextController))
     {
         g_contextPc = reinterpret_cast<ContextPcFn>(*contextPc);
     }
@@ -1352,7 +1352,7 @@ bool Install(const platform::GameImage& image) noexcept
     g_attribute        = reinterpret_cast<AttributeFn>(*attribute);
     // The bars' class per column: every function the further columns' classes call, or they keep the tick's class.
     {
-        const auto barSlot   = image.Rebase(facts::kEnemyBarSlotGlobal, sizeof(void*));
+        const auto barSlot   = players::game_globals::UiSlotAddress(facts::kEnemyBarSlot);
         const auto main      = platform::FindFunction(image, facts::kMainTargetOfLockOn);
         const auto weakFree  = platform::FindFunction(image, facts::kWeakPtrRelease);
         const auto dtAlpha   = platform::FindFunction(image, facts::kGameStateDtAlpha);
@@ -1373,7 +1373,7 @@ bool Install(const platform::GameImage& image) noexcept
             catch (...)
             {
             }
-            g_barSlot         = reinterpret_cast<void**>(*barSlot);
+            g_barSlot         = reinterpret_cast<void**>(barSlot);
             g_mainTarget      = reinterpret_cast<MainTargetFn>(*main);
             g_weakRelease     = reinterpret_cast<WeakReleaseFn>(*weakFree);
             g_dtAlpha         = reinterpret_cast<DtAlphaFn>(*dtAlpha);
@@ -1400,8 +1400,9 @@ bool Install(const platform::GameImage& image) noexcept
     const auto labelsSite = image.Rebase(facts::kLabelsContextCall, 5);
     const auto labelsTwo  = image.Rebase(facts::kLabelsContextCall2, 5);
     const auto weakSite   = image.Rebase(facts::kWeakPointsContextCall, 5);
-    const auto contextFn  = image.Rebase(facts::kPlayerContextController, 16);
-    const auto slots      = image.Rebase(facts::kEndUISystemSlots, 64 * sizeof(void*));
+    const auto contextFn  = platform::FindFunction(image, facts::kPlayerContextController);
+    const auto labelsSlot = players::game_globals::UiSlotAddress(facts::kLabelsSlot);
+    const auto weakSlot   = players::game_globals::UiSlotAddress(facts::kWeakPointsSlot);
     if (cursor && lockon && image.BytesMatch(facts::kCursorPlace, facts::kCursorPlaceFirst) &&
         image.BytesMatch(facts::kLockonPlace, facts::kLockonPlaceFirst))
     {
@@ -1413,10 +1414,9 @@ bool Install(const platform::GameImage& image) noexcept
         platform::Log(L"HUD markers: the target cursor or lock-on placement is not what the research read; they stay "
                       L"player 1's");
     }
-    if (labelsTick && weakTick && labelsSite && labelsTwo && weakSite && contextFn && slots &&
+    if (labelsTick && weakTick && labelsSite && labelsTwo && weakSite && contextFn && labelsSlot && weakSlot &&
         image.BytesMatch(facts::kLabelsTick, facts::kLabelsTickFirst) &&
-        image.BytesMatch(facts::kWeakPointsTick, facts::kWeakPointsTickFirst) &&
-        image.BytesMatch(facts::kPlayerContextController, facts::kPlayerContextControllerFirst))
+        image.BytesMatch(facts::kWeakPointsTick, facts::kWeakPointsTickFirst))
     {
         g_labelsTick  = reinterpret_cast<ManagerTickFn>(*labelsTick);
         g_weakTick    = reinterpret_cast<ManagerTickFn>(*weakTick);
@@ -1424,8 +1424,8 @@ bool Install(const platform::GameImage& image) noexcept
         g_labelsSite2 = *labelsTwo;
         g_weakSite    = *weakSite;
         g_contextAt   = *contextFn;
-        g_labelsSlot  = reinterpret_cast<void**>(*slots) + facts::kLabelsSlot;
-        g_weakSlot    = reinterpret_cast<void**>(*slots) + facts::kWeakPointsSlot;
+        g_labelsSlot  = reinterpret_cast<void**>(labelsSlot);
+        g_weakSlot    = reinterpret_cast<void**>(weakSlot);
     }
     else
     {

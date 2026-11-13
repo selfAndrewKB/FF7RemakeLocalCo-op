@@ -7,6 +7,7 @@
 #include "platform/image.h"
 #include "platform/log.h"
 #include "platform/verified_code.h"
+#include "players/game_globals.h"
 #include "players/seat_camera.h"
 #include "players/seat_objects.h"
 #include "players/scopes.h"
@@ -281,7 +282,7 @@ bool Install(const platform::GameImage& image) noexcept
     const auto pop        = platform::FindFunction(image, facts::kCameraSettingPopRequest);
     const auto setFree    = platform::FindFunction(image, facts::kOperatorSetStateFree);
     const auto resetMove  = platform::FindFunction(image, facts::kOperatorResetBattleMoveFollow);
-    const auto data       = image.Rebase(facts::kDataSingletonGlobal, sizeof(void*));
+    const auto data       = game_globals::Address(game_globals::Global::DataSingleton);
     const auto popSite    = image.Rebase(facts::kCameraSettingPopRequestBattleEndCall, 5);
     if (!enter || !pop || !setFree || !resetMove || !data || !popSite)
     {
@@ -292,7 +293,7 @@ bool Install(const platform::GameImage& image) noexcept
     g_popRequest      = reinterpret_cast<PopRequestFn>(*pop);
     g_setStateFree    = reinterpret_cast<OperatorVoidFn>(*setFree);
     g_resetMoveFollow = reinterpret_cast<OperatorVoidFn>(*resetMove);
-    g_data            = reinterpret_cast<std::uint8_t**>(*data);
+    g_data            = reinterpret_cast<std::uint8_t**>(data);
 
     bool installed = g_popCall.Install(*popSite, *pop, reinterpret_cast<std::uintptr_t>(&PopRequest));
     for (std::size_t i = 0; installed && i < g_enterCalls.size(); ++i)

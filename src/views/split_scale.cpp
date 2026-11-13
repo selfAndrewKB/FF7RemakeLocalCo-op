@@ -8,6 +8,7 @@
 #include "platform/instruction_patch.h"
 #include "platform/log.h"
 #include "platform/verified_code.h"
+#include "players/game_globals.h"
 #include "views/split_scale_rules.h"
 
 #ifndef WIN32_LEAN_AND_MEAN
@@ -82,7 +83,6 @@ struct Sizes
 };
 
 // Set at install, then only read.
-std::uintptr_t      g_engineGlobal = 0;
 const std::int32_t* g_systemRes    = nullptr;
 StatusFn            g_status       = nullptr;
 Console             g_console      = nullptr;
@@ -217,10 +217,10 @@ Sizes ReadSizes() noexcept
 {
     Sizes          sizes;
     std::int32_t   res[2]{};
-    std::uintptr_t engine = 0, client = 0, viewport = 0;
+    const auto     client   = reinterpret_cast<std::uintptr_t>(players::game_globals::GameViewportClient());
+    std::uintptr_t viewport = 0;
     std::int32_t   view[2]{};
-    sizes.read = platform::CopyGuarded(res, g_systemRes, sizeof(res)) && Read(reinterpret_cast<const void*>(g_engineGlobal), engine) &&
-                 engine != 0 && Read(reinterpret_cast<const void*>(engine + facts::kEngineGameViewport), client) && client != 0 &&
+    sizes.read = platform::CopyGuarded(res, g_systemRes, sizeof(res)) && client != 0 &&
                  Read(reinterpret_cast<const void*>(client + facts::kViewportClientViewport), viewport) && viewport != 0 &&
                  platform::CopyGuarded(view, reinterpret_cast<const void*>(viewport + facts::kViewportSizeX), sizeof(view)) &&
                  res[0] > 0 && res[1] > 0 && view[0] > 0 && view[1] > 0;  // a minimized window reads 0x0: unread
@@ -235,7 +235,8 @@ Status ReadStatus() noexcept
 {
     Status         status;
     std::uintptr_t engine = 0;
-    if (!Read(reinterpret_cast<const void*>(g_engineGlobal), engine) || engine == 0 ||
+    engine = reinterpret_cast<std::uintptr_t>(players::game_globals::Object(players::game_globals::Global::Engine));
+    if (engine == 0 ||
         !platform::CallGuarded(g_status, reinterpret_cast<void*>(engine), static_cast<void*>(&status)))
     {
         status.status = -1;
@@ -398,8 +399,8 @@ std::wstring Reading()
 
 bool Install(const platform::GameImage& image, Console console) noexcept
 {
-    const auto engine    = image.Rebase(facts::kGEngine, sizeof(std::uintptr_t));
-    const auto systemRes = image.Rebase(facts::kSystemResolution, 3 * sizeof(std::int32_t));
+    const auto engine    = players::game_globals::Address(players::game_globals::Global::Engine);
+    const auto systemRes = players::game_globals::Address(players::game_globals::Global::SystemResolution);
     const auto maxRef    = image.Rebase(facts::kDynResMaxScreenPercentageRef, sizeof(void*));
     const auto denyRef   = image.Rebase(facts::kDynResPausingDeniedRef, sizeof(void*));
     const auto status    = platform::FindFunction(image, facts::kGetDynamicResolutionStatus);
@@ -409,13 +410,12 @@ bool Install(const platform::GameImage& image, Console console) noexcept
                              L"the window keeps undrawn edges");
         return false;
     }
-    g_engineGlobal = *engine;
-    g_systemRes    = reinterpret_cast<const std::int32_t*>(*systemRes);
-    g_max.ref      = *maxRef;
-    g_deny.ref     = *denyRef;
-    g_status       = reinterpret_cast<StatusFn>(*status);
-    g_console      = console;
-    g_installed    = true;
+    g_systemRes = reinterpret_cast<const std::int32_t*>(systemRes);
+    g_max.ref   = *maxRef;
+    g_deny.ref  = *denyRef;
+    g_status    = reinterpret_cast<StatusFn>(*status);
+    g_console   = console;
+    g_installed = true;
     const auto width  = image.Rebase(facts::kBloomAreaWidthMul, sizeof(facts::kBloomAreaBySp));
     const auto height = image.Rebase(facts::kBloomAreaHeightMul, sizeof(facts::kBloomAreaBySp));
     if (width && height && image.BytesMatch(facts::kBloomAreaSizeStart, facts::kBloomAreaSize))

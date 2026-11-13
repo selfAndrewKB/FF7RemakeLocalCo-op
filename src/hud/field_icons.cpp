@@ -9,6 +9,7 @@
 #include "platform/image.h"
 #include "platform/log.h"
 #include "platform/sparse_array.h"
+#include "players/game_globals.h"
 #include "players/weak_object.h"
 #include "world/actor_place.h"
 
@@ -461,8 +462,8 @@ bool Install(const platform::GameImage& image) noexcept
 {
     const auto place   = image.Rebase(facts::kFieldIconPlace, 16);
     const auto project = image.Rebase(facts::kOverlayProject, 16);
-    const auto slots   = image.Rebase(facts::kEndUISystemSlots, 64 * sizeof(void*));
-    if (!place || !project || !slots || !image.BytesMatch(facts::kFieldIconPlace, facts::kFieldIconPlaceFirst) ||
+    const auto slot    = players::game_globals::UiSlotAddress(facts::kFieldIconSlot);
+    if (!place || !project || !slot || !image.BytesMatch(facts::kFieldIconPlace, facts::kFieldIconPlaceFirst) ||
         !image.BytesMatch(facts::kOverlayProject, facts::kOverlayProjectFirst))
     {
         platform::Log(L"field icons: the icon placement or the overlay projection is not what the research read; the field "
@@ -471,7 +472,7 @@ bool Install(const platform::GameImage& image) noexcept
     }
     g_placeAt   = *place;
     g_project   = reinterpret_cast<ProjectFn>(*project);
-    g_slot      = reinterpret_cast<void**>(*slots) + facts::kFieldIconSlot;
+    g_slot      = reinterpret_cast<void**>(slot);
     g_pending   = true;  // installed by the game thread's tick, outside the function
     g_installed = true;
 

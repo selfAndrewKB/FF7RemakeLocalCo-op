@@ -7,6 +7,7 @@
 #include "platform/image.h"
 #include "platform/log.h"
 #include "platform/verified_code.h"
+#include "players/game_globals.h"
 
 #include <atomic>
 #include <cstdint>
@@ -74,15 +75,15 @@ void Release(void* sceneTargets)
 
 bool Install(const platform::GameImage& image) noexcept
 {
-    const auto site   = image.Rebase(facts::kCompositeReleaseCall, 5);
-    const auto target = platform::FindFunction(image, facts::kCompositeRelease);
-    const auto member = image.Rebase(facts::kSceneRenderTargetsGlobal + facts::kSceneTargetsCompositeHdr, sizeof(void*));
-    if (!site || !target || !member)
+    const auto site    = image.Rebase(facts::kCompositeReleaseCall, 5);
+    const auto target  = platform::FindFunction(image, facts::kCompositeRelease);
+    const auto targets = players::game_globals::Address(players::game_globals::Global::SceneRenderTargets);
+    if (!site || !target || !targets)
     {
         platform::Log(L"movie frame: the release differs from the research; a movie shows in the first view only");
         return false;
     }
-    g_member = *member;
+    g_member = targets + facts::kSceneTargetsCompositeHdr;
     if (!g_call.Install(*site, *target, reinterpret_cast<std::uintptr_t>(&Release)))
     {
         platform::Log(L"movie frame: the release call is not what the research read; a movie shows in the first view only");

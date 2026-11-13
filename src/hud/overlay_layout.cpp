@@ -17,6 +17,7 @@
 #include "platform/image.h"
 #include "platform/log.h"
 #include "platform/verified_code.h"
+#include "players/game_globals.h"
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -789,16 +790,16 @@ bool Install(const platform::GameImage& image) noexcept
     const auto rectFn    = image.Rebase(facts::kGetInGameUIRect);
     const auto entryCall = image.Rebase(facts::kLayerEntryCall, 5);
     const auto entryFn   = image.Rebase(facts::kFindOrAddLayerEntry);
-    const auto overlay   = image.Rebase(facts::kRootOverlayGlobal, sizeof(void*));
+    const auto overlay   = players::game_globals::Address(players::game_globals::Global::RootOverlay);
     const auto submit    = image.Rebase(facts::kLayerSubmitCall, 5);
-    const auto submitFn  = image.Rebase(facts::kSubmitLayerSlot);
+    const auto submitFn  = platform::FindFunction(image, facts::kSubmitLayerSlot);
     const auto contain   = platform::FindFunction(image, facts::kContainScale);
     if (!rectCall || !rectFn || !entryCall || !entryFn || !overlay || !contain || !submit || !submitFn)
     {
         platform::Log(L"HUD layout: the overlay's code is not what the research read; the HUD keeps the game's layout");
         return false;
     }
-    g_overlay      = *overlay;
+    g_overlay      = overlay;
     g_containScale = reinterpret_cast<ContainScaleFn>(*contain);
     if (!g_entryCall.Install(*entryCall, *entryFn, reinterpret_cast<std::uintptr_t>(&LayerEntry)))
     {

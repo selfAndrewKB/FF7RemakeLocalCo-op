@@ -4,6 +4,7 @@
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/verified_code.h"
+#include "players/game_globals.h"
 #include "players/weak_object.h"
 
 #include <string>
@@ -16,7 +17,6 @@ namespace weak = players::weak_object;
 
 // Set at install, then only read.
 AssignFn       g_assign    = nullptr;
-std::uintptr_t g_ui        = 0;  // EndUISystem's array of managers
 std::uintptr_t g_topVtable = 0;
 
 }  // namespace
@@ -24,14 +24,12 @@ std::uintptr_t g_topVtable = 0;
 bool Install(const platform::GameImage& image) noexcept
 {
     const auto assign    = platform::FindFunction(image, facts::kFStringAssign);
-    const auto ui        = image.Rebase(facts::kEndUISystemSlots, 8 * 64);
     const auto topVtable = image.Rebase(facts::kMainTopMenuVtable, 8);
-    if (!assign || !ui || !topVtable || !weak::Installed())
+    if (!assign || players::game_globals::Address(players::game_globals::Global::UiSystemSlots) == 0 || !topVtable || !weak::Installed())
     {
         return false;
     }
     g_assign    = reinterpret_cast<AssignFn>(*assign);
-    g_ui        = *ui;
     g_topVtable = *topVtable;
     return true;
 }
@@ -39,16 +37,6 @@ bool Install(const platform::GameImage& image) noexcept
 AssignFn Assign() noexcept
 {
     return g_assign;
-}
-
-void* System() noexcept
-{
-    return reinterpret_cast<void*>(g_ui);
-}
-
-void* Manager(std::uint32_t slot) noexcept
-{
-    return g_ui != 0 ? platform::ReadPointer(reinterpret_cast<const void*>(g_ui), slot * 8) : nullptr;
 }
 
 bool IsTopWindow(const void* window) noexcept

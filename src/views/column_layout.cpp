@@ -11,6 +11,7 @@
 #include "platform/image.h"
 #include "platform/log.h"
 #include "platform/settings.h"
+#include "players/game_globals.h"
 #include "views/column_rules.h"
 
 #include <array>
@@ -43,8 +44,7 @@ constexpr std::uint8_t   kLayoutSideBySide     = 1;    // ETwoPlayerSplitScreenT
 constexpr const wchar_t* kGameMapsSettingsPath = L"/Script/EngineSettings.Default__GameMapsSettings";
 
 // Set at install, then only read.
-std::uintptr_t g_engineGlobal = 0;
-bool           g_installed    = false;
+bool g_installed = false;
 
 // Game thread.
 int            g_override       = 0;        // the console's columns, 0 for none
@@ -113,16 +113,12 @@ void Fault(const wchar_t* why) noexcept
 /// the constructor's: six entries, the two-player ones of two records, the three-player ones of three.
 std::uint8_t* FindRecords(std::uint32_t type, std::int32_t expected, const wchar_t** why) noexcept
 {
-    std::uintptr_t engine = 0, client = 0, entries = 0, records = 0;
-    std::int32_t   count  = 0;
-    if (!Read(reinterpret_cast<const void*>(g_engineGlobal), engine) || engine == 0)
+    const auto     client  = reinterpret_cast<std::uintptr_t>(players::game_globals::GameViewportClient());
+    std::uintptr_t entries = 0, records = 0;
+    std::int32_t   count   = 0;
+    if (client == 0)
     {
-        *why = L"GEngine is not set";
-        return nullptr;
-    }
-    if (!Read(reinterpret_cast<const void*>(engine + facts::kEngineGameViewport), client) || client == 0)
-    {
-        *why = L"the engine has no game viewport client yet";
+        *why = L"GEngine is not set, or it has no game viewport client yet";
         return nullptr;
     }
     if (!Read(reinterpret_cast<const void*>(client + facts::kViewportClientSplitscreenInfo), entries) ||
@@ -588,13 +584,12 @@ std::wstring TwoReading(const TwoEntry& e)
 
 bool Install(const platform::GameImage& image) noexcept
 {
-    const auto engineGlobal = image.Rebase(facts::kGEngine, sizeof(std::uintptr_t));
+    const auto engineGlobal = players::game_globals::Address(players::game_globals::Global::Engine);
     if (!engineGlobal)
     {
         platform::LogWarning(L"column layout: GEngine is outside the image; three columns are unavailable");
         return false;
     }
-    g_engineGlobal = *engineGlobal;
     g_installed    = true;
     g_wanted       = Records{{kStockFavorTop[0], kStockFavorTop[1], kStockFavorTop[2]}};
     g_lastWrite    = g_wanted;

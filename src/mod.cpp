@@ -30,6 +30,7 @@
 #include "platform/settings.h"
 #include "players/camera_override.h"
 #include "players/field_root.h"
+#include "players/game_globals.h"
 #include "players/nav_area.h"
 #include "players/operator_battle_mode.h"
 #include "players/own_controller.h"
@@ -67,7 +68,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.188.0-one-reader";  // the one version string (the log, UE4SS and the setup app)
+constexpr const wchar_t* kVersion = L"0.189.0-shared-globals";  // the one version string (the log, UE4SS and the setup app)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
@@ -264,8 +265,9 @@ public:
         const auto image = lss::platform::GameImage::Locate();
         if (image)
         {
-            lss::players::weak_object::Install(*image);  // first: every module that keeps a game object between ticks uses it
-            lss::players::field_root::Install(*image);   // second: the field root, the battle system and the party leader, read by most
+            lss::players::weak_object::Install(*image);   // first: every module that keeps a game object between ticks uses it
+            lss::players::game_globals::Install(*image);  // second: the shared globals (each module checks its own)
+            lss::players::field_root::Install(*image);    // third: the field root, the battle system and the party leader, read by most
         }
         if (!image || !session_.Install(*image))
         {

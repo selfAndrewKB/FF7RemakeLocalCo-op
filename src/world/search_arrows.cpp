@@ -10,6 +10,7 @@
 #include "platform/sparse_array.h"
 #include "platform/verified_code.h"
 #include "platform/vtable_entry.h"
+#include "players/game_globals.h"
 #include "players/scopes.h"
 #include "players/seats.h"
 #include "players/weak_object.h"
@@ -657,7 +658,7 @@ bool Install(const platform::GameImage& image) noexcept
                              L"search arrow", what);
         return false;
     };
-    const auto global   = image.Rebase(facts::kSearchSlotGlobal, sizeof(void*));
+    const auto global   = players::game_globals::UiSlotAddress(facts::kSearchSlot);
     const auto clearAll = platform::FindFunction(image, facts::kSearchSlotClearAll);
     const auto tick     = platform::FindFunction(image, facts::kSearchSlotTick);
     const auto bits     = platform::FindFunction(image, facts::kBitArrayInit);
@@ -671,7 +672,7 @@ bool Install(const platform::GameImage& image) noexcept
     {
         return fail(L"the object array (weak pairs)");
     }
-    g_slotGlobal = *global;
+    g_slotGlobal = global;
     g_clearAll   = reinterpret_cast<SlotFn>(*clearAll);
     g_tick       = reinterpret_cast<SlotFn>(*tick);
     g_bitsInit   = reinterpret_cast<BitsFn>(*bits);
@@ -680,8 +681,8 @@ bool Install(const platform::GameImage& image) noexcept
     // Optional: the per-arrow placement, for a mirror's own HUD pass (without it a mirror shows player 1's placement).
     const auto place = platform::FindFunction(image, facts::kSearchPlaceArrow);
     const auto site  = image.Rebase(facts::kSearchPlaceArrowContextCall, 5);
-    const auto pc    = image.Rebase(facts::kPlayerContextController, 16);
-    if (place && site && pc && image.BytesMatch(facts::kPlayerContextController, facts::kPlayerContextControllerFirst))
+    const auto pc    = platform::FindFunction(image, facts::kPlayerContextController);
+    if (place && site && pc)
     {
         g_place     = reinterpret_cast<PlaceFn>(*place);
         g_contextAt = reinterpret_cast<ContextPcFn>(*pc);

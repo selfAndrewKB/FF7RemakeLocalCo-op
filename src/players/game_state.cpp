@@ -7,6 +7,7 @@
 #include "platform/verified_code.h"
 #include "platform/log.h"
 #include "players/field_root.h"
+#include "players/game_globals.h"
 
 #include <array>
 #include <cstdint>
@@ -88,16 +89,16 @@ const Snapshot& Current() noexcept
 
 bool Install(const platform::GameImage& image) noexcept
 {
-    const auto gameMode = image.Rebase(facts::kGameModeGlobal, sizeof(void*));
+    const auto gameMode = game_globals::Address(game_globals::Global::GameMode);
     if (!gameMode || !field_root::Installed())
     {
         platform::Log(L"game state: a global is outside the image; no game.state reading");
         return false;
     }
-    g_gameMode = reinterpret_cast<const std::uint8_t* const*>(*gameMode);
-    if (const auto shop = image.Rebase(facts::kShopSlotGlobal, sizeof(void*)))
+    g_gameMode = reinterpret_cast<const std::uint8_t* const*>(gameMode);
+    if (const auto shop = game_globals::UiSlotAddress(facts::kShopSlot))
     {
-        g_shopSlot = reinterpret_cast<const std::uint8_t* const*>(*shop);
+        g_shopSlot = reinterpret_cast<const std::uint8_t* const*>(shop);
     }
     if (const auto closed = platform::FindFunction(image, facts::kIsPauseMenuClosed))
     {

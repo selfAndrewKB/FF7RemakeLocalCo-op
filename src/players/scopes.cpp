@@ -6,6 +6,7 @@
 #include "platform/image.h"
 #include "platform/log.h"
 #include "players/field_root.h"
+#include "players/game_globals.h"
 #include "players/weak_object.h"
 
 #include <array>
@@ -109,17 +110,17 @@ void DefineLatches(ByteContext& context) noexcept
 
 bool Install(const platform::GameImage& image) noexcept
 {
-    const auto party   = image.Rebase(facts::kPartyManagerGlobal, sizeof(void*));
-    const auto input   = image.Rebase(facts::kSquareInputOwnerGlobal, sizeof(void*));
-    const auto filters = image.Rebase(facts::kUiFilterSlotGlobal, sizeof(void*));
+    const auto party   = game_globals::Address(game_globals::Global::PartyManager);
+    const auto input   = game_globals::Address(game_globals::Global::SquareInputOwner);
+    const auto filters = game_globals::UiSlotAddress(facts::kUiFilterSlot);
     if (!party || !field_root::Installed() || !input || !filters)
     {
         platform::Log(L"scopes: a global is outside the image; no further player's work can run in its own scopes");
         return false;
     }
-    g_partyManager = reinterpret_cast<void**>(*party);
-    g_input        = reinterpret_cast<std::uint8_t**>(*input);
-    g_uiFilters    = reinterpret_cast<std::uint8_t**>(*filters);
+    g_partyManager = reinterpret_cast<void**>(party);
+    g_input        = reinterpret_cast<std::uint8_t**>(input);
+    g_uiFilters    = reinterpret_cast<std::uint8_t**>(filters);
     return true;
 }
 

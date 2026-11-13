@@ -12,6 +12,7 @@
 #include "platform/verified_code.h"
 #include "players/field_hold.h"
 #include "players/field_root.h"
+#include "players/game_globals.h"
 #include "players/lead_keep_rules.h"
 #include "players/leash_rules.h"
 #include "players/party_member.h"
@@ -1156,11 +1157,11 @@ bool Install(const platform::GameImage& image) noexcept
     g_triggerTables     = *tables;
     g_stateChangeTables = *states;
     g_storyFlagIsSet    = reinterpret_cast<StoryFlagIsSetFn>(*flag);
-    const auto acts   = image.Rebase(facts::kTableAction, 3 * sizeof(void*));
+    const auto acts   = game_globals::Address(game_globals::Global::TableAction);
     const auto groups = image.Rebase(facts::kActionGroupTablesGlobal, 3 * sizeof(void*));
     if (acts && groups)
     {
-        g_actionTables      = *acts;
+        g_actionTables      = acts;
         g_actionGroupTables = *groups;
     }
     else

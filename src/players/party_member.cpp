@@ -8,6 +8,7 @@
 #include "players/ai_move_guard.h"
 #include "players/field_hold.h"
 #include "players/field_root.h"
+#include "players/game_globals.h"
 #include "players/lead_gate.h"
 
 #include <array>
@@ -289,8 +290,8 @@ bool Install(const platform::GameImage& image) noexcept
     const auto find      = platform::FindFunction(image, facts::kGetPlayerActor);
     const auto reconcile = platform::FindFunction(image, facts::kReconcileController);
     const auto setType   = platform::FindFunction(image, facts::kSetActorType);
-    const auto party     = image.Rebase(facts::kPartyManagerGlobal, sizeof(void*));
-    const auto data      = image.Rebase(facts::kDataSingletonGlobal, sizeof(void*));
+    const auto party     = game_globals::Address(game_globals::Global::PartyManager);
+    const auto data      = game_globals::Address(game_globals::Global::DataSingleton);
     if (!find || !reconcile || !setType || !party || !data || !field_root::Installed())
     {
         return false;
@@ -298,8 +299,8 @@ bool Install(const platform::GameImage& image) noexcept
     g_getPlayerActor = reinterpret_cast<GetPlayerActorFn>(*find);
     g_reconcile      = reinterpret_cast<ReconcileFn>(*reconcile);
     g_setActorType   = reinterpret_cast<SetActorTypeFn>(*setType);
-    g_partyManager   = reinterpret_cast<void**>(*party);
-    g_data           = reinterpret_cast<std::uint8_t**>(*data);
+    g_partyManager   = reinterpret_cast<void**>(party);
+    g_data           = reinterpret_cast<std::uint8_t**>(data);
     return true;
 }
 

@@ -9,6 +9,7 @@
 #include "platform/image.h"
 #include "platform/log.h"
 #include "platform/seqlock.h"
+#include "players/game_globals.h"
 
 #include <algorithm>
 #include <array>
@@ -223,13 +224,13 @@ bool Install(const platform::GameImage& image) noexcept
     const auto target   = image.Rebase(facts::kUiPrimitivesDraw);
     const auto execute  = image.Rebase(facts::kRhiSetViewportExecute);
     const auto allocate = image.Rebase(facts::kMemStackAllocateChunk);
-    const auto targets  = image.Rebase(facts::kSceneRenderTargetsGlobal + facts::kSceneTargetsUiHeight, sizeof(std::uint32_t));
+    const auto targets  = players::game_globals::Address(players::game_globals::Global::SceneRenderTargets);
     if (!site || !target || !execute || !allocate || !targets)
     {
         platform::Log(L"UI effect pass: UNAVAILABLE, an address is outside the image; the glow is drawn where the game draws it");
         return false;
     }
-    g_sceneTargets    = *targets - facts::kSceneTargetsUiHeight;
+    g_sceneTargets    = targets;
     g_executeViewport = *execute;
     g_allocateChunk   = reinterpret_cast<AllocateChunkFn>(*allocate);
     if (!g_call.Install(*site, *target, reinterpret_cast<std::uintptr_t>(&Draw)))

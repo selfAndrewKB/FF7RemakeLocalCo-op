@@ -15,6 +15,7 @@
 #include "platform/log.h"
 #include "platform/verified_code.h"
 #include "platform/vtable_entry.h"
+#include "players/game_globals.h"
 #include "players/scopes.h"
 #include "players/seat_objects.h"
 #include "players/seats.h"
@@ -226,7 +227,7 @@ try
 {
     const auto drawString = platform::FindFunction(image, facts::kDrawShadowedString);
     const auto postRender = platform::FindFunction(image, facts::kHudPostRender);
-    const auto engine     = image.Rebase(facts::kGEngine, sizeof(void*));
+    const auto engine     = players::game_globals::Address(players::game_globals::Global::Engine);
     if (!drawString || !postRender || !engine)
     {
         platform::Log(L"view prompt: an engine check failed; no prompt can be drawn in a player's view");
@@ -234,7 +235,7 @@ try
     }
     g_drawString = reinterpret_cast<DrawStringFn>(*drawString);
     g_postRender = reinterpret_cast<PostRenderFn>(*postRender);
-    g_engine     = *engine;
+    g_engine     = engine;
     if (!LookUpDrawRect())
     {
         platform::Log(L"view prompt: the HUD's DrawRect was not found as expected; prompts are drawn without their box");

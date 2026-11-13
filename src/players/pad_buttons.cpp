@@ -12,6 +12,7 @@
 #include "platform/verified_code.h"
 #include "platform/vtable_entry.h"
 #include "players/action_tables.h"
+#include "players/game_globals.h"
 #include "players/game_state.h"
 #include "players/menu_pads.h"
 #include "views/whole_screen.h"
@@ -504,7 +505,7 @@ bool Install(const platform::GameImage& image) noexcept
     {
         return false;
     }
-    const auto owner    = image.Rebase(facts::kSquareInputOwnerGlobal, sizeof(void*));
+    const auto owner    = game_globals::Address(game_globals::Global::SquareInputOwner);
     const auto dispatch = platform::FindFunction(image, facts::kActionDispatch);
     const auto routeUp  = platform::FindFunction(image, facts::kRouteActionUp);
     const auto routeUpCall = image.Rebase(facts::kRouteActionUpCall, 5);
@@ -513,7 +514,7 @@ bool Install(const platform::GameImage& image) noexcept
         platform::Log(L"pad buttons: an engine check failed; every pad presses player 1's buttons");
         return false;
     }
-    g_owner = reinterpret_cast<std::uint8_t**>(*owner);
+    g_owner = reinterpret_cast<std::uint8_t**>(owner);
     // The menu openers' names, from the game's FKey globals (filled by its static initialisers); read again on the
     // input tick while unread. Menu time works without them.
     const std::uintptr_t openerGlobals[] = {facts::kPauseMenuKeyGlobal, facts::kMapMenuKeyGlobal,

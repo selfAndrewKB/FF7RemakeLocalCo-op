@@ -6,7 +6,7 @@
 #include "platform/log.h"
 #include "platform/name_text.h"
 #include "platform/verified_code.h"
-
+#include "players/game_globals.h"
 
 #include <string>
 
@@ -22,16 +22,8 @@ using GetPartyLeaderFn = void* (*)(void* partyManager, std::uint8_t selector);
 // Set once at install (the game's own globals, live), then only read.
 std::uint8_t* const* g_root         = nullptr;  // the global holding the field root pointer
 void* const*         g_battleSystem = nullptr;  // the global holding the battle system pointer
-void* const*         g_partyManager = nullptr;  // the global holding the party manager pointer
-std::uint8_t* const* g_commandSlot  = nullptr;  // the UI system's slot holding the field command controller
 GetPartyLeaderFn     g_getLeader    = nullptr;
 bool                 g_installed    = false;
-
-void* PartyManager() noexcept
-{
-    void* manager = nullptr;
-    return g_installed && Read(g_partyManager, manager) ? manager : nullptr;
-}
 
 }  // namespace
 
@@ -39,10 +31,9 @@ bool Install(const platform::GameImage& image) noexcept
 {
     const auto root    = image.Rebase(facts::kEndGameRootGlobal, sizeof(void*));
     const auto system  = image.Rebase(facts::kBattleSystemGlobal, sizeof(void*));
-    const auto party   = image.Rebase(facts::kPartyManagerGlobal, sizeof(void*));
-    const auto command = image.Rebase(facts::kCommandCtrlSlotGlobal, sizeof(void*));
     const auto leader  = platform::FindFunction(image, facts::kGetPartyLeader);
-    if (!root || !system || !party || !command || !leader)
+    if (!root || !system || game_globals::Address(game_globals::Global::PartyManager) == 0 ||
+        game_globals::UiSlotAddress(facts::kCommandCtrlSlot) == 0 || !leader)
     {
         platform::Log(L"field root: a global or the party leader getter is not as the research read it; the modules that need "
                       L"the field root, the battle system, the command controller or the party leader stand aside");
@@ -50,8 +41,6 @@ bool Install(const platform::GameImage& image) noexcept
     }
     g_root         = reinterpret_cast<std::uint8_t* const*>(*root);
     g_battleSystem = reinterpret_cast<void* const*>(*system);
-    g_partyManager = reinterpret_cast<void* const*>(*party);
-    g_commandSlot  = reinterpret_cast<std::uint8_t* const*>(*command);
     g_getLeader    = reinterpret_cast<GetPartyLeaderFn>(*leader);
     g_installed    = true;
     return true;
@@ -137,18 +126,17 @@ void* BattleSystem() noexcept
 
 std::uint8_t* CommandController() noexcept
 {
-    std::uint8_t* controller = nullptr;
-    return g_installed && Read(g_commandSlot, controller) ? controller : nullptr;
+    return g_installed ? static_cast<std::uint8_t*>(game_globals::UiSlot(facts::kCommandCtrlSlot)) : nullptr;
 }
 
 std::uintptr_t CommandControllerSlot() noexcept
 {
-    return g_installed ? reinterpret_cast<std::uintptr_t>(g_commandSlot) : 0;
+    return g_installed ? game_globals::UiSlotAddress(facts::kCommandCtrlSlot) : 0;
 }
 
 void* PartyLeader(std::uint8_t selector) noexcept
 {
-    void* const manager = PartyManager();
+    void* const manager = g_installed ? game_globals::Object(game_globals::Global::PartyManager) : nullptr;
     void*       leader  = nullptr;
     return manager != nullptr && g_getLeader != nullptr && platform::CallGuarded(g_getLeader, leader, manager, selector) ? leader
                                                                                                                          : nullptr;

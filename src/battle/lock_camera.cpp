@@ -12,6 +12,7 @@
 #include "platform/verified_code.h"
 #include "platform/vtable_entry.h"
 #include "players/field_root.h"
+#include "players/game_globals.h"
 #include "players/seat_camera.h"
 #include "players/scopes.h"
 #include "players/seats.h"
@@ -465,13 +466,13 @@ bool Install(const platform::GameImage& image) noexcept
     {
         platform::Log(L"lock camera: an enemy detail window close slot could not be replaced; its context reading is partial");
     }
-    if (const auto stamp = image.Rebase(facts::kOperatorFrameStamp, sizeof(std::uint64_t)))
+    if (const auto stamp = players::game_globals::Address(players::game_globals::Global::OperatorFrameStamp))
     {
-        g_frameStamp = reinterpret_cast<std::uint64_t*>(*stamp);
+        g_frameStamp = reinterpret_cast<std::uint64_t*>(stamp);
     }
-    if (const auto mode = image.Rebase(facts::kGameModeGlobal, sizeof(void*)))
+    if (const auto mode = players::game_globals::Address(players::game_globals::Global::GameMode))
     {
-        g_gameMode = reinterpret_cast<void**>(*mode);
+        g_gameMode = reinterpret_cast<void**>(mode);
     }
     control::Register({.name = L"lock-camera.jumps", .shape = control::Shape::Text,
                        .help = L"each player's camera (player 1's while a further player is in): the bursts of jumps (a tick turning over 10 "

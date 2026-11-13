@@ -22,6 +22,7 @@
 #include "platform/log.h"
 #include "platform/verified_code.h"
 #include "platform/vtable_entry.h"
+#include "players/game_globals.h"
 #include "players/seats.h"
 #include "world/search_arrows.h"
 #include "world/target_icons.h"
@@ -348,12 +349,12 @@ bool Install(const platform::GameImage& image) noexcept
     const auto slot      = image.Rebase(facts::kOverlayDelegateSlot, sizeof(void*));
     const auto acquire   = image.Rebase(facts::kOverlayAcquireCall, 5);
     const auto acquireFn = image.Rebase(c::kAcquireLayer);
-    const auto submitFn  = image.Rebase(facts::kSubmitLayerSlot);
+    const auto submitFn  = platform::FindFunction(image, facts::kSubmitLayerSlot);
     const auto delta     = image.Rebase(facts::kAppDeltaTime, sizeof(double));
     const auto frame     = image.Rebase(facts::kFrameNumber, sizeof(std::uint32_t));
-    if (const auto filters = image.Rebase(facts::kUiFilterSlotGlobal, sizeof(void*)))
+    if (const auto filters = players::game_globals::UiSlotAddress(facts::kUiFilterSlot))
     {
-        g_uiFilters = reinterpret_cast<void**>(*filters);
+        g_uiFilters = reinterpret_cast<void**>(filters);
     }
     const auto thunk     = image.Rebase(facts::kOverlayDelegateThunk);
     if (!render || !slot || !acquire || !acquireFn || !submitFn || !delta || !frame || !thunk || !minimap::PoolCodeInstalled())

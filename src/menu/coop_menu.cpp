@@ -16,6 +16,7 @@
 #include "platform/settings.h"
 #include "platform/verified_code.h"
 #include "platform/vtable_entry.h"
+#include "players/game_globals.h"
 
 #include <cstdint>
 #include <format>
@@ -115,7 +116,7 @@ std::wstring Reading()
                                     coop_page_open::Opens(), coop_page::Commits());
     text += title_row::Reading();
     text += coop_page_open::FrameReading();
-    void* const         mgr = game_ui::Manager(facts::kUiMainMenuSlot);
+    void* const         mgr = players::game_globals::UiSlot(facts::kUiMainMenuSlot);
     void* const         top = mgr != nullptr ? game_ui::WeakAt(mgr, facts::kMainMenuMgrCurrent) : nullptr;
     platform::GameArray rows;
     if (game_ui::IsTopWindow(top) && platform::Read(At(top, facts::kTopRows), rows) && rows.data != nullptr && rows.num > 0 &&

@@ -6,6 +6,7 @@
 #include "platform/image.h"
 #include "platform/log.h"
 #include "platform/verified_code.h"
+#include "players/game_globals.h"
 #include "players/weak_object.h"
 
 #include <cstdint>
@@ -200,7 +201,7 @@ bool Install(const platform::GameImage& image) noexcept
     const auto apply   = platform::FindFunction(image, facts::kApplyCameraFade);
     const auto name    = platform::FindFunction(image, facts::kNameFromWide);
     const auto find    = platform::FindFunction(image, facts::kGetPlayerActor);
-    const auto manager = image.Rebase(facts::kPartyManagerGlobal, sizeof(void*));
+    const auto manager = players::game_globals::Address(players::game_globals::Global::PartyManager);
     if (!apply || !name || !find || !manager)
     {
         platform::LogWarning(L"party fade: a check failed; party members fade near a camera as the game decides");
@@ -209,7 +210,7 @@ bool Install(const platform::GameImage& image) noexcept
     g_apply          = reinterpret_cast<ApplyCameraFadeFn>(*apply);
     g_nameFromWide   = reinterpret_cast<NameFromWideFn>(*name);
     g_getPlayerActor = reinterpret_cast<GetPlayerActorFn>(*find);
-    g_partyManager   = reinterpret_cast<void**>(*manager);
+    g_partyManager   = reinterpret_cast<void**>(manager);
     control::Register({.name = L"world.fade", .shape = control::Shape::Text,
                        .help = L"each party member's near-camera fade switch and whether the mod's reason keeps it off",
                        .get  = [] { return control::Value{Reading()}; }});

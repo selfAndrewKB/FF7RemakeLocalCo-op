@@ -10,6 +10,7 @@
 #include "platform/vtable_entry.h"
 #include "players/camera_override.h"
 #include "players/field_root.h"
+#include "players/game_globals.h"
 #include "players/nav_area.h"
 #include "players/operator_battle_mode.h"
 #include "players/pad_buttons.h"
@@ -539,6 +540,14 @@ bool Global(const platform::GameImage& image, std::uintptr_t address, T*& out) n
     return out != nullptr;
 }
 
+/// A global another module reads too (players/game_globals), as `out`; false when it is outside the image.
+template <class T>
+bool Shared(game_globals::Global global, T*& out) noexcept
+{
+    out = reinterpret_cast<T*>(game_globals::Address(global));
+    return out != nullptr;
+}
+
 }  // namespace
 
 bool Install(const platform::GameImage& image) noexcept
@@ -547,10 +556,10 @@ bool Install(const platform::GameImage& image) noexcept
     {
         return false;  // already installed: a second install must not undo the first
     }
-    if (!weak_object::Installed() || !Global(image, facts::kPartyManagerGlobal, g_partyManager) || !field_root::Installed() ||
-        !Global(image, facts::kGameModeGlobal, g_gameMode) || !Global(image, facts::kOperatorFrameStamp, g_frameStamp) ||
-        !Global(image, facts::kOperatorCorrections, g_corrections) || !Global(image, facts::kNameNoneIndex, g_nameNone) ||
-        !Global(image, facts::kSquareInputOwnerGlobal, g_squareInput) ||
+    if (!weak_object::Installed() || !Shared(game_globals::Global::PartyManager, g_partyManager) || !field_root::Installed() ||
+        !Shared(game_globals::Global::GameMode, g_gameMode) || !Shared(game_globals::Global::OperatorFrameStamp, g_frameStamp) ||
+        !Global(image, facts::kOperatorCorrections, g_corrections) || !Shared(game_globals::Global::NameNoneIndex, g_nameNone) ||
+        !Shared(game_globals::Global::SquareInputOwner, g_squareInput) ||
         !FindInto(image, facts::kSpawnActor, g_spawnActor) || !FindInto(image, facts::kOperatorStaticClass, g_staticClass) ||
         !FindInto(image, facts::kSetOwnerChara, g_setOwnerChara))
     {

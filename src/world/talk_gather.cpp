@@ -10,6 +10,7 @@
 #include "platform/settings.h"
 #include "platform/verified_code.h"
 #include "players/field_root.h"
+#include "players/game_globals.h"
 #include "players/scopes.h"
 #include "players/seats.h"
 #include "players/weak_object.h"
@@ -116,7 +117,7 @@ bool Install(const platform::GameImage& image) noexcept
 {
     const auto tick     = platform::FindFunction(image, facts::kActTick);
     const auto camReset = platform::FindFunction(image, facts::kFieldCameraResetBehindLeader);
-    const auto actions  = image.Rebase(facts::kTableAction, 24);
+    const auto actions  = players::game_globals::Address(players::game_globals::Global::TableAction);
     const auto findRow  = platform::FindFunction(image, facts::kFindRowInTables);
     const auto findNpc  = platform::FindFunction(image, facts::kFindActorByName);  // optional: without it, toward
     const auto named    = image.Rebase(facts::kNamedActorLevel, 8);                 // where player 1's character stood
@@ -128,7 +129,7 @@ bool Install(const platform::GameImage& image) noexcept
     }
     g_tick     = *tick;
     g_camReset = reinterpret_cast<CamResetFn>(*camReset);
-    g_actions  = *actions;
+    g_actions  = actions;
     g_findRow  = reinterpret_cast<FindRowFn>(*findRow);
     if (findNpc && named)
     {

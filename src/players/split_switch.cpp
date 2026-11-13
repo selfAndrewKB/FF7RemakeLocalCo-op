@@ -5,6 +5,7 @@
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
+#include "players/game_globals.h"
 
 #include <cstdint>
 #include <string>
@@ -13,14 +14,11 @@ namespace lss::players::split_switch {
 
 namespace {
 
-std::uintptr_t g_engineGlobal = 0;  // the address holding GEngine
-
 /// The game viewport client's switch byte, or null.
 std::uint8_t* SwitchByte() noexcept
 {
-    std::uintptr_t engine = 0, client = 0;
-    if (g_engineGlobal == 0 || !platform::Read(reinterpret_cast<const void*>(g_engineGlobal), engine) || engine == 0 ||
-        !platform::Read(reinterpret_cast<const void*>(engine + facts::kEngineGameViewport), client) || client == 0)
+    const auto client = reinterpret_cast<std::uintptr_t>(game_globals::GameViewportClient());
+    if (client == 0)
     {
         return nullptr;
     }
@@ -29,16 +27,14 @@ std::uint8_t* SwitchByte() noexcept
 
 }  // namespace
 
-bool Install(const platform::GameImage& image) noexcept
+bool Install(const platform::GameImage&) noexcept
 {
-    const auto engine = image.Rebase(facts::kGEngine, sizeof(std::uintptr_t));
-    if (!engine)
+    if (game_globals::Address(game_globals::Global::Engine) == 0)
     {
         platform::Log(L"split switch: GEngine is outside the image; the engine's single view is unavailable (the split stays "
                       L"for the whole-screen moments)");
         return false;
     }
-    g_engineGlobal = *engine;
     control::Register({.name  = L"split-switch",
                        .shape = control::Shape::Word,
                        .words = {L"set", L"clear", L"unknown"},

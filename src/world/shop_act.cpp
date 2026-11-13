@@ -8,6 +8,7 @@
 #include "platform/log.h"
 #include "platform/verified_code.h"
 #include "platform/vtable_entry.h"
+#include "players/game_globals.h"
 #include "players/scopes.h"
 #include "players/seats.h"
 #include "world/field_targets.h"
@@ -290,7 +291,7 @@ bool Install(const platform::GameImage& image) noexcept
 {
     const auto ctor    = platform::FindFunction(image, facts::kShowMenuActCtor);
     const auto call    = image.Rebase(facts::kShowMenuActCtorCall, 5);
-    const auto actions = image.Rebase(facts::kTableAction, 24);
+    const auto actions = players::game_globals::Address(players::game_globals::Global::TableAction);
     const auto vtable  = image.Rebase(facts::kShowMenuActVtable, 0x28);
     const auto findRow = platform::FindFunction(image, facts::kFindRowInTables);
     if (!ctor || !call || !actions || !vtable || !findRow)
@@ -300,7 +301,7 @@ bool Install(const platform::GameImage& image) noexcept
     }
     g_ctor     = *ctor;
     g_ctorCall = *call;
-    g_actions  = *actions;
+    g_actions  = actions;
     g_vtable   = *vtable;
     g_findRow  = reinterpret_cast<FindRowFn>(*findRow);
     if (!platform::ReplaceSlot(image, facts::kShowMenuActUpdate, reinterpret_cast<std::uintptr_t>(&Update), g_update) ||

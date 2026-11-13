@@ -11,6 +11,7 @@
 #include "platform/log.h"
 #include "platform/verified_code.h"
 #include "players/field_root.h"
+#include "players/game_globals.h"
 #include "players/weak_object.h"
 #include "players/scopes.h"
 #include "players/seats.h"
@@ -267,7 +268,7 @@ bool Install(const platform::GameImage& image) noexcept
     const auto setTarget = platform::FindFunction(image, facts::kBattleCompSetTargetChar);
     const auto free      = platform::FindFunction(image, facts::kGameFree);
     const auto getActor  = platform::FindFunction(image, facts::kGetPlayerActor);
-    const auto data      = image.Rebase(facts::kDataSingletonGlobal, sizeof(void*));
+    const auto data      = players::game_globals::Address(players::game_globals::Global::DataSingleton);
     if (!players::field_root::Installed() || !getLeader || !site || !iterBegin || !iterNext || !setTarget || !free || !getActor || !data)
     {
         platform::Log(L"enemy leader: an engine check failed; enemies keep following a downed leader");
@@ -279,7 +280,7 @@ bool Install(const platform::GameImage& image) noexcept
     g_setTarget = reinterpret_cast<SetTargetFn>(*setTarget);
     g_free      = reinterpret_cast<FreeFn>(*free);
     g_getActor  = reinterpret_cast<GetPlayerActorFn>(*getActor);
-    g_data      = reinterpret_cast<std::uint8_t**>(*data);
+    g_data      = reinterpret_cast<std::uint8_t**>(data);
     if (!g_leaderCall.Install(*site, g_getLeader, reinterpret_cast<std::uintptr_t>(&LeaderForBattleAI)))
     {
         platform::Log(L"enemy leader: the battle AI tick's leader read could not be redirected; enemies are re-targeted but get no leader-change event");

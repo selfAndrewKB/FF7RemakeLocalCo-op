@@ -11,6 +11,7 @@
 #include "platform/log.h"
 #include "platform/settings.h"
 #include "platform/verified_code.h"
+#include "players/game_globals.h"
 
 #include <array>
 #include <atomic>
@@ -364,7 +365,7 @@ try
     const auto awardSite   = image.Rebase(f::kAwardCall, 5);
     const auto clearedSite = image.Rebase(f::kAwardStoryClearedCall, 5);
     const auto tables      = image.Rebase(f::kResidentParameterTables, f::kTableSlots * sizeof(void*));
-    const auto save        = image.Rebase(f::kSaveDataGlobal, sizeof(void*));
+    const auto save        = players::game_globals::Address(players::game_globals::Global::DataSingleton);
     const auto expName     = image.Rebase(f::kNameExpRateGameClear, 8);
     const auto apName      = image.Rebase(f::kNameApRateGameClear, 8);
     const auto easyName    = image.Rebase(f::kNameEasyTakeDamage, 8);
@@ -416,7 +417,7 @@ try
     {
         g.award        = reinterpret_cast<AwardFn>(*award);
         g.cleared      = reinterpret_cast<ClearedFn>(*cleared);
-        g.save         = reinterpret_cast<std::uint8_t**>(*save);
+        g.save         = reinterpret_cast<std::uint8_t**>(save);
         g.expName      = *expName;
         g.apName       = *apName;
         g_awardPlaced  = g_awardCleared.Install(*clearedSite, *cleared, reinterpret_cast<std::uintptr_t>(&AwardCleared)) &&

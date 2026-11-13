@@ -81,6 +81,7 @@ add_library(LocalSplitScreen SHARED
     src/players/dpad_keys.cpp
     src/players/field_exit.cpp
     src/players/field_root.cpp
+    src/players/game_globals.cpp
     src/players/game_state.cpp
     src/players/lead_gate.cpp
     src/players/local_player_list.cpp

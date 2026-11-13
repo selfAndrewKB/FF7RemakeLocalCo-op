@@ -13,6 +13,7 @@
 #include "platform/settings.h"
 #include "platform/verified_code.h"
 #include "players/field_root.h"
+#include "players/game_globals.h"
 #include "players/pad_buttons.h"
 #include "players/seat_camera.h"
 #include "players/scopes.h"
@@ -256,7 +257,7 @@ bool Install(const platform::GameImage& image) noexcept
     const auto tick     = platform::FindFunction(image, facts::kCommandCtrlTick);
     const auto slowCall = image.Rebase(facts::kCommandCtrlSlowCall, 5);
     const auto slow     = platform::FindFunction(image, facts::kSetGameSpeedSlot);
-    const auto gameMode = image.Rebase(facts::kGameModeGlobal, sizeof(void*));
+    const auto gameMode = players::game_globals::Address(players::game_globals::Global::GameMode);
     if (!tickCall || !tick || !slowCall || !slow || !players::field_root::Installed() || !gameMode)
     {
         platform::Log(L"command menu: the tick's engine checks failed; no seat's menu ever ticks, and the menu-slow "
@@ -267,7 +268,7 @@ bool Install(const platform::GameImage& image) noexcept
     g_tickTarget   = *tick;
     g_slowCall     = *slowCall;
     g_slowTarget   = *slow;
-    g_gameMode     = reinterpret_cast<void**>(*gameMode);
+    g_gameMode     = reinterpret_cast<void**>(gameMode);
     // The menu-slow setting (one of the table's words), set before the redirect is placed: no write reads it yet.
     g_slowWrites.SetSlows(platform::settings::Of(platform::settings::kMenuSlow).word == L"on");
     if (!g_slow.Install(g_slowCall, g_slowTarget, reinterpret_cast<std::uintptr_t>(&SetSlot)))

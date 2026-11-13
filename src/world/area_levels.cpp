@@ -9,6 +9,7 @@
 #include "platform/name_text.h"
 #include "platform/settings.h"
 #include "platform/verified_code.h"
+#include "players/game_globals.h"
 #include "players/game_state.h"
 #include "players/seats.h"
 #include "world/area_levels_rules.h"
@@ -275,7 +276,7 @@ bool Install(const platform::GameImage& image) noexcept
 {
     const auto target  = platform::FindFunction(image, facts::kLevelListRequest);
     const auto site    = image.Rebase(facts::kEnvSetLevelListCall, 5);
-    const auto manager = image.Rebase(facts::kEnvSetManagerGlobal, sizeof(void*));
+    const auto manager = players::game_globals::Address(players::game_globals::Global::EnvSetManager);
     if (!target || !site || !manager)
     {
         platform::LogWarning(L"area levels: the level request is not what the research read; the world follows player 1's area alone");
@@ -284,7 +285,7 @@ bool Install(const platform::GameImage& image) noexcept
     g_request    = reinterpret_cast<ListRequestFn>(*target);
     g_listTarget = *target;
     g_listSite   = *site;
-    g_manager    = reinterpret_cast<std::uint8_t**>(*manager);
+    g_manager    = reinterpret_cast<std::uint8_t**>(manager);
     namespace settings = platform::settings;
     g_on.store(settings::Of(settings::kAreaLevels).word == L"on", std::memory_order_relaxed);
     control::RegisterOption(

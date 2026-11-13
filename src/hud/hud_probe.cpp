@@ -14,6 +14,7 @@
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
+#include "players/game_globals.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -195,9 +196,9 @@ std::wstring OverlayText() noexcept
 
 bool Install(const platform::GameImage& image) noexcept
 {
-    if (const auto overlay = image.Rebase(facts::kRootOverlayGlobal, sizeof(void*)))
+    if (const auto overlay = players::game_globals::Address(players::game_globals::Global::RootOverlay))
     {
-        g_overlay = reinterpret_cast<const std::uint8_t* const*>(*overlay);
+        g_overlay = reinterpret_cast<const std::uint8_t* const*>(overlay);
     }
     try
     {

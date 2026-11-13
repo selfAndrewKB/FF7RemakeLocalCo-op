@@ -7,6 +7,7 @@
 #include "platform/log.h"
 #include "platform/verified_code.h"
 #include "platform/vtable_entry.h"
+#include "players/game_globals.h"
 
 #include <array>
 #include <atomic>
@@ -212,14 +213,14 @@ void Apply(bool keepOff) noexcept
 
 bool Install(const platform::GameImage& image) noexcept
 {
-    const auto manager = image.Rebase(facts::kPartyManagerGlobal, sizeof(void*));
+    const auto manager = players::game_globals::Address(players::game_globals::Global::PartyManager);
     if (!manager)
     {
         platform::LogWarning(L"overlap fade: the party manager check failed; characters turn see-through in those moves as the "
                              L"game decides");
         return false;
     }
-    g_partyManager = reinterpret_cast<void**>(*manager);
+    g_partyManager = reinterpret_cast<void**>(manager);
     std::wstring placed, refused;
     for (std::size_t i = 0; i < kMoveCount; ++i)
     {

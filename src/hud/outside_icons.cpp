@@ -12,6 +12,7 @@
 #include "platform/log.h"
 #include "platform/sparse_array.h"
 #include "platform/verified_code.h"
+#include "players/game_globals.h"
 #include "players/scopes.h"
 #include "players/seats.h"
 
@@ -193,9 +194,9 @@ std::wstring Reading()
 bool Install(const platform::GameImage& image) noexcept
 {
     const auto tick     = platform::FindFunction(image, facts::kOutsideIconTick);
-    const auto context  = image.Rebase(facts::kPlayerContextController, 16);
-    const auto slot     = image.Rebase(facts::kOutsideIconSlotGlobal, sizeof(void*));
-    const auto gameMode = image.Rebase(facts::kGameModeGlobal, sizeof(void*));
+    const auto context  = platform::FindFunction(image, facts::kPlayerContextController);
+    const auto slot     = players::game_globals::UiSlotAddress(facts::kOutsideIconSlot);
+    const auto gameMode = players::game_globals::Address(players::game_globals::Global::GameMode);
     bool       sites    = true;
     for (std::size_t i = 0; i < g_sites.size(); ++i)
     {
@@ -203,16 +204,15 @@ bool Install(const platform::GameImage& image) noexcept
         g_sites[i]      = site ? *site : 0;
         sites           = sites && site.has_value();
     }
-    if (!tick || !context || !slot || !gameMode || !sites ||
-        !image.BytesMatch(facts::kPlayerContextController, facts::kPlayerContextControllerFirst))
+    if (!tick || !context || !slot || !gameMode || !sites)
     {
         platform::LogWarning(L"HUD arrows: the off-screen arrows' tick is not what the research read; every view shows player 1's arrows");
         return false;
     }
     g_tick      = reinterpret_cast<TickFn>(*tick);
     g_contextAt = *context;
-    g_slot      = reinterpret_cast<void**>(*slot);
-    g_gameMode  = reinterpret_cast<std::uint8_t**>(*gameMode);
+    g_slot      = reinterpret_cast<void**>(slot);
+    g_gameMode  = reinterpret_cast<std::uint8_t**>(gameMode);
     g_pending   = true;  // placed by the game thread's tick, outside the arrow tick (one call crosses a block)
     control::Register({.name  = L"hud.outside-icons",
                        .shape = control::Shape::Text,

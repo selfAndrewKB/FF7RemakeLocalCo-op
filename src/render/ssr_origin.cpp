@@ -7,6 +7,7 @@
 #include "platform/image.h"
 #include "platform/log.h"
 #include "platform/verified_code.h"
+#include "players/game_globals.h"
 #include "render/dxbc_fix.h"
 #include "render/family_now.h"
 
@@ -310,19 +311,19 @@ bool Install(const platform::GameImage& image) noexcept
     const auto getPipeline   = platform::FindFunction(image, facts::kGetAndOrCreateGraphicsPso);
     const auto ps0           = image.Rebase(facts::kSsrPs0PipelineCall, 5);
     const auto ps1           = image.Rebase(facts::kSsrPs1PipelineCall, 5);
-    const auto rhiGlobal     = image.Rebase(facts::kGDynamicRHI, sizeof(void*));
-    const auto immediateList = image.Rebase(facts::kGRHICommandListImmediate);
+    const auto rhiGlobal     = players::game_globals::Address(players::game_globals::Global::DynamicRhi);
+    const auto immediateList = players::game_globals::Address(players::game_globals::Global::RhiCommandListImmediate);
     if (!getPipeline || !ps0 || !ps1 || !rhiGlobal || !immediateList)
     {
         platform::Log(L"SSR origin: an engine check failed; the further views' reflections keep the next column's surfaces");
         return false;
     }
-    if (!ResolveRhi(image, *rhiGlobal))
+    if (!ResolveRhi(image, rhiGlobal))
     {
         return false;
     }
     g_getPipeline   = reinterpret_cast<GetPipelineFn>(*getPipeline);
-    g_immediateList = *immediateList;
+    g_immediateList = immediateList;
     const bool installed =
         g_ps0Call.Install(*ps0, *getPipeline, reinterpret_cast<std::uintptr_t>(&Pipeline)) &&
         g_ps1Call.Install(*ps1, *getPipeline, reinterpret_cast<std::uintptr_t>(&Pipeline));

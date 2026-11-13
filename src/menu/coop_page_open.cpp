@@ -15,6 +15,7 @@
 #include "platform/settings.h"
 #include "platform/verified_code.h"
 #include "platform/vtable_entry.h"
+#include "players/game_globals.h"
 #include "players/weak_object.h"
 
 #include <array>
@@ -270,7 +271,7 @@ void LeftAtTitle(void* page, const wchar_t* why) noexcept
         void* ref = nullptr;
         if (platform::CallGuarded(g.takeWidget, ref, page, static_cast<void*>(taken)) && ref != nullptr)
         {
-            platform::CallGuarded(g.popLayer, game_ui::System(), ref);
+            platform::CallGuarded(g.popLayer, players::game_globals::Object(players::game_globals::Global::UiSystemSlots), ref);
         }
         void* removed = nullptr;
         platform::CallGuarded(g.remove, removed, page);
@@ -284,7 +285,7 @@ void LeftAtTitle(void* page, const wchar_t* why) noexcept
     }
     else
     {
-        platform::CallGuarded(g_title.setStick, game_ui::Manager(facts::kUiInputSlot), std::uint8_t{0});
+        platform::CallGuarded(g_title.setStick, players::game_globals::UiSlot(facts::kUiInputSlot), std::uint8_t{0});
     }
     g_atTitle   = false;
     g_titleHost = {};
@@ -323,7 +324,7 @@ void ForceClose(void* page, const wchar_t* why) noexcept
         void* ref = nullptr;
         if (platform::CallGuarded(g.takeWidget, ref, page, static_cast<void*>(taken)) && ref != nullptr)
         {
-            platform::CallGuarded(g.popLayer, game_ui::System(), ref);
+            platform::CallGuarded(g.popLayer, players::game_globals::Object(players::game_globals::Global::UiSystemSlots), ref);
         }
         void* removed = nullptr;
         platform::CallGuarded(g.remove, removed, page);
@@ -564,7 +565,7 @@ try
         return;
     }
     std::uint8_t tutorial = 0;
-    if (void* const t = game_ui::Manager(facts::kUiMenuTutorialSlot);
+    if (void* const t = players::game_globals::UiSlot(facts::kUiMenuTutorialSlot);
         t != nullptr && platform::Read(At(t, facts::kMenuTutorialState), tutorial) &&
         tutorial >= facts::kMenuTutorialBusyFirst && tutorial <= facts::kMenuTutorialBusyLast)
     {
@@ -648,7 +649,7 @@ void Tick() noexcept
     }
     // A main menu closed under the page (no game path is known to while the page has focus): take it down.
     void* const  page     = coop_page::Page();
-    void* const  mgr      = game_ui::Manager(facts::kUiMainMenuSlot);
+    void* const  mgr      = players::game_globals::UiSlot(facts::kUiMainMenuSlot);
     std::int32_t menuOpen = 0;
     const bool   menuUp   = mgr == g_mgr && platform::Read(At(mgr, facts::kMainMenuMgrOpen), menuOpen) && menuOpen == 1 &&
                         game_ui::WeakAt(mgr, facts::kMainMenuMgrMenu) != nullptr;

@@ -9,6 +9,7 @@
 #include "platform/verified_code.h"
 #include "platform/vtable_entry.h"
 #include "players/field_root.h"
+#include "players/game_globals.h"
 #include "players/party_member.h"
 #include "players/player_trigger.h"
 #include "players/seat_camera.h"
@@ -683,7 +684,7 @@ bool Install(const platform::GameImage& image) noexcept
     const auto naviRem   = platform::FindFunction(image, facts::kNaviListRemove);
     const auto pending   = image.Rebase(facts::kPendingOverlapNames, 16);
     const auto name      = image.Rebase(facts::kFNamePlayerTrigger, 8);
-    const auto party     = image.Rebase(facts::kPartyManagerGlobal, 8);
+    const auto party     = players::game_globals::Address(players::game_globals::Global::PartyManager);
     if (!sweepSlot || !sweep || !pmGet || !mgrGet || !find || !begin || !end || !naviEnter || !naviLeave || !naviRem || !pending ||
         !name || !players::field_root::Installed() || !party)
     {
@@ -728,7 +729,7 @@ bool Install(const platform::GameImage& image) noexcept
     g_nameFind        = reinterpret_cast<NameFindFn>(*find);
     g_pendingNames    = *pending;
     g_playerTrigger   = playerTrigger;
-    g_partyManager    = *party;
+    g_partyManager    = party;
     g_sweepOriginal   = reinterpret_cast<SweepFn>(*sweep);
 
     const auto call = [&](platform::CallRedirect& redirect, std::uintptr_t site, std::uintptr_t target, auto* replacement) {

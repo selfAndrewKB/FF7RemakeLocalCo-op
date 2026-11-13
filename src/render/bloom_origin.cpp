@@ -7,6 +7,7 @@
 #include "platform/image.h"
 #include "platform/log.h"
 #include "platform/verified_code.h"
+#include "players/game_globals.h"
 #include "render/bloom_reduce_shader.h"
 
 #include <algorithm>
@@ -269,20 +270,20 @@ bool Install(const platform::GameImage& image) noexcept
     const auto bindExactCall = image.Rebase(facts::kBloomL0BindExactCall, 5);
     const auto pipeline      = image.Rebase(facts::kBloomL0PipelineCall, 5);
     const auto pipelineExact = image.Rebase(facts::kBloomL0ExactPipelineCall, 5);
-    const auto rhiGlobal     = image.Rebase(facts::kGDynamicRHI, sizeof(void*));
-    const auto immediateList = image.Rebase(facts::kGRHICommandListImmediate);
+    const auto rhiGlobal     = players::game_globals::Address(players::game_globals::Global::DynamicRhi);
+    const auto immediateList = players::game_globals::Address(players::game_globals::Global::RhiCommandListImmediate);
     if (!getPipeline || !bind || !bindExact || !bindCall || !bindExactCall || !pipeline || !pipelineExact ||
         !rhiGlobal || !immediateList)
     {
         platform::Log(L"bloom origin: an engine check failed; bloom stays off in split screen");
         return false;
     }
-    if (!ResolveRhi(image, *rhiGlobal))
+    if (!ResolveRhi(image, rhiGlobal))
     {
         return false;
     }
     g_getPipeline   = reinterpret_cast<GetPipelineFn>(*getPipeline);
-    g_immediateList = *immediateList;
+    g_immediateList = immediateList;
     // The pipeline calls first: until a binder call is redirected no view is noted, so they pass straight through.
     // The two binder calls share one code block: the second install swaps in the block the first one left.
     const bool installed =

@@ -10,6 +10,7 @@
 #include "platform/log.h"
 #include "platform/verified_code.h"
 #include "platform/vtable_entry.h"
+#include "players/game_globals.h"
 #include "players/weak_object.h"
 #include "players/scopes.h"
 #include "players/field_hold.h"
@@ -480,13 +481,13 @@ bool Install(const platform::GameImage& image) noexcept
     {
         return false;
     }
-    const auto gmalloc  = image.Rebase(facts::kGMallocGlobal, sizeof(void*));
-    const auto gameMode = image.Rebase(facts::kGameModeGlobal, sizeof(void*));
+    const auto gmalloc  = players::game_globals::Address(players::game_globals::Global::Malloc);
+    const auto gameMode = players::game_globals::Address(players::game_globals::Global::GameMode);
     const auto hudMode  = platform::FindFunction(image, facts::kCommandCtrlSetHudMode);
     const auto lists    = platform::FindFunction(image, facts::kCommandListsRebuild);
     const auto allowed  = platform::FindFunction(image, facts::kCommandCtrlSetMenuAllowed);
     const auto rebuild  = platform::FindFunction(image, facts::kPartyListRebuild);
-    const auto setColor = image.Rebase(facts::kSetColorAndOpacity);
+    const auto setColor = platform::FindFunction(image, facts::kSetColorAndOpacity);
     const auto setupCall = image.Rebase(facts::kCommandCtrlSetupCall, 5);
     const auto setupJump = image.Rebase(facts::kCommandCtrlSetupTailJump, 5);
     const auto rebuildCall = image.Rebase(facts::kPartyListRebuildCall, 5);
@@ -505,8 +506,8 @@ bool Install(const platform::GameImage& image) noexcept
         platform::Log(L"command menu: an engine check failed; the seats have no command menu");
         return false;
     }
-    g_gmalloc  = reinterpret_cast<void**>(*gmalloc);
-    g_gameMode = reinterpret_cast<void**>(*gameMode);
+    g_gmalloc  = reinterpret_cast<void**>(gmalloc);
+    g_gameMode = reinterpret_cast<void**>(gameMode);
     g_setColor = reinterpret_cast<SetColorFn>(*setColor);
 
     const auto setupTarget = reinterpret_cast<std::uintptr_t>(g_setup);

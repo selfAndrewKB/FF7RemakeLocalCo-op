@@ -7,6 +7,7 @@
 #include "platform/image.h"
 #include "platform/log.h"
 #include "platform/verified_code.h"
+#include "players/game_globals.h"
 #include "players/scopes.h"
 #include "players/seats.h"
 #include "players/weak_object.h"
@@ -57,8 +58,6 @@ struct Game
     ListAddFn      listAdd    = nullptr;
     PlaySoundFn    playSound  = nullptr;
     SourceFn       source     = nullptr;
-    std::uintptr_t ui         = 0;  // EndUISystem's array of managers
-    std::uintptr_t engine     = 0;  // &GEngine
     std::array<std::uintptr_t, 3> cues{};  // the sounds' FNames, by Sound
 };
 
@@ -82,11 +81,6 @@ std::vector<Window>          g_closing;  // closed ones still playing Out
 std::uint64_t                g_opened = 0, g_changes = 0, g_failed = 0, g_gameClosed = 0, g_inScope = 0;
 bool                         g_failLogged = false;
 
-void* Ui(std::uint32_t slot) noexcept
-{
-    return g.ui != 0 ? platform::ReadPointer(reinterpret_cast<const void*>(g.ui), slot * 8) : nullptr;
-}
-
 std::uint8_t* At(void* object, std::uint32_t offset) noexcept
 {
     return static_cast<std::uint8_t*>(object) + offset;
@@ -95,8 +89,7 @@ std::uint8_t* At(void* object, std::uint32_t offset) noexcept
 /// The world the HUD lives in: the game viewport client's (UObject::GetWorld).
 void* World() noexcept
 {
-    void* const engine = platform::ReadPointer(reinterpret_cast<const void*>(g.engine), 0);
-    void* const client = engine != nullptr ? platform::ReadPointer(engine, facts::kEngineGameViewport) : nullptr;
+    void* const client = players::game_globals::GameViewportClient();
     void* const table  = client != nullptr ? platform::ReadPointer(client, 0) : nullptr;
     const auto  get    = table != nullptr ? reinterpret_cast<GetWorldFn>(platform::ReadPointer(table, facts::kObjectGetWorldSlot)) : nullptr;
     void*       world  = nullptr;
@@ -107,7 +100,7 @@ void* World() noexcept
 std::int32_t FocusLayers() noexcept
 {
     std::int32_t count = -1;
-    void* const  owner = Ui(facts::kFocusContextSlot);
+    void* const  owner = players::game_globals::UiSlot(facts::kFocusContextSlot);
     return owner != nullptr && platform::Read(At(owner, facts::kFocusLayerCount), count) ? count : -1;
 }
 
@@ -194,7 +187,7 @@ void* OpenWindow(int view, const std::wstring& text) noexcept
     std::int32_t id     = -1;
     void*        object = w;
     void*        out    = nullptr;
-    void* const  list   = Ui(facts::kMessageWindowListSlot);
+    void* const  list   = players::game_globals::UiSlot(facts::kMessageWindowListSlot);
     const bool   listed = list != nullptr && platform::CallGuarded(g.listAdd, out, list, &id, &object);
     ++g_opened;
     const wchar_t* const unlisted = listed ? L"" : L"; not in the game's window list";
@@ -251,13 +244,12 @@ try
     const auto listAdd    = platform::FindFunction(image, f::kMessageWindowListAdd);
     const auto playSound  = platform::FindFunction(image, f::kPlayUISound);
     const auto source     = platform::FindFunction(image, f::kUISoundSource);
-    const auto ui         = image.Rebase(f::kEndUISystemSlots, 8 * 64);
-    const auto engine     = image.Rebase(f::kGEngine, sizeof(void*));
+    const auto engine     = players::game_globals::Address(players::game_globals::Global::Engine);
     const auto cursor     = image.Rebase(f::kSoundCueCursor, 8);
     const auto decide     = image.Rebase(f::kSoundCueDecide, 8);
     const auto cancel     = image.Rebase(f::kSoundCueCancel, 8);
-    if (!create || !addToRoot || !inRoot || !setText || !setOptions || !open || !pop || !close || !remove || !listAdd || !ui ||
-        !engine)
+    if (!create || !addToRoot || !inRoot || !setText || !setOptions || !open || !pop || !close || !remove || !listAdd ||
+        players::game_globals::Address(players::game_globals::Global::UiSystemSlots) == 0 || !engine)
     {
         platform::Log(L"view window: an engine check failed; the player windows are drawn in the engine's own font instead");
         return false;
@@ -272,8 +264,6 @@ try
     g.close      = reinterpret_cast<WindowFn>(*close);
     g.remove     = reinterpret_cast<RemoveFn>(*remove);
     g.listAdd    = reinterpret_cast<ListAddFn>(*listAdd);
-    g.ui         = *ui;
-    g.engine     = *engine;
     if (playSound && source && cursor && decide && cancel)
     {
         g.playSound = reinterpret_cast<PlaySoundFn>(*playSound);

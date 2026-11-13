@@ -12,6 +12,7 @@
 #include "platform/image.h"
 #include "platform/log.h"
 #include "platform/verified_code.h"
+#include "players/game_globals.h"
 #include "players/game_state.h"
 #include "players/weak_object.h"
 #include "players/seats.h"
@@ -140,13 +141,13 @@ bool OwnComponents(const wchar_t* name, UObject* copy, const std::uint8_t* origi
 bool Install(const platform::GameImage& image) noexcept
 {
     const auto spawn = platform::FindFunction(image, facts::kSpawnActor);
-    const auto none  = image.Rebase(facts::kNameNoneIndex, sizeof(std::uint32_t));
+    const auto none  = game_globals::Address(game_globals::Global::NameNoneIndex);
     if (!spawn || !none)
     {
         return false;
     }
     g_spawnActor = reinterpret_cast<SpawnActorFn>(*spawn);
-    g_nameNone   = reinterpret_cast<std::uint32_t*>(*none);
+    g_nameNone   = reinterpret_cast<std::uint32_t*>(none);
     return true;
 }
 

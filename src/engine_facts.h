@@ -566,7 +566,7 @@ inline constexpr std::uint32_t  kOverlayFade         = 0x450;  // 5 floats: alph
 /// EndUISystem[37], the UI filters (RE-hud-families.md §5.9): a count per type at +0x24 (int[6]), a suppressed byte per
 /// type at +0x1E. Type 4 fades the whole overlay (to 0 when its count leaves 0, to 1 when it returns; 0x1414BF920,
 /// 0x1414BFE30); type 2 (main menu) also counts 3, 4 and 5.
-inline constexpr std::uintptr_t kUiFilterSlotGlobal  = 0x1459CAA98;
+inline constexpr std::uint32_t  kUiFilterSlot        = 37;  // EndUISystem[37]
 inline constexpr std::uint32_t  kUiFilterCounts      = 0x24;
 inline constexpr std::uint32_t  kUiFilterSuppressed  = 0x1E;
 
@@ -634,7 +634,10 @@ inline constexpr std::int32_t  kElementTypeCustomVerts = 4;
 inline constexpr std::int32_t  kElementTextureModeMask = 1;
 inline constexpr std::int32_t  kElementDrawToTarget    = 4;
 inline constexpr std::uintptr_t kLayerSubmitCall       = 0x14150A1EC;  // call SubmitLayerSlot: crosses a block
-inline constexpr std::uintptr_t kSubmitLayerSlot       = 0x1439FC750;  // (renderer, pool, slot)
+inline constexpr std::array<std::uint8_t, 16> kSubmitLayerSlotEntry{
+    0x40, 0x55, 0x53, 0x56, 0x57, 0x41, 0x55, 0x41, 0x56, 0x41, 0x57, 0x48, 0x8D, 0xAC, 0x24, 0x50};
+/// (renderer, pool, slot)
+inline constexpr platform::FunctionFact kSubmitLayerSlot{L"SubmitLayerSlot", 0x1439FC750, kSubmitLayerSlotEntry};
 
 /// EndUI__ContainScaleFor1920x1080: float (FVector2D size, packed in rcx); W/1920 below 16:9, else H/1080, at least
 /// 0.01. The game's UI scale of a rect, which every marker conversion applies (RE-hud-ui.md §2.4).
@@ -727,8 +730,9 @@ inline constexpr std::array<std::uint8_t, 5> kBarPlaceTargetedFirst{0x48, 0x89, 
 inline constexpr std::uintptr_t kBattleTextPlace = 0x141496AD0;  // (out, pc, canvas*, widget*, loc*, offset, clamp, bool*)
 inline constexpr std::array<std::uint8_t, 7> kBattleTextPlaceFirst{0x4C, 0x8B, 0xDC, 0x49, 0x89, 0x5B, 0x20};
 /// FLocalPlayerContext::GetPlayerController (ctx = widget+0x1E8): the controller the bar placements project with.
-inline constexpr std::uintptr_t kPlayerContextController = 0x143016CF0;
 inline constexpr std::array<std::uint8_t, 7> kPlayerContextControllerFirst{0x44, 0x8B, 0x41, 0x0C, 0x48, 0x8B, 0xD1};
+inline constexpr platform::FunctionFact kPlayerContextController{L"FLocalPlayerContext::GetPlayerController", 0x143016CF0,
+                                                                 kPlayerContextControllerFirst};
 inline constexpr std::uintptr_t kSetPositionInViewport = 0x1428F3ED0;  // UUserWidget (this, FVector2D, bool)
 // Battle text's replay (RE-hud-battle-markers.md §3.3, §10). The tick passes the canvas and the widget as TSharedPtr copies
 // on its stack (NotThreadSafe: a plain `inc [ctrl+8]`), so the record pins its own copies and gives them back with the
@@ -838,8 +842,8 @@ inline constexpr std::uint32_t kCanvasSlotWidget = 0x08, kCanvasSlotOffset = 0x2
 
 // Each further player's own navi map manager (EndUISystem[29], RE-hud-minimap-two.md §2-§6, §9). Call sites are checked by
 // platform::CallRedirect against their targets.
-inline constexpr std::uintptr_t kNaviSlotGlobal        = 0x1459CAA58;  // EndUISystem[29]: the game's manager
-inline constexpr std::uintptr_t kBannerSlotGlobal      = 0x1459CAA88;  // EndUISystem[35]: the banner fades' lists +0x10, +0x80
+inline constexpr std::uint32_t  kNaviSlot              = 29;           // EndUISystem[29]: the game's manager
+inline constexpr std::uint32_t  kBannerSlot            = 35;           // EndUISystem[35]: the banner fades' lists +0x10, +0x80
 inline constexpr std::uintptr_t kNaviManagerCtor       = 0x1414722C0;  // (memory): in place, 0x268 bytes
 inline constexpr std::uintptr_t kGameMalloc            = 0x141C32C90;  // FMemory::Malloc(size, alignment)
 inline constexpr std::uintptr_t kMulticastAddRaw       = 0x14099A3B0;  // (list, handle out, object, {method, 0})
@@ -873,7 +877,11 @@ inline constexpr std::uintptr_t kNaviCreatorAddCall    = 0x141473F36;  // in the
 inline constexpr std::uintptr_t kNaviFindOctagon       = 0x141472C70;  // (user widget): the Nav_Map octagon
 inline constexpr std::uintptr_t kNaviEntryCall         = 0x1414FDDE0;  // the octagon paint's FindOrAdd (pool 0)
 inline constexpr std::uintptr_t kNaviSubmitCall        = 0x1414FDFBB;  // the octagon paint's submit (pool 0)
-inline constexpr std::uintptr_t kSetColorAndOpacity    = 0x1428F1C20;  // UUserWidget (widget, const FLinearColor&)
+inline constexpr std::array<std::uint8_t, 16> kSetColorAndOpacityEntry{
+    0x40, 0x53, 0x48, 0x81, 0xEC, 0x90, 0x00, 0x00, 0x00, 0x48, 0x8B, 0x05, 0x98, 0xEE, 0xAA, 0x02};
+/// UUserWidget (widget, const FLinearColor&)
+inline constexpr platform::FunctionFact kSetColorAndOpacity{L"UUserWidget::SetColorAndOpacity", 0x1428F1C20,
+                                                            kSetColorAndOpacityEntry};
 inline constexpr std::uintptr_t kCharacterByPlayerType = 0x1413B4C40;  // (u8 type): the party's character of that type; an RE fact kept, with no user here (the scopes carry the member type)
 inline constexpr std::uint32_t  kNaviManagerRoot       = 0x08;   // weak NaviMap_C
 inline constexpr std::uint32_t  kNaviManagerOctagon    = 0x18;   // weak Nav_Map (UEndNaviMapOctagon)
@@ -965,7 +973,7 @@ inline constexpr std::uint32_t kFocusCaptureFirstFree = 0x30;   // FirstFreeInde
 inline constexpr std::uint32_t kFocusMenuDelegate     = 0x190;  // the menu-core delegate (64 bytes; all zero = unbound)
 inline constexpr std::uint32_t kFocusMenuDelegateBytes = 0x40;
 inline constexpr std::uint32_t kUiFilterLatches       = 0x18;   // EndUISystem[37]: the wait-tint (+0x18) and Dying (+0x19) latch bytes
-inline constexpr std::uintptr_t kCommandCtrlSlotGlobal = 0x1459CAA08;  // EndUISystem[19]: the field command controller
+inline constexpr std::uint32_t kCommandCtrlSlot       = 19;     // EndUISystem[19]: the field command controller
 
 // --- A second field command controller (RE-battle.md §2, RE-command-menu-two.md) ----------------------------------
 // FieldCommandCtrl: 0x5D0 bytes from GMalloc, the ctor, then SetupMenuWidgets(ctrl, world) builds its own two widgets
@@ -1061,7 +1069,7 @@ inline constexpr std::uint8_t kCommandWaitOpening = 1;
 inline constexpr std::uint8_t kCommandWaitOpen    = 5;
 
 // --- The open battle menu's grey: UI filter 0, the wait tint (research/RE-menu-grey.md) -----------------------------
-// The UI filter manager EndUISystem[37] (`EUI+0x128`, kUiFilterSlotGlobal; its counts and suppressed bytes above): effect handle per type at +0x00 (i32, -1 = none), the latch
+// The UI filter manager EndUISystem[37] (`EUI+0x128`, kUiFilterSlot; its counts and suppressed bytes above): effect handle per type at +0x00 (i32, -1 = none), the latch
 // at +0x18 (u8 per type), suppressed at +0x1E (u8 per type), the shared count at +0x24 (i32 per type). Type 0 = the
 // wait tint (FX_R_WaitFilter_01). EndUIFilter__ActivateType(fm, u8 type, u8 instant), EndUIFilter__DeactivateType(fm,
 // u8 type) (returns at once when the type's handle is -1). The wait's spawn call (count 0 -> 1, not suppressed), and
@@ -2012,10 +2020,10 @@ inline constexpr std::uint32_t kBoxComponentExtent        = 0x710;
 /// driver writes each frame: the enemy bar manager's (EndUISystem[27]) displayed target (a weak pointer pair) and
 /// the off-screen icon manager's (EndUISystem[38]) target name (an FString at +0x88, its FName at +0x98).
 inline constexpr std::uint32_t  kBattleSysCursorWidget        = 0x10;
-inline constexpr std::uintptr_t kEnemyBarSlotGlobal           = 0x1459CAA48;  // EndUISystem[27]
+inline constexpr std::uint32_t  kEnemyBarSlot                 = 27;  // EndUISystem[27]
 inline constexpr std::uint32_t  kEnemyBarDisplayedTarget      = 0xD8;
 inline constexpr std::uint32_t  kEnemyBarDisplayedTargetBytes = 0x10;
-inline constexpr std::uintptr_t kOutsideIconSlotGlobal        = 0x1459CAAA0;  // EndUISystem[38]
+inline constexpr std::uint32_t  kOutsideIconSlot              = 38;  // EndUISystem[38]
 inline constexpr std::uint32_t  kOutsideIconTargetName        = 0x88;
 inline constexpr std::uint32_t  kOutsideIconTargetNameBytes   = 0x18;
 inline constexpr std::uint32_t  kOutsideIconHighlightName     = 0x98;  // the FName the tick compares (8 bytes; +0x10 of the range)
@@ -2310,9 +2318,9 @@ inline constexpr std::array<std::uint8_t, 16> kGetAttachedActorsEntry{
     0x40, 0x55, 0x53, 0x41, 0x54, 0x41, 0x55, 0x48, 0x8D, 0xAC, 0x24, 0x28, 0xFF, 0xFF, 0xFF, 0x48};
 inline constexpr platform::FunctionFact kGetAttachedActors{L"AActor::GetAttachedActors", 0x142C8EB50,
                                                            kGetAttachedActorsEntry};
-/// The save data (SaveDataMgr_Get_cand's singleton [ASSUMPTION: the save data]). While its state is 7, the active data
-/// at +0x880 holds the EnvironmentSet's last set name, char[128], which a hit writes and a no-hit reads.
-inline constexpr std::uintptr_t kSaveDataGlobal       = 0x1457E9768;
+/// The save data is the data singleton (kDataSingletonGlobal; SaveDataMgr_Get_cand's singleton [ASSUMPTION: the save data]).
+/// While its state is 7, the active data at +0x880 holds the EnvironmentSet's last set name, char[128], which a hit
+/// writes and a no-hit reads.
 inline constexpr std::uint32_t  kSaveDataActive       = 0x880;
 inline constexpr std::uint32_t  kSaveDataState        = 0x890;
 inline constexpr std::int32_t   kSaveDataStateActive  = 7;
@@ -2699,7 +2707,7 @@ inline constexpr std::uint8_t   kFlavorHookShot = 16;
 /// set state 1 (every arrow fades). The HUD tick ticks it once a frame (AnimStates, then PlaceArrow for each arrow through
 /// the arrow's own player, +0x1E8). The area actor (AEndFieldActionActorHookShotChild) keeps one in-area flag (+0x638)
 /// and one arrow (+0x640); its nav-area interface sits at +0x3C8 (enter, stay, leave take the interface).
-inline constexpr std::uintptr_t kSearchSlotGlobal = 0x1459CAB28;  // EndUISystem[55]
+inline constexpr std::uint32_t  kSearchSlot      = 55;  // EndUISystem[55]
 inline constexpr std::uint32_t  kSearchSlotBytes = 0x80;
 inline constexpr std::uint32_t  kSearchSlotCompass = 0x00, kSearchSlotState = 0x28;
 inline constexpr std::uint32_t  kSearchSlotMapNum = 0x38, kSearchSlotMapBits = 0x40, kSearchSlotMapFree = 0x60, kSearchSlotMapFreeCount = 0x64;
@@ -2967,7 +2975,10 @@ inline constexpr std::uintptr_t kFieldTargetPress     = 0x14101BE20;  // FieldAc
 inline constexpr std::uintptr_t kFieldTargetPressCall = 0x140FF5DFB;  // E8 20 60 02 00
 /// The pick's screen test asks for "the first local player" (UWorld::GetFirstLocalPlayerFromController, void*(world)):
 /// a row flagged NeedScreenSpace passes only on that player's screen. Only caller on this path; crosses a block.
-inline constexpr std::uintptr_t kFirstLocalPlayer     = 0x143370570;
+inline constexpr std::array<std::uint8_t, 16> kFirstLocalPlayerEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x10, 0x56, 0x48, 0x83, 0xEC, 0x30, 0xC7, 0x44, 0x24, 0x28, 0x00, 0x00};
+inline constexpr platform::FunctionFact kFirstLocalPlayer{L"UWorld::GetFirstLocalPlayerFromController", 0x143370570,
+                                                          kFirstLocalPlayerEntry};
 inline constexpr std::uintptr_t kFieldTargetScreenCall = 0x141017B7F;  // E8 EC 89 35 02
 /// The manager's per-player state (§8.3): the last pick's visited entries (TArray, inline 64) and its name-to-trace map
 /// (TMap) in one range; the current target (name, state name, actor tag), its prompt text (FString), hold timer and
@@ -3122,7 +3133,7 @@ inline constexpr platform::SlotFact kShowMenuActUpdate{L"the show-menu act's Upd
                                                        {L"FEndActionPERelativeCamera__Update", 0x140DF6080, kShowMenuActUpdateEntry}};
 inline constexpr std::uintptr_t kTableAction       = 0x145839B80;  // g_DT_Action, three tables
 inline constexpr std::uint32_t  kActionRowIntegers = 0xD8;         // FEndDataTableAction::IntegerArgumentList (TArray<int32>)
-inline constexpr std::uintptr_t kShopSlotGlobal    = 0x1459CAAD0;  // EndUISystem[44] (kEndUISystemSlots + 44 * 8)
+inline constexpr std::uint32_t  kShopSlot          = 44;           // EndUISystem[44]
 inline constexpr std::uint32_t  kShopUp            = 0x370;        // the shop UI's "a shop is up" byte
 
 // --- A further player's talk: player 1's character brought over (RE-talk-far.md §3, §4, §6) ----------------------
@@ -3167,7 +3178,7 @@ inline constexpr std::uintptr_t kNamedActorLevel       = 0x145879EE8;
 /// The field target icon manager (EndUISystem[15], one for the game's life): its hold gauge's last ratio (+0x54, one
 /// float for every widget: the "gauge full" sound plays when a ratio reaches 1 from below it); its icon map's element
 /// count (+0x08) and free slots (+0x34): the live icons are their difference.
-inline constexpr std::uintptr_t kTargetIconSlotGlobal = 0x1459CA9E8;
+inline constexpr std::uint32_t  kTargetIconSlot       = 15;  // EndUISystem[15]
 inline constexpr std::uint32_t  kTargetIconGaugeRatio = 0x54;
 inline constexpr std::uint32_t  kTargetIconMapCount = 0x08, kTargetIconMapFree = 0x34;
 /// The icon setter's one Show call (UEndFieldTargetIcon* (UI15, UWorld*, FName name by value, const FVector*, u8 state,

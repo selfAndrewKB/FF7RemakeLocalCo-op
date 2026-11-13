@@ -19,6 +19,7 @@
 #include "platform/log.h"
 #include "platform/verified_code.h"
 #include "players/field_root.h"
+#include "players/game_globals.h"
 #include "players/scopes.h"
 #include "players/seats.h"
 #include "players/unreal_call.h"
@@ -268,19 +269,19 @@ bool FindInto(const platform::GameImage& image, const platform::FunctionFact& fa
 
 bool Install(const platform::GameImage& image) noexcept
 {
-    const auto bar      = image.Rebase(facts::kEnemyBarSlotGlobal, sizeof(void*));
-    const auto icon     = image.Rebase(facts::kOutsideIconSlotGlobal, sizeof(void*));
+    const auto bar      = players::game_globals::UiSlotAddress(facts::kEnemyBarSlot);
+    const auto icon     = players::game_globals::UiSlotAddress(facts::kOutsideIconSlot);
     const auto los      = platform::FindFunction(image, facts::kCursorLineOfSight);
     const auto losCall  = image.Rebase(facts::kCursorLineOfSightCall, 5);
     const auto suspend  = platform::FindFunction(image, facts::kBattleSuspend);
-    const auto setColor = image.Rebase(facts::kSetColorAndOpacity);
+    const auto setColor = platform::FindFunction(image, facts::kSetColorAndOpacity);
     if (!players::field_root::Installed() || !bar || !icon || !los || !losCall || !suspend || !setColor || !FindInto(image, facts::kCursorDriver, g_driver))
     {
         platform::Log(L"target cursor: an engine check failed; no seat has a cursor of its own");
         return false;
     }
-    g_barSlot         = reinterpret_cast<std::uint8_t**>(*bar);
-    g_iconSlot        = reinterpret_cast<std::uint8_t**>(*icon);
+    g_barSlot         = reinterpret_cast<std::uint8_t**>(bar);
+    g_iconSlot        = reinterpret_cast<std::uint8_t**>(icon);
     g_lineOfSight     = *los;
     g_lineOfSightCall = *losCall;
     g_suspend         = *suspend;

@@ -956,7 +956,7 @@ bool Install(const platform::GameImage& image) noexcept
     const auto pressSite  = image.Rebase(facts::kFieldTargetPressCall, 5);
     const auto press      = image.Rebase(facts::kFieldTargetPress);
     const auto screenSite = image.Rebase(facts::kFieldTargetScreenCall, 5);
-    const auto screen     = image.Rebase(facts::kFirstLocalPlayer);
+    const auto screen     = platform::FindFunction(image, facts::kFirstLocalPlayer);
     const auto gate       = platform::FindFunction(image, facts::kFieldActionGate);
     const auto held       = platform::FindFunction(image, facts::kActionHeldByKey);
     const auto pressed    = platform::FindFunction(image, facts::kActionPressedByKey);

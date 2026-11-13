@@ -1,7 +1,8 @@
 #pragma once
 
-// The game's UI pieces the Co-op menu's modules share: the UI system's managers, the main menu's first page, weak
-// pointers held in the game's widgets, and FStrings read and copied the game's way. Used by menu/coop_menu,
+// The game's UI pieces the Co-op menu's modules share: the main menu's first page, weak pointers held in the game's
+// widgets, and FStrings read and copied the game's way (the UI system's managers are players/game_globals'
+// UiSlot). Used by menu/coop_menu,
 // menu/coop_page_open and menu/coop_page; found at install, then only read. Game thread.
 
 #include "platform/game_array.h"
@@ -22,11 +23,6 @@ bool Install(const platform::GameImage& image) noexcept;
 
 /// The game's FString copy, for writes inside the caller's own guard.
 AssignFn Assign() noexcept;
-
-/// EndUISystem's array of managers (the focus-layer pop takes it).
-void* System() noexcept;
-/// The manager in EndUISystem's slot `slot`, or null.
-void* Manager(std::uint32_t slot) noexcept;
 
 /// `window` is the main menu's first page (MainTopMenu, by its vtable).
 bool IsTopWindow(const void* window) noexcept;

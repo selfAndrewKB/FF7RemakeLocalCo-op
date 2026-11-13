@@ -5,6 +5,7 @@
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
+#include "players/game_globals.h"
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -111,10 +112,11 @@ bool IsCompare(const std::uint8_t* bytes, std::uintptr_t at, std::uintptr_t mode
 
 bool Install(const platform::GameImage& image) noexcept
 {
-    const auto first = image.Rebase(facts::kLetterboxFirstCompare, kCompareBytes);
-    const auto last  = image.Rebase(facts::kLetterboxLastCompare, kCompareBytes);
-    const auto mode  = image.Rebase(facts::kSystemResolution + facts::kSystemResolutionWindowMode, sizeof(std::int32_t));
-    if (!first || !last || !mode || *last < *first)
+    const auto first  = image.Rebase(facts::kLetterboxFirstCompare, kCompareBytes);
+    const auto last   = image.Rebase(facts::kLetterboxLastCompare, kCompareBytes);
+    const auto system = players::game_globals::Address(players::game_globals::Global::SystemResolution);
+    const auto mode   = system != 0 ? system + facts::kSystemResolutionWindowMode : 0;
+    if (!first || !last || mode == 0 || *last < *first)
     {
         platform::LogWarning(L"letterbox patch: the compare range or the window-mode global is outside the image; unavailable");
         return false;
@@ -130,7 +132,7 @@ bool Install(const platform::GameImage& image) noexcept
     g_sites.clear();
     for (std::size_t i = 0; i + kCompareBytes <= bytes; ++i)
     {
-        if (IsCompare(code.data() + i, *first + i, *mode))
+        if (IsCompare(code.data() + i, *first + i, mode))
         {
             g_sites.push_back(*first + i + kCompareBytes - 1);  // the imm8
             i += kCompareBytes - 1;
