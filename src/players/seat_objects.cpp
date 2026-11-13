@@ -2,6 +2,7 @@
 
 #include "engine_facts.h"
 #include "platform/guarded.h"
+#include "players/actor_fields.h"
 #include "players/seats.h"
 #include "players/weak_object.h"
 
@@ -96,7 +97,7 @@ int SeatOfCameraManager(const void* manager) noexcept
     for (int seat = 1; manager != nullptr && seat <= kSeatsBuilt; ++seat)
     {
         void* controller = Resolve(g_seats[static_cast<std::size_t>(seat)].controller);
-        if (controller != nullptr && platform::ReadPointer(controller, facts::kControllerCameraManager) == manager)
+        if (controller != nullptr && actor_fields::CameraManager(controller) == manager)
         {
             return seat;
         }

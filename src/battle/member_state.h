@@ -5,6 +5,7 @@
 
 #include "engine_facts.h"
 #include "platform/guarded.h"
+#include "players/actor_fields.h"
 
 #include <cstdint>
 #include <optional>
@@ -14,7 +15,7 @@ namespace lss::battle::member_state {
 /// The action state byte of `character`'s battle component; empty when the character or its component cannot be read.
 inline std::optional<std::uint8_t> ActionState(const void* character) noexcept
 {
-    const auto*  component = static_cast<const std::uint8_t*>(platform::ReadPointer(character, facts::kCharacterBattleComponent));
+    const auto*  component = players::actor_fields::BattleComponent(character);
     std::uint8_t state     = 0;
     if (component == nullptr || !platform::Read(component + facts::kBattleCompActionState, state))
     {

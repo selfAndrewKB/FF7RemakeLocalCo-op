@@ -14,6 +14,7 @@
 #include "hud/overlay_pass.h"
 #include "platform/call_redirect.h"
 #include "platform/code_redirect.h"
+#include "platform/game_array.h"
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
@@ -271,10 +272,16 @@ std::uintptr_t PaintInterfaceOf(void* manager) noexcept
     return reinterpret_cast<std::uintptr_t>(slate + f::kOctagonPaintInterface);
 }
 
+/// The manager's NaviMap_C root, or null.
+void* NaviRoot(void* manager) noexcept
+{
+    return manager != nullptr ? ResolveWeak(At(manager, f::kNaviManagerRoot)) : nullptr;
+}
+
 /// The manager's roots shown on the overlay: its NaviMap_C and its compass's Compass_C.
 void RootsOf(void* manager, void* (&roots)[2]) noexcept
 {
-    roots[0] = manager != nullptr ? ResolveWeak(At(manager, f::kNaviManagerRoot)) : nullptr;
+    roots[0] = NaviRoot(manager);
     void* compass = nullptr;
     roots[1] = manager != nullptr && Read(At(manager, f::kNaviManagerCompass), compass) && compass != nullptr
                    ? ResolveWeak(compass)
@@ -284,7 +291,7 @@ void RootsOf(void* manager, void* (&roots)[2]) noexcept
 /// The manager's root is painted: alive and neither collapsed nor hidden (the tick collapses it when its Out ends).
 bool RootShown(void* manager) noexcept
 {
-    void*        root       = manager != nullptr ? ResolveWeak(At(manager, f::kNaviManagerRoot)) : nullptr;
+    void*        root       = NaviRoot(manager);
     std::uint8_t visibility = 1;
     return root != nullptr && Read(At(root, f::kWidgetVisibility), visibility) && visibility != 1 && visibility != 2;
 }
@@ -993,7 +1000,7 @@ try
             {
                 Follow(seat, one);
             }
-            if (void* root = ResolveWeak(At(s.manager, f::kNaviManagerRoot)); root != s.lastRoot)
+            if (void* root = NaviRoot(s.manager); root != s.lastRoot)
             {
                 s.lastRoot = root;
                 platform::Log(L"HUD minimap: {}'s root changed: {} [{}]; player 1 [{}]", SeatName(seat), SeatName(seat),
@@ -1129,13 +1136,6 @@ void* InstanceOf(int seat) noexcept
     return g.slot29 != nullptr && Read(g.slot29, manager) && !IsSeatManager(manager) ? manager : nullptr;
 }
 
-/// An FString as the game lays it out (data, count with the terminator, capacity): AddIcon copies it.
-struct RawString
-{
-    const wchar_t* data = nullptr;
-    std::int32_t   num = 0, max = 0;
-};
-
 }  // namespace
 
 bool AddIconTo(int seat, std::uint64_t key, std::uint8_t kind, const float (&at)[3], const IconParams& params) noexcept
@@ -1146,8 +1146,8 @@ bool AddIconTo(int seat, std::uint64_t key, std::uint8_t kind, const float (&at)
     {
         return false;
     }
-    const RawString text{kNoText, 1, 1};
-    U64             ignored = 0;
+    const platform::GameArray text{const_cast<wchar_t*>(kNoText), 1, 1};  // an FString over the empty text: AddIcon copies it
+    U64                       ignored = 0;
     return platform::CallGuarded(g.addIcon, ignored, manager, key, static_cast<U64>(kind), reinterpret_cast<U64>(&at[0]),
                                  reinterpret_cast<U64>(&text), reinterpret_cast<U64>(&params));
 }

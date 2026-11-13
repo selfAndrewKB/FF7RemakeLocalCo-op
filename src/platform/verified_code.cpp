@@ -65,4 +65,16 @@ bool ReplaceSlot(const GameImage& image, const SlotFact& fact, std::uintptr_t re
     return true;
 }
 
+const CodeSite* FirstDiffering(const GameImage& image, std::span<const CodeSite> sites) noexcept
+{
+    for (const CodeSite& site : sites)
+    {
+        if (!image.BytesMatch(site.address, site.bytes))
+        {
+            return &site;
+        }
+    }
+    return nullptr;
+}
+
 }  // namespace lss::platform

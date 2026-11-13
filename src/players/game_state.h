@@ -37,6 +37,8 @@ const Snapshot& Current() noexcept;
 
 /// The world the game mode names (AEndGameMode::GetWorld), or null. Game thread.
 void* World() noexcept;
+/// The world `object` lives in (UObject::GetWorld through its vtable, the call guarded), or null. Game thread.
+void* WorldOf(void* object) noexcept;
 
 /// Whether a menu owns the game's input now (research/RE-pause-menu-any-pad.md): the game state is the cinema pause,
 /// a menu or the chapter-start pause (7, 8, 10), a shop is up (its UI's own byte: shops run in the field state,

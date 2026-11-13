@@ -3,6 +3,7 @@
 #include "control/registry.h"
 #include "engine_facts.h"
 #include "platform/call_redirect.h"
+#include "platform/game_array.h"
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
@@ -31,14 +32,6 @@ namespace {
 using BindFn           = void* (*)(void* context, void* vertexShaderOut, const float* sourceRect, const float* destRect);
 using GetPipelineFn    = void* (*)(void* commandList, const void* initializer, std::uint32_t applyFlags);
 using CreatePsRenderFn = void** (*)(void* rhi, void** out, void* immediateList, const void* code);
-
-/// TArray<uint8> as the engine lays it out.
-struct ByteArray
-{
-    const std::uint8_t* data;
-    std::int32_t        num;
-    std::int32_t        max;
-};
 
 /// The corrected shader's code blob in the engine's framing: the original's resource tables, the corrected DXBC,
 /// the original's optional data and footer (the bindings are the original's, so is everything around the DXBC).
@@ -135,10 +128,10 @@ std::wstring Hex(const std::uint8_t* bytes, std::size_t count) noexcept
 /// holds g_createMutex and has seen neither a shader nor a failure.
 void CreateFixed() noexcept
 {
-    const ByteArray code{kFixedCode.data(), static_cast<std::int32_t>(kFixedCode.size()),
-                         static_cast<std::int32_t>(kFixedCode.size())};
-    void*           shaderRef = nullptr;
-    void**          returned  = nullptr;  // the engine returns `out` itself; the shader is what it wrote there
+    const platform::GameArray code{const_cast<std::uint8_t*>(kFixedCode.data()), static_cast<std::int32_t>(kFixedCode.size()),
+                                   static_cast<std::int32_t>(kFixedCode.size())};
+    void*                     shaderRef = nullptr;
+    void**                    returned  = nullptr;  // the engine returns `out` itself; the shader is what it wrote there
     if (!platform::CallGuarded(g_createShader, returned, g_rhi, &shaderRef, reinterpret_cast<void*>(g_immediateList),
                                static_cast<const void*>(&code)) ||
         shaderRef == nullptr)

@@ -16,6 +16,7 @@
 #include "platform/log.h"
 #include "platform/settings.h"
 #include "platform/verified_code.h"
+#include "players/game_state.h"
 #include "players/weak_object.h"
 
 #include <array>
@@ -51,7 +52,6 @@ using GrowFn      = void (*)(void* array);
 using RemoveAtFn  = void (*)(void* array, std::int32_t index, std::int32_t count);
 using SetCountFn  = void (*)(void* box, std::int32_t count);
 using RefreshFn   = void (*)(void* box);
-using GetWorldFn  = void* (*)(void* object);
 
 /// The game's functions, found at install.
 struct Game
@@ -454,10 +454,8 @@ void* Ready(void* host, std::int32_t z, std::uint8_t inGame) noexcept
         {
             g_class = RC::Unreal::UObjectGlobals::StaticFindObject<RC::Unreal::UClass*>(nullptr, nullptr, facts::kOptionsClassPath);
         }
-        void* world = nullptr;
-        const auto getWorld =
-            reinterpret_cast<GetWorldFn>(platform::ReadPointer(platform::ReadPointer(host, 0), facts::kObjectGetWorldSlot));
-        if (g_class == nullptr || getWorld == nullptr || !platform::CallGuarded(getWorld, world, host) || world == nullptr ||
+        void* const world = players::game_state::WorldOf(host);
+        if (g_class == nullptr || world == nullptr ||
             !platform::CallGuarded(g.create, page, world, g_class, inGame) || page == nullptr)
         {
             platform::LogWarning(L"Co-op page: the game's Options screen could not be made ({}); the row opens nothing",

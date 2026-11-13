@@ -12,6 +12,7 @@
 #include "menu/coop_page.h"
 #include "menu/game_ui.h"
 #include "platform/call_redirect.h"
+#include "platform/game_array.h"
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
@@ -68,15 +69,6 @@ bool                   g_ready = false;
 int  g_readings = 0;      // the strip's readings still to log for this open (the open and its first step)
 bool g_failSaid = false;  // a failed marker or label write logged for this open
 
-/// An FString parameter as ProcessEvent's frame holds it: a view over the mod's text (the call copies it; nothing here
-/// is freed by the game).
-struct StringView
-{
-    const wchar_t* data;
-    std::int32_t   num;
-    std::int32_t   max;
-};
-
 bool Call(void* object, UFunction* function, void* params) noexcept
 {
     return object != nullptr && function != nullptr &&
@@ -86,7 +78,7 @@ bool Call(void* object, UFunction* function, void* params) noexcept
 bool SetText(void* block, const wchar_t* text) noexcept
 {
     const auto length = static_cast<std::int32_t>(std::wcslen(text)) + 1;
-    StringView params{text, length, length};
+    platform::GameArray params{const_cast<wchar_t*>(text), length, length};  // the call copies it; the game frees nothing
     return Call(block, g_calls.setText, &params);
 }
 
@@ -135,7 +127,7 @@ void LogReadings(void* strip, const settings::Option& row) noexcept
     Call(strip, g_calls.getMaxOffset, &maxOffset);
     platform::LogDebug(L"Co-op slider: {} strip: clipping {}, desired count {}, scroll bar {} (always {}), slot {}, last "
                        L"given {:.1f} x {:.1f}, scroll range {:.1f}",
-                       row.key, clipping, desired, bar, alwaysBar, ClassName(ReadPointer(strip, facts::kWidgetSlot)), size[0],
+                       row.key, clipping, desired, bar, alwaysBar, ClassName(game_ui::SlotOf(strip)), size[0],
                        size[1], maxOffset);
 }
 
@@ -179,7 +171,7 @@ void Fit(void* page, void* gauge, const std::uint8_t* info, bool opened) noexcep
     Call(strip, g_calls.setScrollOffset, &to);
     // The marker, by the setter the game placed it with: its x within the window, its y as the game left it.
     void* const head = ReadPointer(gauge, facts::kGaugeHead);
-    void* const slot = head != nullptr ? ReadPointer(head, facts::kWidgetSlot) : nullptr;
+    void* const slot = game_ui::SlotOf(head);
     bool        canvas = false;
     struct
     {
@@ -301,7 +293,7 @@ try
     };
     if (!marker || !fromInt || !openSite || !stepSite || !rowSite || !shaped(g_calls.setDesiredCount, 4) ||
         !shaped(g_calls.setScrollOffset, 4) || !shaped(g_calls.getScrollOffset, 4) || !shaped(g_calls.getMaxOffset, 4) ||
-        !shaped(g_calls.setPosition, 8) || !shaped(g_calls.setText, sizeof(StringView)) || g_calls.canvasSlot == nullptr)
+        !shaped(g_calls.setPosition, 8) || !shaped(g_calls.setText, sizeof(platform::GameArray)) || g_calls.canvasSlot == nullptr)
     {
         platform::LogWarning(L"Co-op slider: an engine check failed; the long rows stay lists");
         return false;

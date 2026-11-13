@@ -15,6 +15,7 @@
 #include "platform/log.h"
 #include "platform/name_text.h"
 #include "platform/verified_code.h"
+#include "players/actor_fields.h"
 #include "players/scopes.h"
 #include "players/weak_object.h"
 #include "world/actor_place.h"
@@ -359,7 +360,7 @@ __declspec(noinline) void LogTargetCall(void* component, void* character, void* 
     bool hate = false;
     platform::CallGuarded(g_isHate, hate, component);
     void* const enemy      = OwnerOf(component);
-    void* const controller = enemy != nullptr ? platform::ReadPointer(enemy, facts::kCharacterBattleAI) : nullptr;
+    void* const controller = enemy != nullptr ? players::actor_fields::BattleAi(enemy) : nullptr;
     platform::LogDebug(L"enemy watch: {} {:#x} target call by {}: asked {}, holds {}{}, held {}; {}{}", ClassName(controller),
                        reinterpret_cast<std::uintptr_t>(controller), by, CharacterName(character), CharacterName(after),
                        hate ? L" (a hate enemy: the call takes its hate pick)" : L"", CharacterName(before), Distances(enemy, after),

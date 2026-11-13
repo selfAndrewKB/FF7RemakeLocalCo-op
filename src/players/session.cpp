@@ -1,4 +1,5 @@
 #include "players/session.h"
+#include "players/actor_fields.h"
 #include "players/unreal_call.h"
 
 #define RC_UNREAL_DISABLE_PROPERTY_DEPRECATION_WARNINGS
@@ -91,6 +92,12 @@ UObject* Field(const void* object, std::uint32_t offset) noexcept
                                                       sizeof(value))
                ? value
                : nullptr;
+}
+
+/// A local player's controller, or null.
+UObject* ControllerOf(const void* localPlayer) noexcept
+{
+    return Field(localPlayer, facts::kLocalPlayerController);
 }
 
 using local_player_list::Describe;
@@ -226,7 +233,7 @@ std::uint32_t Session::SeatIds() const noexcept
 
 UObject* Session::Controller(const Seat& seat) const noexcept
 {
-    return Field(seat.localPlayer, facts::kLocalPlayerController);
+    return ControllerOf(seat.localPlayer);
 }
 
 void Session::EndMemberModules(const Seat& seat) noexcept
@@ -419,7 +426,7 @@ try
     }
     const bool ready = game.valid && game.state == kStatePlay && game.hasRoot && game.running && game.step == kStepSteady &&
                        players != nullptr && players->Num() == 1 + Count() + Mirrors() && !lowerPending &&
-                       Field(Field((*players)[0], facts::kLocalPlayerController), facts::kControllerPawn) != nullptr;
+                       Field(ControllerOf((*players)[0]), facts::kControllerPawn) != nullptr;
     const auto now = std::chrono::steady_clock::now();
     if (!ready)
     {
@@ -456,7 +463,7 @@ try
         {
             return;  // the seat funnel refused the member last time; not tried again before its retry tick
         }
-        UObject* const playerOneController = Field((*players)[0], facts::kLocalPlayerController);
+        UObject* const playerOneController = ControllerOf((*players)[0]);
         SettleRank(seat, playerOneController);
         const party_member::Choice choice = party_member::Choose(seat.index, playerOneController, nullptr, false, seat.standIn);
         LogFormation(seat, choice);
@@ -536,7 +543,7 @@ void Session::LogWait(Seat& seat, const party_member::Choice& choice, const wcha
         if (players != nullptr && players->Num() >= 1)
         {
             platform::Log(L"  the row's member: {}",
-                          party_member::AiDetail(party_member::RowActor(seat.index, Field((*players)[0], facts::kLocalPlayerController), seat.standIn)));
+                          party_member::AiDetail(party_member::RowActor(seat.index, ControllerOf((*players)[0]), seat.standIn)));
         }
     }
 }
@@ -580,7 +587,7 @@ void Session::Forget(Seat& seat) noexcept
 
 UObject* Session::PlayerOneController() const noexcept
 {
-    return Field(LocalPlayer(0), facts::kLocalPlayerController);
+    return ControllerOf(LocalPlayer(0));
 }
 
 bool Session::ClaimsRank(const Seat& seat) noexcept
@@ -760,7 +767,7 @@ try
                       mirrors != 0 ? L" plus the mirror" : L"", players == nullptr ? -1 : players->Num());
         return;
     }
-    UObject* playerOneController = Field((*players)[0], facts::kLocalPlayerController);
+    UObject* playerOneController = ControllerOf((*players)[0]);
     if (Field(playerOneController, facts::kControllerPawn) == nullptr)
     {
         platform::Log(L"join refused: player 1 controls no character (title screen or a load); join in the field");
@@ -900,7 +907,7 @@ try
     world::push_events::OnSeatLeaving(seat.index);  // a lever event of the seat's ends while its scopes still answer for it
     EndMemberModules(seat);
     // The seat's member goes back to its AI first, through the game's leader funnel.
-    if (seatInstalled_ && !party_seat::Unseat(seat.index, Field((*players)[0], facts::kLocalPlayerController), controller))
+    if (seatInstalled_ && !party_seat::Unseat(seat.index, ControllerOf((*players)[0]), controller))
     {
         if (!worldChange)
         {
@@ -955,7 +962,7 @@ try
         choice.wait = party_member::Wait::Unread;
         return false;
     }
-    UObject* playerOne      = Field((*players)[0], facts::kLocalPlayerController);
+    UObject* playerOne      = ControllerOf((*players)[0]);
     UObject* seatController = Controller(seat);
     choice                  = party_member::Choose(seat.index, playerOne, seatController, false, seat.standIn);
     if (choice.member == nullptr)
@@ -1020,7 +1027,7 @@ try
                   party_seat::MemberType(seat.index), why, seat.Name());
     EndMemberModules(seat);  // the menu is set up again for the next member by its own tick
     DestroyOperator(seat);
-    party_seat::Unseat(seat.index, Field((*players)[0], facts::kLocalPlayerController), Controller(seat));
+    party_seat::Unseat(seat.index, ControllerOf((*players)[0]), Controller(seat));
     seat.ResetMember();
 }
 catch (...)
@@ -1108,7 +1115,7 @@ try
     // the formation has its row.
     const std::uint8_t was  = party_seat::MemberType(seat.index);
     const std::uint8_t type = party_member::TypeOf(character);
-    if (platform::ReadPointer(controller, facts::kControllerLeaderCharacter) != character || type == facts::kPlayerTypeNone)
+    if (actor_fields::LeaderCharacter(controller) != character || type == facts::kPlayerTypeNone)
     {
         platform::Log(L"{}'s own switch did not land ({}); {} keeps member type {}", seat.Name(),
                       type == facts::kPlayerTypeNone ? L"the character is in no row of the formation"
@@ -1135,7 +1142,7 @@ try
     if (seat_objects::Operator(seat.index) == nullptr)
     {
         // A seat on a still camera (its spawn failed at the join) gets an operator on the new member.
-        StartSeatCamera(seat, Field((*players)[0], facts::kLocalPlayerController), controller, character);
+        StartSeatCamera(seat, ControllerOf((*players)[0]), controller, character);
     }
     Report();
 }
@@ -1184,7 +1191,7 @@ try
         return;  // the player's own switch holds while the fight lasts; its row decides again at the end (TickOwnSwitch)
     }
     if (const wchar_t* why = party_member::WhyNotInSlot(seat.index, member, party_seat::MemberType(seat.index),
-                                                       Field((*players)[0], facts::kLocalPlayerController), seat.standIn))
+                                                       ControllerOf((*players)[0]), seat.standIn))
     {
         ReleaseMember(seat, why);
         return;
@@ -1511,7 +1518,7 @@ try
     for (std::int32_t i = 0; i < players->Num(); ++i)
     {
         UObject* player     = (*players)[i];
-        UObject* controller = Field(player, facts::kLocalPlayerController);
+        UObject* controller = ControllerOf(player);
         UObject* manager    = Field(controller, facts::kControllerCameraManager);
         // The list's place is the column; the player is named by its seat (a mirror holds no seat).
         const wchar_t* name = i == 0 ? SeatName(0) : L"a mirror";
@@ -1563,7 +1570,7 @@ try
     {
         return L"no party";
     }
-    return party_member::FormationReading(Field((*players)[0], facts::kLocalPlayerController));
+    return party_member::FormationReading(ControllerOf((*players)[0]));
 }
 catch (...)
 {
@@ -1598,7 +1605,7 @@ try
     if (seat.awaiting)
     {
         const party_member::Choice choice =
-            party_member::Choose(seat.index, Field((*players)[0], facts::kLocalPlayerController), nullptr, false, seat.standIn);
+            party_member::Choose(seat.index, ControllerOf((*players)[0]), nullptr, false, seat.standIn);
         return std::format(L"awaiting: row {} type {}: {}", choice.ordinal, choice.type, party_member::Describe(choice.wait));
     }
     if (seat.localPlayer == nullptr)
@@ -1606,7 +1613,7 @@ try
         return L"waiting (no seat)";
     }
     const party_member::Choice choice =
-        party_member::Choose(seat.index, Field((*players)[0], facts::kLocalPlayerController), Controller(seat), false, seat.standIn);
+        party_member::Choose(seat.index, ControllerOf((*players)[0]), Controller(seat), false, seat.standIn);
     return std::format(L"waiting: row {} type {}: {}", choice.ordinal, choice.type, party_member::Describe(choice.wait));
 }
 catch (...)
@@ -1640,7 +1647,7 @@ try
     }
     // SpecificPlayer stays null: the engine then uses player 1's controller, as the console does.
     alignas(16) std::uint8_t frame[kMaxFrame]{};
-    *reinterpret_cast<UObject**>(frame + context->GetOffset_Internal()) = Field((*players)[0], facts::kLocalPlayerController);
+    *reinterpret_cast<UObject**>(frame + context->GetOffset_Internal()) = ControllerOf((*players)[0]);
     auto*      string = new (frame + text->GetOffset_Internal()) RC::Unreal::FString(command);
     const bool called = GuardedProcessEvent(static_cast<UObject*>(library->GetClassDefaultObject()), function, frame);
     string->~FString();

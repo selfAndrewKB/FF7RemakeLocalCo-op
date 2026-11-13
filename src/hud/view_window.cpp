@@ -8,6 +8,7 @@
 #include "platform/log.h"
 #include "platform/verified_code.h"
 #include "players/game_globals.h"
+#include "players/game_state.h"
 #include "players/scopes.h"
 #include "players/seats.h"
 #include "players/weak_object.h"
@@ -37,7 +38,6 @@ using RemoveFn     = void* (*)(void* widget);  // out of the HUD overlay
 using ListAddFn    = void* (*)(void* list, std::int32_t* id, void** window);
 using PlaySoundFn  = void (*)(const void* args);
 using SourceFn     = void* (*)();
-using GetWorldFn   = void* (*)(void* object);
 
 static_assert(kViews == players::scopes::kMaxPlayers, "a window per player");
 
@@ -89,11 +89,7 @@ std::uint8_t* At(void* object, std::uint32_t offset) noexcept
 /// The world the HUD lives in: the game viewport client's (UObject::GetWorld).
 void* World() noexcept
 {
-    void* const client = players::game_globals::GameViewportClient();
-    void* const table  = client != nullptr ? platform::ReadPointer(client, 0) : nullptr;
-    const auto  get    = table != nullptr ? reinterpret_cast<GetWorldFn>(platform::ReadPointer(table, facts::kObjectGetWorldSlot)) : nullptr;
-    void*       world  = nullptr;
-    return get != nullptr && platform::CallGuarded(get, world, client) ? world : nullptr;
+    return players::game_state::WorldOf(players::game_globals::GameViewportClient());
 }
 
 /// The focus context's layer count (-1 unreadable): the open's log shows the pop left them as they were.
@@ -442,16 +438,17 @@ void Play(Sound sound) noexcept
     {
         return;
     }
-    // The 0x34-byte arguments as the message window builds them.
+    // The arguments as the message window builds them (facts::kUISoundArgsBytes).
     alignas(16) std::uint8_t args[0x38]{};
     const std::int32_t       index    = -1;
     const float              mix[4]   = {0.0f, 1.0f, 1.0f, 0.0f};
     const float              one      = 1.0f;
-    std::memcpy(args + 0x00, &src, sizeof(src));
-    std::memcpy(args + 0x08, &cue, sizeof(cue));
-    std::memcpy(args + 0x10, &index, sizeof(index));
-    std::memcpy(args + 0x14, mix, sizeof(mix));
-    std::memcpy(args + 0x30, &one, sizeof(one));
+    static_assert(sizeof(args) >= facts::kUISoundArgsBytes, "room for the call's arguments");
+    std::memcpy(args + facts::kUISoundArgsSource, &src, sizeof(src));
+    std::memcpy(args + facts::kUISoundArgsCue, &cue, sizeof(cue));
+    std::memcpy(args + facts::kUISoundArgsIndex, &index, sizeof(index));
+    std::memcpy(args + facts::kUISoundArgsMix, mix, sizeof(mix));
+    std::memcpy(args + facts::kUISoundArgsLast, &one, sizeof(one));
     platform::CallGuarded(g.playSound, static_cast<const void*>(args));
 }
 

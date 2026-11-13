@@ -28,6 +28,7 @@
 #include "platform/image.h"
 #include "platform/log.h"
 #include "platform/settings.h"
+#include "players/actor_fields.h"
 #include "players/camera_override.h"
 #include "players/field_root.h"
 #include "players/game_globals.h"
@@ -68,7 +69,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.189.0-shared-globals";  // the one version string (the log, UE4SS and the setup app)
+constexpr const wchar_t* kVersion = L"0.190.0-one-accessor";  // the one version string (the log, UE4SS and the setup app)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
@@ -480,7 +481,7 @@ private:
     /// A local player's camera manager (null if unread).
     void* CameraManagerOf(int index) const noexcept
     {
-        return lss::platform::ReadPointer(ControllerOf(index), lss::facts::kControllerCameraManager);
+        return lss::players::actor_fields::CameraManager(ControllerOf(index));
     }
 
     /// A local player's pawn (player 1's is the character the game centres the NPCs' senses on), or null.
@@ -504,7 +505,7 @@ private:
     /// A seat's own camera manager while its player is in, or null.
     void* ManagerOfSeat(int seat) const noexcept
     {
-        return lss::platform::ReadPointer(ControllerOfSeat(seat), lss::facts::kControllerCameraManager);
+        return lss::players::actor_fields::CameraManager(ControllerOfSeat(seat));
     }
 
     // Declaration order matters: holds_ and remote_ hold references into session_, so it comes first.

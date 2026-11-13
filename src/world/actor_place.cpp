@@ -2,6 +2,7 @@
 
 #include "engine_facts.h"
 #include "platform/guarded.h"
+#include "players/actor_fields.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -11,7 +12,7 @@ namespace lss::world::actor_place {
 
 bool ActorLocation(const void* actor, float (&out)[3]) noexcept
 {
-    const void* root = platform::ReadPointer(actor, facts::kActorRootComponent);
+    const void* root = players::actor_fields::RootComponent(actor);
     float       at[3]{};  // read apart from `out`, so a fault partway leaves `out` untouched
     if (root == nullptr || !platform::Read(static_cast<const std::uint8_t*>(root) + facts::kComponentWorldLocation, at))
     {
@@ -34,7 +35,7 @@ bool ActorLocation(const void* actor, GameVector& out) noexcept
 
 bool ActorYaw(const void* actor, float& out) noexcept
 {
-    const void* root = platform::ReadPointer(actor, facts::kActorRootComponent);
+    const void* root = players::actor_fields::RootComponent(actor);
     float       rotation[3]{};  // pitch, yaw, roll
     if (root == nullptr || !platform::Read(static_cast<const std::uint8_t*>(root) + facts::kSceneRelativeRotation, rotation))
     {

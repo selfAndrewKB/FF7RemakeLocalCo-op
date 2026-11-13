@@ -3,6 +3,7 @@
 #include "control/registry.h"
 #include "engine_facts.h"
 #include "platform/call_redirect.h"
+#include "platform/game_array.h"
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
@@ -31,14 +32,6 @@ namespace {
 
 using GetPipelineFn    = void* (*)(void* commandList, const void* initializer, std::uint32_t applyFlags);
 using CreatePsRenderFn = void** (*)(void* rhi, void** out, void* immediateList, const void* code);
-
-/// TArray<uint8> as the engine lays it out.
-struct ByteArray
-{
-    const std::uint8_t* data;
-    std::int32_t        num;
-    std::int32_t        max;
-};
 
 using Hash = std::array<std::uint8_t, 20>;  // FRHIShader::Hash, the compiler's OutputHash
 
@@ -115,7 +108,7 @@ void* Correct(const std::uint8_t* original, const wchar_t*& outcome) noexcept
     std::uintptr_t      vtable   = 0;
     const std::uint8_t* bytecode = nullptr;
     std::size_t         length   = 0;
-    ByteArray           code{};
+    platform::GameArray code{};
     if (!platform::Read(original, vtable) || vtable != g_pixelVtable)
     {
         outcome = L"not a D3D12 pixel shader";
@@ -159,9 +152,9 @@ void* Correct(const std::uint8_t* original, const wchar_t*& outcome) noexcept
         outcome = SwapText(swap);
         return nullptr;
     }
-    const ByteArray fixed{copy.data(), code.num, code.num};
-    void*           shaderRef = nullptr;
-    void**          returned  = nullptr;  // the engine returns `out` itself; the shader is what it wrote there
+    const platform::GameArray fixed{copy.data(), code.num, code.num};
+    void*                     shaderRef = nullptr;
+    void**                    returned  = nullptr;  // the engine returns `out` itself; the shader is what it wrote there
     if (!platform::CallGuarded(g_createShader, returned, g_rhi, &shaderRef, reinterpret_cast<void*>(g_immediateList),
                                static_cast<const void*>(&fixed)) ||
         shaderRef == nullptr)

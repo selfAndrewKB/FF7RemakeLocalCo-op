@@ -6,6 +6,7 @@
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
+#include "players/actor_fields.h"
 #include "players/field_root.h"
 #include "players/game_state.h"
 #include "players/party_member.h"
@@ -38,7 +39,7 @@ std::wstring  g_last = L"none yet";
 /// and the one its placing acts abort by.
 bool Busy(const void* character) noexcept
 {
-    const auto*  component = static_cast<const std::uint8_t*>(platform::ReadPointer(character, facts::kCharacterFieldAction));
+    const auto*  component = players::actor_fields::FieldAction(character);
     std::uint8_t busy      = 0;
     return catch_up_move::InFieldAction(character) ||
            (component != nullptr && Read(component + facts::kFieldActionBusy, busy) && busy != 0);

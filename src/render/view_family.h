@@ -21,10 +21,22 @@ struct Family
     std::int32_t        index = -1;       // the view's place in it
 };
 
+/// The view's family object (FSceneView::Family), or null.
+inline const void* FamilyOf(const void* view) noexcept
+{
+    return platform::ReadPointer(view, facts::kViewFamily);
+}
+
+/// The family's scene (FSceneViewFamily::Scene), or null.
+inline void* SceneOf(const void* family) noexcept
+{
+    return platform::ReadPointer(family, facts::kFamilyScene);
+}
+
 /// The view's family, if the family lists the view; count 0 otherwise. Guarded reads.
 inline Family Of(const void* view) noexcept
 {
-    const void* const family = platform::ReadPointer(view, facts::kViewFamily);
+    const void* const family = FamilyOf(view);
     std::int32_t      count  = 0;
     const auto* const views  = static_cast<const std::uint8_t*>(platform::ReadPointer(family, facts::kFamilyViews));
     if (views == nullptr ||

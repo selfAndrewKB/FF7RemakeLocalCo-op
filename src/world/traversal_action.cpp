@@ -10,6 +10,7 @@
 #include "platform/log.h"
 #include "platform/verified_code.h"
 #include "platform/vtable_entry.h"
+#include "players/actor_fields.h"
 #include "players/field_root.h"
 #include "players/game_globals.h"
 #include "players/pad_buttons.h"
@@ -293,6 +294,18 @@ int SeatOfComponentAnyThread(const void* component) noexcept
     return 0;
 }
 
+/// The seat whose member's component a field action state belongs to, while the seats' scopes run (any thread), or 0.
+int SeatOfState(const void* state) noexcept
+{
+    return state != nullptr && Scoping() ? SeatOfComponentAnyThread(players::actor_fields::ActionStateComponent(state)) : 0;
+}
+
+/// `state` belongs to `seat`'s own member, on the game thread.
+bool SeatsOwnState(int seat, const void* state) noexcept
+{
+    return seat != 0 && OnGameThreadNow() && players::actor_fields::ActionStateComponent(state) == g_seats[seat].component;
+}
+
 /// The balance beam's end delegate (animation side): for a seat's member, its stored camera is kept out of the
 /// delegate's test of player 1's camera, so the state's exit (inside the action start, on the seat's operator; it has no
 /// leader test) eases the seat's camera out.
@@ -300,7 +313,7 @@ void BalanceEnd(void** capture, char reached)
 {
     const auto original = reinterpret_cast<BalanceEndFn>(g_balanceEnd.Original());
     auto*      state    = capture != nullptr ? static_cast<std::uint8_t*>(ReadPointer(capture, 0)) : nullptr;
-    const int  seat     = state != nullptr && Scoping() ? SeatOfComponentAnyThread(ReadPointer(state, facts::kStateComponent)) : 0;
+    const int  seat     = SeatOfState(state);
     void*      stored   = seat != 0 ? ReadPointer(state, facts::kBalanceStoredFlavor) : nullptr;
     if (stored == nullptr)
     {
@@ -322,7 +335,7 @@ void BalanceEnd(void** capture, char reached)
 void NoteNearEnd(void* const* capture, std::uint8_t action) noexcept
 {
     const void* state = capture != nullptr ? ReadPointer(capture, 0) : nullptr;
-    if (const int seat = state != nullptr && Scoping() ? SeatOfComponentAnyThread(ReadPointer(state, facts::kStateComponent)) : 0; seat != 0)
+    if (const int seat = SeatOfState(state); seat != 0)
     {
         g_ductNearEnd[seat].store(action, std::memory_order_relaxed);
     }
@@ -355,7 +368,7 @@ void LadderPhase(void** capture, char phase)
         return;
     }
     void* state = capture != nullptr ? ReadPointer(capture, 0) : nullptr;
-    if (const int seat = state != nullptr && Scoping() ? SeatOfComponentAnyThread(ReadPointer(state, facts::kStateComponent)) : 0; seat != 0)
+    if (const int seat = SeatOfState(state); seat != 0)
     {
         g_ladderThread.store(OnGameThreadNow() ? 1 : 2, std::memory_order_relaxed);  // research: which thread the animation side is
         g_ladderExitPhase[seat].store(reached, std::memory_order_relaxed);
@@ -367,7 +380,7 @@ void LadderPhase(void** capture, char phase)
 int SeatOfStateAnyThread(void* const* capture, void** state) noexcept
 {
     *state = capture != nullptr ? ReadPointer(capture, 0) : nullptr;
-    return *state != nullptr && Scoping() ? SeatOfComponentAnyThread(ReadPointer(*state, facts::kStateComponent)) : 0;
+    return SeatOfState(*state);
 }
 
 /// The gap jump's long-jump finish (animation side): the game sets the state done and ticks the owner's component there,
@@ -412,7 +425,7 @@ void PoleFinish(void** capture)
 void SlideDownPostTick(void* state, float dt)
 {
     const auto original = reinterpret_cast<PostTickFn>(g_slideDownPostTick.Original());
-    const int  seat     = OnGameThreadNow() && g_locksOk.load(std::memory_order_relaxed) ? SeatOfComponent(ReadPointer(state, facts::kStateComponent)) : 0;
+    const int  seat     = OnGameThreadNow() && g_locksOk.load(std::memory_order_relaxed) ? SeatOfComponent(players::actor_fields::ActionStateComponent(state)) : 0;
     if (seat == 0)
     {
         original(state, dt);
@@ -462,7 +475,7 @@ bool WithSeatLeader(const platform::VTableEntry& slot, void* state, const wchar_
 {
     const auto original = reinterpret_cast<StateCallFn>(slot.Original());
     const int  seat     = g_pausedSeat.load(std::memory_order_relaxed);
-    if (seat == 0 || !OnGameThreadNow() || ReadPointer(state, facts::kStateComponent) != g_seats[seat].component)
+    if (!SeatsOwnState(seat, state))
     {
         original(state);
         return false;
@@ -487,7 +500,7 @@ void MonkeyBarsBaseExit(void* state)
 {
     const auto original = reinterpret_cast<StateCallFn>(g_monkeyBarsBaseExit.Original());
     const int  seat     = g_resumedSeat.load(std::memory_order_relaxed);
-    if (seat == 0 || !OnGameThreadNow() || ReadPointer(state, facts::kStateComponent) != g_seats[seat].component)
+    if (!SeatsOwnState(seat, state))
     {
         original(state);
         return;
@@ -529,7 +542,7 @@ bool PlayerOneOnFence(const void* actor) noexcept
 void WireFenceCall(const platform::VTableEntry& slot, void* state, const wchar_t* what)
 {
     const int  seat  = g_pausedSeat.load(std::memory_order_relaxed);
-    const bool mine  = seat != 0 && OnGameThreadNow() && ReadPointer(state, facts::kStateComponent) == g_seats[seat].component;
+    const bool mine  = SeatsOwnState(seat, state);
     std::uint8_t* actor = mine ? StateActor(state) : nullptr;  // the Exit's: cleared by the call
     if (!WithSeatLeader(slot, state, what) || !mine)
     {
@@ -563,7 +576,7 @@ void WireFenceBaseStart(void* state)
 {
     const auto original = reinterpret_cast<StateCallFn>(g_fenceBaseStart.Original());
     const int  seat     = g_resumedSeat.load(std::memory_order_relaxed);
-    if (seat == 0 || !OnGameThreadNow() || ReadPointer(state, facts::kStateComponent) != g_seats[seat].component)
+    if (!SeatsOwnState(seat, state))
     {
         original(state);
         return;
@@ -866,7 +879,7 @@ void LogHookShotCameras(int seat, const void* member, const wchar_t* when) noexc
 {
     const void* controller = players::seat_objects::Controller(seat);
     const void* possessed  = ReadPointer(controller, facts::kControllerCharacter);  // null-safe
-    const auto* mesh      = static_cast<const std::uint8_t*>(ReadPointer(member, facts::kCharacterMesh));
+    const auto* mesh      = players::actor_fields::Mesh(member);
     float       tilt[3]{};
     const bool  tiltRead = mesh != nullptr && platform::CopyGuarded(tilt, mesh + facts::kSceneRelativeRotation, sizeof(tilt));
     platform::LogDebug(L"traversal: {}'s grappling hook {}: its hookshot camera {}, player 1's {}; its controller possesses the member: {}; "
@@ -1044,7 +1057,7 @@ const std::uint8_t* PlayerOneLeader(const std::uint8_t** component) noexcept
         return nullptr;
     }
     const auto* leader = static_cast<const std::uint8_t*>(players::weak_object::ObjectOf(pair));
-    *component         = leader != nullptr ? static_cast<const std::uint8_t*>(ReadPointer(leader, facts::kCharacterFieldAction)) : nullptr;
+    *component         = leader != nullptr ? players::actor_fields::FieldAction(leader) : nullptr;
     return leader;
 }
 
@@ -1157,7 +1170,7 @@ void LogSqueezeCamera(int player, const void* member, const void* component, con
     const bool follows = op != nullptr && ReadPointer(op, facts::kOperatorOwnerChara) == member;
     float facing = std::numeric_limits<float>::quiet_NaN();
     std::array<float, 4> q{};  // x, y, z, w
-    if (const void* root = member != nullptr ? ReadPointer(member, facts::kActorRootComponent) : nullptr;
+    if (const void* root = member != nullptr ? players::actor_fields::RootComponent(member) : nullptr;
         root != nullptr && platform::CopyGuarded(q.data(), static_cast<const std::uint8_t*>(root) + facts::kComponentWorldRotation, sizeof(q)))
     {
         facing = static_cast<float>(std::atan2(2.0 * (q[3] * q[2] + q[0] * q[1]), 1.0 - 2.0 * (q[1] * q[1] + q[2] * q[2])) * 180.0 * std::numbers::inv_pi);
@@ -1454,7 +1467,7 @@ void TickSeat(int seat, void* member) noexcept
     }
     SeatState& state = g_seats[seat];
     state.member     = member;
-    state.component  = member != nullptr ? ReadPointer(member, facts::kCharacterFieldAction) : nullptr;
+    state.component  = member != nullptr ? players::actor_fields::FieldAction(member) : nullptr;
     g_seatComponents[seat].store(state.component, std::memory_order_relaxed);
     std::uint8_t action = 0;
     if (state.component != nullptr)
@@ -1467,7 +1480,7 @@ void TickSeat(int seat, void* member) noexcept
     // finishes the way it started.
     if (action == 0)
     {
-        const bool withAi = member != nullptr && ReadPointer(member, facts::kCharacterPlayerSlot) == nullptr;
+        const bool withAi = member != nullptr && players::actor_fields::PlayerSlot(member) == nullptr;
         if (withAi && !state.withAi)
         {
             platform::LogDebug(L"traversal: {}'s member is with its AI: its field actions run as the game's AI ally's (a door or gate "

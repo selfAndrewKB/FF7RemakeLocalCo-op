@@ -13,6 +13,7 @@
 #include "platform/verified_code.h"
 #include "platform/vtable_entry.h"
 #include "players/action_key.h"
+#include "players/actor_fields.h"
 #include "players/field_root.h"
 #include "players/pad_buttons.h"
 #include "players/party_member.h"
@@ -196,11 +197,6 @@ std::wstring Name(std::uint64_t bits) noexcept
     return text;
 }
 
-std::uint8_t* Root() noexcept
-{
-    return players::field_root::Root();
-}
-
 /// The chests waiting for their open: {data, count} of the state manager's list.
 bool ChestQueue(const std::uint64_t*& data, std::int32_t& count) noexcept
 {
@@ -233,6 +229,12 @@ T InCopy(const SeatState& state, std::uint32_t offset) noexcept
         }
     }
     return value;
+}
+
+/// The name of the pending write the seat's copy of the manager holds (the game's record of a press).
+std::uint64_t PendingName(const SeatState& state) noexcept
+{
+    return InCopy<std::uint64_t>(state, facts::kTargetsPendingName);
 }
 
 /// Frees what the copy owns (the five heap blocks the manager's dtor frees) and forgets it. Not while open.
@@ -444,7 +446,7 @@ public:
         // name): that entry's byte is then the game's, not put back.
         std::uint64_t pending = 0;
         pending_     = Read(mgr + facts::kTargetsPendingEnable, pending) && pending != 0;
-        pendingName_ = InCopy<std::uint64_t>(state, facts::kTargetsPendingName);
+        pendingName_ = PendingName(state);
         state.leftToPlayerOne = static_cast<std::uint32_t>(marked_.count());
     }
 
@@ -615,7 +617,7 @@ void DropTalkPressesAtWorldChange(void* targets) noexcept
 /// removes it at the next state-manager tick): the talk's gather faces player 1's character toward it.
 void NoteTalkPress(int seat, std::uint64_t name) noexcept
 {
-    void* const targets = ReadPointer(Root(), facts::kRootFieldTargets);
+    void* const targets = players::field_root::FieldTargets();
     DropTalkPressesAtWorldChange(targets);
     talk_presses::Dropped dropped;
     talk_presses::Press*  press = g_talkPresses.Note(seat, name, GetTickCount64(), dropped);
@@ -652,7 +654,7 @@ void DropTalkPresses(std::uint64_t name) noexcept
 /// (rule 4: a running talk or greeting holds it, so a long talk or a choice before the shop never lapses them).
 void TickTalkPresses() noexcept
 {
-    void* const targets = ReadPointer(Root(), facts::kRootFieldTargets);
+    void* const targets = players::field_root::FieldTargets();
     if (!g_talkPresses.Any())
     {
         g_notesManager = targets;
@@ -692,7 +694,7 @@ void PressFor(int seat, void* mgr, float dt, TickFn original) noexcept
         return;  // with its AI (a lead, a scene): no press of the player's starts anything on it (world/traversal_action.h)
     }
     auto*                        live = static_cast<std::uint8_t*>(mgr);
-    auto*                        push = static_cast<std::uint8_t*>(ReadPointer(Root(), facts::kRootPushButtons));
+    auto*                        push = players::field_root::PushButtons();
     const std::uint64_t*         queue = nullptr;
     std::int32_t                 before = 0, after = 0;
     bool                         pressedNow = false, ok = true, queued = false;
@@ -764,7 +766,7 @@ void PressFor(int seat, void* mgr, float dt, TickFn original) noexcept
     }
     if (state.kind == Kind::Npc)
     {
-        const auto pressed = InCopy<std::uint64_t>(state, facts::kTargetsPendingName);  // the game's own record of the press
+        const auto pressed = PendingName(state);  // the game's own record of the press
         const auto name    = pressed != 0 ? pressed : state.target;
         if (name == g_playerOnePressed)
         {
@@ -1042,7 +1044,7 @@ void Tick() noexcept
         return;
     }
     PlaceCrossing();
-    target_icons::Tick(ReadPointer(Root(), facts::kRootFieldTargets));
+    target_icons::Tick(players::field_root::FieldTargets());
     TickTalkPresses();
     const std::uint64_t* queue = nullptr;
     std::int32_t         count = 0;
@@ -1168,7 +1170,7 @@ void* LayoutRow(std::uint64_t name) noexcept
 
 std::uint64_t FirstTag(const void* member) noexcept
 {
-    const auto*   tags  = static_cast<const std::uint8_t*>(ReadPointer(member, facts::kActorTags));
+    const auto*   tags  = players::actor_fields::Tags(member);
     std::int32_t  count = 0;
     std::uint64_t tag   = 0;
     return tags != nullptr && Read(static_cast<const std::uint8_t*>(member) + facts::kActorTags + 8, count) && count > 0 && Read(tags, tag)

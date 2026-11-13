@@ -84,7 +84,6 @@ inline constexpr std::size_t    kGameStatePause       = 0x4F0;  // execIsGamePau
 inline constexpr std::size_t    kFieldRootStep        = 0x70;   // dword: the field step machine (13 = steady field, 14-20 exit steps)
 inline constexpr std::size_t    kFieldRootRunning     = 0x74;   // byte: the step machine runs
 inline constexpr std::size_t    kFieldRootLocation    = 0x78;   // FName: the current location
-inline constexpr std::uint32_t  kGameModeGetWorldSlot = 0x140;
 /// UEndMenuAPI::execIsPauseMenuClosed(ctx, FFrame&, bool* result) (RE-pause-menu-any-pad.md §3.4): the Blueprint
 /// thunk with the test inlined (the pause, main and map menus' weak slots, Libra, game over, the named widgets).
 /// It only reads and bumps the frame's code pointer (+0x20), which stays 0 in a zeroed frame.
@@ -716,6 +715,15 @@ inline constexpr std::uintptr_t kAppDeltaTime         = 0x1453A49B0;  // FApp::D
 inline constexpr std::uintptr_t kFrameNumber          = 0x1453A4A00;
 inline constexpr std::uintptr_t kDrawEntryBatchCall   = 0x1439FCFD8;  // DrawLayerEntry: call DrawEntryBatchToTarget
 inline constexpr std::uintptr_t kDrawEntryBatchToTarget = 0x1439FD100;  // 9 arguments, no result
+/// One render buffer as FEndMenuRenderer's constructor makes pool 2's: 64 bytes, its vtable at +0, a u32 the constructor
+/// sets to 4 at +8 [UNKNOWN: its meaning], the capacity at +0x38; InitResource is the vtable's +0x28. A layer entry's
+/// own batches hang at +0x80, and the draw call is given that pointer + 0x50 (RE-hud-two-images.md).
+inline constexpr std::uint32_t kRenderBufferBytes    = 64;
+inline constexpr std::uint32_t kRenderBufferWord8    = 0x08;
+inline constexpr std::uint32_t kRenderBufferCapacity = 0x38;
+inline constexpr std::uint32_t kRenderBufferInitSlot = 0x28;
+inline constexpr std::uint32_t kLayerEntryBatches    = 0x80;
+inline constexpr std::uint32_t kBatchesDrawn         = 0x50;
 inline constexpr std::uintptr_t kGMallocGlobal        = 0x145825680;  // FMalloc* GMalloc (vt+0x10 Malloc(size, align))
 inline constexpr std::uint32_t  kMallocSlotMalloc     = 0x10;         // FMalloc's vtable: Malloc(size, alignment)
 inline constexpr std::uintptr_t kMenuVertexBufferVtable = 0x144F766F8;  // FEndMenuRenderer's pool buffers
@@ -786,6 +794,8 @@ inline constexpr std::array<std::uint8_t, 16> kWeakPtrReleaseEntry{
 inline constexpr platform::FunctionFact kWeakPtrRelease{L"TWeakPtrTS_Release", 0x140657A90, kWeakPtrReleaseEntry};  // (weak pair*): one weak reference off
 // The bar manager's entries (0x150 bytes: +0 source, +8 its weak controller, p = +0x10) and the bar's objects.
 inline constexpr std::uint32_t kBarEntrySize        = 0x150;
+inline constexpr std::uint32_t kBarManagerEntries   = 0x08;   // the manager's set: its elements' data
+inline constexpr std::uint32_t kBarManagerEntryBits = 0x30;   //   and NumBits
 inline constexpr std::uint32_t kBarEntryP           = 0x10;
 inline constexpr std::uint32_t kBarEntryNameText    = 0xE8;   // p: weak Txt_EnemyName
 inline constexpr std::uint32_t kBarEntryStatusPanel = 0xF0;   // p: weak Pnl_Icon_Status
@@ -1928,6 +1938,8 @@ inline constexpr std::int32_t   kDataObjectRowsMax        = 1 << 16;  // Ch. 4's
 /// target is resolved by name every frame (a field point, else the level object: a character). [CONFIRMED code, read
 /// live: the Ch. 3 record targets opy030_Tifa]
 inline constexpr std::uint32_t  kRootObjectiveIcons      = 0x1F8;
+inline constexpr std::uint32_t  kObjectiveIconsData      = 0x08;  // the registry's array: data
+inline constexpr std::uint32_t  kObjectiveIconsNum       = 0x10;  //   and count
 inline constexpr std::uint32_t  kObjectiveIconRecordKey  = 0x08;
 inline constexpr std::uint32_t  kObjectiveIconRecordRow  = 0x18;
 inline constexpr std::uint32_t  kObjectiveIconRecordGone = 0x29;
@@ -3732,6 +3744,14 @@ inline constexpr std::int32_t  kPlayerWindowZOrder         = 1000;   // above th
 inline constexpr std::array<std::uint8_t, 16> kPlayUISoundEntry{
     0x40, 0x53, 0x48, 0x83, 0xEC, 0x50, 0x48, 0x8B, 0xD9, 0x48, 0x8B, 0x0D, 0x30, 0xB9, 0x13, 0x04};
 inline constexpr platform::FunctionFact kPlayUISound{L"EndAudio_PlayUISound_cand", 0x1416AE170, kPlayUISoundEntry};
+/// Its arguments, 0x34 bytes as the message window builds them: the source, the cue's FName, an index (-1), a float4
+/// mix {0, 1, 1, 0} and a float the window sets to 1 [UNKNOWN: its meaning].
+inline constexpr std::uint32_t kUISoundArgsBytes  = 0x34;
+inline constexpr std::uint32_t kUISoundArgsSource = 0x00;
+inline constexpr std::uint32_t kUISoundArgsCue    = 0x08;
+inline constexpr std::uint32_t kUISoundArgsIndex  = 0x10;
+inline constexpr std::uint32_t kUISoundArgsMix    = 0x14;
+inline constexpr std::uint32_t kUISoundArgsLast   = 0x30;
 inline constexpr std::array<std::uint8_t, 16> kUISoundSourceEntry{
     0x40, 0x53, 0x48, 0x83, 0xEC, 0x30, 0x65, 0x48, 0x8B, 0x04, 0x25, 0x58, 0x00, 0x00, 0x00, 0xBA};
 inline constexpr platform::FunctionFact kUISoundSource{L"EndUI_GetUISoundSource_cand", 0x1413B64B0, kUISoundSourceEntry};

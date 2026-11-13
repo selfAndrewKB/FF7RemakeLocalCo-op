@@ -6,7 +6,9 @@
 #include "platform/image.h"
 #include "platform/log.h"
 #include "platform/name_text.h"
+#include "players/actor_fields.h"
 #include "players/weak_object.h"
+#include "render/view_family.h"
 
 #include <cstdint>
 #include <format>
@@ -107,8 +109,7 @@ std::wstring Name(const void* object) noexcept
 
 const void* WorldOf(const void* view) noexcept
 {
-    const void* family = ReadPointer(view, facts::kViewFamily);
-    void*       scene  = family != nullptr ? ReadPointer(family, facts::kFamilyScene) : nullptr;
+    void* const scene  = view_family::SceneOf(view_family::FamilyOf(view));
     const void* vtable = scene != nullptr ? ReadPointer(scene, 0) : nullptr;
     const auto  fn     = vtable != nullptr ? reinterpret_cast<GetWorldFn>(ReadPointer(vtable, facts::kSceneGetWorldSlot)) : nullptr;
     void*       world  = nullptr;
@@ -233,7 +234,7 @@ std::wstring Reading()
             break;
         }
         const auto  blend = Field<float>(controller, facts::kRscBlendTime);
-        const void* owner = ReadPointer(controller, facts::kComponentOwner);
+        const void* owner = players::actor_fields::ComponentOwner(controller);
         out += std::format(L"; {} on {} (kind {}, blend {:.2f} s, the last view's weight {:.2f}):", Name(controller),
                            owner != nullptr ? Name(owner) : std::wstring(L"?"), Field<std::uint8_t>(controller, facts::kRscBlendType),
                            blend, Field<float>(controller, facts::kRscWeight));

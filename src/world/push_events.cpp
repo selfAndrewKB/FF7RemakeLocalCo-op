@@ -10,6 +10,7 @@
 #include "platform/name_text.h"
 #include "platform/verified_code.h"
 #include "platform/vtable_entry.h"
+#include "players/actor_fields.h"
 #include "players/field_root.h"
 #include "players/pad_buttons.h"
 #include "players/party_member.h"
@@ -120,14 +121,9 @@ std::mutex                             g_deferredLock;
 std::array<Deferred, kDeferredMax>     g_deferred{};
 std::size_t                            g_deferredCount = 0;  // under g_deferredLock
 
-std::uint8_t* Root() noexcept
-{
-    return players::field_root::Root();
-}
-
 std::uint8_t* Manager() noexcept
 {
-    return static_cast<std::uint8_t*>(ReadPointer(Root(), facts::kRootPushButtons));
+    return players::field_root::PushButtons();
 }
 
 /// The game's own test for "an event runs": the manager's active list has a head node.
@@ -579,7 +575,7 @@ void Step(void* object, float dt)
                 const std::uint8_t byte = held ? 1 : 0;
                 platform::WriteGuarded(static_cast<std::uint8_t*>(object) + facts::kPushObjHeld, &byte, 1);
             }
-            const target_icons::SeatSwap icons(seat, ReadPointer(Root(), facts::kRootFieldTargets), state.localPlayer, false);
+            const target_icons::SeatSwap icons(seat, players::field_root::FieldTargets(), state.localPlayer, false);
             g_inStep.store(true, std::memory_order_release);
             original(object, dt);
             g_inStep.store(false, std::memory_order_release);
@@ -818,7 +814,7 @@ bool Admitted(int seat) noexcept
         return false;
     }
     const void*  member = g_seats[seat].member;
-    const auto*  action = static_cast<const std::uint8_t*>(ReadPointer(member, facts::kCharacterFieldAction));
+    const auto*  action = players::actor_fields::FieldAction(member);
     std::uint8_t running = 0;
     return member != nullptr && players::party_member::ActorMode(member) != facts::kActorModeBattle && action != nullptr &&
            Read(action + facts::kFieldActionState, running) && running == 0;

@@ -7,6 +7,7 @@
 #include "platform/log.h"
 #include "platform/verified_code.h"
 #include "platform/vtable_entry.h"
+#include "players/actor_fields.h"
 #include "players/seats.h"
 #include "world/actor_place.h"
 #include "world/anim_choice.h"
@@ -69,7 +70,7 @@ std::wstring      g_summary      = L"no summary yet";
 bool OwnerLocation(void* mesh, GameVector& out) noexcept
 {
     float at[3]{};
-    if (!actor_place::ActorLocation(ReadPointer(mesh, facts::kComponentOwner), at))
+    if (!actor_place::ActorLocation(players::actor_fields::ComponentOwner(mesh), at))
     {
         return false;
     }
@@ -288,7 +289,7 @@ void TickSeat(int seat, void* seatCameraManager, void* seatMember) noexcept
         s.member     = seatMember;
         s.judgedFrom = 0;
     }
-    s.mesh = ReadPointer(seatMember, facts::kCharacterMesh);
+    s.mesh = players::actor_fields::Mesh(seatMember);
 }
 
 void Tick() noexcept

@@ -285,13 +285,13 @@ std::uint64_t SetBlendRt(void* payload)
             {
                 g_differed[k].store(differs, std::memory_order_relaxed);
                 float own = 0.0f, shared = 0.0f;
-                std::memcpy(&own, g_state.records[k].sceneFields + 0x0C, sizeof(own));
-                std::memcpy(&shared, g_state.game.sceneFields + 0x0C, sizeof(shared));
+                std::memcpy(&own, g_state.records[k].sceneFields + area_chains::kShadowDistanceAt, sizeof(own));
+                std::memcpy(&shared, g_state.game.sceneFields + area_chains::kShadowDistanceAt, sizeof(shared));
                 platform::LogDebug(L"shadows: view {}'s area light settings now {} the ones the last camera set for every view "
                                    L"(its shadow distance {} {:.0f}; the last camera's {} {:.0f})",
                                    k + 1, differs ? L"differ from" : L"match",
-                                   g_state.records[k].sceneFields[0x08] != 0 ? L"set by its area to" : L"default,", own,
-                                   g_state.game.sceneFields[0x08] != 0 ? L"set to" : L"default,", shared);
+                                   g_state.records[k].sceneFields[area_chains::kShadowDistanceSetAt] != 0 ? L"set by its area to" : L"default,", own,
+                                   g_state.game.sceneFields[area_chains::kShadowDistanceSetAt] != 0 ? L"set to" : L"default,", shared);
             }
             const bool fogDiffers = area_chains::FogDiffers(g_state.fogs[k], g_state.fogGame);
             if (fogDiffers != g_fogDiffered[k].load(std::memory_order_relaxed))

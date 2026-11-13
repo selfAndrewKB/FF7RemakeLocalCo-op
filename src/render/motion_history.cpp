@@ -5,12 +5,13 @@
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
+#include "platform/verified_code.h"
+#include "render/view_family.h"
 
 #include <array>
 #include <atomic>
 #include <cstdint>
 #include <format>
-#include <span>
 #include <string>
 #include <utility>
 #include <variant>
@@ -31,20 +32,13 @@ constexpr std::uint32_t kSceneStarted      = 0x6488;           // FScene::Curren
 constexpr std::uint32_t kScenePaused       = 0x6350 + 0x51;    // FScene::MotionBlurInfoData.bWorldIsPaused
 constexpr std::uint32_t kFamilyWorldPaused = 0x84;             // FSceneViewFamily::bWorldIsPaused
 
-/// A site the lever depends on, by its instruction bytes.
-struct Site
-{
-    const wchar_t*                 what;
-    std::uintptr_t                 address;
-    std::span<const std::uint8_t>  bytes;
-};
 constexpr std::array<std::uint8_t, 7> kEnsureGate{0x80, 0xB9, 0x88, 0x64, 0x00, 0x00, 0x00};        // cmp byte [rcx+6488h], 0
 constexpr std::array<std::uint8_t, 9> kSubmitClear{0x41, 0xC6, 0x84, 0x24, 0x88, 0x64, 0x00, 0x00, 0x00};  // mov byte [r12+6488h], 0
 constexpr std::array<std::uint8_t, 7> kEnsureArgument{0x0F, 0xB6, 0x97, 0x84, 0x00, 0x00, 0x00};    // movzx edx, byte [rdi+84h]
 constexpr std::array<std::uint8_t, 4> kStartFrameWrite{0x41, 0x88, 0x41, 0x51};                     // mov [r9+51h], al
 constexpr std::array<std::uint8_t, 4> kUpdateGate{0x80, 0x79, 0x51, 0x00};                          // cmp byte [rcx+51h], 0
 constexpr std::array<std::uint8_t, 11> kUpdateCall{0x48, 0x8B, 0x56, 0x08, 0x48, 0x8D, 0x8A, 0x50, 0x63, 0x00, 0x00};  // the table at Scene+0x6350
-const std::array<Site, 6> kSites{{
+const std::array<platform::CodeSite, 6> kSites{{
     {L"EnsureMotionBlurCacheIsUpToDate's started-flag test", 0x142590ED9, kEnsureGate},
     {L"the submission's clear of the started flag", 0x1425C9DB0, kSubmitClear},
     {L"the submission's bWorldIsPaused argument", 0x1425C9B11, kEnsureArgument},
@@ -69,7 +63,7 @@ std::atomic<std::uint64_t> g_refused{0};  // families whose scene was not an FSc
 /// The family's scene, if it is an FScene (GetRenderScene is then the scene itself); null otherwise.
 std::uint8_t* SceneOf(const std::uint8_t* family) noexcept
 {
-    void* const scene = platform::ReadPointer(family, facts::kFamilyScene);
+    void* const scene = view_family::SceneOf(family);
     std::uintptr_t vtable = 0;
     if (scene == nullptr || !platform::Read(scene, vtable) || vtable != g_sceneVtable)
     {
@@ -119,14 +113,11 @@ bool Install(const platform::GameImage& image) noexcept
                              L"family");
         return false;
     }
-    for (const Site& site : kSites)
+    if (const platform::CodeSite* differs = platform::FirstDiffering(image, kSites))
     {
-        if (!image.BytesMatch(site.address, site.bytes))
-        {
-            platform::LogWarning(L"motion history: UNAVAILABLE ({} differs); the table steps once per player's family",
-                                 site.what);
-            return false;
-        }
+        platform::LogWarning(L"motion history: UNAVAILABLE ({} differs); the table steps once per player's family",
+                             differs->what);
+        return false;
     }
     g_sceneVtable = *vtable;
     g_installed.store(true, std::memory_order_release);  // publishes the vtable

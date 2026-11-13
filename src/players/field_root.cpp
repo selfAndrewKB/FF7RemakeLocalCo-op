@@ -111,6 +111,21 @@ std::uint8_t* CharaOwner() noexcept
     return static_cast<std::uint8_t*>(ReadPointer(Root(), facts::kEndGameRootCharaOwner));
 }
 
+void* FieldTargets() noexcept
+{
+    return ReadPointer(Root(), facts::kRootFieldTargets);
+}
+
+std::uint8_t* PushButtons() noexcept
+{
+    return static_cast<std::uint8_t*>(ReadPointer(Root(), facts::kRootPushButtons));
+}
+
+void* FieldPoints() noexcept
+{
+    return ReadPointer(Root(), facts::kRootFieldPoints);
+}
+
 bool InBattle() noexcept
 {
     const std::uint8_t* owner = CharaOwner();

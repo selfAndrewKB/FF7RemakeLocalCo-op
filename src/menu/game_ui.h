@@ -5,7 +5,9 @@
 // UiSlot). Used by menu/coop_menu,
 // menu/coop_page_open and menu/coop_page; found at install, then only read. Game thread.
 
+#include "engine_facts.h"
 #include "platform/game_array.h"
+#include "platform/guarded.h"
 
 #include <cstdint>
 #include <string>
@@ -37,6 +39,12 @@ inline std::uint8_t* At(void* object, std::uint32_t offset) noexcept
 
 /// The game's FString at `at`, read into the mod's (empty if unreadable).
 std::wstring ReadString(const void* at) noexcept;
+
+/// A widget's panel slot (UWidget::Slot), or null.
+inline void* SlotOf(const void* widget) noexcept
+{
+    return platform::ReadPointer(widget, facts::kWidgetSlot);
+}
 
 /// The game's copy of `text` into the FString at `to`. False if it faulted.
 bool AssignString(void* to, const std::wstring& text) noexcept;

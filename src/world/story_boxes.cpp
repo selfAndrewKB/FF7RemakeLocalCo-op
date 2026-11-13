@@ -13,6 +13,7 @@
 #include "platform/image.h"
 #include "platform/log.h"
 #include "platform/verified_code.h"
+#include "players/actor_fields.h"
 #include "players/field_root.h"
 #include "players/lead_gate.h"
 #include "players/party_member.h"
@@ -150,11 +151,6 @@ std::uint64_t FirstTag(const void* actor) noexcept
     std::int32_t count = 0;
     std::uint64_t tag  = 0;
     return Read(tags + sizeof(void*), count) && count > 0 && Read(ReadPointer(tags, 0), tag) ? tag : 0;
-}
-
-void* FieldPoints() noexcept
-{
-    return ReadPointer(players::field_root::Root(), facts::kRootFieldPoints);
 }
 
 /// The box's layout object and its actor group (0: none). False when the box has no layout row.
@@ -444,7 +440,7 @@ std::int64_t Begin(void* points, std::uint64_t box, void* collider)
 /// The member enters the box now: the game's own enter, then its end when the member is no longer inside.
 void Replay(const Waiting& w, void* member, const wchar_t* why)
 {
-    void*        points   = FieldPoints();
+    void*        points   = players::field_root::FieldPoints();
     const auto   original = reinterpret_cast<BeginFn>(g_redirect.Original());
     const Sends  sends    = WouldSend(w.object);
     std::int64_t result   = 0;
@@ -494,7 +490,7 @@ std::wstring Reading()
 bool BoxShape(std::uint64_t tag, story_box_rules::Box& out) noexcept
 try
 {
-    void* points = g_installed ? FieldPoints() : nullptr;
+    void* points = g_installed ? players::field_root::FieldPoints() : nullptr;
     void* actor  = nullptr;
     return points != nullptr && tag != 0 && CallGuarded(g_actorByTag, actor, points, &tag) && actor != nullptr && ShapeOf(actor, out);
 }
@@ -658,10 +654,10 @@ try
     float      one[3]  = {};
     const bool haveOne = pawnOne != nullptr &&
                          platform::CopyGuarded(one,
-                                               static_cast<const std::uint8_t*>(ReadPointer(pawnOne, facts::kActorRootComponent)) +
+                                               players::actor_fields::RootComponent(pawnOne) +
                                                    facts::kComponentWorldLocation,
                                                sizeof(one));
-    void* points = FieldPoints();
+    void* points = players::field_root::FieldPoints();
     for (std::size_t i = 0; i < g_waiting.size();)
     {
         const Waiting  w        = g_waiting[i];  // a copy: the game calls below must never see a reference into the list

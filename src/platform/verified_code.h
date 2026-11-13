@@ -34,6 +34,17 @@ struct SlotFact
     FunctionFact   target;
 };
 
+/// A code site a module depends on: its IDA address and the instruction bytes there.
+struct CodeSite
+{
+    const wchar_t*                what;
+    std::uintptr_t                address;
+    std::span<const std::uint8_t> bytes;
+};
+
+/// The first of `sites` whose bytes differ in the image, or null when every one is as listed.
+const CodeSite* FirstDiffering(const GameImage& image, std::span<const CodeSite> sites) noexcept;
+
 /// The live address of `fact`'s function, or empty (logged) if its entry bytes differ.
 std::optional<std::uintptr_t> FindFunction(const GameImage& image, const FunctionFact& fact) noexcept;
 

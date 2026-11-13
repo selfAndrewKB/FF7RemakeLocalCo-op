@@ -6,6 +6,7 @@
 #include "platform/log.h"
 #include "platform/verified_code.h"
 #include "platform/vtable_entry.h"
+#include "players/actor_fields.h"
 
 #include <cstdint>
 #include <cstring>
@@ -53,7 +54,7 @@ bool FillOwner(void* cameraManager) noexcept
         return true;
     }
     void*       owner         = ReadPointer(cameraManager, facts::kActorOwner);
-    const void* ownersManager = ReadPointer(owner, facts::kControllerCameraManager);
+    const void* ownersManager = actor_fields::CameraManager(owner);
     if (VTableOf(owner) != g_playerControllerVTable || (ownersManager != nullptr && ownersManager != cameraManager))
     {
         g_report.ownerRefused = true;
@@ -180,7 +181,7 @@ bool CanRename() noexcept
 bool UsesNativeClasses(const void* playerOneController) noexcept
 {
     return playerOneController != nullptr && VTableOf(playerOneController) == g_playerControllerVTable &&
-           VTableOf(ReadPointer(playerOneController, facts::kControllerCameraManager)) == g_cameraManagerVTable;
+           VTableOf(actor_fields::CameraManager(playerOneController)) == g_cameraManagerVTable;
 }
 
 JoinScope::JoinScope(void* playerOneController, int controllerId) noexcept

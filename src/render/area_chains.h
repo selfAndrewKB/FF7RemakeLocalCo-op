@@ -42,6 +42,9 @@ inline constexpr std::size_t  kBlendSize = 0x50;  // FDirectLightControllerBlend
 inline constexpr std::uint8_t kMagic     = 0x5B;
 inline constexpr std::size_t  kMagicAt   = 0x02;
 inline constexpr std::size_t  kIndexAt   = 0x03;
+/// The shadow distance an area sets: its bool at +0x08, its float at +0x0C.
+inline constexpr std::size_t kShadowDistanceSetAt = 0x08;
+inline constexpr std::size_t kShadowDistanceAt    = 0x0C;
 /// The padding bytes after the bools at +0x08, +0x10 and +0x18 (each followed by its float at +0x0C, +0x14, +0x1C).
 inline constexpr std::size_t kStateAt[8] = {0x09, 0x0A, 0x0B, 0x11, 0x12, 0x13, 0x19, 0x1A};
 

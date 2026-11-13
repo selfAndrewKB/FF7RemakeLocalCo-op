@@ -51,6 +51,13 @@ std::wstring OnOffOwnerText(std::uint64_t owner) noexcept;
 /// or null.
 std::uint8_t* CharaOwner() noexcept;
 
+/// The root's field target manager (facts::kRootFieldTargets), or null.
+void* FieldTargets() noexcept;
+/// The root's push button manager (facts::kRootPushButtons), or null.
+std::uint8_t* PushButtons() noexcept;
+/// The root's field points (facts::kRootFieldPoints), or null.
+void* FieldPoints() noexcept;
+
 /// The field battle state on that object says a battle is on.
 bool InBattle() noexcept;
 

@@ -5,6 +5,7 @@
 #include "platform/image.h"
 #include "platform/log.h"
 #include "platform/verified_code.h"
+#include "players/actor_fields.h"
 #include "players/ai_move_guard.h"
 #include "players/field_hold.h"
 #include "players/field_root.h"
@@ -57,7 +58,7 @@ bool ReadParty(void* playerOneController, Party& out) noexcept
     {
         return false;
     }
-    out.leaderOne = ReadPointer(playerOneController, facts::kControllerLeaderCharacter);
+    out.leaderOne = actor_fields::LeaderCharacter(playerOneController);
     out.pawnOne   = ReadPointer(playerOneController, facts::kControllerPawn);
     return true;
 }
@@ -357,7 +358,7 @@ Choice Choose(int seat, void* playerOneController, void* taker, bool log, std::u
         void*              actor = ActorOfType(party, type);
         choice.type              = type;
         choice.ordinal           = target;
-        void* holder             = actor != nullptr ? ReadPointer(actor, facts::kCharacterPlayerSlot) : nullptr;
+        void* holder             = actor != nullptr ? actor_fields::PlayerSlot(actor) : nullptr;
         if (actor == nullptr)
         {
             choice.wait = Wait::NotLoaded;
@@ -441,7 +442,7 @@ try
         }
         void* actor = ActorOfType(party, type);
         text += std::format(L"[row {} type {} status {} holder {:#x}: {}] ", i, type, party.statuses[type],
-                            reinterpret_cast<std::uintptr_t>(ReadPointer(actor, facts::kCharacterPlayerSlot)), AiDetail(actor));
+                            reinterpret_cast<std::uintptr_t>(actor_fields::PlayerSlot(actor)), AiDetail(actor));
     }
     return text;
 }
@@ -550,7 +551,7 @@ bool LockKeepsMembers(std::uint32_t mask) noexcept
 bool LeaderWithPlayer() noexcept
 {
     void* leader = field_root::PartyLeader(facts::kLeaderCurrent);
-    return leader != nullptr && ReadPointer(leader, facts::kCharacterPlayerSlot) != nullptr;
+    return leader != nullptr && actor_fields::PlayerSlot(leader) != nullptr;
 }
 
 bool HandToAi(void* member) noexcept
@@ -572,7 +573,7 @@ bool ReturnTo(void* member, void* controller) noexcept
 
 bool HandedToAi(void* member) noexcept
 {
-    return member != nullptr && ReadPointer(member, facts::kCharacterPlayerSlot) == nullptr;
+    return member != nullptr && actor_fields::PlayerSlot(member) == nullptr;
 }
 
 bool ReassertPlayerType(void* member) noexcept

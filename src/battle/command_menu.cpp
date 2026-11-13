@@ -15,6 +15,7 @@
 #include "players/scopes.h"
 #include "players/field_hold.h"
 #include "players/field_root.h"
+#include "players/game_state.h"
 #include "players/party_member.h"
 #include "players/party_seat.h"
 #include "players/seats.h"
@@ -50,7 +51,6 @@ using MenuAllowedFn   = double (*)(void* controller, std::uint8_t on, std::uint8
 using InputLiveFn     = void (*)(void* controller, std::uint8_t live, std::uint64_t a3);
 using NativeTickFn    = std::int64_t (*)(void* widget, const void* geometry, float deltaTime);
 using SetColorFn      = void (*)(void* widget, const float* color);
-using GetWorldFn      = void* (*)(void* gameMode);
 
 /// Every scope a call on a seat's controller runs in: its focus context, the UI slot, the primary, the leader and
 /// the camera operator (menu camera flavours), the UI filters' latches.
@@ -153,20 +153,6 @@ void Transparent(void* widget) noexcept
         colour[3] = 0.0f;
         Tint(widget, colour);
     }
-}
-
-/// The world the game mode names (for a Setup of our own).
-void* World() noexcept
-{
-    void*      gameMode = nullptr;
-    void**     vtable   = nullptr;
-    GetWorldFn getWorld = nullptr;
-    void*      world    = nullptr;
-    return Read(g_gameMode, gameMode) && gameMode != nullptr && Read(gameMode, vtable) &&
-                   Read(reinterpret_cast<std::uint8_t*>(vtable) + facts::kGameModeGetWorldSlot, getWorld) &&
-                   platform::CallGuarded(getWorld, world, gameMode)
-               ? world
-               : nullptr;
 }
 
 /// Setup on the seat's controller inside its scopes. False if the scopes could not open or the call faulted.
@@ -600,7 +586,7 @@ void Tick(int seat, bool seatPlays) noexcept
     }
     if (!ReadyOf(s))
     {
-        void* world = World();
+        void* world = players::game_state::World();
         if (world == nullptr || !SetupSeat(seat, world))
         {
             return;

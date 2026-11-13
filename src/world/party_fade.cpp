@@ -6,6 +6,7 @@
 #include "platform/image.h"
 #include "platform/log.h"
 #include "platform/verified_code.h"
+#include "players/actor_fields.h"
 #include "players/game_globals.h"
 #include "players/weak_object.h"
 
@@ -112,7 +113,7 @@ std::int32_t ReasonCount(void* character) noexcept
 int FadeOn(void* character) noexcept
 {
     std::uint8_t on = 0;
-    return Read(static_cast<const std::uint8_t*>(ReadPointer(character, facts::kCharacterMesh)) + facts::kMeshNearFarFadeEnabled, on)
+    return Read(players::actor_fields::Mesh(character) + facts::kMeshNearFarFadeEnabled, on)
                ? (on != 0 ? 1 : 0)
                : -1;
 }

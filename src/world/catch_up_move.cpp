@@ -6,6 +6,7 @@
 #include "platform/image.h"
 #include "platform/log.h"
 #include "platform/verified_code.h"
+#include "players/actor_fields.h"
 #include "players/scopes.h"
 #include "players/seats.h"
 
@@ -87,7 +88,7 @@ bool Move(void* character, const GameVector& point, const float yawDegrees) noex
 
 bool InFieldAction(const void* character) noexcept
 {
-    const void*  component = platform::ReadPointer(character, facts::kCharacterFieldAction);
+    const void*  component = players::actor_fields::FieldAction(character);
     std::uint8_t running   = 0;
     return component != nullptr &&
            platform::Read(static_cast<const std::uint8_t*>(component) + facts::kFieldActionRunning, running) && running != 0;

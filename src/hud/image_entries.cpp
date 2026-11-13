@@ -65,19 +65,19 @@ void* MakeBuffer(std::uintptr_t vtable, std::uint32_t capacity) noexcept
         return nullptr;
     }
     void* buffer = nullptr;
-    if (!platform::CallGuarded(reinterpret_cast<MallocFn>(malloc), buffer, allocator, std::size_t{64}, std::uint32_t{0}) ||
+    if (!platform::CallGuarded(reinterpret_cast<MallocFn>(malloc), buffer, allocator, std::size_t{facts::kRenderBufferBytes}, std::uint32_t{0}) ||
         buffer == nullptr)
     {
         return nullptr;
     }
     auto* bytes = static_cast<std::uint8_t*>(buffer);
-    std::memset(bytes, 0, 64);
+    std::memset(bytes, 0, facts::kRenderBufferBytes);
     std::memcpy(bytes, &vtable, sizeof(vtable));
     const std::uint32_t four = 4;
-    std::memcpy(bytes + 8, &four, sizeof(four));
-    std::memcpy(bytes + 0x38, &capacity, sizeof(capacity));
+    std::memcpy(bytes + facts::kRenderBufferWord8, &four, sizeof(four));
+    std::memcpy(bytes + facts::kRenderBufferCapacity, &capacity, sizeof(capacity));
     std::uintptr_t init = 0;
-    std::memcpy(&init, reinterpret_cast<const void*>(vtable + 0x28), sizeof(init));
+    std::memcpy(&init, reinterpret_cast<const void*>(vtable + facts::kRenderBufferInitSlot), sizeof(init));
     return platform::CallGuarded(reinterpret_cast<InitFn>(init), buffer) ? buffer : nullptr;
 }
 
@@ -124,8 +124,8 @@ bool BatchOf(const std::uintptr_t (&entries)[4], const void* batch) noexcept
     {
         const std::uintptr_t entry = reinterpret_cast<const std::atomic<std::uintptr_t>&>(slot).load(std::memory_order_acquire);
         std::uintptr_t       own   = 0;
-        if (entry != 0 && platform::CopyGuarded(&own, reinterpret_cast<const void*>(entry + 0x80), sizeof(own)) &&
-            own != 0 && own + 0x50 == reinterpret_cast<std::uintptr_t>(batch))
+        if (entry != 0 && platform::CopyGuarded(&own, reinterpret_cast<const void*>(entry + facts::kLayerEntryBatches), sizeof(own)) &&
+            own != 0 && own + facts::kBatchesDrawn == reinterpret_cast<std::uintptr_t>(batch))
         {
             return true;
         }

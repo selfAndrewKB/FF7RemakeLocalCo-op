@@ -25,6 +25,7 @@
 #include "platform/log.h"
 #include "platform/verified_code.h"
 #include "platform/vtable_entry.h"
+#include "players/actor_fields.h"
 #include "players/weak_object.h"
 #include "players/scopes.h"
 
@@ -474,7 +475,7 @@ void BattleStart(void* component)
         OwnerFn getOwner = nullptr;
         if (Read(component, vtable) && Read(vtable + 4, getOwner) && platform::CallGuarded(getOwner, owner, component))
         {
-            enemy = ReadPointer(owner, facts::kCharacterBattleAI);
+            enemy = players::actor_fields::BattleAi(owner);
         }
     }
     void* const starting = t_starting;
@@ -866,7 +867,7 @@ void Sensing(std::uint64_t attackerComponent, std::uint64_t a2, std::uint64_t a3
     for (std::size_t candidate = 1; candidate < kSeats && seat == 0; ++candidate)
     {
         void* member = g_members[candidate].load(std::memory_order_relaxed);
-        if (member != nullptr && ReadPointer(member, facts::kCharacterBattleComponent) == reinterpret_cast<void*>(attackerComponent))
+        if (member != nullptr && players::actor_fields::BattleComponent(member) == reinterpret_cast<void*>(attackerComponent))
         {
             seat = static_cast<int>(candidate);
         }

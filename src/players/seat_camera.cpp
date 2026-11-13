@@ -8,9 +8,11 @@
 #include "platform/log.h"
 #include "platform/verified_code.h"
 #include "platform/vtable_entry.h"
+#include "players/actor_fields.h"
 #include "players/camera_override.h"
 #include "players/field_root.h"
 #include "players/game_globals.h"
+#include "players/game_state.h"
 #include "players/nav_area.h"
 #include "players/operator_battle_mode.h"
 #include "players/pad_buttons.h"
@@ -41,7 +43,6 @@ using weak_object::Resolve;
 using weak_object::Weak;
 
 using SpawnActorFn     = void* (*)(void* world, void* type, const void* transform, const void* parameters);
-using GetWorldFn       = void* (*)(void* gameMode);
 using StaticClassFn    = void* (*)();
 using SetOwnerCharaFn  = void (*)(void* cameraOperator, void* character);
 using ActorVoidFn      = void (*)(void* self);
@@ -384,7 +385,7 @@ void UpdateCamera(void* self, float deltaSeconds)
     const int   seat    = seatsIn ? SeatOfManager(self) : 0;
     if (seat == 0)
     {
-        void* const managerOne = platform::ReadPointer(one, facts::kControllerCameraManager);
+        void* const managerOne = actor_fields::CameraManager(one);
         if ((seatsIn && self == managerOne) ||
             (self != nullptr && self == views::scene_camera::MirrorSource()))
         {
@@ -402,7 +403,7 @@ void UpdateCamera(void* self, float deltaSeconds)
     const scopes::Scope leader(seat, scopes::Leader);
     // A scene's camera (slots player 1's manager was given this frame) onto the seat's, with the game's own setters,
     // inside the scope so the primary-scoped ones reach the seat's manager.
-    views::scene_camera::BeforeUpdateCamera(platform::ReadPointer(one, facts::kControllerCameraManager), seat, self);
+    views::scene_camera::BeforeUpdateCamera(actor_fields::CameraManager(one), seat, self);
     g_cameraUpdate(self, deltaSeconds);
     render::history_cut::AfterCameraUpdate(self, false);
 }
@@ -659,13 +660,9 @@ bool Start(int seat, void* playerOneController, void* seatController, void* memb
         platform::Log(L"{}'s camera: no member to follow; still camera", name);
         return false;
     }
-    void*      world    = nullptr;
-    void*      type     = nullptr;
-    void**     vtable   = nullptr;
-    GetWorldFn getWorld = nullptr;
-    if (!Read(gameMode, vtable) || !Read(reinterpret_cast<std::uint8_t*>(vtable) + facts::kGameModeGetWorldSlot, getWorld) ||
-        !platform::CallGuarded(getWorld, world, gameMode) || world == nullptr ||
-        !platform::CallGuarded(g_staticClass, type) || type == nullptr)
+    void* const world = game_state::WorldOf(gameMode);
+    void*       type  = nullptr;
+    if (world == nullptr || !platform::CallGuarded(g_staticClass, type) || type == nullptr)
     {
         platform::Log(L"{}'s camera: the world or the operator class could not be found; still camera", name);
         return false;

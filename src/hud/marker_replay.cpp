@@ -459,7 +459,8 @@ std::uint8_t* BarEntryOf(void* manager, void* widget) noexcept
     std::uint8_t* data  = nullptr;
     std::int32_t  count = 0, index = -1;
     const auto*   m     = static_cast<const std::uint8_t*>(manager);
-    if (!platform::CopyGuarded(&data, m + 0x08, sizeof(data)) || !platform::CopyGuarded(&count, m + 0x30, sizeof(count)) ||
+    if (!platform::CopyGuarded(&data, m + facts::kBarManagerEntries, sizeof(data)) ||
+        !platform::CopyGuarded(&count, m + facts::kBarManagerEntryBits, sizeof(count)) ||
         !platform::CopyGuarded(&index, static_cast<const std::uint8_t*>(widget) + facts::kObjectIndex, sizeof(index)) ||
         data == nullptr || count <= 0 || count > 4096)
     {

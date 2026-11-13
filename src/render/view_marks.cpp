@@ -4,6 +4,7 @@
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
+#include "platform/verified_code.h"
 
 #include <array>
 #include <atomic>
@@ -11,7 +12,6 @@
 #include <cstdint>
 #include <cstring>
 #include <format>
-#include <span>
 #include <string>
 #include <utility>
 #include <variant>
@@ -33,13 +33,6 @@ constexpr std::uint32_t kContextAsync      = 0x2AEC;  // its bIsAsyncComputeCont
 constexpr std::uint32_t kDeviceDirect      = 0x40;    // FD3D12Device -> the direct FD3D12CommandListManager* (type 0)
 constexpr std::uint32_t kManagerQueue      = 0x28;    // the manager's ID3D12CommandQueue* (its TRefCountPtr's pointer)
 
-/// A site the path depends on, by its instruction bytes.
-struct Site
-{
-    const wchar_t*                what;
-    std::uintptr_t                address;
-    std::span<const std::uint8_t> bytes;
-};
 constexpr std::array<std::uint8_t, 7> kAsyncTest{0x80, 0xBF, 0xEC, 0x2A, 0x00, 0x00, 0x00};  // cmp byte [rdi+2AECh], 0
 constexpr std::array<std::uint8_t, 4> kDeviceLoad{0x48, 0x8B, 0x4F, 0x08};                    // mov rcx, [rdi+8]
 constexpr std::array<std::uint8_t, 4> kDirectLoad{0x48, 0x8B, 0x49, 0x40};                    // mov rcx, [rcx+40h]
@@ -48,7 +41,7 @@ constexpr std::array<std::uint8_t, 4> kDirectLoad{0x48, 0x8B, 0x49, 0x40};      
 constexpr std::array<std::uint8_t, 32> kQueueSignal{0x49, 0x8B, 0x4E, 0x28, 0x49, 0x8B, 0x86, 0x58, 0x01, 0x00, 0x00,
                                                     0x49, 0x8B, 0xB6, 0x18, 0x01, 0x00, 0x00, 0x4C, 0x8B, 0xC6, 0x4C,
                                                     0x8B, 0x11, 0x48, 0x8B, 0x50, 0x10, 0x41, 0xFF, 0x52, 0x70};
-const std::array<Site, 4> kSites{{
+const std::array<platform::CodeSite, 4> kSites{{
     {L"FlushCommands' async-context test", 0x141F625DD, kAsyncTest},
     {L"FlushCommands' device load", 0x141F625E4, kDeviceLoad},
     {L"FlushCommands' direct manager load", 0x141F625F0, kDirectLoad},
@@ -160,13 +153,10 @@ catch (...)
 
 bool Install(const platform::GameImage& image) noexcept
 {
-    for (const Site& site : kSites)
+    if (const platform::CodeSite* differs = platform::FirstDiffering(image, kSites))
     {
-        if (!image.BytesMatch(site.address, site.bytes))
-        {
-            platform::LogWarning(L"view marks: UNAVAILABLE ({} differs); no GPU view events", site.what);
-            return false;
-        }
+        platform::LogWarning(L"view marks: UNAVAILABLE ({} differs); no GPU view events", differs->what);
+        return false;
     }
     g_installed.store(true, std::memory_order_release);
     control::Register({.name  = L"view-marks",

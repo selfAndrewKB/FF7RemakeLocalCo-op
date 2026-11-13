@@ -105,7 +105,7 @@ const wchar_t* ShowInList(void* start, std::int32_t rows) noexcept
         return L"its list could not be refreshed";
     }
     float       width = 0.0f, base = 0.0f;
-    void* const slot  = platform::ReadPointer(list, facts::kWidgetSlot);
+    void* const slot  = game_ui::SlotOf(list);
     bool        isCanvasSlot = false;
     if (slot == nullptr || !platform::Read(At(start, facts::kStartMenuListWidth), width) ||
         !platform::Read(At(start, facts::kStartMenuListBase), base) || !platform::CallGuarded(g.isCanvasSlot, isCanvasSlot, slot) ||

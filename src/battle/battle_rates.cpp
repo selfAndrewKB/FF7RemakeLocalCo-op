@@ -11,6 +11,7 @@
 #include "platform/log.h"
 #include "platform/settings.h"
 #include "platform/verified_code.h"
+#include "players/actor_fields.h"
 #include "players/game_globals.h"
 
 #include <array>
@@ -157,8 +158,8 @@ void Clamp(std::int32_t* damage, void* attacker, void* victim, const std::uint8_
     if (rate != rules::kOne && damage != nullptr && *damage > 0 && heal == 0 && attacker != nullptr && victim != nullptr &&
         source != nullptr)
     {
-        void* const   from      = ReadPointer(attacker, facts::kCharacterBattleComponent);
-        void* const   to        = ReadPointer(victim, facts::kCharacterBattleComponent);
+        void* const   from      = players::actor_fields::BattleComponent(attacker);
+        void* const   to        = players::actor_fields::BattleComponent(victim);
         bool          fromParty = true, toParty = false;
         std::uint8_t  type = 0, power = 0;
         if (from != nullptr && to != nullptr && platform::CallGuarded(g.isPartySide, fromParty, from) && !fromParty &&

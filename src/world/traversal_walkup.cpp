@@ -8,6 +8,7 @@
 #include "platform/log.h"
 #include "platform/verified_code.h"
 #include "platform/vtable_entry.h"
+#include "players/actor_fields.h"
 #include "players/field_root.h"
 #include "players/game_globals.h"
 #include "players/party_member.h"
@@ -477,7 +478,7 @@ std::uint64_t NaviLeave(void* manager, void* volume)
 
 bool InIgnoreGroup(const void* actor, const void* member) noexcept
 {
-    const auto*  tags = static_cast<const std::uint8_t*>(ReadPointer(member, facts::kActorTags));
+    const auto*  tags = players::actor_fields::Tags(member);
     std::uint64_t tag = 0;
     if (tags == nullptr || !Read(tags, tag))
     {
@@ -537,7 +538,7 @@ void TryStartFor(int seat, void* actor, std::size_t cls, float dt, TryStartFn or
     auto*       base   = static_cast<std::uint8_t*>(actor);
     const auto& spot = facts::kWalkUpClasses[cls];
     auto*       root   = players::field_root::Root();
-    auto*       comp   = static_cast<std::uint8_t*>(ReadPointer(state.member, facts::kCharacterFieldAction));
+    auto*       comp   = players::actor_fields::FieldAction(state.member);
     if (comp == nullptr)
     {
         return;  // a member without a field-action component cannot take a spot

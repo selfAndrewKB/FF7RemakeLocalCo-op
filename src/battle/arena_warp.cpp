@@ -8,6 +8,7 @@
 #include "platform/log.h"
 #include "platform/verified_code.h"
 #include "players/action_key.h"
+#include "players/actor_fields.h"
 #include "players/field_root.h"
 #include "players/game_state.h"
 #include "players/party_member.h"
@@ -98,7 +99,7 @@ const wchar_t* Refusal(void* battleSystem, void* member) noexcept
     {
         return L"this battle brings no member back";
     }
-    const auto* component = static_cast<const std::uint8_t*>(ReadPointer(member, facts::kCharacterBattleComponent));
+    const auto* component = players::actor_fields::BattleComponent(member);
     if (component == nullptr || !Read(component + facts::kBattleCompActionState, action) ||
         !Read(component + facts::kBattleCompFlags, flags))
     {
@@ -112,7 +113,7 @@ const wchar_t* Refusal(void* battleSystem, void* member) noexcept
     {
         return L"it is in the middle of an action";
     }
-    const auto*  fieldAction = static_cast<const std::uint8_t*>(ReadPointer(member, facts::kCharacterFieldAction));
+    const auto*  fieldAction = players::actor_fields::FieldAction(member);
     std::uint8_t busy        = 0;
     if (fieldAction != nullptr && Read(fieldAction + facts::kFieldActionBusy, busy) && busy != 0)
     {
@@ -155,7 +156,7 @@ void Run(int seat) noexcept
     }
     const float distance = Distance();
     bool        moved    = false;
-    void* const component = ReadPointer(member, facts::kCharacterBattleComponent);
+    void* const component = players::actor_fields::BattleComponent(member);
     if (component == nullptr || !platform::CallGuarded(g_warp, moved, component, distance))
     {
         platform::LogWarning(L"arena warp: the game's warp raised for {}'s character; it may stand where it was", SeatName(seat));

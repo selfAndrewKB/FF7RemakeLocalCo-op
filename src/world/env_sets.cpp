@@ -8,6 +8,7 @@
 #include "platform/log.h"
 #include "platform/name_text.h"
 #include "platform/verified_code.h"
+#include "players/actor_fields.h"
 #include "players/game_globals.h"
 #include "players/seats.h"
 #include "views/scene_camera.h"
@@ -210,7 +211,7 @@ char Issue(void* unused, const TraceArg* arg, std::uint64_t r8, std::uint64_t r9
         }
         if (Read(static_cast<std::uint8_t*>(s.member) + facts::kActorTags + 8, tags) && tags > 0)
         {
-            Read(ReadPointer(s.member, facts::kActorTags), own.tag);
+            Read(players::actor_fields::Tags(s.member), own.tag);
         }
         g_issue(nullptr, &own, 0, 0, &s.handle);
         ++s.traces;

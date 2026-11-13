@@ -7,6 +7,7 @@
 #include "platform/log.h"
 #include "platform/verified_code.h"
 #include "platform/vtable_entry.h"
+#include "players/actor_fields.h"
 #include "players/game_globals.h"
 
 #include <array>
@@ -141,7 +142,7 @@ std::uint8_t NotFaded(const void* state) noexcept
 /// scopes (as the slide-down's), revisit this test.
 bool LeaderState(const void* state) noexcept
 {
-    const void*  component = ReadPointer(state, facts::kStateComponent);
+    const void*  component = players::actor_fields::ActionStateComponent(state);
     void*        manager   = nullptr;
     std::uint8_t mine = 0xFF, leader = 0xFE;
     return component != nullptr && Read(g_partyManager, manager) && manager != nullptr &&

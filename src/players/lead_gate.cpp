@@ -232,6 +232,12 @@ std::vector<std::int64_t> Names(const std::uint8_t* base, std::uint32_t cap)
     return out;
 }
 
+/// A state row's trigger names (the ones the game reads).
+std::vector<std::int64_t> RowTriggers(const std::uint8_t* row)
+{
+    return Names(row + facts::kStateRowTriggers, facts::kStateRowTriggersRead);
+}
+
 struct Slot
 {
     std::int64_t        object = 0, state = 0;
@@ -363,8 +369,7 @@ struct MarkerPoint
 /// first (research/RE-lead-arrival-wait.md); false when the name is no field point of the loaded level.
 bool PointLocation(std::int64_t name, GameVector& out) noexcept
 {
-    std::uint8_t*       root      = field_root::Root();
-    void*               points    = root != nullptr ? ReadPointer(root, facts::kRootFieldPoints) : nullptr;
+    void*               points    = field_root::FieldPoints();
     const std::uint8_t* transform = nullptr;
     if (g_fieldPointFind == nullptr || points == nullptr ||
         !platform::CallGuarded(g_fieldPointFind, transform, points, &name) || transform == nullptr)
@@ -653,7 +658,7 @@ std::int64_t OwnBoxAhead(const std::vector<Slot>& slots, const Slot& self, std::
         {
             continue;
         }
-        const std::vector<std::int64_t> listens = Names(s.row + facts::kStateRowTriggers, facts::kStateRowTriggersRead);
+        const std::vector<std::int64_t> listens = RowTriggers(s.row);
         for (const std::int64_t exit : exits)
         {
             if (std::find(listens.begin(), listens.end(), exit) == listens.end() ||
@@ -746,7 +751,7 @@ try
         {
             continue;
         }
-        const std::vector<std::int64_t> triggers = Names(s.row + facts::kStateRowTriggers, facts::kStateRowTriggersRead);
+        const std::vector<std::int64_t> triggers = RowTriggers(s.row);
         for (std::size_t i = 0; i < triggers.size() && triggers[i] != 0; ++i)
         {
             if (triggers[i] != census.trigger)
@@ -801,7 +806,7 @@ try
     const std::uint8_t* registry = static_cast<const std::uint8_t*>(ReadPointer(root, facts::kRootObjectiveIcons));
     const std::uint8_t* data     = nullptr;
     std::int32_t        num      = 0;
-    if (registry == nullptr || !Read(registry + 8, data) || !Read(registry + 0x10, num) || data == nullptr)
+    if (registry == nullptr || !Read(registry + facts::kObjectiveIconsData, data) || !Read(registry + facts::kObjectiveIconsNum, num) || data == nullptr)
     {
         marker.text = L"registry unread";
         return marker;
