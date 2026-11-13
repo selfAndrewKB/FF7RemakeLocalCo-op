@@ -3,9 +3,11 @@
 #include "control/registry.h"
 #include "engine_facts.h"
 #include "platform/call_redirect.h"
+#include "platform/game_array.h"
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
+#include "platform/name_text.h"
 #include "platform/verified_code.h"
 #include "platform/vtable_entry.h"
 #include "players/actor_fields.h"
@@ -660,7 +662,66 @@ std::wstring Report()
     return out;
 }
 
+/// The most entries of the manager's spot map read in one search (a field lists a few hundred).
+constexpr std::int32_t kMaxSpotEntries = 4096;
+
 }  // namespace
+
+bool AiOnlySpotNear(const platform::GameVector& at, float radius, AiOnlySpot& out) noexcept
+try
+{
+    auto* manager = g_installed ? static_cast<std::uint8_t*>(g_fieldActionMgr()) : nullptr;
+    platform::GameArray pairs;
+    if (manager == nullptr || !Read(manager + facts::kFieldActionMgrVolumes, pairs) || pairs.data == nullptr)
+    {
+        return false;
+    }
+    bool found = false;
+    for (std::int32_t i = 0; i < pairs.num && i < kMaxSpotEntries; ++i)
+    {
+        // A free slot of the map keeps stale bytes: an entry counts only as a known spot class keyed by its own first tag.
+        const auto*   pair  = static_cast<const std::uint8_t*>(pairs.data) + static_cast<std::size_t>(i) * facts::kNameMapPairSize;
+        std::uint64_t key   = 0;
+        void*         actor = nullptr;
+        if (!Read(pair, key) || !Read(pair + facts::kNameMapPairValue, actor) || actor == nullptr)
+        {
+            continue;
+        }
+        const std::size_t cls = ClassOfVtable(actor);
+        const auto*       spot = static_cast<const std::uint8_t*>(actor);
+        // NPC-only by its byte, with its collision off (the state's effect, so a byte left set by another state counts
+        // for nothing), and not deactivated.
+        std::uint8_t npcOnly = 0, activation = 0, collision = 0;
+        if (cls == kClasses || !Read(spot + facts::kFieldSpotNpcOnly, npcOnly) || npcOnly == 0 ||
+            !Read(spot + facts::kActorCollisionByte, collision) || (collision & facts::kActorCollisionBit) != 0 ||
+            !Read(spot + facts::kFieldSpotActivation, activation) || activation == facts::kFieldSpotDeactivated)
+        {
+            continue;
+        }
+        platform::GameArray tags;
+        std::uint64_t       first = 0;
+        if (!Read(spot + facts::kActorTags, tags) || tags.num < 1 || !Read(tags.data, first) || first != key)
+        {
+            continue;
+        }
+        platform::GameVector where;
+        if (!actor_place::ActorLocation(actor, where))
+        {
+            continue;
+        }
+        const float distance = std::hypot(where.x - at.x, where.y - at.y);
+        if (distance <= radius && (!found || distance < out.distance))
+        {
+            out   = AiOnlySpot{actor, facts::kWalkUpClasses[cls].name, platform::NameText(key), distance};
+            found = true;
+        }
+    }
+    return found;
+}
+catch (...)
+{
+    return false;
+}
 
 bool Install(const platform::GameImage& image) noexcept
 {

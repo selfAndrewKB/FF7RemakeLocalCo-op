@@ -13,6 +13,9 @@
 //     arrival) the member goes to its AI: the game's own Enter of the move runs again from there (within the
 //     row's GoalRadius - 15 cm, 35 to 85 cm on the rows read, it arrives where it stands, else it walks
 //     the last steps; a Lead then waits for player 1 to come within about 8-10 m, as in single player) and signals;
+//   - a spot on the way that only a companion's AI may take now (its level state's NPC-only: a ladder the level opens
+//     to everyone only after the companions climbed it) counts as reached within kCrossingRadius of it: no player can
+//     take it, so the AI takes it and finishes the move, as the game has it (research/RE-ladder-spot-offer.md);
 //   - it stays on its AI until the level writes its next setting (the move's state changes), then comes back;
 //   - a move with no arrival trigger (Tifa's Ch. 4 lead: only the leash needs her) signals nothing: kept throughout.
 // A move whose point is no field point of the loaded level (a follow, an actor's name) cannot be marked: a guide, as
@@ -39,6 +42,12 @@ enum class Verdict : std::uint8_t
 /// always has the last steps to walk or none; narrow enough that the player walks nearly all of it. The hold check runs
 /// every 10 ticks: a sprint (about 6 m/s) moves 1 m between checks, inside the 4 m circle.
 inline constexpr float kHandRadius = 200.0f;
+
+/// How near an AI-only spot (cm, 2D, from the spot actor's place) a kept move's member goes to its AI. Chosen on the
+/// expectation that a ladder's actor stands near the ladder's line, so a member at its foot or top is within it; the
+/// lead gate logs the nearest such spot's distance at each kept move's start, which measures that. 2D only: a member
+/// at the top of a tall ladder stands far above its actor.
+inline constexpr float kCrossingRadius = 250.0f;
 
 /// The member stands within kHandRadius of the point, `dx`, `dy` apart (cm).
 constexpr bool Reached(float dx, float dy) noexcept

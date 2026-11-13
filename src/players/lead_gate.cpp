@@ -19,6 +19,7 @@
 #include "players/state_path.h"
 #include "world/actor_place.h"
 #include "world/story_boxes.h"
+#include "world/traversal_walkup.h"
 
 #include <Unreal/NameTypes.hpp>
 
@@ -48,6 +49,7 @@ using FieldPointFindFn = const std::uint8_t* (*)(void* points, const std::int64_
 
 // A staging lead's or run's waiters are read again this often (the marker each call).
 constexpr std::uint32_t kCensusEveryTicks = 60;
+constexpr float         kAiOnlySpotCensus = 3000.0f;  // cm: how far from a kept move's start an AI-only spot is named in the log
 constexpr std::uint32_t kMaxIconRecords   = 64;
 constexpr std::size_t   kMaxNameChars     = 96;
 constexpr std::size_t   kMaxStateChars    = 1024;  // a next-state name (the FName limit): read whole, or its lookup misses
@@ -105,6 +107,7 @@ struct Judgment
     bool          leadIn     = false;  // a scene lead-in by name (lead_keep_rules::SceneLeadIn); SceneLeadIn reads the object's slot
     bool          pointKnown = false;  // its destination is a field point of the loaded level (`point`)
     bool          reached    = false;  // measured within the hand radius while the move was needed, kept and signalling (this setting)
+    std::wstring  crossing;            // reached at an AI-only spot on the way instead (its kind and tag; empty: at the point)
     std::int64_t  destination = 0;
     GameVector    point;
     std::uint32_t censusTick = 0;
@@ -1291,16 +1294,36 @@ try
     const bool needed    = last.waiter || last.marker || last.leash;
     // How far the member stands from the point (2D, as the game measures its arrival), while it may be handed there.
     float      away  = -1.0f;
-    const bool keeps = g_keeps && g_marking;
-    if (needed && keeps && last.pointKnown && last.signals && !last.reached)
+    const bool keeps     = g_keeps && g_marking;
+    const bool measuring = needed && keeps && last.pointKnown && last.signals && !last.reached;
+    const bool starting  = !same && keeps;
+    GameVector at;
+    const bool placed = (measuring || starting) && world::actor_place::ActorLocation(member, at);
+    if (measuring && placed)
     {
-        GameVector at;
-        if (world::actor_place::ActorLocation(member, at))
+        const float dx = at.x - last.point.x, dy = at.y - last.point.y;
+        away           = std::hypot(dx, dy);
+        last.reached   = lead_keep_rules::Reached(dx, dy);
+        // A spot on the way only the companion's AI may take: no player can, and the level opens it to everyone only
+        // after the companions took it, so the move would wait for ever on a player's member.
+        world::traversal_walkup::AiOnlySpot spot;
+        if (!last.reached && world::traversal_walkup::AiOnlySpotNear(at, lead_keep_rules::kCrossingRadius, spot))
         {
-            const float dx = at.x - last.point.x, dy = at.y - last.point.y;
-            away           = std::hypot(dx, dy);
-            last.reached   = lead_keep_rules::Reached(dx, dy);
+            last.reached  = true;
+            last.crossing = std::format(L"{} {}", spot.kind, spot.tag);
+            away          = spot.distance;
         }
+    }
+    if (starting && placed)
+    {
+        // Which AI-only spot the move starts near, if any: a crossing too far from the spot's actor for the radius shows
+        // here first.
+        world::traversal_walkup::AiOnlySpot spot;
+        platform::LogDebug(L"lead gate: {}'s kept move starts {}", Name(object),
+                           world::traversal_walkup::AiOnlySpotNear(at, kAiOnlySpotCensus, spot)
+                               ? std::format(L"{:.1f} m from the {} {}, which only a companion's AI may take now", spot.distance / 100,
+                                             spot.kind, spot.tag)
+                               : std::format(L"with no AI-only spot within {:.0f} m", kAiOnlySpotCensus / 100));
     }
     const Verdict was = last.verdict;
     last.verdict      = lead_keep_rules::Decide(needed, keeps, last.pointKnown, last.signals, last.reached, last.ownBox != 0);
@@ -1320,7 +1343,14 @@ try
             platform::Log(L"lead gate: {}", g_reading);
         }
     }
-    if (last.verdict == Verdict::AtMark && was != Verdict::AtMark)
+    if (last.verdict == Verdict::AtMark && was != Verdict::AtMark && !last.crossing.empty())
+    {
+        platform::Log(L"lead gate: {} brought within {:.1f} m of the {} (the crossing radius {:.1f} m), which only its AI may take "
+                      L"now (the level's NPC-only state): to its AI, which takes it and finishes the move to {}; back to its "
+                      L"player at the level's next setting",
+                      Name(object), away / 100, last.crossing, lead_keep_rules::kCrossingRadius / 100, Name(last.destination));
+    }
+    else if (last.verdict == Verdict::AtMark && was != Verdict::AtMark)
     {
         platform::Log(L"lead gate: {} brought within {:.1f} m of its point {} (the hand radius {:.0f} m): to its AI, which walks the "
                       L"last steps and signals the arrival; back to its player at the level's next setting",

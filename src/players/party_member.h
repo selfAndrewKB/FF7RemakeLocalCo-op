@@ -50,7 +50,8 @@ enum class Wait : std::uint8_t
     AiHeld,       // a script holds its field AI (a script layer, or the unread ESCAPE_POSITION kind: field_hold.h)
     Animation,    // its AI plays a scripted animation (ANIMATION or the one-shot SINGLE_ANIMATION: field_hold.h)
     Guide,        // its AI walks a guide: a lead or a run to a mark the level waits on, or the story marks it (lead_gate.h)
-    AtMark,       // its player brought a kept move to its point: its AI finishes the arrival (lead_keep_rules.h)
+    AtMark,       // its player brought a kept move to its point, or to a spot on the way only its AI may take: its AI
+                  // finishes the move (lead_keep_rules.h)
     SceneLeadIn,  // the level's scene lead-in on it, a run and a stand a scene opens on: its AI plays it through, whatever
                   // the lead rule would say (lead_keep_rules.h kSceneLeadIns, lead_gate.h)
     FieldAction,  // no player holds it and it is inside a field action (a ladder, a squeeze, a crawl, a step) its AI began:

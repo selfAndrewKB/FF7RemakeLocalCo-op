@@ -499,7 +499,8 @@ const wchar_t* WhyHeldByScript(void* member) noexcept
     case Wait::Guide:
         return L"a guide (a lead or a run to a mark: a level step waits on its arrival, or the story's marker rides on it): its AI walks it";
     case Wait::AtMark:
-        return L"brought to its move's point: its AI finishes the arrival until the level's next setting";
+        return L"brought to its move's point, or to a spot on the way only its AI may take: its AI finishes the move until the level's "
+               L"next setting";
     case Wait::SceneLeadIn:
         return L"on a scene lead-in (a run and a stand a scene opens on, excluded from the lead rule by name): its AI plays it through";
     default:
@@ -650,8 +651,8 @@ const wchar_t* Describe(Wait wait) noexcept
     case Wait::Guide:
         return L"its AI walks a guide (a lead or a run to a mark: a level step waits on its arrival, or the story's marker rides on it)";
     case Wait::AtMark:
-        return L"its player brought it to its move's point: its AI finishes the arrival (a lead waits for player 1 first), until the "
-               L"level's next setting";
+        return L"its player brought it to its move's point, or to a spot on the way only its AI may take: its AI finishes the move "
+               L"(a lead waits for player 1 first), until the level's next setting";
     case Wait::SceneLeadIn:
         return L"the level's scene lead-in is on it (a run and a stand a scene opens on, excluded from the lead rule by name): its AI "
                L"plays it through to the scene";

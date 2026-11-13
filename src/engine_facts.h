@@ -2626,6 +2626,15 @@ inline constexpr platform::FunctionFact kNameMapFind{L"TMap_FNameKey24_FindIndex
 inline constexpr std::uint32_t kFieldActionMgrVolumes = 0x280;
 inline constexpr std::uint32_t kNameMapPairSize       = 24;
 inline constexpr std::uint32_t kNameMapPairValue      = 8;
+/// A field-action spot actor's state (End FieldActionBase, RE-ladder-spot-offer.md §2.2). NPC-only: its level state row
+/// said NPCONLY, so its collision is off (no PlayerTrigger reaches it, player 1's included) and only a companion's AI takes
+/// it, by its navigation link. Deactivated: collision and link off. [CONFIRMED code]
+inline constexpr std::uint32_t kFieldSpotNpcOnly      = 0x58D;  // u8, 1 NPC-only
+inline constexpr std::uint32_t kFieldSpotActivation   = 0x4FC;  // u8
+inline constexpr std::uint8_t  kFieldSpotDeactivated  = 2;
+/// AActor::bActorEnableCollision (stock 4.18 bitfield byte and bit), what an NPC-only state turns off. [CONFIRMED code]
+inline constexpr std::uint32_t kActorCollisionByte    = 0x86;
+inline constexpr std::uint8_t  kActorCollisionBit     = 0x04;
 
 /// The walk-up classes the further players take (the vault, the rubble step-over and the duck-under from
 /// research/RE-traversal-vault-two.md, the slides, the fence gap and the step from RE-traversal-slides-two.md, the

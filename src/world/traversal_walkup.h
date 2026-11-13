@@ -31,6 +31,12 @@
 // A spot whose ignore group lists the member is skipped, as the game skips it for its leader. Game thread only (the
 // dispatcher, the sweep and the TryStart loop all run there). Logged: Info at install, Debug per seat enter, leave,
 // hold-back and start request, Trace per re-run.
+//
+// A spot in its level state's NPC-only setting has its collision off, so no player's trigger reaches it (player 1's
+// included) and only a companion's AI takes it, by its navigation link (research/RE-ladder-spot-offer.md). AiOnlySpotNear
+// finds such spots for the lead gate, which hands a kept move's member to its AI there, as the game would have it.
+
+#include "platform/game_vectors.h"
 
 #include <string>
 
@@ -43,6 +49,20 @@ namespace lss::world::traversal_walkup {
 /// Checks every site and slot against the research and places the redirects (logged). False if a check failed:
 /// further players then cannot use walk-up spots.
 bool Install(const platform::GameImage& image) noexcept;
+
+/// A field-action spot only a companion's AI may take now (its level state's NPC-only: collision off, so no player's
+/// trigger reaches it; its navigation link on).
+struct AiOnlySpot
+{
+    void*        actor = nullptr;
+    std::wstring kind;            // "ladder", ...
+    std::wstring tag;             // its own tag, the name the field-action manager keys it by ("Lad100_0040")
+    float        distance = 0.0f; // 2D, game units, from the point asked about
+};
+
+/// The nearest AI-only spot whose actor stands within `radius` (2D, game units) of `at`, from the field-action manager's
+/// spots (each entry checked: a known spot class, its own first tag the entry's key). False with none. Game thread.
+bool AiOnlySpotNear(const platform::GameVector& at, float radius, AiOnlySpot& out) noexcept;
 
 /// Game thread, each engine tick: the seat's controller and member while its player is in (null otherwise). A new
 /// controller or trigger drops the seat's copies (a new controller also its queued entries, at their resolve).
