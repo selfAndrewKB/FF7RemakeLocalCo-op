@@ -67,6 +67,8 @@ bool IsGameThread() noexcept;
 /// Player 1's field camera operator (the field root's), and a seat's own; null when none.
 void* OperatorOne() noexcept;
 void* Operator(int seat) noexcept;
+/// How many times the seat's own operator has ticked since the start (never reset; a watch's own counter).
+std::uint32_t OperatorTicks(int seat) noexcept;
 
 /// The merged stick replaced by one pad's record for its lifetime (`user` = XInput user: 0 pad 1, 1 pad 2; a pad not
 /// connected reads still). `clearKeys` also clears the key-driven stick (the keyboard is player 1's). The game

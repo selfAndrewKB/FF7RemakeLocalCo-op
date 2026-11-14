@@ -110,6 +110,7 @@ struct CallCounts
     std::uint32_t cameraUpdate = 0;  // the camera manager's UpdateCamera under the player's scopes
 };
 std::array<CallCounts, kPlayers> g_counts;  // index 0 = player 1, s = seat s
+std::array<std::uint32_t, kPlayers> g_operatorTicks{};  // each seat's operator ticks since the start (never reset)
 
 bool OnGameThread() noexcept
 {
@@ -344,6 +345,7 @@ void OperatorTick(void* self, float deltaSeconds)
         return;
     }
     ++g_counts[seat].operatorTick;
+    ++g_operatorTicks[static_cast<std::size_t>(seat)];
     void* const                      controller = seat_objects::Controller(seat);
     const PrimaryScope               primary(controller);
     const OperatorScope              scope(seat_objects::OperatorWeak(seat));
@@ -812,6 +814,11 @@ void* OperatorOne() noexcept
 void* Operator(int seat) noexcept
 {
     return seat_objects::Operator(seat);
+}
+
+std::uint32_t OperatorTicks(int seat) noexcept
+{
+    return seat >= 0 && seat < kPlayers ? g_operatorTicks[static_cast<std::size_t>(seat)] : 0;
 }
 
 void LogCounts() noexcept

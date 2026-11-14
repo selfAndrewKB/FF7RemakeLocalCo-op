@@ -12,8 +12,12 @@
 #include "players/field_root.h"
 #include "players/party_seat.h"
 #include "players/scopes.h"
+#include "players/seat_camera.h"
 #include "players/seats.h"
+#include "world/actor_place.h"
 
+#include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <format>
 #include <span>
@@ -42,6 +46,55 @@ bool                     g_placed   = false;
 int                      g_toadSeat = 0;
 SwappedFn                g_swapped  = nullptr;
 void*                    g_context  = nullptr;
+
+/// After a swap in a seat's place, the seat's camera read once a second for a few seconds: whether its operator owns the
+/// character the controller now holds, ticks, has finished the leader-change move, and in which state, and where the
+/// seat's view is against that character.
+struct CameraWatch
+{
+    int                                   seat    = 0;  // 0: no watch
+    int                                   sample  = 0;
+    std::chrono::steady_clock::time_point nextAt;
+    std::uint32_t                         ticks   = 0;  // the operator's tick count at the last sample
+};
+constexpr int                       kWatchSamples = 6;
+constexpr std::chrono::milliseconds kWatchSpacing{1000};
+CameraWatch                         g_watch;
+
+void SampleCamera() noexcept
+{
+    const int           seat       = g_watch.seat;
+    const auto*         op         = static_cast<const std::uint8_t*>(players::seat_camera::Operator(seat));
+    void* const         controller = players::scopes::Controller(seat);
+    void* const         character  = controller != nullptr ? players::actor_fields::LeaderCharacter(controller) : nullptr;
+    void*               owner      = nullptr;
+    std::uint8_t        state[2]   = {0xFF, 0xFF};
+    std::uint8_t        moving     = 0xFF;
+    const bool          ownerRead  = op != nullptr && platform::Read(op + facts::kOperatorOwnerChara, owner);
+    if (op != nullptr)
+    {
+        platform::CopyGuarded(state, op + facts::kOperatorCameraState, sizeof(state));
+        if (const auto* personal = static_cast<const std::uint8_t*>(platform::ReadPointer(op, facts::kOperatorPersonalLeaderChange)))
+        {
+            platform::Read(personal + facts::kCameraFlavorActive, moving);
+        }
+    }
+    float       view[3] = {}, at[3] = {};
+    const auto* manager = static_cast<const std::uint8_t*>(controller != nullptr ? players::actor_fields::CameraManager(controller) : nullptr);
+    const bool  placed  = manager != nullptr && platform::CopyGuarded(view, manager + facts::kCameraManagerPovLocation, sizeof(view)) &&
+                         character != nullptr && world::actor_place::ActorLocation(character, at);
+    const std::uint32_t ticks  = players::seat_camera::OperatorTicks(seat);
+    const auto          number = [](std::uint8_t value) { return value == 0xFF ? std::wstring(L"unread") : std::to_wstring(value); };
+    platform::LogDebug(L"seat toad: {}'s camera {} s after the swap: its operator's owner {}; operator ticks +{}; the leader-change move "
+                       L"{}; camera state {} (next {}); its view {}",
+                       SeatName(seat), g_watch.sample,
+                       !ownerRead ? L"unread" : owner == character ? L"the character the controller holds" : L"NOT the character the controller holds",
+                       ticks - g_watch.ticks, moving == 0 ? L"done" : moving == 1 ? L"still running" : L"unread", number(state[0]),
+                       number(state[1]),
+                       placed ? std::format(L"{:.1f} m from the character", std::hypot(view[0] - at[0], view[1] - at[1], view[2] - at[2]) / 100)
+                              : std::wstring(L"unread"));
+    g_watch.ticks = ticks;
+}
 
 /// The seat marked as the one whose swap runs, for the game call's length.
 class ToadPass
@@ -104,11 +157,15 @@ std::uint64_t SwapInSeatPlace(std::uintptr_t original, void* manager, std::uint8
     const bool  moved = after != before && after != nullptr;
     platform::Log(L"seat toad: {}'s character {} (member type {}); the game's swap ran in {}'s place: {}", SeatName(seat), what, type,
                   SeatName(seat),
-                  moved ? L"its controller and camera moved with it"
+                  moved ? L"its controller moved onto it (its camera: the watch's lines)"
                         : L"its controller did not move (the game's leader branch did not run for it)");
     if (moved && g_swapped != nullptr)
     {
         g_swapped(g_context, seat, after);  // adopted now: a cure in the same drain finds the toad as the seat's leader
+    }
+    if (moved)
+    {
+        g_watch = {.seat = seat, .sample = 0, .nextAt = std::chrono::steady_clock::now(), .ticks = players::seat_camera::OperatorTicks(seat)};
     }
     return result;
 }
@@ -186,6 +243,15 @@ void Remove() noexcept
 
 void Tick() noexcept
 {
+    if (g_watch.seat != 0 && std::chrono::steady_clock::now() >= g_watch.nextAt)
+    {
+        SampleCamera();
+        g_watch.nextAt += kWatchSpacing;
+        if (++g_watch.sample >= kWatchSamples)
+        {
+            g_watch = {};
+        }
+    }
     if (g_placed || g_apply == 0)
     {
         return;
