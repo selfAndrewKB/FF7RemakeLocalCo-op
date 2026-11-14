@@ -1130,6 +1130,45 @@ inline constexpr platform::FunctionFact kUiFilterDeactivate{L"EndUIFilter__Deact
 inline constexpr std::uintptr_t                kUiFilterWaitOpenCall = 0x14141A074;
 inline constexpr std::array<std::uintptr_t, 4> kUiFilterRestoreCalls{0x1411A6F17, 0x1412C0643, 0x1412AA469, 0x1414C0395};
 
+// --- The low-health red edge: UI filter 1, "Dying" (research/RE-low-health-effect.md) ---------------------------------
+// FieldCommandCtrl__DyingFilter_PartyHp (once per command-controller tick) sets the controller's own flag when any
+// formation member's HP is at or below its danger threshold, gated by the controller's allowed byte (on/off 43 writes it
+// on player 1's controller only); the flags share the filter's count, and the effect is the screen-filter slot's
+// post-process component. Its HP read is Party_GetHpByType(u8 type) -> u32, one call inside the function; a member read
+// as kDyingNeverLow is never at or below a threshold.
+inline constexpr std::uint32_t kCommandCtrlDying        = 0x424;  // u8: the controller's own danger flag
+inline constexpr std::uint32_t kCommandCtrlDyingAllowed = 0x547;  // u8: the effect allowed (1), hidden by an event (0)
+inline constexpr std::uint32_t kDyingNeverLow           = 0x7FFFFFFF;
+inline constexpr std::array<std::uint8_t, 16> kPartyHpByTypeEntry{
+    0x40, 0x53, 0x48, 0x83, 0xEC, 0x20, 0x48, 0x8B, 0x05, 0x1B, 0x86, 0xCE, 0x04, 0x0F, 0xB6, 0xD9};
+inline constexpr platform::FunctionFact kPartyHpByType{L"Party_GetHpByType", 0x140B01140, kPartyHpByTypeEntry};
+inline constexpr std::uintptr_t         kDyingHpCall = 0x14141A162;  // in FieldCommandCtrl__DyingFilter_PartyHp
+// The screen-filter slot EndUISystem[20]: a holder whose +0x08 is the post-process component and whose Dying fade is
+// linear (current, start, target, elapsed, duration), run every HUD tick by EndUISlot20_ScreenFilterParams_Tick(holder,
+// float dt). With +0x08 null the tick moves the holder's fades and writes nothing else, so a zeroed holder of
+// kScreenFilterHolderBytes runs the same curve. The fade's target and length are the game's constants (data); the game
+// fades in and out over the same length.
+inline constexpr std::uint32_t  kScreenFilterSlot        = 20;
+inline constexpr std::uint32_t  kScreenFilterComponent   = 0x08;
+inline constexpr std::uint32_t  kScreenFilterHolderBytes = 0x70;
+inline constexpr std::uint32_t  kDyingFadeNow            = 0x54;  // float
+inline constexpr std::uint32_t  kDyingFadeStart          = 0x58;
+inline constexpr std::uint32_t  kDyingFadeTarget         = 0x5C;
+inline constexpr std::uint32_t  kDyingFadeElapsed        = 0x60;
+inline constexpr std::uint32_t  kDyingFadeLength         = 0x64;
+inline constexpr std::uintptr_t kDyingIntensityOn        = 0x144F91DF4;  // float 0.8
+inline constexpr std::uintptr_t kDyingFadeSeconds        = 0x144F91D1C;  // float 0.5
+inline constexpr std::array<std::uint8_t, 16> kScreenFilterTickEntry{
+    0x40, 0x53, 0x48, 0x83, 0xEC, 0x30, 0x48, 0x8B, 0xD9, 0x0F, 0x29, 0x74, 0x24, 0x20, 0x48, 0x8B};
+inline constexpr platform::FunctionFact kScreenFilterTick{L"EndUISlot20_ScreenFilterParams_Tick", 0x1414996C0,
+                                                          kScreenFilterTickEntry};
+inline constexpr std::uintptr_t         kScreenFilterTickCall = 0x1413AE3D6;  // in EndUISystem__TickHUDWithDelta
+// The component's FPostProcessSettings copy, made by its own tick and read by each view's blend: the override flags
+// (bit 21 the narrow intensity) and the narrow intensity the view takes.
+inline constexpr std::uint32_t kImageEffectsSettingsFlags = 0x31C;
+inline constexpr std::uint32_t kImageEffectsNarrowBit     = 0x200000;
+inline constexpr std::uint32_t kImageEffectsNarrowNow     = 0x77C;  // float
+
 // --- The open battle menu's sound muffle: the "WaitMode" sound state (research/RE-menu-sound-muffle.md) ---------------
 // The native of UEndSoundAPI::CallEvent. 12 WaitMode_ON (world sound quieter and lower, footsteps off, a wet reverb), 13
 // WaitMode_OFF: absolute values for the one mix, no count. The wait's own two calls; the summon, a minigame's wait and an

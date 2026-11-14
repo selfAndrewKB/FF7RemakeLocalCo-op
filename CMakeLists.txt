@@ -123,6 +123,7 @@ add_library(LocalSplitScreen SHARED
     src/render/lighting_volume.cpp
     src/render/fog_volume_watch.cpp
     src/render/history_cut.cpp
+    src/render/low_health.cpp
     src/render/movie_frame.cpp
     src/render/occlusion_exempt.cpp
     src/render/family_boundary.cpp
@@ -354,6 +355,13 @@ add_executable(LeadMarkRulesTests
 target_include_directories(LeadMarkRulesTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_compile_features(LeadMarkRulesTests PRIVATE cxx_std_20)
 add_test(NAME lead_mark_rules COMMAND LeadMarkRulesTests)
+
+add_executable(LowHealthRulesTests
+    tests/low_health_rules_test.cpp
+)
+target_include_directories(LowHealthRulesTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(LowHealthRulesTests PRIVATE cxx_std_20)
+add_test(NAME low_health_rules COMMAND LowHealthRulesTests)
 
 add_executable(PartySwitchRulesTests
     tests/party_switch_rules_test.cpp

@@ -60,6 +60,7 @@
 #include "render/fog_volume_watch.h"
 #include "render/history_cut.h"
 #include "render/lighting_volume.h"
+#include "render/low_health.h"
 #include "render/movie_frame.h"
 #include "render/occlusion_exempt.h"
 #include "render/motion_history.h"
@@ -303,6 +304,9 @@ constexpr std::array kModules{
     // without it an open menu greys the screen with the slow-down off
     Module{.name = L"menu grey", .install = Call<&battle::menu_grey::Install>, .remove = &battle::menu_grey::Remove,
            .needs = {Need<&battle::command_menu_tick::Install>()}},
+    // without it one player's low health lights the red edge in every view (its views' site is the shadows' call)
+    Module{.name = L"low health", .install = Call<&render::low_health::Install>, .remove = &render::low_health::Remove,
+           .needs = {Need<&battle::command_menu_tick::Install>(), Need<&render::shadows_per_view::Install>()}},
     // without it a player locked outside a fight stays there
     Module{.name = L"arena warp", .install = Call<&battle::arena_warp::Install>, .needs = {Need<&battle::command_menu_tick::Install>()}},
     // player 1's switch skips a further player's member
@@ -808,6 +812,7 @@ void TickAfterSession(const Frame& frame) noexcept
 {
     players::split_render::Tick(frame.map.count > 1);
     render::area_blend::Tick(frame.map.count > 1);  // before this frame's views
+    render::low_health::Tick(frame.map);
     views::scene_camera::SeatManagers seatManagers{};
     for (int seat = 1; seat <= players::kSeatsBuilt; ++seat)
     {

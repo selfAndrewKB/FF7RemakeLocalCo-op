@@ -11,6 +11,7 @@
 #include "render/area_blend.h"
 #include "render/area_chains.h"
 #include "render/family_now.h"
+#include "render/low_health.h"
 #include "render/shadow_code.h"
 
 #include <array>
@@ -90,13 +91,15 @@ area_chains::Tag TagOf(const void* view) noexcept
 }
 
 /// At CalcSceneView's call: notes the view for the pushes its blend makes, and gives the area controllers' fade timers
-/// the view's own around it (render/area_blend.h).
+/// (render/area_blend.h) and the low-health red edge (render/low_health.h) the view's own around it.
 void* StartFinal(void* view, void* location)
 {
     t_note = TagOf(view);
     const void* state = t_note.valid ? t_note.state : nullptr;
     area_blend::Before(view, state);
+    low_health::Before(view);
     void* const result = g_startFinal(view, location);
+    low_health::After();
     area_blend::After(view, state);
     t_note = {};
     return result;

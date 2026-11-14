@@ -412,6 +412,8 @@ src/
                             not including b), separated by commas, e.g
     lighting_volume         The translucency lighting volume with more than one view (research/RE-haze-per-view.md): the
                             blue haze in players 2's and 3's views
+    low_health              The low-health red edge in each player's own view
+    low_health_rules.h      The low-health red edge's rules for each player's view (render/low_health.h)
     motion_history          Every player's view keeps the motion of moving things: the renderer's table of where each
                             moving object was last frame steps once a frame, as with one player, not once per player's
                             family
@@ -663,5 +665,5 @@ src/
                             game
     title_row_rules.h       Where the title menu's Co-op row goes among its rows' kinds (research/RE-title-menu.md):
                             directly below Options, so the rows through Options keep their places
-tests/                      69 host-side test programs (ctest), one per pure header or code stub; run without the game
+tests/                      70 host-side test programs (ctest), one per pure header or code stub; run without the game
 ```
