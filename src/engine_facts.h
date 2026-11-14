@@ -1882,6 +1882,24 @@ inline constexpr std::array<std::uint8_t, 16> kSetPartyLeaderToadEntry{
 inline constexpr std::size_t kSetPartyLeaderToadPushes = 6;
 inline constexpr platform::FunctionFact kSetPartyLeaderToad{L"PartyManager_SetPartyLeader_NoInputNoForce", 0x1415F1AE0,
                                                            kSetPartyLeaderToadEntry};
+/// The battle's toad swaps (research/RE-toad-seat.md): the battle system's toad manager drains its queue each battle
+/// tick (and once at the battle's end) into ApplyToad(mgr, u8 type) and CureToad(mgr, u8 type). Each copies the
+/// status and gauges between the member and its toad actor, fades one out and the other in, and swaps the type's party
+/// slot; only for the party leader does the swap move a controller (the leader setter onto the toad, and back). Both
+/// open with three pushes (5 bytes), run on the game thread alone.
+inline constexpr std::array<std::uint8_t, 16> kToadApplyEntry{
+    0x40, 0x53, 0x55, 0x41, 0x57, 0x48, 0x83, 0xEC, 0x20, 0x44, 0x0F, 0xB6, 0xFA, 0x48, 0x8B, 0xD9};
+inline constexpr std::array<std::uint8_t, 16> kToadCureEntry{
+    0x40, 0x53, 0x56, 0x41, 0x57, 0x48, 0x83, 0xEC, 0x20, 0x44, 0x0F, 0xB6, 0xFA, 0x48, 0x8B, 0xD9};
+inline constexpr std::size_t            kToadSwapFirst = 5;  // the pushes' bytes
+inline constexpr platform::FunctionFact kToadApply{L"BattleToadMgr_ApplyToad", 0x140A176A0, kToadApplyEntry};
+inline constexpr platform::FunctionFact kToadCure{L"BattleToadMgr_CureToad", 0x140A17A50, kToadCureEntry};
+/// BattlePlayerComp_AddStatus(comp, u8 status, u8, float seconds, u8 force): the status sources' one setter; force skips
+/// the resistance test. Frog (59) on a party member's component queues the toad apply for the next battle tick.
+inline constexpr std::array<std::uint8_t, 16> kAddStatusEntry{
+    0x44, 0x88, 0x44, 0x24, 0x18, 0x55, 0x53, 0x56, 0x57, 0x41, 0x55, 0x41, 0x57, 0x48, 0x8D, 0x6C};
+inline constexpr platform::FunctionFact kAddStatus{L"BattlePlayerComp_AddStatus", 0x14096D430, kAddStatusEntry};
+inline constexpr std::uint8_t           kStatusFrog = 59;
 /// The formation's one writer, at the end of every player stream, reached by the Blueprint exec's tail jump.
 inline constexpr std::array<std::uint8_t, 16> kFinishPlayerStreamEntry{
     0x48, 0x89, 0x4C, 0x24, 0x08, 0x55, 0x53, 0x56, 0x57, 0x41, 0x54, 0x41, 0x55, 0x41, 0x56, 0x41};

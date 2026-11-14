@@ -630,6 +630,8 @@ src/
     party_switch_rules.h    The battle switch's rules in co-op (battle/party_switch.h applies the first,
                             players/session.h the others), as pure functions over what the game reports; tested on the
                             host
+    seat_toad               Player 2's or 3's character turned into a toad, and back, with that player's own controller
+                            and camera on it (research/RE-toad-seat.md)
     sequence_camera         The battle sequence cameras (abilities, enemy specials, summons) on each player's own camera
                             (research/RE-seq-camera-two.md)
     stall_rules.h           When an enemy that is ready to attack but declines counts as stalled, and whether the game

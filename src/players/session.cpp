@@ -36,6 +36,7 @@
 #include "battle/command_menu.h"
 #include "battle/party_switch.h"
 #include "battle/party_switch_rules.h"
+#include "battle/seat_toad.h"
 #include "battle/targeting.h"
 #include "battle/lock_camera.h"
 #include "world/catch_up_move.h"
@@ -194,6 +195,7 @@ bool Session::Install(const platform::GameImage& image) noexcept
                                                          .leaderHandedToAi = &Session::OnLeaderHandedToAi,
                                                          .leaderReturned   = &Session::OnLeaderReturned,
                                                          .context          = this});
+        battle::seat_toad::SetListener(&Session::OnToadSwapped, this);
     }
     return true;
 }
@@ -1149,34 +1151,34 @@ void Session::TickOwnSwitch(Seat& seat) noexcept
     }
 }
 
-/// The game moved the seat's controller from its member onto `character` by the seat's own switch (the old member to
-/// its battle AI, the new one possessed, the controller's camera manager retargeted, all the game's own): the seat
-/// plays `character` from here, as after a take, and keeps it while the fight lasts.
-void Session::AdoptOwnSwitch(Seat& seat, void* character) noexcept
+/// The game moved the seat's controller from its member onto `character` (the old one to its battle AI, the new one
+/// possessed, the controller's camera manager retargeted, all the game's own): the seat plays `character` from here,
+/// as after a take.
+bool Session::AdoptMoved(Seat& seat, void* character, const wchar_t* what) noexcept
 try
 {
     auto*    players    = LocalPlayers(gameInstance_);
     UObject* controller = Controller(seat);
     if (players == nullptr || players->Num() < 1 || controller == nullptr || !Seated(seat.index))
     {
-        return;
+        return false;
     }
-    // Nothing is touched until the switch is known to have landed on a deployed member: the controller names it, and
+    // Nothing is touched until the move is known to have landed on a deployed member: the controller names it, and
     // the formation has its row.
     const std::uint8_t was  = party_seat::MemberType(seat.index);
     const std::uint8_t type = party_member::TypeOf(character);
     if (actor_fields::LeaderCharacter(controller) != character || type == facts::kPlayerTypeNone)
     {
-        platform::Log(L"{}'s own switch did not land ({}); {} keeps member type {}", seat.Name(),
+        platform::Log(L"{}'s {} did not land ({}); {} keeps member type {}", seat.Name(), what,
                       type == facts::kPlayerTypeNone ? L"the character is in no row of the formation"
-                                                     : L"its controller does not hold the member the game's switch named",
+                                                     : L"its controller does not hold the character the game named",
                       seat.Name(), was);
-        return;
+        return false;
     }
     EndMemberModules(seat);  // the menu, lock and target let go of the old member; set up again for the new one by their own ticks
-    // The seat's camera operator stays: the game's switch broadcast the change on the seat's controller, whose
+    // The seat's camera operator stays: the game's move broadcast the change on the seat's controller, whose
     // leader-changed delegate the operator holds, so the operator is already playing its own leader-change transition
-    // onto the new member. A fresh operator would start on the new member with no transition (a cut).
+    // onto the new character. A fresh operator would start on it with no transition (a cut).
     seat.ResetMember();
     party_seat::Adopt(seat.index, controller, character, type);  // the controller names the character: checked above
     if (!weak_object::WeakPairOf(character, seat.memberWeak))
@@ -1184,21 +1186,53 @@ try
         seat.memberWeak[0] = -1;
         seat.memberWeak[1] = 0;
     }
+    if (seat_objects::Operator(seat.index) == nullptr)
+    {
+        // A seat on a still camera (its spawn failed at the join) gets an operator on the new character.
+        StartSeatCamera(seat, ControllerOf((*players)[0]), controller, character);
+    }
+    Report();
+    return true;
+}
+catch (...)
+{
+    platform::Log(L"{}'s {}: an engine lookup raised an exception", seat.Name(), what);
+    return false;
+}
+
+/// The seat's own switch landed: it keeps the new member while the fight lasts.
+void Session::AdoptOwnSwitch(Seat& seat, void* character) noexcept
+{
+    const std::uint8_t was = party_seat::MemberType(seat.index);
+    if (!AdoptMoved(seat, character, L"own switch"))
+    {
+        return;
+    }
     seat.ownSwitch        = true;
     seat.outOfBattleTicks = 0;
     platform::Log(L"{} switches from member type {} to type {} (their own d-pad switch in the fight, the game's own cycle); back on "
                   L"their row's member when the fight ends",
-                  seat.Name(), was, type);
-    if (seat_objects::Operator(seat.index) == nullptr)
-    {
-        // A seat on a still camera (its spawn failed at the join) gets an operator on the new member.
-        StartSeatCamera(seat, ControllerOf((*players)[0]), controller, character);
-    }
-    Report();
+                  seat.Name(), was, party_seat::MemberType(seat.index));
 }
-catch (...)
+
+void Session::OnToadSwapped(void* self, int index, void* character) noexcept
 {
-    platform::Log(L"own switch: an engine lookup raised an exception");
+    auto* session = static_cast<Session*>(self);
+    if (index < 1 || index > kSeatsBuilt)
+    {
+        return;
+    }
+    Seat&               seat  = session->seats_[index];
+    const bool          own   = seat.ownSwitch;
+    const std::uint32_t ticks = seat.outOfBattleTicks;
+    if (!session->AdoptMoved(seat, character, L"toad swap"))
+    {
+        return;
+    }
+    seat.ownSwitch        = own;
+    seat.outOfBattleTicks = ticks;
+    platform::Log(L"{} plays the game's swap of member type {}: the toad or the character, whichever the game shows now", seat.Name(),
+                  party_seat::MemberType(seat.index));
 }
 
 /// The own switch over: the seat follows its row again (FollowSlot gives the member back when the row names another).
@@ -1352,9 +1386,14 @@ catch (...)
 void Session::OnLeaderChanging(void* self, void* character) noexcept
 {
     auto* session = static_cast<Session*>(self);
-    // A seat's own d-pad switch: the game's cycle runs inside that seat's command tick with the seat's controller as the
-    // primary, so this change moves the seat's controller, not player 1's (battle/party_switch.h); the seat adopts the
-    // character once the game has moved it (TickOwnSwitch). Nothing of player 1's changes: no stand-in, no going home.
+    // A seat's own d-pad switch, or the game's toad swap of its member: the game's code runs inside that seat's scopes with
+    // the seat's controller as the primary, so this change moves the seat's controller, not player 1's
+    // (battle/party_switch.h, battle/seat_toad.h). The own switch is adopted next tick (TickOwnSwitch), the toad swap
+    // right after the game's call (OnToadSwapped). Nothing of player 1's changes: no stand-in, no going home.
+    if (battle::seat_toad::ToadSeat() != 0)
+    {
+        return;
+    }
     if (const int pass = battle::party_switch::CyclingSeat(); pass != 0)
     {
         Seat& seat = session->seats_[pass];
