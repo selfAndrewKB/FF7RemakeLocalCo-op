@@ -16,12 +16,14 @@
 //   - the answers: the script natives that name the player run with the calling enemy recorded on this thread
 //     (their UFunction native pointers swapped), and the reads inside them (three leader reads, the two expectation
 //     counts' type reads, the party API's two results) answer the coin's human's member or type;
-//   - the player's weight, at the inlined "is this member the player" tests (the hate rows, the hate pick's
-//     tie-break, IsAIPC):
+//   - the player's weight, at the inlined "is this member the player" tests (the hate rows, IsAIPC):
 //     the party manager read there is answered by a block whose leader type is the member's own when the member is a
-//     further human's (battle/type_answer_code.h), so both humans get the player's rows and the AI ally keeps its
-//     single-player ratio; ties between humans go to the first in party order (the game's own rule with both "the
-//     leader");
+//     human's other than player 1's (battle/type_answer_code.h), so every human gets the player's rows and the AI ally
+//     keeps its single-player ratio;
+//   - the hate pick's tie-break: "the player" there is the enemy's coin human alone (its controller handed to the
+//     answer), the game's rule with one leader. Answered "the player" for every human, the last tied human in party
+//     order won every tie: player 1 never did with three humans, the AI ally never did with two
+//     (research/RE-enemy-hate-three-humans.md);
 //   - membership: the enemy EQS target context keeps a human's member (its controller answers as a battle AI's);
 //   - the target's area: a character's own area queries run in battle only for the leader or an AI-controlled
 //     character, and an enemy approaches, places itself around and checks sight against the area of the character

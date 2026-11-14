@@ -186,6 +186,7 @@ struct Counts
     std::array<std::atomic<unsigned>, kSeats> scriptAnswers{};  // the three script reads and the collector, per player
     std::atomic<unsigned>                     openingAnswers{};
     std::atomic<unsigned>                     expectationAnswers{};
+    std::array<std::atomic<unsigned>, kSeats> tieAnswers{};     // the hate pick's tie-break reads (two sites), per coin's player
     std::atomic<unsigned>                     apiAnswers{};
     std::atomic<unsigned>                     eqsKept{};
     std::atomic<unsigned>                     areasRefreshed{};  // a human's member's area query tick let through
@@ -688,6 +689,27 @@ void* PartyManagerForExpectation()
     return g_pmGet();
 }
 
+/// PartyManager_Get at the hate pick's two tie-break reads, given the picking enemy's controller: "the player" there is
+/// the enemy's coin human alone, the game's rule with one leader. A tie between humans goes to that one, and a tie
+/// between the others to the game's own coin byte; with every human answered "the player", the last tied human in party
+/// order won every tie (player 1, first, never did; research/RE-enemy-hate-three-humans.md).
+void* TieAnswer(void* controller) noexcept
+{
+    if (Tossing() && controller != nullptr)
+    {
+        const int player = CoinOf(controller);
+        if (player >= 1 && player <= kSeats)
+        {
+            Count(g_counts.tieAnswers[static_cast<std::size_t>(player - 1)], g_totals.tieAnswers[static_cast<std::size_t>(player - 1)]);
+        }
+        if (player >= 2)
+        {
+            return g_fakes[player - 2];
+        }
+    }
+    return g_pmGet();
+}
+
 /// `IsA_EndBattleAIController` at the enemy EQS target context: a human's controller counts.
 bool EqsIsA(void* controller, void* b, void* c)
 {
@@ -887,24 +909,41 @@ void Sensing(std::uint64_t attackerComponent, std::uint64_t a2, std::uint64_t a3
 
 // --- Install helpers ---------------------------------------------------------------------------------------------
 
+/// Places `code` (built, empty when the build failed) near the PartyManager_Get call at `site` and points the call at it.
+bool PlaceLeaderTestAnswer(platform::CallRedirect& redirect, std::uintptr_t site, std::span<const std::uint8_t> code,
+                           std::uintptr_t partyManagerGet, bool crosses, const wchar_t* what) noexcept
+{
+    const std::uintptr_t placedCode =
+        code.empty() ? 0
+                     : platform::PlaceCodeNear(site, code.size(), [&](std::uintptr_t, std::span<std::uint8_t> out) noexcept {
+                           std::memcpy(out.data(), code.data(), code.size());
+                           return true;
+                       });
+    const bool placed = placedCode != 0 && (crosses ? redirect.InstallFromOwnThread(site, partyManagerGet, placedCode)
+                                                    : redirect.Install(site, partyManagerGet, placedCode));
+    if (!placed)
+    {
+        platform::Log(L"enemy coin: {} could not be answered; it keeps the game's leader test", what);
+    }
+    return placed;
+}
+
 /// Places the leader-type answer for the inlined test at `site` (the member in `reg`) and points the call at it.
 bool PlaceTypeAnswer(platform::CallRedirect& redirect, std::uintptr_t site, type_answer_code::Register reg, std::uintptr_t partyManagerGet,
                      bool crosses, const wchar_t* what) noexcept
 {
     std::array<std::uint8_t, type_answer_code::kMaxBytes> bytes{};
     const std::size_t length = type_answer_code::Build(bytes, reg, reinterpret_cast<std::uintptr_t>(&g_fakes[0][0]), kFurther, partyManagerGet);
-    const std::uintptr_t code =
-        length == 0 ? 0
-                    : platform::PlaceCodeNear(site, length, [&](std::uintptr_t, std::span<std::uint8_t> out) noexcept {
-                          std::memcpy(out.data(), bytes.data(), length);
-                          return true;
-                      });
-    const bool placed = code != 0 && (crosses ? redirect.InstallFromOwnThread(site, partyManagerGet, code) : redirect.Install(site, partyManagerGet, code));
-    if (!placed)
-    {
-        platform::Log(L"enemy coin: {} could not be answered; it keeps the game's leader test", what);
-    }
-    return placed;
+    return PlaceLeaderTestAnswer(redirect, site, std::span<const std::uint8_t>(bytes.data(), length), partyManagerGet, crosses, what);
+}
+
+/// Places the hate pick's tie-break answer at `site`: the enemy's controller handed to TieAnswer.
+bool PlaceTieAnswer(platform::CallRedirect& redirect, std::uintptr_t site, std::uintptr_t partyManagerGet, bool crosses) noexcept
+{
+    std::array<std::uint8_t, type_answer_code::kControllerJumpBytes> bytes{};
+    const std::size_t length = type_answer_code::BuildControllerJump(bytes, reinterpret_cast<std::uintptr_t>(&TieAnswer));
+    return PlaceLeaderTestAnswer(redirect, site, std::span<const std::uint8_t>(bytes.data(), length), partyManagerGet, crosses,
+                                 L"the hate pick's tie-break leader test");
 }
 
 bool PlaceCall(platform::CallRedirect& redirect, const platform::GameImage& image, std::uintptr_t site, std::uintptr_t target, const void* replacement,
@@ -985,6 +1024,11 @@ std::wstring Reading(const Counts& counts) noexcept
                     counts.scriptAnswers[0].load(), counts.scriptAnswers[1].load(), counts.scriptAnswers[2].load(), counts.openingAnswers.load(),
                     counts.expectationAnswers.load(), counts.apiAnswers.load(), counts.eqsKept.load(), counts.areasRefreshed.load(),
                     counts.hitsScoped.load(), counts.sensingsScoped.load(), counts.offThread.load());
+    if (counts.tieAnswers[0].load() + counts.tieAnswers[1].load() + counts.tieAnswers[2].load() != 0)
+    {
+        text += std::format(L"; the hate pick's tie reads answered for P1 {} / P2 {} / P3 {}", counts.tieAnswers[0].load(),
+                            counts.tieAnswers[1].load(), counts.tieAnswers[2].load());
+    }
     for (std::size_t kind = 0; kind < kReadKinds; ++kind)
     {
         const auto& per = counts.reads[kind];  // players 1-3 printed: three is the most the mod seats
@@ -1000,6 +1044,7 @@ void ResetSince() noexcept
 {
     for (auto& t : g_counts.tosses) Take(t);
     for (auto& a : g_counts.scriptAnswers) Take(a);
+    for (auto& a : g_counts.tieAnswers) Take(a);
     for (auto& kind : g_counts.reads)
     {
         for (auto& r : kind) Take(r);
@@ -1022,7 +1067,7 @@ bool Any(const Counts& counts) noexcept
                    counts.apiAnswers.load() + counts.eqsKept.load() + counts.areasRefreshed.load() + counts.hitsScoped.load() + counts.sensingsScoped.load() + counts.offThread.load();
     for (std::size_t i = 0; i < kSeats; ++i)
     {
-        sum += counts.tosses[i].load() + counts.scriptAnswers[i].load();
+        sum += counts.tosses[i].load() + counts.scriptAnswers[i].load() + counts.tieAnswers[i].load();
         for (const auto& kind : counts.reads)
         {
             sum += kind[i].load();
@@ -1100,7 +1145,7 @@ bool Install(const platform::GameImage& image) noexcept
     for (std::size_t i = 0; i < g_tie.size(); ++i)
     {
         const auto tie = image.Rebase(facts::kBattleTieTypeCalls[i], 5);
-        placed += tie && PlaceTypeAnswer(g_tie[i], *tie, type_answer_code::kRdi, *pmGet, i == 1, L"the hate pick's tie-break leader test") ? 1 : 0;
+        placed += tie && PlaceTieAnswer(g_tie[i], *tie, *pmGet, i == 1) ? 1 : 0;
     }
     const auto isAipc = image.Rebase(facts::kBattleIsAipcTypeCall, 5);
     placed += isAipc && PlaceTypeAnswer(g_isAipc, *isAipc, type_answer_code::kRbx, *pmGet, true, L"IsAIPC's leader test") ? 1 : 0;

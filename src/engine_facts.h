@@ -1577,8 +1577,9 @@ inline constexpr platform::SlotFact kBattleEnemyCompBattleStartSlot{L"the enemy 
                                                                     0x144B6B1C8 + 0x100, kBattleEnemyCompBattleStart};
 inline constexpr std::uintptr_t kBattleOpeningLeaderCall = 0x140893204;
 /// The inlined "is this member the player" reads (call PartyManager_Get; movzx ecx, [rax+0x233]; cmp [reg+0x58], cl;
-/// the manager read for nothing else): the hate rows (member in r14), the hate pick's two tie-break reads (rdi; the
-/// second crosses its block), IsAIPC (rbx; crosses).
+/// the manager read for nothing else): the hate rows (member in r14), the hate pick's two tie-break reads (member in
+/// rdi, the picking enemy's battle AI controller in r13, only rax and rcx read after the call; the second crosses its
+/// block), IsAIPC (rbx; crosses).
 inline constexpr std::uintptr_t kBattleHateTypeCall = 0x14093F27A;                           // E8 41 88 D1 FF
 inline constexpr std::array<std::uintptr_t, 2> kBattleTieTypeCalls{0x140940081, 0x14094009E};  // E8 3A 7A D1 FF, E8 1D 7A D1 FF
 inline constexpr std::uintptr_t kBattleIsAipcTypeCall = 0x14187D25D;                         // E8 5E A8 DD FE

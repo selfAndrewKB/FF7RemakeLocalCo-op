@@ -4,7 +4,8 @@
 // member (battle/enemy_coin.h; research/RE-enemy-attention-coin.md). Pure: the bytes are built here and tested on
 // the host (tests/type_answer_code_test.cpp); enemy_coin places them near the game's code and points the call at them.
 //
-// The test the game compiled inline, at four places (the hate rows, the two tie-break reads, IsAIPC), is
+// The test the game compiled inline, at four places (the hate rows, the two tie-break reads, IsAIPC; the tie-break
+// reads take the controller jump below instead), is
 //     call PartyManager_Get ; movzx ecx, byte [rax+0x233] ; cmp [member+0x58], cl
 // the party manager's leader type against the member's own type, with the manager pointer used for nothing else.
 // The function called in place of PartyManager_Get reads the member's type from the register the game holds it in
@@ -92,6 +93,25 @@ inline std::size_t Build(std::span<std::uint8_t> out, Register member, std::uint
     at += sizeof(partyManagerGet);
     put({0x48, 0x8B, 0xC1, 0xC3});  // mov rax, rcx ; ret
     return at == length ? length : 0;
+}
+
+/// The hate pick's tie-break reads answer from the enemy's coin, not the member: their call goes to a function of the
+/// mod's taking the enemy's battle AI controller, which the game holds in r13 there. The code passes it on and jumps,
+/// so the function returns straight to the game with the stack as the call left it:
+///     mov rcx, r13 ; jmp [rip+0] ; dq <function>
+inline constexpr std::size_t kControllerJumpBytes = 3 + 6 + 8;
+
+/// Writes that code into `out`; returns its length, or 0 if `out` is short.
+inline std::size_t BuildControllerJump(std::span<std::uint8_t> out, std::uintptr_t function) noexcept
+{
+    if (out.size() < kControllerJumpBytes)
+    {
+        return 0;
+    }
+    constexpr std::uint8_t head[] = {0x4C, 0x89, 0xE9, 0xFF, 0x25, 0x00, 0x00, 0x00, 0x00};  // mov rcx, r13 ; jmp [rip+0]
+    std::memcpy(out.data(), head, sizeof(head));
+    std::memcpy(out.data() + sizeof(head), &function, sizeof(function));
+    return kControllerJumpBytes;
 }
 
 }  // namespace lss::battle::type_answer_code

@@ -94,6 +94,19 @@ void Lengths()
     EXPECT(Build(code, kR14, kBlocks, 3, kPmGet) == 5 + 10 + 3 * 8 + 2 * 7 + 14 + 4);
 }
 
+/// The tie-break's jump: the controller moved into the first argument, then an absolute jump to the function.
+void ControllerJump()
+{
+    constexpr std::uintptr_t kFunction = 0x7FF6C0001230;
+    std::array<std::uint8_t, kControllerJumpBytes> code{};
+    EXPECT(BuildControllerJump(code, kFunction) == 17);
+    EXPECT(code[0] == 0x4C && code[1] == 0x89 && code[2] == 0xE9);  // mov rcx, r13
+    EXPECT(code[3] == 0xFF && code[4] == 0x25 && code[5] == 0 && code[6] == 0 && code[7] == 0 && code[8] == 0);
+    EXPECT(Qword(&code[9]) == kFunction);
+    std::array<std::uint8_t, 16> small{};
+    EXPECT(BuildControllerJump(small, kFunction) == 0);
+}
+
 }  // namespace
 
 int main()
@@ -104,5 +117,6 @@ int main()
     Walk(kRdi, 2);
     Refusals();
     Lengths();
+    ControllerJump();
     return lss::test::Report();
 }
