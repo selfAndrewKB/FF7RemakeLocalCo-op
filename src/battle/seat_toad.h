@@ -18,9 +18,7 @@
 // Test action `toad <player>` (in a fight): the game's own status setter gives that player's character the Frog status
 // at the status table's middle duration, through the whole game path (the next battle tick applies it; its timer cures it).
 // Logged: Info for each swap run in a seat's place, whether it landed, and when a seat's scope cannot open; Debug for a
-// swap met inside another player's scope, and, once a second for 6 s after each swap, the seat's camera: whether its
-// operator owns the character, ticks and has ended the leader-change move, its state, and the view's distance to it (one
-// watch at a time: a later swap, any seat's, takes it over).
+// swap met inside another player's scope.
 // Game thread only.
 
 namespace lss::platform {

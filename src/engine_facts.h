@@ -118,11 +118,6 @@ inline constexpr std::uint32_t  kOperatorOwnerChara   = 0x5D0;        // AEndFie
 inline constexpr std::uint32_t  kOperatorControlYaw   = 0x42C;        // the control yaw the tick read from its controller (+0x428 pitch)
 inline constexpr std::uint32_t  kOperatorFinalRotation = 0x4D8;       // the tick's final pitch/yaw (the Lock clamp's output, written back to the controller)
 inline constexpr std::uint32_t  kOperatorCameraLocation = 0x410;      // FVector: the tick's camera location (RE-lock-camera-ledger.md §12, §13, read live)
-// The operator's camera state (u8: +0 now, +1 next; 1 the Lock state) and its personal leader-change flavor (a pointer;
-// its active byte), which a same-character leader change starts (research/RE-toad-seat.md).
-inline constexpr std::uint32_t  kOperatorCameraState  = 0x658;
-inline constexpr std::uint32_t  kOperatorPersonalLeaderChange = 0x798;
-inline constexpr std::uint32_t  kCameraFlavorActive   = 0x38;
 inline constexpr std::uint32_t  kGameModeFrameCounter = 0x770;        // AEndGameMode: the engine frame counter, copied at world-tick phase 100
 inline constexpr std::uint32_t  kOperatorObjectFlags  = 0x48;         // the game's spawn flags for the operator
 inline constexpr std::uint32_t  kSpawnParamsTemplate  = 0x08;         // FActorSpawnParameters::Template (RE-player-trigger.md §4.2)
