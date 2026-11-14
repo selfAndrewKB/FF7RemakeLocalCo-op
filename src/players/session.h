@@ -264,9 +264,10 @@ private:
     /// The seat's own d-pad switch in a fight (battle/party_switch.h): each tick, the adoption of the member the game moved
     /// its controller onto, and the fight's end, when its row decides again.
     void TickOwnSwitch(Seat& seat) noexcept;
-    /// The seat plays `character`, onto which the game moved its controller (`what` names the move in the log). False
-    /// (logged) when the controller does not name it or it is in no row of the formation.
-    bool AdoptMoved(Seat& seat, void* character, const wchar_t* what) noexcept;
+    /// The seat plays `character`, onto which the game moved its controller (`what` names the move in the log). The battle
+    /// modules let go of the old member unless `sameMember` (a toad standing in for it). False (logged) when the controller
+    /// does not name it or it is in no row of the formation.
+    bool AdoptMoved(Seat& seat, void* character, const wchar_t* what, bool sameMember) noexcept;
     void AdoptOwnSwitch(Seat& seat, void* character) noexcept;
     /// The game's toad swap run in the seat's place (battle/seat_toad.h) moved its controller onto `character`: adopted
     /// at once, an own switch the seat was in kept.

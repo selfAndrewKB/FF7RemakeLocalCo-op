@@ -1154,7 +1154,7 @@ void Session::TickOwnSwitch(Seat& seat) noexcept
 /// The game moved the seat's controller from its member onto `character` (the old one to its battle AI, the new one
 /// possessed, the controller's camera manager retargeted, all the game's own): the seat plays `character` from here,
 /// as after a take.
-bool Session::AdoptMoved(Seat& seat, void* character, const wchar_t* what) noexcept
+bool Session::AdoptMoved(Seat& seat, void* character, const wchar_t* what, bool sameMember) noexcept
 try
 {
     auto*    players    = LocalPlayers(gameInstance_);
@@ -1175,7 +1175,10 @@ try
                       seat.Name(), was);
         return false;
     }
-    EndMemberModules(seat);  // the menu, lock and target let go of the old member; set up again for the new one by their own ticks
+    if (!sameMember)
+    {
+        EndMemberModules(seat);  // the menu, lock and target let go of the old member; set up again for the new one by their own ticks
+    }
     // The seat's camera operator stays: the game's move broadcast the change on the seat's controller, whose
     // leader-changed delegate the operator holds, so the operator is already playing its own leader-change transition
     // onto the new character. A fresh operator would start on it with no transition (a cut).
@@ -1204,7 +1207,7 @@ catch (...)
 void Session::AdoptOwnSwitch(Seat& seat, void* character) noexcept
 {
     const std::uint8_t was = party_seat::MemberType(seat.index);
-    if (!AdoptMoved(seat, character, L"own switch"))
+    if (!AdoptMoved(seat, character, L"own switch", false))
     {
         return;
     }
@@ -1225,7 +1228,9 @@ void Session::OnToadSwapped(void* self, int index, void* character) noexcept
     Seat&               seat  = session->seats_[index];
     const bool          own   = seat.ownSwitch;
     const std::uint32_t ticks = seat.outOfBattleTicks;
-    if (!session->AdoptMoved(seat, character, L"toad swap"))
+    // The toad stands in for the same member: its lock, target and menu carry on, as player 1's do through the game's own
+    // toad (ended, they would leave the seat's operator in its Lock state with no target).
+    if (!session->AdoptMoved(seat, character, L"toad swap", true))
     {
         return;
     }
