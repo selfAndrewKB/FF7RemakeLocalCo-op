@@ -144,8 +144,9 @@ struct Seat
     std::uint32_t  ticks       = 0;        // its manager ticked, since the last reading
     std::uint32_t  scopeFailed = 0;        // its contexts could not be held (no tick then), since the last reading
     bool           notHeldLogged = false;  // the "not updated" line is out; the recovery line follows it
-    U64            pinKey      = 0;        // its own marker's key, scaled after each of its ticks (SetPinScale)
-    float          pinScale    = 1.0f;
+    U64            pinKey      = 0;        // its own marker's key, scaled after each of its ticks (SetOwnMarkerScale)
+    float          pinScale    = 1.0f;     // the minimap pin's
+    float          markScale   = 1.0f;     // the compass mark's
     bool           pinTold     = false;    // the scale's first outcome for this key is logged
     std::array<std::int32_t, 2> markWeak  = {-1, 0};  // the compass mark's widget (weak pair) its image set was found for
     void*          markImage   = nullptr;  // that image set
@@ -423,7 +424,7 @@ void ScalePin(int seat, Seat& s) noexcept
 /// frame the compass skipped the mark). A mark already at the seat's scale is left as it is.
 void ScaleCompassMark(int seat, Seat& s) noexcept
 {
-    if (s.pinKey == 0 || s.pinScale == 1.0f || g.findWidget == nullptr || g.updateTransform == nullptr || g.compassImageName == nullptr)
+    if (s.pinKey == 0 || s.markScale == 1.0f || g.findWidget == nullptr || g.updateTransform == nullptr || g.compassImageName == nullptr)
     {
         return;
     }
@@ -461,7 +462,7 @@ void ScaleCompassMark(int seat, Seat& s) noexcept
         s.markWeak  = {weak[0], weak[1]};
         s.markImage = image;
     }
-    const platform::GameVector2D wanted{s.pinScale, s.pinScale};
+    const platform::GameVector2D wanted{s.markScale, s.markScale};
     platform::GameVector2D       now;
     if (!Read(At(s.markImage, f::kWidgetRenderScale), now) || (now.x == wanted.x && now.y == wanted.y))
     {
@@ -473,7 +474,7 @@ void ScaleCompassMark(int seat, Seat& s) noexcept
     {
         s.markTold = true;
         platform::LogDebug(L"HUD minimap: {}'s own marker's compass mark {}", SeatName(seat),
-                           scaled ? std::format(L"drawn at {:.1f} times the game's scale", s.pinScale)
+                           scaled ? std::format(L"drawn at {:.1f} times the game's scale", s.markScale)
                                   : std::wstring(L"could not be scaled; the game's scale stays"));
     }
 }
@@ -1295,21 +1296,22 @@ std::uint32_t IconResets() noexcept
     return g_iconResets;
 }
 
-void SetPinScale(int seat, std::uint64_t key, float scale) noexcept
+void SetOwnMarkerScale(int seat, std::uint64_t key, float pinScale, float markScale) noexcept
 {
     if (seat < 1 || seat >= kMaxPlayers)
     {
         return;
     }
     Seat& s = g_seats[static_cast<std::size_t>(seat)];
-    if (s.pinKey != key || s.pinScale != scale)
+    if (s.pinKey != key || s.pinScale != pinScale || s.markScale != markScale)
     {
-        s.pinTold  = false;  // the new key or scale's first outcome is logged, for the pin and the compass mark
-        s.markTold = false;
+        s.pinTold      = false;  // the new key or scale's first outcome is logged, for the pin and the compass mark
+        s.markTold     = false;
         s.markMissTold = false;
     }
-    s.pinKey   = key;
-    s.pinScale = scale;
+    s.pinKey    = key;
+    s.pinScale  = pinScale;
+    s.markScale = markScale;
 }
 
 }  // namespace lss::hud::minimap

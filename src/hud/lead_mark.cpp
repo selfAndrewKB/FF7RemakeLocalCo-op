@@ -2,11 +2,9 @@
 
 #include "control/registry.h"
 #include "hud/field_icons.h"
-#include "hud/lead_mark_rules.h"
 #include "hud/minimap.h"
 #include "platform/guarded.h"
 #include "platform/log.h"
-#include "platform/settings.h"
 #include "players/lead_gate.h"
 #include "players/seat_camera.h"
 #include "players/seats.h"
@@ -35,6 +33,10 @@ constexpr float         kVisibleStart   = 5000;  // cm: the diamond shows within
 constexpr float         kSeenWithin     = 1.0e7f;  // cm
 constexpr std::uint32_t kCheckEvery     = 10;  // ticks
 constexpr float         kMovedCm        = 1;   // a point further than this from the placed one is a new point
+// The marker's size in the seat's view, times the game's: the field diamond, the minimap pin, the compass mark.
+constexpr float         kDiamondScale   = 3.0f;
+constexpr float         kPinScale       = 2.0f;
+constexpr float         kCompassScale   = 2.5f;
 
 /// One seat's marker.
 struct Seat
@@ -52,21 +54,6 @@ struct Seat
 };
 std::array<Seat, kSeatsBuilt + 1> g_seats;  // by seat ([0] unused)
 bool                              g_installed = false;
-float                             g_scale     = 1.0f;  // the marker's size, times the game's (platform/settings.h kLeadMarkerSize)
-
-/// The size to the diamonds and to each placed pin.
-void ApplyScale() noexcept
-{
-    field_icons::SetOwnedScale(g_scale);
-    for (int seat = 1; seat <= kSeatsBuilt; ++seat)
-    {
-        const Seat& s = g_seats[static_cast<std::size_t>(seat)];
-        if (s.onOwn)
-        {
-            minimap::SetPinScale(seat, s.key, g_scale);
-        }
-    }
-}
 
 /// The FName of `text`, made if new (FNAME_Add), packed as the game passes it (comparison index low, number high); a
 /// free function so a fault is caught by the guard.
@@ -113,7 +100,7 @@ void Take(int seat, Seat& s, const wchar_t* why) noexcept
 {
     const bool game = s.onGame && minimap::RemoveIconFrom(0, s.key);
     const bool own  = s.onOwn && minimap::RemoveIconFrom(seat, s.key);
-    minimap::SetPinScale(seat, 0, 1.0f);
+    minimap::SetOwnMarkerScale(seat, 0, 1.0f, 1.0f);
     platform::Log(L"lead mark: {}'s marker at {} removed ({}): game's instance {}, {}'s own {}", SeatName(seat),
                   players::lead_gate::PointName(s.point), why, s.onGame ? (game ? L"yes" : L"NO") : L"not there",
                   SeatName(seat), s.onOwn ? (own ? L"yes" : L"NO") : L"not there");
@@ -142,7 +129,7 @@ void Place(int seat, Seat& s, const players::lead_gate::Mark& mark, const wchar_
     }
     if (s.onOwn)
     {
-        minimap::SetPinScale(seat, s.key, g_scale);
+        minimap::SetOwnMarkerScale(seat, s.key, kPinScale, kCompassScale);
     }
     s.at[0]  = mark.at[0];
     s.at[1]  = mark.at[1];
@@ -208,24 +195,12 @@ bool Install(const platform::GameImage&) noexcept
                                return control::Value{std::wstring(L"unreadable (an exception)")};
                            }
                        }});
-    // The marker's size (platform/settings.h kLeadMarkerSize): the file, the console and the Co-op page set it through the
-    // one setter.
-    g_scale = lead_mark_rules::ScaleOf(platform::settings::Of(platform::settings::kLeadMarkerSize).word);
-    control::RegisterOption(
-        platform::settings::kLeadMarkerSize,
-        [](const std::wstring& word) {
-            g_scale = lead_mark_rules::ScaleOf(word);
-            ApplyScale();
-            platform::Log(L"lead mark: the marker's size {:.1f} times the game's (the console)", g_scale);
-            return control::Outcome{};
-        },
-        [] { return std::format(L"{:.1f}", g_scale); });
-    ApplyScale();
+    field_icons::SetOwnedScale(kDiamondScale);
     g_installed = true;
     players::lead_gate::SetMarking(true);
-    platform::Log(L"lead mark: a further player's kept lead is marked in that player's view (the main-objective diamond, a pin on "
-                  L"its own minimap), {:.1f} times the game's size (lead-marker-size, from {})",
-                  g_scale, platform::settings::Why(platform::settings::kLeadMarkerSize));
+    platform::Log(L"lead mark: a further player's kept lead is marked in that player's view, larger than the game's: the "
+                  L"main-objective diamond {:.1f} times, the pin on its own minimap {:.1f} times, its compass mark {:.1f} times",
+                  kDiamondScale, kPinScale, kCompassScale);
     return true;
 }
 
@@ -250,7 +225,7 @@ void Remove() noexcept
         {
             platform::Log(L"lead mark: the mod unloads off the game thread; {}'s marker is left to the next field end", SeatName(seat));
             s.onGame = s.onOwn = false;
-            minimap::SetPinScale(seat, 0, 1.0f);
+            minimap::SetOwnMarkerScale(seat, 0, 1.0f, 1.0f);
         }
         if (s.key != 0)
         {
@@ -281,7 +256,7 @@ void TickSeat(int seat, void* member) noexcept
     {
         s.onGame = s.onOwn = false;  // a field end or reset emptied every instance: nothing left to remove
         s.clearOwner       = true;
-        minimap::SetPinScale(seat, 0, 1.0f);
+        minimap::SetOwnMarkerScale(seat, 0, 1.0f, 1.0f);
         reset              = true;
         platform::Log(L"lead mark: the icons were reset (a field end); {}'s marker at {} went with them", SeatName(seat),
                       players::lead_gate::PointName(s.point));

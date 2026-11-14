@@ -349,13 +349,6 @@ target_include_directories(PartyRankRulesTests PRIVATE "${CMAKE_CURRENT_SOURCE_D
 target_compile_features(PartyRankRulesTests PRIVATE cxx_std_20)
 add_test(NAME party_rank_rules COMMAND PartyRankRulesTests)
 
-add_executable(LeadMarkRulesTests
-    tests/lead_mark_rules_test.cpp
-)
-target_include_directories(LeadMarkRulesTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
-target_compile_features(LeadMarkRulesTests PRIVATE cxx_std_20)
-add_test(NAME lead_mark_rules COMMAND LeadMarkRulesTests)
-
 add_executable(LowHealthRulesTests
     tests/low_health_rules_test.cpp
 )

@@ -84,11 +84,11 @@ bool AddIconTo(int seat, std::uint64_t key, std::uint8_t kind, const float (&at)
 /// The game's RemoveIcon on one instance only (the widget and the entry go at once; a missing key is a no-op:
 /// RE-lead-mark-check.md).
 bool RemoveIconFrom(int seat, std::uint64_t key) noexcept;
-/// Game thread: the icon `key` on seat `seat`'s own instance is drawn at `scale`, its minimap pin and its compass mark,
-/// written after each of the seat's ticks (the tick writes the game's scale every frame, including the halving while a
-/// guide icon shows, which this replaces). Key 0 or scale 1.0 stops it. One key per seat (its own marker); player 1's
-/// icons are untouched.
-void SetPinScale(int seat, std::uint64_t key, float scale) noexcept;
+/// Game thread: the icon `key` on seat `seat`'s own instance is drawn with its minimap pin at `pinScale` and its compass
+/// mark at `markScale`, written after each of the seat's ticks (the tick writes the game's scale every frame, including
+/// the halving while a guide icon shows, which this replaces). Key 0 stops both; a scale of 1.0 leaves that one the
+/// game's. One key per seat (its own marker); player 1's icons are untouched.
+void SetOwnMarkerScale(int seat, std::uint64_t key, float pinScale, float markScale) noexcept;
 /// The field ends and resets heard: each empties every instance's icons, so an icon added before is added again.
 std::uint32_t IconResets() noexcept;
 

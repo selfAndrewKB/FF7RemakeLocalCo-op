@@ -14,6 +14,8 @@
 // level's next move), removed when the verdict ends (the member brought to the point, the setting's end, the player
 // letting go) and added again after a field end or reset emptied the icons. Checked every 10 ticks per seat (a row
 // changes a few times a minute at most). Without this module the lead gate hands every needed move to its AI.
+// In the seat's view the marker is drawn larger than the game's, each part at its own fixed size (hud/field_icons for
+// the diamond, hud/minimap for the pin and the compass mark); player 1's markers keep the game's size.
 // Game thread.
 
 #include <string>
