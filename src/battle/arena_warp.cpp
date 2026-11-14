@@ -51,7 +51,7 @@ struct Seat
     bool                          asked = false;  // a double click waits for the next engine tick
 };
 std::array<Seat, players::scopes::kMaxPlayers> g_seats;
-std::uint32_t g_presses = 0, g_fieldPresses = 0, g_warps = 0, g_alreadyInside = 0, g_refused = 0, g_noPoint = 0;
+std::uint32_t g_presses = 0, g_fieldPresses = 0, g_warps = 0, g_fromInside = 0, g_refused = 0, g_noPoint = 0;
 std::uint64_t g_reads = 0, g_readsFailed = 0;  // the Dash reads made, and those the game's getter could not answer
 
 using players::field_root::BattleSystem;
@@ -141,18 +141,10 @@ void Run(int seat) noexcept
                       SeatName(seat), why, players::party_member::ControlLockMask());
         return;
     }
-    bool inside = false;
-    if (!platform::CallGuarded(g_inside, inside, battleSystem, member))
-    {
-        return;
-    }
-    if (inside)
-    {
-        ++g_alreadyInside;
-        platform::Log(L"arena warp: {} clicked the left stick twice; its character is already in the fight's area",
-                      SeatName(seat));
-        return;
-    }
+    // The area test is not a gate: a character can stand inside the fight's area and still be cut off from it (a train
+    // car's far side). It is read for the log only.
+    bool       inside     = false;
+    const bool insideRead = g_inside != nullptr && platform::CallGuarded(g_inside, inside, battleSystem, member);
     const float distance = Distance();
     bool        moved    = false;
     void* const component = players::actor_fields::BattleComponent(member);
@@ -170,17 +162,22 @@ void Run(int seat) noexcept
         return;
     }
     ++g_warps;
-    platform::Log(L"arena warp: {}'s character was outside the fight's area and is brought in front of player 1's character "
-                  L"({:.1f} m; field lock {:#x})",
-                  SeatName(seat), distance / 100.0f, players::party_member::ControlLockMask());
+    if (insideRead && inside)
+    {
+        ++g_fromInside;
+    }
+    platform::Log(L"arena warp: {}'s character is brought in front of player 1's character ({:.1f} m; the game's area test: {}; "
+                  L"field lock {:#x})",
+                  SeatName(seat), distance / 100.0f, !insideRead ? L"unread" : inside ? L"inside" : L"outside",
+                  players::party_member::ControlLockMask());
 }
 
 std::wstring Reading()
 {
-    return std::format(L"{}; Dash presses seen in a battle {}, brought in {}, already inside {}, refused {}, nothing moved {}; "
+    return std::format(L"{}; Dash presses seen in a battle {}, brought in {} (from inside the fight's area {}), refused {}, nothing moved {}; "
                        L"Dash presses seen in the field {} (their double clicks: world.party-warp); the further players' Dash "
                        L"read {} times, unanswered {}",
-                       g_warp != nullptr ? L"on" : L"off", g_presses, g_warps, g_alreadyInside, g_refused, g_noPoint,
+                       g_warp != nullptr ? L"on" : L"off", g_presses, g_warps, g_fromInside, g_refused, g_noPoint,
                        g_fieldPresses, g_reads, g_readsFailed);
 }
 
@@ -194,7 +191,7 @@ bool Install(const platform::GameImage& image) noexcept
     const auto inside   = platform::FindFunction(image, facts::kInsideBattleArea);
     const auto name     = image.Rebase(facts::kNameWarpDistanceCache, sizeof(std::uint64_t));
     const auto params   = image.Rebase(facts::kTableGameParam, 3 * sizeof(void*));
-    if (!dash || !pressed || !warp || !inside || !players::field_root::Installed() || !name || !params)
+    if (!dash || !pressed || !warp || !players::field_root::Installed() || !name || !params)
     {
         platform::Log(L"arena warp: an engine check failed; a double click of the left stick does not bring a character into "
                       L"the fight");
@@ -202,20 +199,20 @@ bool Install(const platform::GameImage& image) noexcept
     }
     g_dashKey      = *dash;
     g_pressed      = reinterpret_cast<players::action_key::Getter>(*pressed);
-    g_inside       = reinterpret_cast<InsideFn>(*inside);
+    g_inside       = inside ? reinterpret_cast<InsideFn>(*inside) : nullptr;  // the log's only; optional
     g_distanceName = *name;
     g_gameParams   = *params;
     g_warp         = reinterpret_cast<WarpFn>(*warp);  // last: Tick and ReadPress test it
     control::Register({.name  = L"arena-warp",
                        .shape = control::Shape::Text,
                        .help  = L"further players' characters brought into the fight on a double click of the left stick: "
-                                L"Dash presses seen in a battle (one per click), brought in, already inside, refused (paused "
+                                L"Dash presses seen in a battle (one per click), brought in (from inside the fight's area, by the game's test), refused (paused "
                                 L"or a menu up, a scripted event, a battle with no recovery, down, mid-action, a field "
                                 L"action), nothing moved (no navmesh point, or the party leader); and the Dash presses seen "
                                 L"in the field, where a double click brings the character back to player 1's",
                        .get   = [] { return control::Value{Reading()}; }});
-    platform::Log(L"arena warp: installed; a further player who double-clicks the left stick in a battle, outside the fight's "
-                  L"area, is brought in front of player 1's character");
+    platform::Log(L"arena warp: installed; player 2 or 3 double-clicking the left stick in a battle, inside the fight's area or not, "
+                  L"is brought in front of player 1's character");
     return true;
 }
 

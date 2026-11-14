@@ -15,10 +15,11 @@
 //   - the member alive (not KO: the game's gate); not locked in an action (the leader switch's "may be left" rule) and
 //     in no field action (the game would cut it short; refused instead): the mod's own stricter guards;
 //   - not paused, no menu up, no scripted event holding the party;
-//   - outside the battle area by the game's own test; inside it nothing moves ("already in the fight").
+//   - inside the battle area or not: the game's own area test is logged, not a gate, since a character can stand inside
+//     the area and still be cut off from the fight (the far side of a train car).
 // The distance is the game's GameParam BattleTeleportNavDistanceChangeCharacter, else its default 3 m. Player 1's
 // character is the party leader the area is built around: its double click does nothing. Logged: Info at install and
-// at each answered double click (the player's own ask: brought in, already inside, refused and why, nothing moved);
+// at each answered double click (the player's own ask: brought in and from where, refused and why, nothing moved);
 // the reading `arena-warp` (with the presses seen). Game thread.
 //
 // Outside a battle the same double click asks for the field's answer: the character brought back beside player 1's
