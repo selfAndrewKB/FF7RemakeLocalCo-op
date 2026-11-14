@@ -81,8 +81,9 @@ public:
     /// arrows): its member is given back and the new row's seated by the session's follow, as at a story party change.
     /// False (nothing changed) when the seat cannot step (CanStepMember).
     bool StepMember(int seat, int dir) noexcept;
-    /// The seat plays its member (seated, not handed to its AI, standing in for no one), no battle is on, the party has
-    /// another rank, and the player holding it, if any, plays its member too (a step onto it trades ranks with that player).
+    /// The seat plays its member (seated, not handed to its AI, standing in for no one), the party has another rank, and the
+    /// player holding it, if any, plays its member too (a step onto it trades ranks with that player). In a fight only a
+    /// trade, with both members free to leave (TradesInFight).
     bool CanStepMember(int seat) const noexcept;
     /// The actor of the seat's row now (its rank's, or the stand-in's), whatever its state: a player window's name. Null
     /// without one.
@@ -195,6 +196,8 @@ private:
                                                         // its row decides again at the fight's end
         void*                ownSwitchPending = nullptr;  // the character the game's switch is moving its controller onto, adopted next tick
         std::uint32_t        outOfBattleTicks = 0;      // ticks in a row the game's in-battle test said no while the own switch holds
+        std::uint8_t         lastType       = 9;        // the character its row last gave it (9 = facts::kPlayerTypeNone: none yet):
+                                                        // kept, or taken back, when the party's members change (KeepCharacters)
 
         /// "player 2" for seat 1: the name every line of the seat's uses.
         const wchar_t* Name() const noexcept { return SeatName(index); }
@@ -210,6 +213,9 @@ private:
     void JoinNow(int index) noexcept;
     /// The seat claims a rank of the party order: in, waiting for a member, or to rejoin.
     static bool ClaimsRank(const Seat& seat) noexcept;
+    /// The party's members changed (the formation rebuilt): each seat's rank moves to the character it plays, or the one it
+    /// last played while it waits (party_rank_rules::KeepCharacters), before any seat follows its row.
+    void KeepCharacters() noexcept;
     /// The ranks the other seats claim, as party_rank_rules' bits.
     std::uint32_t RanksHeldBesides(int index) const noexcept;
     /// The seat other than `besides` that holds `rank` (in, waiting, or to rejoin), or 0.
@@ -227,6 +233,9 @@ private:
     bool StepTarget(int index, int dir, int& next, int& holder, int& count) const noexcept;
     /// The seat plays its member: seated, not handed to its AI, standing in for no one.
     bool PlaysMember(int index) const noexcept;
+    /// In a fight, the seat may trade its member with another player's: it plays its own row's member (not one its own
+    /// switch took), which is not down and not in an action the game's leader switch does not leave.
+    bool TradesInFight(int index) const noexcept;
     /// A seat whose rank the party no longer has (a story party change shrank it) takes the lowest free one.
     void SettleRank(Seat& seat, void* playerOneController) noexcept;
     /// Player 1's controller, or null.
@@ -302,6 +311,10 @@ private:
     bool                 seatInstalled_     = false;
     bool                 eventsInstalled_   = false;
     std::uint32_t        ticks_             = 0;
+    // The characters by rank at the last formation rebuild (KeepCharacters acts only on a change: a rebuild that changes
+    // nothing leaves a step taken in the same tick alone).
+    std::array<std::uint8_t, party_rank_rules::kMaxRanks> rankTypesSeen_{};
+    int                                                   rankCountSeen_ = -1;
 };
 
 }  // namespace lss::players

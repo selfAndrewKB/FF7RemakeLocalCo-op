@@ -2301,7 +2301,6 @@ inline constexpr platform::FunctionFact kInsideBattleArea{L"BattleCycleLeader_Is
 inline constexpr std::uint32_t  kBattleNoRecovery       = 0x3E8;   // u8 on the battle system: the game warps no member
 inline constexpr std::uint32_t  kBattleRecoveryReady    = 0xDF18;  // u32 on the battle system: non-zero for the warp
 inline constexpr std::uint32_t  kBattleCompFlags        = 0x168;   // the battle component's flags (0x81: may leave)
-inline constexpr std::uint8_t   kBattleActionKo         = 13;
 inline constexpr std::uint8_t   kBattleActionLocked     = 2;     // RE-battle-switch.md: the leader may not be left
 inline constexpr std::uint8_t   kBattleCompMayLeave     = 0x81;  //   ... unless these flags are set
 inline constexpr std::uintptr_t kNameWarpDistanceCache  = 0x1459C5278;  // FName BattleTeleportNavDistanceChangeCharacter

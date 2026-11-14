@@ -1,6 +1,7 @@
 #include "battle/arena_warp.h"
 
 #include "battle/arena_warp_rules.h"
+#include "battle/member_state.h"
 #include "control/registry.h"
 #include "engine_facts.h"
 #include "platform/guarded.h"
@@ -93,24 +94,23 @@ const wchar_t* Refusal(void* battleSystem, void* member) noexcept
     {
         return L"a push-button event (a switch, a lever, a terminal) holds the party";
     }
-    std::uint8_t  noRecovery = 1, action = 0, flags = 0;
+    std::uint8_t  noRecovery = 1;
     std::uint32_t ready = 0;
     if (!Read(static_cast<const std::uint8_t*>(battleSystem) + facts::kBattleNoRecovery, noRecovery) || noRecovery != 0 ||
         !Read(static_cast<const std::uint8_t*>(battleSystem) + facts::kBattleRecoveryReady, ready) || ready == 0)
     {
         return L"this battle brings no member back";
     }
-    const auto* component = players::actor_fields::BattleComponent(member);
-    if (component == nullptr || !Read(component + facts::kBattleCompActionState, action) ||
-        !Read(component + facts::kBattleCompFlags, flags))
+    const auto state = member_state::ActionState(member);
+    if (!state)
     {
         return L"its battle state is unread";
     }
-    if (action == facts::kBattleActionKo)
+    if (*state == facts::kBattleCompStateKnockedOut)
     {
         return L"it is down (the game brings it in when revived)";
     }
-    if (action == facts::kBattleActionLocked && (flags & facts::kBattleCompMayLeave) == 0)
+    if (member_state::InLockedAction(member))
     {
         return L"it is in the middle of an action";
     }

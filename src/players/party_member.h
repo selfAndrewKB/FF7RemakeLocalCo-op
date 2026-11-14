@@ -24,7 +24,9 @@
 // Seat-indexed (seat 1 = player 2); game thread only; every read guarded (a reload tears the party down under them).
 
 #include "players/field_hold.h"
+#include "players/party_rank_rules.h"
 
+#include <array>
 #include <cstdint>
 #include <string>
 
@@ -123,6 +125,9 @@ void SetRank(int seat, int rank) noexcept;
 /// How many ranks the party has now: the rows past the field leader that are neither battle support nor player 1's
 /// (player 1's counts while player 1 is away from the field leader, as Choose counts it). 0 when unread.
 int Ranks(void* playerOneController) noexcept;
+/// The character type each rank gives now (`out[r - 1]`, the field leader's for a rank whose row is player 1's, as Choose
+/// gives it), and the count of ranks filled (party_rank_rules::RanksOf; 0 when unread).
+int RankTypes(void* playerOneController, std::array<std::uint8_t, party_rank_rules::kMaxRanks>& out) noexcept;
 
 /// The actor in seat `seat`'s row whatever its state (null without a row or an actor).
 void* RowActor(int seat, void* playerOneController, std::uint8_t standIn) noexcept;

@@ -39,6 +39,7 @@
 #include "battle/seat_toad.h"
 #include "battle/targeting.h"
 #include "battle/lock_camera.h"
+#include "battle/member_state.h"
 #include "world/catch_up_move.h"
 #include "world/push_events.h"
 #include "world/run_catch_up.h"
@@ -620,6 +621,61 @@ std::uint32_t Session::RanksHeldBesides(int index) const noexcept
     return held;
 }
 
+void Session::KeepCharacters() noexcept
+{
+    std::array<std::uint8_t, party_rank_rules::kMaxRanks> rankTypes{};
+    const int count = party_member::RankTypes(PlayerOneController(), rankTypes);
+    if (count == rankCountSeen_ && rankTypes == rankTypesSeen_)
+    {
+        return;  // the same characters by rank: no member changed
+    }
+    rankCountSeen_ = count;
+    rankTypesSeen_ = rankTypes;
+    if (count < 1)
+    {
+        return;  // no row past player 1's to keep anyone on: the ranks wait as they are
+    }
+    std::array<party_rank_rules::Keeper, kSeatsBuilt> keepers{};
+    std::array<int, kSeatsBuilt>                      seatOf{};
+    int                                               n = 0;
+    for (int index = 1; index <= kSeatsBuilt; ++index)
+    {
+        const Seat& seat = seats_[index];
+        if (!ClaimsRank(seat))
+        {
+            continue;
+        }
+        // A stand-in plays player 1's former character, not its row's: it keeps its rank if no one else takes it.
+        const bool own = seat.standIn == facts::kPlayerTypeNone;
+        keepers[static_cast<std::size_t>(n)] = {.type  = own ? seat.lastType : facts::kPlayerTypeNone,
+                                                .rank  = party_member::Rank(index),
+                                                .plays = own && party_seat::Member(index) != nullptr};
+        seatOf[static_cast<std::size_t>(n)] = index;
+        ++n;
+    }
+    party_rank_rules::KeepCharacters(keepers.data(), n, rankTypes.data(), count);
+    for (int k = 0; k < n; ++k)
+    {
+        const int index = seatOf[static_cast<std::size_t>(k)];
+        const int was   = party_member::Rank(index);
+        const int rank  = keepers[static_cast<std::size_t>(k)].rank;
+        if (rank == was)
+        {
+            continue;
+        }
+        const Seat& seat = seats_[index];
+        party_member::SetRank(index, rank);
+        platform::Log(L"the party's members changed: {} moves from rank {} to rank {} of {} in the party order ({})", seat.Name(), was,
+                      rank, count,
+                      rank <= count && rankTypes[static_cast<std::size_t>(rank - 1)] == seat.lastType
+                          ? (party_seat::Member(index) != nullptr ? L"it keeps the character it plays"
+                                                                  : L"the character it last played is back")
+                          : seat.lastType == facts::kPlayerTypeNone || seat.standIn != facts::kPlayerTypeNone
+                              ? L"it keeps no character of its own: its place went to another player's"
+                              : L"its character is not in the party: its place went to another player's");
+    }
+}
+
 void Session::SettleRank(Seat& seat, void* playerOneController) noexcept
 {
     const int count = party_member::Ranks(playerOneController);
@@ -704,9 +760,9 @@ std::uint32_t Session::FreeRanks(int index, void* playerOneController) const noe
 
 bool Session::StepTarget(int index, int dir, int& next, int& holder, int& count) const noexcept
 {
-    // In the field only: a swap in a fight is not supported. A step onto another player's rank trades with that player,
-    // whose member must be free to give back too (not handed to its AI): a trade under a hold would move the hold's return.
-    if (!PlaysMember(index) || field_root::InBattle())
+    // A step onto another player's rank trades with that player, whose member must be free to give back too (not handed
+    // to its AI): a trade under a hold would move the hold's return.
+    if (!PlaysMember(index))
     {
         return false;
     }
@@ -719,6 +775,12 @@ bool Session::StepTarget(int index, int dir, int& next, int& holder, int& count)
         return false;
     }
     holder = SeatHoldingRank(next, index);
+    // In a fight only a trade between two players (a member no player plays is the own d-pad switch's, battle/party_switch.h),
+    // through the same give-back and take a story party change makes there.
+    if (field_root::InBattle())
+    {
+        return holder != 0 && TradesInFight(index) && TradesInFight(holder);
+    }
     // Neither member mid-action (a ladder, a crawl): given back inside one, its rest would run as the other player's
     // and stop where it stands.
     if (world::catch_up_move::FieldActionUnderway(RowActor(index)))
@@ -732,6 +794,15 @@ bool Session::StepTarget(int index, int dir, int& next, int& holder, int& count)
     // A rank no player plays now (no one's, or a waiting player's): only onto a member a join would take now. A step onto
     // one that is not would give the player's own member back and leave the player out until that one is free.
     return RankFree(index, next, playerOne);
+}
+
+bool Session::TradesInFight(int index) const noexcept
+{
+    // Its own row's member (not a member its own switch took: the trade would move the ranks under that switch), standing,
+    // and free to leave as the game's own leader switch is: never mid-action, so no attack or spell is cut off.
+    void* const member = party_seat::Member(index);
+    return PlaysMember(index) && !seats_[index].ownSwitch && member != nullptr &&
+           !battle::member_state::KnockedOut(member, true) && !battle::member_state::InLockedAction(member);
 }
 
 bool Session::CanStepMember(int index) const noexcept
@@ -1035,6 +1106,10 @@ try
     platform::Log(L"{} plays member type {} (row {} of the party order){}", seat.Name(), choice.type, choice.ordinal,
                   seat.waitLogged == 0 ? L"" : std::format(L", {} ticks after it began to wait for one", ticks_ - seat.awaitSince));
     seat.waitLogged = 0;
+    if (seat.standIn == facts::kPlayerTypeNone)
+    {
+        seat.lastType = choice.type;  // its own row's character: the one it keeps when the party's members change
+    }
     StartSeatCamera(seat, playerOne, seatController, choice.member);
     if (party_member::JoinsThroughHold(choice.wait))
     {
@@ -1456,6 +1531,7 @@ void Session::OnStreamFinishing(void* self) noexcept
 void Session::OnStreamFinished(void* self) noexcept
 {
     auto* session = static_cast<Session*>(self);
+    session->KeepCharacters();  // before any seat follows its row: a row shift alone moves no player's character
     for (int index = 1; index <= kSeatsBuilt; ++index)
     {
         Seat& seat   = session->seats_[index];

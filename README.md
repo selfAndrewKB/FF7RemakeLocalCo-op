@@ -343,8 +343,8 @@ src/
     party_events            The game's party funnels, heard by the session (research/RE-slot-member.md)
     party_member            Which deployed party member a further player plays, and when it is the player's to take
                             (research/RE-slot-member.md)
-    party_rank_rules.h      Which party member each further player plays, as a place in the game's party order
-                            (players/party_member; the a player window's arrows, players/player_window)
+    party_rank_rules.h      Which party member each of players 2 and 3 plays, as a place in the game's party order
+                            (players/party_member; a player window's arrows, players/player_window)
     party_seat              A further player's controller takes a party member through the game's own leader funnel, and
                             gives it back
     player_trigger          Each seat's own PlayerTrigger: a copy of the game's one placed trigger actor

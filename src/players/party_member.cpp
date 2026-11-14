@@ -139,6 +139,13 @@ FreeRows FreeRowsOf(const Party& party) noexcept
     return rows;
 }
 
+/// The formation ordinal rank `rank` (1..rows.count) gives: its row, or the field leader's (`anchor`) when that row is
+/// player 1's character now.
+std::int32_t RowOfRank(const FreeRows& rows, int rank, std::int32_t anchor) noexcept
+{
+    return rows.playerOnes[rank - 1] ? anchor : rows.ordinal[rank - 1];
+}
+
 /// Each seat's rank (party_rank_rules.h); [0] unused. Game thread.
 std::array<int, kSeatSlots> g_rank{0, 1, 2};
 
@@ -352,12 +359,8 @@ Choice ChooseAt(int seat, int rank, void* playerOneController, void* taker, bool
     bool           toField = false;
     if (target < 0 && rank >= 1 && rank <= rows.count)
     {
-        target  = rows.ordinal[rank - 1];
+        target  = RowOfRank(rows, rank, anchor);  // the seat's row player 1's now: player 1's former character instead
         toField = rows.playerOnes[rank - 1];
-    }
-    if (toField)
-    {
-        target = anchor;  // the seat's row is player 1's now: player 1's former character instead
     }
     if (target >= 0)
     {
@@ -425,6 +428,23 @@ int Ranks(void* playerOneController) noexcept
 {
     Party party;
     return g_getPlayerActor != nullptr && ReadParty(playerOneController, party) ? FreeRowsOf(party).count : 0;
+}
+
+int RankTypes(void* playerOneController, std::array<std::uint8_t, party_rank_rules::kMaxRanks>& out) noexcept
+{
+    Party party;
+    if (g_getPlayerActor == nullptr || !ReadParty(playerOneController, party))
+    {
+        return 0;
+    }
+    const FreeRows     rows   = FreeRowsOf(party);
+    const int          count  = party_rank_rules::RanksOf(rows.count);
+    const std::int32_t anchor = Anchor(party);
+    for (int rank = 1; rank <= count; ++rank)
+    {
+        out[static_cast<std::size_t>(rank - 1)] = party.types[RowOfRank(rows, rank, anchor)];
+    }
+    return count;
 }
 
 void* RowActor(int seat, void* playerOneController, std::uint8_t standIn) noexcept

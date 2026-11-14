@@ -68,6 +68,47 @@ void AShrunkParty()
     EXPECT(Step(0, 1, 0, 2) == 1);
 }
 
+constexpr std::uint8_t kBarret = 1, kTifa = 2, kAerith = 3, kNone = 9;
+
+/// The party's members change: each player keeps the character it plays, or takes back the one it last played.
+void KeepingCharacters()
+{
+    // Cloud alone; player 2 (last Barret) and player 3 (last Tifa) wait on ranks 1 and 2. Tifa joins: player 3 takes her.
+    Keeper alone[2] = {{kBarret, 1, false}, {kTifa, 2, false}};
+    const std::uint8_t tifaOnly[2] = {kTifa, kNone};
+    KeepCharacters(alone, 2, tifaOnly, 1);
+    EXPECT(alone[0].rank == 2 && alone[1].rank == 1);
+    // Barret joins ahead of her in the formation: player 3 keeps Tifa, now rank 2; player 2 takes Barret back.
+    Keeper joined[2] = {{kBarret, 2, false}, {kTifa, 1, true}};
+    const std::uint8_t both[2] = {kBarret, kTifa};
+    KeepCharacters(joined, 2, both, 2);
+    EXPECT(joined[0].rank == 1 && joined[1].rank == 2);
+    // Player 2 plays Tifa, player 3 has no last character: Barret joins, player 2 keeps Tifa and player 3 gets Barret's rank.
+    Keeper fresh[2] = {{kTifa, 1, true}, {kNone, 2, false}};
+    KeepCharacters(fresh, 2, both, 2);
+    EXPECT(fresh[0].rank == 2 && fresh[1].rank == 1);
+    // Nothing moved: the ranks stay.
+    Keeper same[2] = {{kBarret, 1, true}, {kTifa, 2, true}};
+    KeepCharacters(same, 2, both, 2);
+    EXPECT(same[0].rank == 1 && same[1].rank == 2);
+    // A player playing goes before a waiting one that last played the same character.
+    Keeper contest[2] = {{kTifa, 2, false}, {kTifa, 1, true}};
+    KeepCharacters(contest, 2, both, 2);
+    EXPECT(contest[1].rank == 2 && contest[0].rank == 1);
+    // Barret leaves: player 3 keeps Tifa (now rank 1); player 2, whose character is gone, waits on rank 2.
+    Keeper left[2] = {{kBarret, 1, false}, {kTifa, 2, true}};
+    KeepCharacters(left, 2, tifaOnly, 1);
+    EXPECT(left[1].rank == 1 && left[0].rank == 2);
+    // A party with no row past player 1's: nothing matches; distinct ranks stay.
+    Keeper solo[2] = {{kTifa, 1, false}, {kAerith, 2, false}};
+    KeepCharacters(solo, 2, tifaOnly, 0);
+    EXPECT(solo[0].rank == 1 && solo[1].rank == 2);
+    // One player.
+    Keeper one[1] = {{kTifa, 1, true}};
+    KeepCharacters(one, 1, both, 2);
+    EXPECT(one[0].rank == 2);
+}
+
 }  // namespace
 
 int main()
@@ -76,6 +117,7 @@ int main()
     AJoinTakesAFreeMember();
     TheArrows();
     AShrunkParty();
+    KeepingCharacters();
     if (g_failures != 0)
     {
         std::printf("party_rank_rules: %d failure(s)\n", g_failures);

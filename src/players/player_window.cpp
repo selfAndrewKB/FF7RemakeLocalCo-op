@@ -446,7 +446,8 @@ void WindowInput(const Frame& frame, const Event& e, int seat)
             }
             else
             {
-                platform::LogDebug(L"player window: player {}'s step changes nothing (no other party member free, in battle, "
+                platform::LogDebug(L"player window: player {}'s step changes nothing (no other party member free; in a fight, no "
+                                   L"other player to trade with whose character and theirs are both standing and between actions; "
                                    L"or standing in for player 1's former character)",
                                    seat + 1);
             }
