@@ -204,21 +204,18 @@ void SizeOwned(Owned& owned, const std::int32_t (&weak)[2]) noexcept
     if (owned.sized[0] == weak[0] && owned.sized[1] == weak[1] && owned.sizedTo == size)
     {
         float now = size;
-        if (owned.image == nullptr || !Read(static_cast<std::uint8_t*>(owned.image) + facts::kImageSetSize + sizeof(float), now) ||
-            now == size)
+        if (owned.image == nullptr || !players::weak_object::Live(owned.image) ||
+            !Read(static_cast<std::uint8_t*>(owned.image) + facts::kImageSetSize + sizeof(float), now) || now == size)
         {
-            return;
+            return;  // the size holds, or nothing to read back: a failed search is not repeated for this widget, and a dead
+                     // image set goes with its widget, whose successor has another weak pair
         }
     }
     owned.sized   = {weak[0], weak[1]};
     owned.sizedTo = size;
     owned.image   = nullptr;
-    void* const   widget = players::weak_object::ObjectOf(weak);
-    void* const   tree   = widget != nullptr ? players::actor_fields::WidgetTree(widget) : nullptr;
-    void*         image  = nullptr;
-    std::uint64_t name   = 0;
-    if (tree == nullptr || !Read(g_iconName, name) || !platform::CallGuarded(g_findWidget, image, tree, static_cast<const void*>(&name)) ||
-        image == nullptr)
+    void* const image = players::actor_fields::ChildByName(players::weak_object::ObjectOf(weak), g_iconName, g_findWidget);
+    if (image == nullptr)
     {
         platform::LogDebug(L"field icons: player {}'s own marker: its diamond's image set was not found; the game's size stays",
                            owned.seat + 1);

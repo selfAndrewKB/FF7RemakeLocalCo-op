@@ -21,10 +21,12 @@
 #include "platform/log.h"
 #include "platform/sparse_array.h"
 #include "platform/verified_code.h"
+#include "players/actor_fields.h"
 #include "players/game_globals.h"
 #include "players/scopes.h"
 #include "players/seat_objects.h"
 #include "players/seats.h"
+#include "players/weak_object.h"
 
 #include <array>
 #include <cstdint>
@@ -70,6 +72,7 @@ struct alignas(16) LinearColor
 };
 using SetColorFn    = void (*)(void* widget, const LinearColor* color);
 using SetIconScaleFn = void (*)(void* icon, U64 scale);  // FVector2D by value
+using UpdateTransformFn = void (*)(void* widget);       // UWidget::UpdateRenderTransform
 
 struct Live
 {
@@ -97,6 +100,9 @@ struct Live
     SetColorFn    setColor     = nullptr;
     SetIconScaleFn setIconScale = nullptr;  // a pin's per-icon scale (optional: the game's scale without it)
     const U64*    mapIconName  = nullptr;   // the Slate type name the game checks before touching a pin
+    facts::WidgetTreeFindFn findWidget = nullptr;  // the compass mark: its image set by name (optional)
+    UpdateTransformFn updateTransform  = nullptr;
+    const U64*    compassImageName = nullptr;  // the game's name global of the compass icon's image set
     std::uintptr_t bannerStart = 0, bannerEnd = 0;
     void**        slot29       = nullptr;  // &EndUISystem[29]
     void**        slot35       = nullptr;  // &EndUISystem[35] (the banner manager)
@@ -141,6 +147,10 @@ struct Seat
     U64            pinKey      = 0;        // its own marker's key, scaled after each of its ticks (SetPinScale)
     float          pinScale    = 1.0f;
     bool           pinTold     = false;    // the scale's first outcome for this key is logged
+    std::array<std::int32_t, 2> markWeak  = {-1, 0};  // the compass mark's widget (weak pair) its image set was found for
+    void*          markImage   = nullptr;  // that image set
+    bool           markTold    = false;    // the compass mark's first outcome for this key is logged
+    bool           markMissTold = false;   // and a failed search of its image set
 };
 std::array<Seat, kMaxPlayers> g_seats;  // by seat; [0] holds player 1's octagon's paint interface only
 
@@ -365,6 +375,24 @@ private:
 };
 
 // --- Redirected calls ------------------------------------------------------------------------------------------------
+/// The pointer a keyed store holds for `key`: the store's live elements (an FName key first) walked by its allocation
+/// bits, the pointer read at `valueOffset` in the matching one. Null when no element has the key.
+void* StoreValue(void* store, std::uint32_t elementBytes, U64 key, std::uint32_t valueOffset) noexcept
+{
+    void* value = nullptr;
+    platform::ForEachSparseElement(reinterpret_cast<std::uintptr_t>(store), elementBytes, platform::kSmallSetMaxBits,
+                                   [&](std::uintptr_t element) {
+                                       U64 held = 0;
+                                       if (Read(reinterpret_cast<const void*>(element), held) && held == key)
+                                       {
+                                           value = platform::ReadPointer(reinterpret_cast<const void*>(element), valueOffset);
+                                           return false;
+                                       }
+                                       return true;
+                                   });
+    return value;
+}
+
 /// The seat's own marker's pin at its scale, right after the seat's tick, which writes the game's per-icon scale every
 /// frame: the game's own setter, on the store element of the marker's key, the pin type-checked as the game checks it.
 void ScalePin(int seat, Seat& s) noexcept
@@ -373,17 +401,7 @@ void ScalePin(int seat, Seat& s) noexcept
     {
         return;
     }
-    void* pin = nullptr;
-    platform::ForEachSparseElement(reinterpret_cast<std::uintptr_t>(At(s.manager, f::kNaviIconStore)), f::kNaviIconBytes,
-                                   platform::kSmallSetMaxBits, [&](std::uintptr_t element) {
-                                       U64 key = 0;
-                                       if (Read(reinterpret_cast<const void*>(element), key) && key == s.pinKey)
-                                       {
-                                           pin = platform::ReadPointer(reinterpret_cast<const void*>(element), f::kNaviIconPin);
-                                           return false;
-                                       }
-                                       return true;
-                                   });
+    void* const pin = StoreValue(At(s.manager, f::kNaviIconStore), f::kNaviIconBytes, s.pinKey, f::kNaviIconPin);
     U64 type = 0, expected = 0;
     if (pin == nullptr || !Read(g.mapIconName, expected) || !Read(At(pin, f::kSlateTypeName), type) || type != expected)
     {
@@ -396,6 +414,67 @@ void ScalePin(int seat, Seat& s) noexcept
         platform::LogDebug(L"HUD minimap: {}'s own marker's pin {}", SeatName(seat),
                            scaled ? std::format(L"drawn at {:.1f} times the game's scale", s.pinScale)
                                   : std::wstring(L"could not be scaled (the setter faulted); the game's scale stays"));
+    }
+}
+
+/// The seat's own marker's compass mark at its scale, right after the seat's tick, whose compass tick (its last step)
+/// writes the game's scale on the mark's image set every frame: the seat's scale written in its place through the game's
+/// own render transform push, as the pin's is (a product of the two could not tell the game's write from the mod's on a
+/// frame the compass skipped the mark). A mark already at the seat's scale is left as it is.
+void ScaleCompassMark(int seat, Seat& s) noexcept
+{
+    if (s.pinKey == 0 || s.pinScale == 1.0f || g.findWidget == nullptr || g.updateTransform == nullptr || g.compassImageName == nullptr)
+    {
+        return;
+    }
+    void* const  compass = platform::ReadPointer(s.manager, f::kNaviManagerCompass);
+    std::uint8_t shown   = 0;
+    if (compass == nullptr || !Read(At(compass, f::kCompassShown), shown) || shown == 0)
+    {
+        return;  // the minimap mode, or no compass
+    }
+    void* const  entry   = StoreValue(At(compass, f::kCompassIcons), f::kCompassIconBytes, s.pinKey, f::kCompassIconEntry);
+    std::int32_t weak[2] = {-1, 0};
+    if (entry == nullptr || !platform::CopyGuarded(weak, entry, sizeof(weak)) || weak[0] < 0)
+    {
+        return;  // not made yet (the compass makes it the first frame the mark is eligible)
+    }
+    if (s.markImage != nullptr && (weak[0] != s.markWeak[0] || weak[1] != s.markWeak[1] || !players::weak_object::Live(s.markImage)))
+    {
+        s.markWeak  = {-1, 0};  // another mark widget, or this one's image set gone: searched again below
+        s.markImage = nullptr;
+    }
+    if (s.markImage == nullptr)
+    {
+        void* const image = players::actor_fields::ChildByName(players::weak_object::ObjectOf(weak), g.compassImageName, g.findWidget);
+        if (image == nullptr)
+        {
+            if (!s.markMissTold)
+            {
+                s.markMissTold = true;
+                platform::LogDebug(L"HUD minimap: {}'s own marker's compass mark: its image set was not found (searched again "
+                                   L"each frame); the game's scale stays",
+                                   SeatName(seat));
+            }
+            return;
+        }
+        s.markWeak  = {weak[0], weak[1]};
+        s.markImage = image;
+    }
+    const platform::GameVector2D wanted{s.pinScale, s.pinScale};
+    platform::GameVector2D       now;
+    if (!Read(At(s.markImage, f::kWidgetRenderScale), now) || (now.x == wanted.x && now.y == wanted.y))
+    {
+        return;
+    }
+    const bool scaled = platform::WriteGuarded(At(s.markImage, f::kWidgetRenderScale), &wanted, sizeof(wanted)) &&
+                        platform::CallGuarded(g.updateTransform, s.markImage);
+    if (!s.markTold)
+    {
+        s.markTold = true;
+        platform::LogDebug(L"HUD minimap: {}'s own marker's compass mark {}", SeatName(seat),
+                           scaled ? std::format(L"drawn at {:.1f} times the game's scale", s.pinScale)
+                                  : std::wstring(L"could not be scaled; the game's scale stays"));
     }
 }
 
@@ -437,6 +516,7 @@ void Tick29(void* manager, float deltaTime)
         else if (scope.Held())
         {
             ScalePin(seat, s);
+            ScaleCompassMark(seat, s);
         }
     }
 }
@@ -865,6 +945,9 @@ bool Install(const platform::GameImage& image) noexcept
     g.setColor       = reinterpret_cast<SetColorFn>(platform::FindFunction(image, f::kSetColorAndOpacity).value_or(0));
     g.setIconScale   = reinterpret_cast<SetIconScaleFn>(platform::FindFunction(image, f::kMapIconSetScale).value_or(0));
     g.mapIconName    = reinterpret_cast<const U64*>(at(f::kNameSEndMapIcon, sizeof(U64)));
+    g.findWidget     = reinterpret_cast<facts::WidgetTreeFindFn>(platform::FindFunction(image, f::kWidgetTreeFind).value_or(0));
+    g.updateTransform = reinterpret_cast<UpdateTransformFn>(platform::FindFunction(image, f::kWidgetUpdateRenderTransform).value_or(0));
+    g.compassImageName = reinterpret_cast<const U64*>(at(f::kNameAllNutIconNaviMap, sizeof(U64)));
     g.bannerStart    = at(f::kNaviBannerStart);
     g.bannerEnd      = at(f::kNaviBannerEnd);
     g.slot29         = reinterpret_cast<void**>(players::game_globals::UiSlotAddress(f::kNaviSlot));
@@ -1221,7 +1304,9 @@ void SetPinScale(int seat, std::uint64_t key, float scale) noexcept
     Seat& s = g_seats[static_cast<std::size_t>(seat)];
     if (s.pinKey != key || s.pinScale != scale)
     {
-        s.pinTold = false;  // the new key or scale's first outcome is logged
+        s.pinTold  = false;  // the new key or scale's first outcome is logged, for the pin and the compass mark
+        s.markTold = false;
+        s.markMissTold = false;
     }
     s.pinKey   = key;
     s.pinScale = scale;

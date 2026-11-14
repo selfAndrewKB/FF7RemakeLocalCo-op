@@ -1,9 +1,10 @@
 #pragma once
 
 // The fields of the game's actors that several modules read, one reader each: a character's components, mesh, player
-// slot and tags, an actor's root component, a component's owner, a controller's camera manager and leader. Each is one
-// guarded read (null for a null object or a faulting read), as the modules made before; any thread may call them, and
-// what they return belongs to the thread that owns the object.
+// slot and tags, an actor's root component, a component's owner, a controller's camera manager and leader. Also a user
+// widget's tree and a named child found in it by the game's own search. Each is one guarded read or call (null for a
+// null object or a fault); any thread may call the reads, the child search only the game thread, and what they return
+// belongs to the thread that owns the object.
 
 #include "engine_facts.h"
 #include "platform/guarded.h"
@@ -82,6 +83,21 @@ inline void* LeaderCharacter(const void* controller) noexcept
 inline void* WidgetTree(const void* userWidget) noexcept
 {
     return platform::ReadPointer(userWidget, facts::kUserWidgetTree);
+}
+
+/// A user widget's named child, found by the game's own tree search with the name the game's name global holds, or null
+/// (no widget, no tree, a faulting read or call, or no such child).
+inline void* ChildByName(const void* userWidget, const std::uint64_t* nameGlobal, facts::WidgetTreeFindFn find) noexcept
+{
+    void* const   tree  = userWidget != nullptr ? WidgetTree(userWidget) : nullptr;
+    std::uint64_t name  = 0;
+    void*         child = nullptr;
+    if (tree == nullptr || find == nullptr || nameGlobal == nullptr || !platform::CopyGuarded(&name, nameGlobal, sizeof(name)) ||
+        !platform::CallGuarded(find, child, tree, static_cast<const void*>(&name)))
+    {
+        return nullptr;
+    }
+    return child;
 }
 
 }  // namespace lss::players::actor_fields

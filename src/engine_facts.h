@@ -806,6 +806,7 @@ inline constexpr std::uint32_t kBarEntryPoint       = 0xB4;   // p: the cached s
 inline constexpr std::uint32_t kBarEntryEase        = 0x110;  // p: the displayed target's y-ease toward -60
 inline constexpr std::uint32_t kBarStatusSlotSize   = 0x20;   // a status icon slot: +0 weak widget
 inline constexpr std::uint32_t kWidgetRenderTranslationY = 0x94;  // UWidget::RenderTransform.Translation.Y
+inline constexpr std::uint32_t kWidgetRenderScale        = 0x98;  // UWidget::RenderTransform.Scale (x, y)
 inline constexpr std::uint32_t kSourceCharacterSlot = 0x20;   // source->vt: the character (AEndCharacter) of a bar's source
 inline constexpr std::uint32_t kSourceIsPartSlot    = 0x68;   // source->vt: a part source (no status panel, no bonus icon)
 inline constexpr std::uint32_t kCharacterUnit       = 0xCB0;  // AEndCharacter: its battle unit
@@ -922,6 +923,15 @@ inline constexpr std::uint32_t  kNaviManagerFlags      = 0x180;  // hidden, visi
 inline constexpr std::uint32_t  kNaviManagerMapData    = 0x1B4;  // the map data (a pointer at a 4-aligned offset)
 inline constexpr std::uint32_t  kNaviManagerModes      = 0x258;  // navi-map mode, compass mode, pending
 inline constexpr std::uint32_t  kNaviManagerCompass    = 0x260;  // the compass object (+0: weak Compass_C)
+/// The compass object (research/RE-lead-marker-size.md): its icon map at +0x08 (a TMap whose sparse array holds 32-byte
+/// elements, the navi store's key at +0 and the entry at +8; the entry's weak Icon_NaviMap_C at +0), and its shown
+/// byte. The compass tick, the manager tick's last call, writes the icon image set's (`All_Nut_Icon_NaviMap`, found by
+/// the game's name global) render scale every frame. [CONFIRMED code]
+inline constexpr std::uint32_t  kCompassIcons          = 0x08;
+inline constexpr std::uint32_t  kCompassIconBytes      = 0x20;
+inline constexpr std::uint32_t  kCompassIconEntry      = 0x08;
+inline constexpr std::uint32_t  kCompassShown          = 0x58;
+inline constexpr std::uintptr_t kNameAllNutIconNaviMap = 0x145856560;  // FName "All_Nut_Icon_NaviMap"
 // Read only for the `hud.minimap` description:
 inline constexpr std::uint32_t  kNaviManagerPlayerIcon = 0x20;   // weak Icon_Player
 inline constexpr std::uint32_t  kNaviManagerAnimation  = 0x18C;  // int
