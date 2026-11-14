@@ -84,6 +84,10 @@ bool AddIconTo(int seat, std::uint64_t key, std::uint8_t kind, const float (&at)
 /// The game's RemoveIcon on one instance only (the widget and the entry go at once; a missing key is a no-op:
 /// RE-lead-mark-check.md).
 bool RemoveIconFrom(int seat, std::uint64_t key) noexcept;
+/// Game thread: the icon `key` on seat `seat`'s own instance is drawn `scale` times the game's per-icon scale, through
+/// the game's setter after each of the seat's ticks (the tick writes the game's scale every frame). Key 0 or scale 1.0
+/// stops it. One key per seat (its own marker); player 1's icons are untouched.
+void SetPinScale(int seat, std::uint64_t key, float scale) noexcept;
 /// The field ends and resets heard: each empties every instance's icons, so an icon added before is added again.
 std::uint32_t IconResets() noexcept;
 

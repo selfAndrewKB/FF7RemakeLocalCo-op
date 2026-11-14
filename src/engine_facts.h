@@ -847,6 +847,17 @@ inline constexpr std::uint32_t kFieldIconSlot = 51;  // EndUISystem[51]: +0 the 
 inline constexpr std::uint32_t kFieldIconMapData = 0x10, kFieldIconMapElement = 24, kFieldIconMapElementEntry = 8;
 inline constexpr std::uint32_t kFieldIconMapElementKey = 0;  // the navi icon's FName, slot 29's key (RE-field-icon-placement.md §2.2)
 inline constexpr std::uint32_t kFieldIconEntryHasSlot = 28, kFieldIconEntryAlpha = 32;  // the entry's has-slot byte; its alpha, the only state the placement carries
+/// The diamond's image set (FieldQuestIcon_C's `Ims_QuestIcon`, a UEndImageSet; research/RE-lead-marker-size.md): its
+/// UMG Size (+0x134 x, +0x138 y; 24 x 24 at the widget's creation, read every frame by the placement and written by nothing
+/// per frame), its Slate widget (+0x150), and the Slate size setter the creation calls (slate, FVector2D by value), found
+/// in the widget's tree by the game's own name global. [CONFIRMED code]
+inline constexpr std::uint32_t  kImageSetSize        = 0x134;
+inline constexpr std::uint32_t  kImageSetSlate       = 0x150;
+inline constexpr float          kQuestIconSize       = 24.0f;
+inline constexpr std::uintptr_t kNameImsQuestIcon    = 0x145856F00;  // FName "Ims_QuestIcon"
+inline constexpr std::array<std::uint8_t, 16> kImageSetSetSizeEntry{
+    0x48, 0x83, 0xEC, 0x28, 0x66, 0x48, 0x0F, 0x6E, 0xCA, 0x0F, 0x2E, 0x89, 0x08, 0x04, 0x00, 0x00};
+inline constexpr platform::FunctionFact kImageSetSetSize{L"SEndImageSet__SetImageSize", 0x1414F0060, kImageSetSetSizeEntry};
 inline constexpr std::uint32_t kCanvasChildren   = 0x160;  // SEndCanvas vtable: its children (+0 vtable: count; +8 slot pointers)
 inline constexpr std::uint32_t kCanvasSlotWidget = 0x08, kCanvasSlotOffset = 0x20;  // a slot's SWidget, its Offset {x, y, w, h}
 
@@ -893,6 +904,18 @@ inline constexpr std::array<std::uint8_t, 16> kSetColorAndOpacityEntry{
 inline constexpr platform::FunctionFact kSetColorAndOpacity{L"UUserWidget::SetColorAndOpacity", 0x1428F1C20,
                                                             kSetColorAndOpacityEntry};
 inline constexpr std::uintptr_t kCharacterByPlayerType = 0x1413B4C40;  // (u8 type): the party's character of that type; an RE fact kept, with no user here (the scopes carry the member type)
+/// The manager's icon store (a TSparseArray of 152-byte elements, research/RE-lead-marker.md): the key at +0, the
+/// minimap pin (a raw Slate SEndMapIcon) at +0x10. The game type-checks a pin by its Slate type name (+0x1D0) against a
+/// name global, then sets its per-icon scale (icon, FVector2D by value), which the navi tick writes again every frame
+/// (research/RE-lead-marker-size.md). [CONFIRMED code]
+inline constexpr std::uint32_t  kNaviIconStore         = 0xD8;
+inline constexpr std::uint32_t  kNaviIconBytes         = 0x98;
+inline constexpr std::uint32_t  kNaviIconPin           = 0x10;
+inline constexpr std::uint32_t  kSlateTypeName         = 0x1D0;
+inline constexpr std::uintptr_t kNameSEndMapIcon       = 0x145857D20;  // FName "SEndMapIcon"
+inline constexpr std::array<std::uint8_t, 16> kMapIconSetScaleEntry{
+    0x48, 0x8B, 0xC4, 0x48, 0x89, 0x58, 0x18, 0x48, 0x89, 0x70, 0x20, 0x57, 0x48, 0x81, 0xEC, 0xA0};
+inline constexpr platform::FunctionFact kMapIconSetScale{L"SEndMapIcon_SetIconScale", 0x1414F5D70, kMapIconSetScaleEntry};
 inline constexpr std::uint32_t  kNaviManagerRoot       = 0x08;   // weak NaviMap_C
 inline constexpr std::uint32_t  kNaviManagerOctagon    = 0x18;   // weak Nav_Map (UEndNaviMapOctagon)
 inline constexpr std::uint32_t  kNaviManagerFlags      = 0x180;  // hidden, visible, enabled, auto-rotate; +0x188 zoom
@@ -3513,6 +3536,7 @@ inline constexpr platform::FunctionFact kIntArrayGrow{L"TArrayInt32_ResizeGrow_c
 inline constexpr std::array<std::uint8_t, 16> kWidgetTreeFindEntry{
     0x4C, 0x8B, 0xDC, 0x53, 0x48, 0x83, 0xEC, 0x40, 0x49, 0x8D, 0x43, 0x08, 0x49, 0xC7, 0x43, 0x08};
 inline constexpr platform::FunctionFact kWidgetTreeFind{L"UWidgetTree__FindWidget", 0x1428FD470, kWidgetTreeFindEntry};
+using WidgetTreeFindFn = void* (*)(void* tree, const void* name);  // kWidgetTreeFind's signature
 /// void(UEndCanvasPanelSlot*, FVector2D by value).
 inline constexpr std::array<std::uint8_t, 16> kCanvasSlotSetSizeEntry{
     0x48, 0x81, 0xEC, 0xA8, 0x00, 0x00, 0x00, 0x48, 0x8B, 0x05, 0x3A, 0xA5, 0x04, 0x04, 0x48, 0x33};

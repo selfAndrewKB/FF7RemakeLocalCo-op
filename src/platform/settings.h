@@ -237,6 +237,15 @@ inline constexpr Option kLeadHolder{  // players/lead_gate
     true, L"Leading the Way", kLeadHolderLabels,
     L"When the story has another player's character lead the way. AI Guides: its AI walks there and the player watches. "
     L"Player Keeps: the player walks it to the marked stop."};
+inline constexpr std::array<const wchar_t*, 5> kLeadMarkerSizeWords{L"1.0", L"1.5", L"2.0", L"2.5", L"3.0"};
+inline constexpr std::array<const wchar_t*, 5> kLeadMarkerSizeLabels{L"Game's Size", L"1.5x", L"2x", L"2.5x", L"3x"};
+inline constexpr Option kLeadMarkerSize{  // hud/lead_mark
+    L"Experimental", L"lead-marker-size", kLeadMarkerSizeWords, L"2.0",
+    L"the size of a further player's own lead marker under lead-holder keeps, times the game's: its diamond in the field "
+    L"and its pin on that player's minimap (1.0 to 3.0); player 1's objective markers keep the game's size",
+    true, L"Lead Marker Size", kLeadMarkerSizeLabels,
+    L"How large the marked stop is in another player's view while they lead the way: the diamond in the field and the pin "
+    L"on their minimap. Player 1's markers keep the game's size."};
 inline constexpr Option kAreaLevels{  // world/area_levels
     L"Experimental", L"area-levels", kAreaLevelsWords, L"on",
     L"on: every player's area stays loaded and solid, not only player 1's, at the cost of more memory (each further "
@@ -266,7 +275,7 @@ inline constexpr Option kTalkFollow{  // world/talk_gather, players/session
 /// Every option, in the order the settings file lists them.
 inline constexpr std::array kOptions{&kMultiMonitor, &kMonitors,    &kColumnOrder,  &kTwoPlayerSplit, &kThreePlayerSplit, &kHorizontalFov,
                                      &kVerticalFov,  &kMenuSlow,    &kBattleWarps,  &kEnemyDamage,    &kEnemyHp,          &kBossHp,
-                                     &kEnemyStagger, &kExpGain,     &kApGain,       &kLeadHolder,     &kAreaLevels,       &kTalkGather,
+                                     &kEnemyStagger, &kExpGain,     &kApGain,       &kLeadHolder,     &kLeadMarkerSize,   &kAreaLevels,       &kTalkGather,
                                      &kTalkFollow};
 
 /// The option is a row of the table (Of and Why answer by the row).
@@ -280,7 +289,7 @@ consteval bool Listed(const Option& option)
 }
 static_assert(Listed(kMultiMonitor) && Listed(kMonitors) && Listed(kColumnOrder) && Listed(kTwoPlayerSplit) && Listed(kThreePlayerSplit) &&
                   Listed(kHorizontalFov) && Listed(kVerticalFov) && Listed(kMenuSlow) && Listed(kBattleWarps) && Listed(kEnemyDamage) && Listed(kEnemyHp) && Listed(kBossHp) &&
-                  Listed(kEnemyStagger) && Listed(kExpGain) && Listed(kApGain) && Listed(kLeadHolder) && Listed(kAreaLevels) &&
+                  Listed(kEnemyStagger) && Listed(kExpGain) && Listed(kApGain) && Listed(kLeadHolder) && Listed(kLeadMarkerSize) && Listed(kAreaLevels) &&
                   Listed(kTalkGather) && Listed(kTalkFollow),
               "every option is a row of kOptions");
 

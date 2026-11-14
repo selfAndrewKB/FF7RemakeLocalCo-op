@@ -77,9 +77,14 @@ void TableConsistent()
             open = option->section;
         }
     }
-    EXPECT(kOptions.size() == 19);
+    EXPECT(kOptions.size() == 20);
     EXPECT(kLeadHolder.experimental && std::wcscmp(kLeadHolder.fallback, L"guide") == 0);
     EXPECT(std::wcscmp(kLeadHolder.section, L"Experimental") == 0);
+    // The lead marker's size: experimental, twice the game's by default, a label per word.
+    EXPECT(kLeadMarkerSize.experimental && std::wcscmp(kLeadMarkerSize.section, L"Experimental") == 0);
+    EXPECT(std::wcscmp(kLeadMarkerSize.fallback, L"2.0") == 0);
+    EXPECT(kLeadMarkerSize.words.size() == kLeadMarkerSize.wordLabels.size());
+    EXPECT(Judge(kLeadMarkerSize, L"1.5").word == L"1.5" && Judge(kLeadMarkerSize, L"").word == L"2.0");
     // The two talk options: experimental, on by default (the behaviour without them), on|off words with their labels.
     for (const Option* talk : {&kTalkGather, &kTalkFollow})
     {

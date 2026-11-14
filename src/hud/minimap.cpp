@@ -15,9 +15,11 @@
 #include "platform/call_redirect.h"
 #include "platform/code_redirect.h"
 #include "platform/game_array.h"
+#include "platform/game_vectors.h"
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
+#include "platform/sparse_array.h"
 #include "platform/verified_code.h"
 #include "players/game_globals.h"
 #include "players/scopes.h"
@@ -67,6 +69,7 @@ struct alignas(16) LinearColor
     float r = 0.0f, g = 0.0f, b = 0.0f, a = 0.0f;
 };
 using SetColorFn    = void (*)(void* widget, const LinearColor* color);
+using SetIconScaleFn = void (*)(void* icon, U64 scale);  // FVector2D by value
 
 struct Live
 {
@@ -92,6 +95,8 @@ struct Live
     FindOrAddFn   findOrAdd    = nullptr;
     SubmitFn      submit       = nullptr;
     SetColorFn    setColor     = nullptr;
+    SetIconScaleFn setIconScale = nullptr;  // a pin's per-icon scale (optional: the game's scale without it)
+    const U64*    mapIconName  = nullptr;   // the Slate type name the game checks before touching a pin
     std::uintptr_t bannerStart = 0, bannerEnd = 0;
     void**        slot29       = nullptr;  // &EndUISystem[29]
     void**        slot35       = nullptr;  // &EndUISystem[35] (the banner manager)
@@ -133,6 +138,9 @@ struct Seat
     std::uint32_t  ticks       = 0;        // its manager ticked, since the last reading
     std::uint32_t  scopeFailed = 0;        // its contexts could not be held (no tick then), since the last reading
     bool           notHeldLogged = false;  // the "not updated" line is out; the recovery line follows it
+    U64            pinKey      = 0;        // its own marker's key, scaled after each of its ticks (SetPinScale)
+    float          pinScale    = 1.0f;
+    bool           pinTold     = false;    // the scale's first outcome for this key is logged
 };
 std::array<Seat, kMaxPlayers> g_seats;  // by seat; [0] holds player 1's octagon's paint interface only
 
@@ -357,6 +365,40 @@ private:
 };
 
 // --- Redirected calls ------------------------------------------------------------------------------------------------
+/// The seat's own marker's pin at its scale, right after the seat's tick, which writes the game's per-icon scale every
+/// frame: the game's own setter, on the store element of the marker's key, the pin type-checked as the game checks it.
+void ScalePin(int seat, Seat& s) noexcept
+{
+    if (s.pinKey == 0 || s.pinScale == 1.0f || g.setIconScale == nullptr || g.mapIconName == nullptr)
+    {
+        return;
+    }
+    void* pin = nullptr;
+    platform::ForEachSparseElement(reinterpret_cast<std::uintptr_t>(At(s.manager, f::kNaviIconStore)), f::kNaviIconBytes,
+                                   platform::kSmallSetMaxBits, [&](std::uintptr_t element) {
+                                       U64 key = 0;
+                                       if (Read(reinterpret_cast<const void*>(element), key) && key == s.pinKey)
+                                       {
+                                           pin = platform::ReadPointer(reinterpret_cast<const void*>(element), f::kNaviIconPin);
+                                           return false;
+                                       }
+                                       return true;
+                                   });
+    U64 type = 0, expected = 0;
+    if (pin == nullptr || !Read(g.mapIconName, expected) || !Read(At(pin, f::kSlateTypeName), type) || type != expected)
+    {
+        return;  // not made yet (the icon's widget comes with the seat's next tick), or not a pin
+    }
+    const bool scaled = platform::CallGuarded(g.setIconScale, pin, platform::PassedByValue({s.pinScale, s.pinScale}));
+    if (!s.pinTold)
+    {
+        s.pinTold = true;
+        platform::LogDebug(L"HUD minimap: {}'s own marker's pin {}", SeatName(seat),
+                           scaled ? std::format(L"drawn at {:.1f} times the game's scale", s.pinScale)
+                                  : std::wstring(L"could not be scaled (the setter faulted); the game's scale stays"));
+    }
+}
+
 void Tick29(void* manager, float deltaTime)
 {
     g.tick(manager, deltaTime);
@@ -391,6 +433,10 @@ void Tick29(void* manager, float deltaTime)
         {
             s.faulted = true;
             platform::Log(L"HUD minimap: {}'s navi map tick faulted; its minimap stops", SeatName(seat));
+        }
+        else if (scope.Held())
+        {
+            ScalePin(seat, s);
         }
     }
 }
@@ -817,6 +863,8 @@ bool Install(const platform::GameImage& image) noexcept
     g.findOrAdd      = reinterpret_cast<FindOrAddFn>(at(f::kFindOrAddLayerEntry));
     g.submit         = reinterpret_cast<SubmitFn>(platform::FindFunction(image, f::kSubmitLayerSlot).value_or(0));
     g.setColor       = reinterpret_cast<SetColorFn>(platform::FindFunction(image, f::kSetColorAndOpacity).value_or(0));
+    g.setIconScale   = reinterpret_cast<SetIconScaleFn>(platform::FindFunction(image, f::kMapIconSetScale).value_or(0));
+    g.mapIconName    = reinterpret_cast<const U64*>(at(f::kNameSEndMapIcon, sizeof(U64)));
     g.bannerStart    = at(f::kNaviBannerStart);
     g.bannerEnd      = at(f::kNaviBannerEnd);
     g.slot29         = reinterpret_cast<void**>(players::game_globals::UiSlotAddress(f::kNaviSlot));
@@ -1162,6 +1210,21 @@ bool RemoveIconFrom(int seat, std::uint64_t key) noexcept
 std::uint32_t IconResets() noexcept
 {
     return g_iconResets;
+}
+
+void SetPinScale(int seat, std::uint64_t key, float scale) noexcept
+{
+    if (seat < 1 || seat >= kMaxPlayers)
+    {
+        return;
+    }
+    Seat& s = g_seats[static_cast<std::size_t>(seat)];
+    if (s.pinKey != key || s.pinScale != scale)
+    {
+        s.pinTold = false;  // the new key or scale's first outcome is logged
+    }
+    s.pinKey   = key;
+    s.pinScale = scale;
 }
 
 }  // namespace lss::hud::minimap

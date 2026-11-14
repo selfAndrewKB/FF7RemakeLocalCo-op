@@ -10,7 +10,9 @@
 // The arithmetic is the plain component-wise kind the mod's rules need (a camera's distance and angle to a mesh, a turn
 // between two forwards).
 
+#include <bit>
 #include <cmath>
+#include <cstdint>
 
 namespace lss::platform {
 
@@ -27,6 +29,12 @@ struct GameVector2D
     float x = 0.0f, y = 0.0f;
 };
 static_assert(sizeof(GameVector2D) == 8 && alignof(GameVector2D) == 4, "the engine's FVector2D: two packed 4-byte floats");
+
+/// An FVector2D as a game function takes it by value: one register, x in its low half, y in its high.
+inline std::uint64_t PassedByValue(const GameVector2D& v) noexcept
+{
+    return std::bit_cast<std::uint64_t>(v);
+}
 
 inline GameVector operator-(const GameVector& a, const GameVector& b) noexcept { return {a.x - b.x, a.y - b.y, a.z - b.z}; }
 inline GameVector operator+(const GameVector& a, const GameVector& b) noexcept { return {a.x + b.x, a.y + b.y, a.z + b.z}; }

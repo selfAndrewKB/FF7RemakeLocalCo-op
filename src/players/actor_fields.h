@@ -78,4 +78,10 @@ inline void* LeaderCharacter(const void* controller) noexcept
     return platform::ReadPointer(controller, facts::kControllerLeaderCharacter);
 }
 
+/// A user widget's widget tree (its named children are found in it), or null.
+inline void* WidgetTree(const void* userWidget) noexcept
+{
+    return platform::ReadPointer(userWidget, facts::kUserWidgetTree);
+}
+
 }  // namespace lss::players::actor_fields

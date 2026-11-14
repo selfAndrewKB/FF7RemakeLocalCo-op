@@ -478,8 +478,8 @@ void FieldMove(void* self, float deltaSeconds)
     // A member with its AI (a scripted hold: its PLAYER slot empty, the controller still naming it as its character) is
     // the AI's to move. The field move drives whatever character the controller names, possessed or not, adding the
     // seat's stick and writing the gait the AI's path following writes too; the game's own give back leaves the
-    // controller naming no one, so nothing of the player's moves it. Held off here for the same state, as a guard: the
-    // game was not seen calling it for a seat during a hold.
+    // controller naming no one, so nothing of the player's moves it. The game calls it every frame for every controller
+    // (its actor tick), so it is held off here for the same state.
     const bool withAi = party_member::HandedToAi(actor_fields::LeaderCharacter(self));
     if (withAi != g_seats[seat].moveHeldOff)
     {

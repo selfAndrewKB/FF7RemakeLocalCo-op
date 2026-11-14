@@ -52,4 +52,8 @@ bool Enabled() noexcept;
 /// every view. False when four keys are owned already. With the switch off the game's placement stands (every view).
 bool SetOwner(std::uint64_t key, int seat) noexcept;
 
+/// Game thread: every owned icon's diamond is `scale` times the game's size (1.0: the game's), through the game's own
+/// size setter on its image set, once per widget (research/RE-lead-marker-size.md). Player 1's icons are untouched.
+void SetOwnedScale(float scale) noexcept;
+
 }  // namespace lss::hud::field_icons

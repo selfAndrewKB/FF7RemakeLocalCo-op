@@ -9,6 +9,8 @@
 #include "platform/image.h"
 #include "platform/log.h"
 #include "platform/sparse_array.h"
+#include "platform/verified_code.h"
+#include "players/actor_fields.h"
 #include "players/game_globals.h"
 #include "players/weak_object.h"
 #include "world/actor_place.h"
@@ -82,12 +84,21 @@ struct Listing
     const void*   entry = nullptr;
     std::uint64_t key   = 0;
 };
-/// An icon one seat owns: its diamond shows in that seat's view only (SetOwner).
+/// An icon one seat owns: its diamond shows in that seat's view only (SetOwner), at the owned size (SetOwnedScale).
 struct Owned
 {
-    std::uint64_t key  = 0;
-    int           seat = -1;  // -1: the record is free
+    std::uint64_t               key     = 0;
+    int                         seat    = -1;         // -1: the record is free
+    std::array<std::int32_t, 2> sized   = {-1, 0};    // the widget (weak pair) last given the owned size
+    float                       sizedTo = 0.0f;       // that size
+    void*                       image   = nullptr;    // that widget's image set, read back at each placement
 };
+
+using SetImageSizeFn = void (*)(void* slate, std::uint64_t size);  // FVector2D by value
+facts::WidgetTreeFindFn g_findWidget = nullptr;  // the game's UWidgetTree::FindWidget
+SetImageSizeFn        g_setImageSize = nullptr;  // the image set's Slate size setter
+const std::uint64_t*  g_iconName     = nullptr;  // the game's name global of the diamond's image set
+float                 g_ownedScale   = 1.0f;
 
 std::vector<Call>        g_calls;
 std::vector<Known>       g_known;
@@ -173,10 +184,59 @@ std::uint8_t* Manager() noexcept
     return g_slot != nullptr && Read(g_slot, manager) ? static_cast<std::uint8_t*>(manager) : nullptr;
 }
 
-void ListEntries(const std::uint8_t* manager) noexcept;
-bool Listed(const void* entry) noexcept;
-int  OwnerOf(const void* entry) noexcept;
-bool AnyOwned() noexcept;
+void   ListEntries(const std::uint8_t* manager) noexcept;
+bool   Listed(const void* entry) noexcept;
+Owned* OwnedOf(const void* entry) noexcept;
+int    OwnerOf(const void* entry) noexcept;
+bool   AnyOwned() noexcept;
+
+/// An owned icon's diamond at the owned size, through the game's own setter on its image set: the game sets the size
+/// when it makes the widget and lays the diamond out from it every frame, so a size that holds needs no second call (a
+/// widget made again starts at the game's size). The size read back at each placement catches a creation that wrote
+/// the game's size after it; otherwise tried once per widget and size.
+void SizeOwned(Owned& owned, const std::int32_t (&weak)[2]) noexcept
+{
+    const float size = facts::kQuestIconSize * g_ownedScale;
+    if (g_setImageSize == nullptr || g_findWidget == nullptr || weak[0] < 0)
+    {
+        return;
+    }
+    if (owned.sized[0] == weak[0] && owned.sized[1] == weak[1] && owned.sizedTo == size)
+    {
+        float now = size;
+        if (owned.image == nullptr || !Read(static_cast<std::uint8_t*>(owned.image) + facts::kImageSetSize + sizeof(float), now) ||
+            now == size)
+        {
+            return;
+        }
+    }
+    owned.sized   = {weak[0], weak[1]};
+    owned.sizedTo = size;
+    owned.image   = nullptr;
+    void* const   widget = players::weak_object::ObjectOf(weak);
+    void* const   tree   = widget != nullptr ? players::actor_fields::WidgetTree(widget) : nullptr;
+    void*         image  = nullptr;
+    std::uint64_t name   = 0;
+    if (tree == nullptr || !Read(g_iconName, name) || !platform::CallGuarded(g_findWidget, image, tree, static_cast<const void*>(&name)) ||
+        image == nullptr)
+    {
+        platform::LogDebug(L"field icons: player {}'s own marker: its diamond's image set was not found; the game's size stays",
+                           owned.seat + 1);
+        return;
+    }
+    void* const        slate = platform::ReadPointer(image, facts::kImageSetSlate);
+    const GameVector2D both{size, size};
+    if (slate == nullptr || !platform::WriteGuarded(static_cast<std::uint8_t*>(image) + facts::kImageSetSize, &both, sizeof(both)) ||
+        !platform::CallGuarded(g_setImageSize, slate, platform::PassedByValue(both)))
+    {
+        platform::LogDebug(L"field icons: player {}'s own marker: its diamond could not be resized; the game's size stays",
+                           owned.seat + 1);
+        return;
+    }
+    owned.image = image;
+    platform::LogDebug(L"field icons: player {}'s own marker's diamond is {:.0f} wide (the game's {:.0f})", owned.seat + 1, size,
+                       facts::kQuestIconSize);
+}
 
 void Place(void* entry, void* canvas, float dt, void* controller, const GameVector* leader, std::int32_t unused, const GameVector* icon)
 {
@@ -201,8 +261,9 @@ void Place(void* entry, void* canvas, float dt, void* controller, const GameVect
                     ListEntries(manager);
                     listedAt = g_frame;
                 }
-                if (OwnerOf(entry) >= 1)
+                if (Owned* const owned = OwnedOf(entry); owned != nullptr && owned->seat >= 1)
                 {
+                    SizeOwned(*owned, call.weak);
                     constexpr float kHidden = 0.0f;
                     platform::WriteGuarded(static_cast<std::uint8_t*>(entry) + facts::kFieldIconEntryAlpha, &kHidden, sizeof(kHidden));
                     dt = 0.0f;
@@ -262,7 +323,7 @@ bool AnyOwned() noexcept
 }
 
 /// The seat owning the listed `entry`'s icon, or -1 (every view's).
-int OwnerOf(const void* entry) noexcept
+Owned* OwnedOf(const void* entry) noexcept
 {
     for (const Listing& listed : g_listed)
     {
@@ -270,16 +331,22 @@ int OwnerOf(const void* entry) noexcept
         {
             continue;
         }
-        for (const Owned& owned : g_owned)
+        for (Owned& owned : g_owned)
         {
             if (owned.seat >= 0 && owned.key == listed.key)
             {
-                return owned.seat;
+                return &owned;
             }
         }
-        return -1;
+        return nullptr;
     }
-    return -1;
+    return nullptr;
+}
+
+int OwnerOf(const void* entry) noexcept
+{
+    const Owned* const owned = OwnedOf(entry);
+    return owned != nullptr ? owned->seat : -1;
 }
 
 /// The canvas slot holding `widget`, matched on the widget's Slate object as the placement matches it (the game's
@@ -475,6 +542,21 @@ bool Install(const platform::GameImage& image) noexcept
     g_slot      = reinterpret_cast<void**>(slot);
     g_pending   = true;  // installed by the game thread's tick, outside the function
     g_installed = true;
+    // A seat's own diamond at the owned size (hud/lead_mark): optional, the game's size without it.
+    const auto findWidget = platform::FindFunction(image, facts::kWidgetTreeFind);
+    const auto setSize    = platform::FindFunction(image, facts::kImageSetSetSize);
+    const auto iconName   = image.Rebase(facts::kNameImsQuestIcon, sizeof(std::uint64_t));
+    if (findWidget && setSize && iconName)
+    {
+        g_findWidget   = reinterpret_cast<facts::WidgetTreeFindFn>(*findWidget);
+        g_setImageSize = reinterpret_cast<SetImageSizeFn>(*setSize);
+        g_iconName     = reinterpret_cast<const std::uint64_t*>(*iconName);
+    }
+    else
+    {
+        platform::Log(L"field icons: the diamond's size setter is not what the research read; a seat's own marker keeps the "
+                      L"game's size");
+    }
 
     using control::Outcome;
     using control::Register;
@@ -710,6 +792,11 @@ bool SetOwner(std::uint64_t key, int seat) noexcept
     }
     *free = Owned{.key = key, .seat = seat};
     return true;
+}
+
+void SetOwnedScale(float scale) noexcept
+{
+    g_ownedScale = scale;  // each owned diamond takes it at its next placement (SizeOwned compares the size)
 }
 
 }  // namespace lss::hud::field_icons

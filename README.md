@@ -254,6 +254,8 @@ src/
                             a split half's band (research/RE-hud-overlay-pass.md)
     lead_mark               A further player's own marker for the move it keeps: the game's own main-objective diamond,
                             placed in the world to guide that player
+    lead_mark_rules.h       The size of a further player's own lead marker (hud/lead_mark), from the setting's word
+                            (platform/settings.h kLeadMarkerSize: "1.0" ...
     marker_replay           Battle world markers placed through each player's own camera
                             (research/RE-hud-battle-markers.md), by capture and replay
     minimap                 Each seat's own minimap and compass: a navi map manager per seat, the game's own
@@ -661,5 +663,5 @@ src/
                             game
     title_row_rules.h       Where the title menu's Co-op row goes among its rows' kinds (research/RE-title-menu.md):
                             directly below Options, so the rows through Options keep their places
-tests/                      68 host-side test programs (ctest), one per pure header or code stub; run without the game
+tests/                      69 host-side test programs (ctest), one per pure header or code stub; run without the game
 ```

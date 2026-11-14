@@ -7,14 +7,15 @@
 #include "menu/title_row_rules.h"
 #include "platform/entry_redirect.h"
 #include "platform/game_array.h"
+#include "platform/game_vectors.h"
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
 #include "platform/verified_code.h"
 #include "platform/vtable_entry.h"
+#include "players/actor_fields.h"
 
 #include <array>
-#include <bit>
 #include <cstdint>
 #include <cstring>
 #include <format>
@@ -30,7 +31,6 @@ using platform::GameArray;
 
 using ConstructFn = void (*)(void* start);
 using GrowFn      = void (*)(void* array);
-using FindFn      = void* (*)(void* tree, const void* name);
 using SetCountFn  = void (*)(void* box, std::int32_t count);
 using RefreshFn   = void (*)(void* box);
 using IsAFn       = bool (*)(void* object);
@@ -43,7 +43,7 @@ struct Game
 {
     std::uintptr_t pressAt = 0, textSlot = 0, textWas = 0, listName = 0;
     GrowFn         grow     = nullptr;
-    FindFn         find     = nullptr;
+    facts::WidgetTreeFindFn find = nullptr;
     SetCountFn     setCount = nullptr;
     RefreshFn      refresh  = nullptr;
     IsAFn          isBox    = nullptr;
@@ -92,7 +92,7 @@ bool InsertGuarded(GameArray* kinds, std::size_t place) noexcept
 /// list, whose press and text go by kind.
 const wchar_t* ShowInList(void* start, std::int32_t rows) noexcept
 {
-    void* const tree = platform::ReadPointer(start, facts::kUserWidgetTree);
+    void* const tree = players::actor_fields::WidgetTree(start);
     void*       list = nullptr;
     bool        isBox = false;
     if (tree == nullptr || !platform::CallGuarded(g.find, list, tree, reinterpret_cast<const void*>(g.listName)) || list == nullptr ||
@@ -114,9 +114,8 @@ const wchar_t* ShowInList(void* start, std::int32_t rows) noexcept
         return L"its list's height could not be read";
     }
     const float height = static_cast<float>(rows - facts::kStartMenuBaseRows) * facts::kStartMenuRowHeight + base;
-    const auto  packed = static_cast<std::uint64_t>(std::bit_cast<std::uint32_t>(width)) |
-                         (static_cast<std::uint64_t>(std::bit_cast<std::uint32_t>(height)) << 32);
-    return platform::CallGuarded(g.setSize, slot, packed) ? nullptr : L"its list's height could not be set";
+    return platform::CallGuarded(g.setSize, slot, platform::PassedByValue({width, height})) ? nullptr
+                                                                                             : L"its list's height could not be set";
 }
 
 /// The Co-op row below Options in a list the construct just built.
@@ -203,7 +202,7 @@ try
     }
     g.pressAt  = *press;
     g.grow     = reinterpret_cast<GrowFn>(*grow);
-    g.find     = reinterpret_cast<FindFn>(*find);
+    g.find     = reinterpret_cast<facts::WidgetTreeFindFn>(*find);
     g.setCount = reinterpret_cast<SetCountFn>(*setCount);
     g.refresh  = reinterpret_cast<RefreshFn>(*refresh);
     g.isBox    = reinterpret_cast<IsAFn>(*castBox);
