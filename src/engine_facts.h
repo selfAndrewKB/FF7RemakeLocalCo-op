@@ -2311,6 +2311,24 @@ inline constexpr std::array<std::uint8_t, 16> kCharInBattleAreaOfGroupEntry{
     0x48, 0x89, 0x5C, 0x24, 0x20, 0x48, 0x89, 0x54, 0x24, 0x10, 0x55, 0x56, 0x57, 0x41, 0x54, 0x41};
 inline constexpr platform::FunctionFact kCharInBattleAreaOfGroup{L"EncountMgr_IsCharInBattleAreaOfGroup", 0x140FB24F0,
                                                                  kCharInBattleAreaOfGroupEntry};
+/// The group's update (group, dt), every group every tick, waiting ones included; it runs the step only in lifecycle 1
+/// (0 waiting: every counted member's actor spawned, with its battle component, and not hidden by reason 11 or 14).
+/// Its first two instructions are copied (mov rax, rsp ; mov [rax+10h], rbx: none of 5 bytes alone).
+inline constexpr std::array<std::uint8_t, 16> kEncountGroupUpdateEntry{
+    0x48, 0x8B, 0xC4, 0x48, 0x89, 0x58, 0x10, 0x48, 0x89, 0x70, 0x18, 0x48, 0x89, 0x78, 0x20, 0x55};
+inline constexpr platform::FunctionFact kEncountGroupUpdate{L"EncountGroup_Update_LeaderAreaRequests", 0x140F9B400, kEncountGroupUpdateEntry};
+inline constexpr std::size_t            kEncountGroupUpdateFirst = 7;
+/// The member test (actor): 1 when the actor is hidden by reason 11 or 14. Only on a character (the update tests that first).
+inline constexpr std::array<std::uint8_t, 16> kEncountMemberHiddenEntry{
+    0x40, 0x53, 0x48, 0x83, 0xEC, 0x20, 0x48, 0x8B, 0xD9, 0x48, 0x85, 0xC9, 0x75, 0x08, 0x32, 0xC0};
+inline constexpr platform::FunctionFact kEncountMemberHidden{L"EncountMember_ActorHasReason11or14", 0x140F9ECD0, kEncountMemberHiddenEntry};
+inline constexpr std::uint32_t kEncountGroupLifecycle   = 0x11;
+inline constexpr std::uint32_t kEncountGroupMemberCount = 0x50;  // u32
+inline constexpr std::uint32_t kEncountGroupMembers     = 0x58;  // up to 16 record pointers, inline
+inline constexpr std::uint32_t kEncountGroupMaxMembers  = 16;
+inline constexpr std::uint32_t kEncountGroupMemberActor = 0x08;  // vtable byte offset (slot 1): actor (group, int member), the state manager's
+inline constexpr std::uint32_t kEncountMemberName       = 0x2C;  // the enemy object's FName
+inline constexpr std::uint32_t kEncountMemberOut        = 0x4B;  // non-zero: the member no longer counts
 inline constexpr std::uint32_t kEncountGroupState    = 0x12;
 inline constexpr std::uint32_t kEncountGroupName     = 0x24;
 inline constexpr std::uint32_t kEncountGroupAreaName = 0x2C;

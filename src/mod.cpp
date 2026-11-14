@@ -69,7 +69,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.207.0-encounter-watch";  // the one version string (the log, UE4SS and the setup app)
+constexpr const wchar_t* kVersion = L"0.207.1-waiting-groups";  // the one version string (the log, UE4SS and the setup app)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;

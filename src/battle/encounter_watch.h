@@ -13,8 +13,17 @@
 //   - Info: a group's state change (idle, caution, engage, battle, escaping, escaped, ended), with which players'
 //     characters stand in its battle area at that moment;
 //   - Debug: a player's character entering or leaving a group's battle area (each group asked at most twice a second);
-//   - `encounter-watch` reads the groups seen in the last second: their state and who stands in their area.
-// Game thread only: the step runs on it, and the redirect is placed from the engine tick, outside the step.
+//   - `encounter-watch` reads the groups seen in the last second: their state and who stands in their area, or why
+//     they wait.
+// A group steps only once its lifecycle is 1: every counted member's actor spawned, with its battle component, and not
+// hidden by reason 11 or 14 (else it waits at 0, its enemies roaming on their own field AI). The group's update, which
+// runs for every group every tick, goes through a second entry redirect, also unchanged; while a group waits (read at
+// most once a second) the watch reads the same test from the game's own member getter and hide test:
+//   - Info: player 2 or 3 within 15 m of a waiting group's enemy (once, again after 25 m away), with why the group waits
+//     (the first enemy not spawned, without its battle component, or hidden; or every enemy shown: the group is
+//     switched off by its scene object's state) and how far player 1 is;
+//   - Debug: a group's lifecycle change, and a waiting group's reason when it changes.
+// Game thread only: the update and step run on it, and the redirects are placed from the engine tick, outside them.
 
 namespace lss::platform {
 class GameImage;
