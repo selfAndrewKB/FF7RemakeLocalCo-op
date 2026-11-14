@@ -143,8 +143,14 @@ void* Create(void* runner, const std::uint64_t* act, std::uint32_t type, void* c
             note = {};
         }
     }
-    const int          pressed = field_targets::PeekTalkPress(object);
     const std::int32_t kind    = KindOf(actName);
+    const int          talked  = field_targets::PeekTalkPress(object);
+    // A shop no NPC press names: a vending machine's, whose act runs on the level script's channel (matched by time).
+    std::uint64_t      oneName = 0, oneAt = 0;
+    const bool         onesAct = field_targets::PlayerOnePress(oneName, oneAt) && oneName == object;  // player 1 pressed its channel
+    const int          machine = talked == 0 && kind == kShopKind && !onesAct ? field_targets::PeekVendingPress() : 0;
+    const bool         vending = machine != 0;
+    const int          pressed = vending ? machine : talked;
     if (platform::Enabled(platform::Level::Debug))
     {
         try
@@ -153,6 +159,7 @@ void* Create(void* runner, const std::uint64_t* act, std::uint32_t type, void* c
                                field_targets::NameOf(actName), kind, field_targets::NameOf(object),
                                pressed == 0 ? L"no further player's press of it" : SeatName(pressed),
                                pressed == 0        ? L""
+                               : vending           ? L"'s vending machine press: a shop"
                                : kind != kShopKind ? L"'s press of it, but not a shop: the game's"
                                                    : L"'s press of it: a shop");
         }
@@ -160,16 +167,18 @@ void* Create(void* runner, const std::uint64_t* act, std::uint32_t type, void* c
         {
         }
     }
-    if (pressed == 0)
-    {
-        return original(runner, act, type, channel, flag);
-    }
-    if (kind != kShopKind)
+    if (pressed != 0 && kind != kShopKind)
     {
         ++g_notShops;
+    }
+    // The seat Peek named; 0 with no press, for an act that is no shop, or a press that lapsed between the peek and here.
+    const int seat = pressed == 0 || kind != kShopKind ? 0
+                     : vending                         ? field_targets::ClaimVendingPress()
+                                                       : field_targets::ClaimTalkPress(object);
+    if (seat == 0)
+    {
         return original(runner, act, type, channel, flag);
     }
-    const int seat = field_targets::ClaimTalkPress(object);  // the seat Peek named
     Note*     free = nullptr;
     for (Note& note : g_notes)
     {

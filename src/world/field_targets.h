@@ -15,8 +15,10 @@
 //     three bytes the game writes (held, pressed, the latch cleared on release): the one rule restated here.
 //   - Only chests and ground items (an ObjectTreasure row), NPCs (an ObjectActor row: quest NPCs, shopkeepers; their
 //     talk state's trigger, research/RE-talk-two.md), doors (Door_, HeavyDoor_), curtains (Curtain_, an experiment),
-//     grappling-hook points (HookShot_) and the member's own swing (TarzanJump_ and its tag) are pressed, the doors,
-//     curtains, hooks and swings while the member's field actions run as the player's (world/traversal_action.h).
+//     vending machines (VendingMachine_), grappling-hook points (HookShot_) and the member's own swing (TarzanJump_ and
+//     its tag) are pressed, the doors, curtains, machines, hooks and swings while the member's field actions run as the
+//     player's (world/traversal_action.h). A machine's press is noted for the shop act the level then queues (matched
+//     by time, world/shop_act.h); it lapses after 15 s, at player 1's next press, the player's leave or a world change.
 //     Situations, examine points, push-button and battle-start objects, enemy and party objects stay player 1's: for
 //     the player's pick every other active target is marked disabled (the entry's own byte, the pick's rejection test;
 //     put back after, unless the run applied the game's own pending write to it), so the game gives the player neither
@@ -71,6 +73,10 @@ std::wstring Reading() noexcept;
 /// Claim takes every note of that object. Game thread.
 int PeekTalkPress(std::uint64_t object) noexcept;
 int ClaimTalkPress(std::uint64_t object) noexcept;
+/// The seat whose vending machine press waits for its shop act (matched by time: the level runs that act on its own
+/// script channel); 0 if none. Claim takes it. Game thread.
+int PeekVendingPress() noexcept;
+int ClaimVendingPress() noexcept;
 /// Player 1's last press of a field target (the game's own record of the pressed name) and its time (GetTickCount64);
 /// false when none since the world changed. Game thread.
 bool PlayerOnePress(std::uint64_t& name, std::uint64_t& atMs) noexcept;

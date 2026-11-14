@@ -74,6 +74,7 @@ enum class Kind : std::uint8_t
     Curtain,   // Curtain_: a door-like pass-through (admitted as an experiment)
     Board,     // OperationBoard_: a quick-press switch board (a wall or floor button, a key console), the member's own field action
     ElevatorBoard,  // OperationBoard_ ... ELVSwitch: an elevator's (player 1's: the cabin may carry the party)
+    Vending,   // VendingMachine_: the member's own vending action, then the level's shop act (world/shop_act.h)
     Other,
 };
 
@@ -95,6 +96,7 @@ const wchar_t* KindName(Kind kind) noexcept
         case Kind::Curtain: return L"a curtain";
         case Kind::Board: return L"a switch board";
         case Kind::ElevatorBoard: return L"an elevator's switch board";
+        case Kind::Vending: return L"a vending machine";
         case Kind::Other: return L"another target";
     }
     return L"?";
@@ -108,8 +110,8 @@ bool BoardMember(int seat) noexcept
     return type == facts::kPlayerTypeCloud || type == facts::kPlayerTypeBarret || type == facts::kPlayerTypeTifa;
 }
 
-/// Pressed for a further player now: a chest and an NPC always; a door, a curtain or the member's own swing only while
-/// the member's field actions run as its player's (world/traversal_action.h), a switch board the same and only for a member
+/// Pressed for a further player now: a chest and an NPC always; a door, a curtain, a vending machine or the member's own
+/// swing only while the member's field actions run as its player's (world/traversal_action.h), a switch board the same and only for a member
 /// with its animation, the grappling hook only while its three lock calls are also redirected
 /// (traversal_action::HookShotReady), a lever only while its event calls are placed and no event runs
 /// (push_events::Admitted); read at each use (a level change can stop that).
@@ -121,7 +123,8 @@ bool Admitted(Kind kind, int seat) noexcept
         case Kind::Npc: return true;
         case Kind::Door:
         case Kind::Swing:
-        case Kind::Curtain: return traversal_action::Scoping();
+        case Kind::Curtain:
+        case Kind::Vending: return traversal_action::Scoping();
         case Kind::Board: return traversal_action::Scoping() && BoardMember(seat);
         case Kind::HookShot: return traversal_action::HookShotReady();
         case Kind::Lever: return push_events::Admitted(seat);
@@ -180,6 +183,18 @@ void*                         g_notesManager     = nullptr;  // the target manag
 int                           g_pickSeat = 0;  // the seat whose pick runs now (the screen test answers with its player)
 std::uint32_t                 g_playerOneOpens = 0;
 bool                          g_pressSkipLogged = false;
+
+/// A seat's vending machine press, waiting for the shop act it starts. That act runs on the level script's channel, not
+/// the machine's, so it is matched by time: the next shop act no NPC press names, within the wait, with no press of player
+/// 1's since. One at a time (the game has one shop).
+struct VendingPress
+{
+    int           seat = 0;  // 0: none
+    std::uint64_t name = 0, atMs = 0;
+};
+constexpr std::uint64_t kVendingWaitMs = 15000;  // the press to the act: the member's vending action plays between
+VendingPress            g_vending;
+std::uint32_t           g_vendingClaims = 0, g_vendingLapsed = 0;
 
 constexpr std::size_t kRangeVisited = 0;  // the copy's ranges (FreshCopy's order)
 
@@ -379,6 +394,10 @@ Kind Classify(std::uint64_t name, std::uint64_t state, const void* member) noexc
     if (StartsWith(name, "OperationBoard_"))
     {
         return push_event_rules::ElevatorBoard(Name(name)) ? Kind::ElevatorBoard : Kind::Board;
+    }
+    if (StartsWith(name, "VendingMachine_"))
+    {
+        return Kind::Vending;
     }
     return Kind::Other;
 }
@@ -598,11 +617,40 @@ void LogDropped(const talk_presses::Dropped& dropped, const wchar_t* why) noexce
     g_talkDropped += static_cast<std::uint32_t>(dropped.count);
 }
 
+/// The vending press waiting for its shop act is dropped (`why` in the log).
+void DropVendingPress(const wchar_t* why) noexcept
+{
+    if (g_vending.seat != 0)
+    {
+        ++g_vendingLapsed;
+        platform::LogDebug(L"field targets: {}'s vending press of {} is dropped: {}", SeatName(g_vending.seat), Name(g_vending.name), why);
+        g_vending = {};
+    }
+}
+
+/// The vending press lapses after its wait, or once player 1 presses anything after it (the next shop is then theirs).
+void TickVendingPress() noexcept
+{
+    if (g_vending.seat == 0)
+    {
+        return;
+    }
+    if (g_playerOneLastAt > g_vending.atMs)
+    {
+        DropVendingPress(L"player 1 pressed a target after it");
+    }
+    else if (GetTickCount64() - g_vending.atMs > kVendingWaitMs)
+    {
+        DropVendingPress(L"no shop act within the wait");
+    }
+}
+
 /// The presses are dropped when the target manager changes (a world change).
 void DropTalkPressesAtWorldChange(void* targets) noexcept
 {
     if (targets != g_notesManager)
     {
+        DropVendingPress(L"the world changed");
         talk_presses::Dropped dropped;
         g_talkPresses.DropAll(dropped);
         LogDropped(dropped, L"the world changed");
@@ -764,18 +812,29 @@ void PressFor(int seat, void* mgr, float dt, TickFn original) noexcept
     {
         platform::LogDebug(L"field targets: {} pressed {} ({})", SeatName(seat), Name(state.target), KindName(state.kind));
     }
-    if (state.kind == Kind::Npc)
+    if (state.kind == Kind::Npc || state.kind == Kind::Vending)
     {
         const auto pressed = PendingName(state);  // the game's own record of the press
         const auto name    = pressed != 0 ? pressed : state.target;
-        if (name == g_playerOnePressed)
+        // A machine's shop is matched by time, so any press of player 1's in this frame makes the next shop theirs.
+        if (name == g_playerOnePressed || (state.kind == Kind::Vending && g_playerOnePressed != 0))
         {
-            platform::LogDebug(L"field targets: {} pressed {} in the frame player 1 did; the talk is player 1's", SeatName(seat),
+            platform::LogDebug(L"field targets: {} pressed {} in the frame player 1 did; what it starts is player 1's", SeatName(seat),
                                Name(name));
+        }
+        else if (state.kind == Kind::Npc)
+        {
+            NoteTalkPress(seat, name);
         }
         else
         {
-            NoteTalkPress(seat, name);
+            if (g_vending.seat != 0 && g_vending.seat != seat)
+            {
+                platform::LogDebug(L"field targets: {}'s vending press is replaced by {}'s", SeatName(g_vending.seat), SeatName(seat));
+            }
+            g_vending = {seat, name, GetTickCount64()};
+            platform::Log(L"field targets: {} pressed the vending machine {}; the next shop act within {} s is theirs", SeatName(seat),
+                          Name(name), kVendingWaitMs / 1000);
         }
     }
     if (queued && after == before + 1 && queue != nullptr)
@@ -930,8 +989,9 @@ std::wstring Report()
     std::int32_t count = 0;
     const std::uint64_t* queue = nullptr;
     ChestQueue(queue, count);
-    out += std::format(L"; chests queued {}, player 1's opens {}; NPC presses claimed by an act {}, lapsed {}, dropped {}",
-                       count, g_playerOneOpens, g_talkClaims, g_talkLapsed, g_talkDropped);
+    out += std::format(L"; chests queued {}, player 1's opens {}; NPC presses claimed by an act {}, lapsed {}, dropped {}; vending "
+                       L"presses claimed by a shop {}, dropped {}",
+                       count, g_playerOneOpens, g_talkClaims, g_talkLapsed, g_talkDropped, g_vendingClaims, g_vendingLapsed);
     for (int seat = 1; seat <= players::kSeatsBuilt; ++seat)
     {
         const SeatState& s = g_seats[seat];
@@ -1032,6 +1092,10 @@ void TickSeat(int seat, void* localPlayer, void* member) noexcept
         talk_presses::Dropped dropped;
         g_talkPresses.DropSeat(seat, dropped);
         LogDropped(dropped, L"the player left or changed character");
+        if (g_vending.seat == seat)
+        {
+            DropVendingPress(L"the player left or changed character");
+        }
     }
     state.localPlayer = localPlayer;
     state.member      = member;
@@ -1046,6 +1110,7 @@ void Tick() noexcept
     PlaceCrossing();
     target_icons::Tick(players::field_root::FieldTargets());
     TickTalkPresses();
+    TickVendingPress();
     const std::uint64_t* queue = nullptr;
     std::int32_t         count = 0;
     if (!ChestQueue(queue, count))
@@ -1077,6 +1142,7 @@ void Remove() noexcept
     target_icons::Remove();
     g_pending.fill({});
     g_talkPresses.Clear();
+    g_vending = {};
     for (SeatState& state : g_seats)
     {
         DropCopy(state);
@@ -1102,6 +1168,7 @@ bool PlayerOnePress(std::uint64_t& name, std::uint64_t& atMs) noexcept
 
 void RefreshPlayerOnePress() noexcept
 {
+    // A seat's vending press older than this moment is then dropped too (TickVendingPress): its shop runs as player 1's.
     if (g_playerOneLast != 0)
     {
         g_playerOneLastAt = GetTickCount64();
@@ -1127,6 +1194,25 @@ bool TalkPressSpot(std::uint64_t object, float (&out)[3]) noexcept
 void MarkTalkJudged(std::uint64_t object) noexcept
 {
     g_talkPresses.MarkJudged(object);
+}
+
+int PeekVendingPress() noexcept
+{
+    TickVendingPress();  // a lapse decided now, not at the next tick
+    return g_vending.seat;
+}
+
+int ClaimVendingPress() noexcept
+{
+    const int seat = PeekVendingPress();
+    if (seat != 0)
+    {
+        ++g_vendingClaims;
+        platform::Log(L"field targets: {}'s vending press of {} opened its shop {} ms after the press", SeatName(seat), Name(g_vending.name),
+                      GetTickCount64() - g_vending.atMs);
+        g_vending = {};
+    }
+    return seat;
 }
 
 int ClaimTalkPress(std::uint64_t object) noexcept

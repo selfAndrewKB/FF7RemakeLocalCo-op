@@ -69,7 +69,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.205.0-fair-ties";  // the one version string (the log, UE4SS and the setup app)
+constexpr const wchar_t* kVersion = L"0.206.0-vending";  // the one version string (the log, UE4SS and the setup app)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;

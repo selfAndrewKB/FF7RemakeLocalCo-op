@@ -10,8 +10,11 @@
 // act (type 43, kind 1), which opens the shop on its first frame and, through its own Begin, Update, OnFinish and end,
 // resolves "the leader" (LEADER_) for the main character, its camera preset and its facing holds, and sets the
 // shop camera on the primary camera manager. Run as the game's, all of that is player 1's.
+//   - A vending machine is the same shop: a further player's press runs the member's own vending action and the level
+//     then queues the act on its own script channel, so a kind-1 act no NPC press names is the vending press's
+//     (field_targets::ClaimVendingPress, matched by time).
 //   - The act's creation (one call, which runs its Begin) is redirected: when its channel's object is an NPC a further
-//     player pressed (field_targets::ClaimTalkPress) and the act's row is kind 1 (a shop), it runs in that player's
+//     player pressed (field_targets::ClaimTalkPress), or a vending press waits, and the act's row is kind 1 (a shop), it runs in that player's
 //     Leader scope, and on a monitor row in its Primary scope too, and the act is noted as the player's with those
 //     scopes; its Update, OnFinish and destructor (vtable entries of this act alone) run in the same scopes. So "the
 //     leader" is the opener's character through the game's own code, and the camera: on a row the opener's manager
