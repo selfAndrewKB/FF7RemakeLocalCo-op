@@ -16,7 +16,7 @@
 // Player 1's swaps are the game's; so is a swap while the seat's member is with its AI (its controller is not on it).
 //
 // Test action `toad <player>` (in a fight): the game's own status setter gives that player's character the Frog status
-// for 30 s, through the whole game path (the next battle tick applies it; the expiry cures it).
+// at the status table's middle duration, through the whole game path (the next battle tick applies it; its timer cures it).
 // Logged: Info for each swap run in a seat's place, whether it landed, and when a seat's scope cannot open; Debug for a
 // swap met inside another player's scope, and, once a second for 6 s after each swap, the seat's camera: whether its
 // operator owns the character, ticks and has ended the leader-change move, its state, and the view's distance to it (one

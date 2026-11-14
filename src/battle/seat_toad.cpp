@@ -30,10 +30,10 @@ namespace {
 using players::SeatName;
 
 using SwapFn      = std::uint64_t (*)(void* manager, std::uint8_t type);
-using AddStatusFn = std::uint64_t (*)(void* component, std::uint8_t status, std::uint8_t unused, float seconds, std::uint8_t force);
+using AddStatusFn = std::uint64_t (*)(void* component, std::uint8_t status, std::uint8_t level, float scale, std::uint8_t force);
 
 constexpr unsigned kSwapContexts = players::scopes::Primary | players::scopes::Leader | players::scopes::UiSlot;
-constexpr float    kTestSeconds  = 30.0f;
+constexpr float    kGameTimeScale = 1.0f;  // the scale the game's own status sources pass
 
 // Set at install, then only read.
 std::uintptr_t g_apply = 0, g_cure = 0;
@@ -200,12 +200,14 @@ control::Outcome GiveFrog(int player) noexcept
         return {false, std::format(L"player {} plays no character with a battle component now", player)};
     }
     std::uint64_t result = 0;
-    if (!platform::CallGuarded(g_addStatus, result, component, facts::kStatusFrog, std::uint8_t{0}, kTestSeconds, std::uint8_t{1}))
+    if (!platform::CallGuarded(g_addStatus, result, component, facts::kStatusFrog, facts::kAddStatusLevelMiddle, kGameTimeScale,
+                               std::uint8_t{1}))
     {
         return {false, L"the game's status setter faulted"};
     }
-    platform::Log(L"seat toad: the test gave player {}'s character the Frog status for {:.0f} s (the next battle tick applies it)", player,
-                  kTestSeconds);
+    platform::Log(L"seat toad: the test gave player {}'s character the Frog status at the status table's middle duration (the "
+                  L"next battle tick applies it; its timer cures it)",
+                  player);
     return {};
 }
 
@@ -228,8 +230,9 @@ bool Install(const platform::GameImage& image) noexcept
                        .shape = control::Shape::Integer,
                        .min   = 1,
                        .max   = players::kSeatsBuilt + 1,
-                       .help  = L"(test, in a fight) give player N's character the Frog status for 30 s through the game's own "
-                                L"status setter: the toad swap follows on the next battle tick, its expiry cures it",
+                       .help  = L"(test, in a fight) give player N's character the Frog status (the status table's middle "
+                                L"duration) through the game's own status setter: the toad swap follows on the next battle "
+                                L"tick, its timer cures it",
                        .set   = [](const control::Value& value) { return GiveFrog(static_cast<int>(std::get<std::int64_t>(value))); }});
     return true;
 }

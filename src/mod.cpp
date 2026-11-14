@@ -69,7 +69,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.203.0-warp-from-inside";  // the one version string (the log, UE4SS and the setup app)
+constexpr const wchar_t* kVersion = L"0.203.1-toad-test-time";  // the one version string (the log, UE4SS and the setup app)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;

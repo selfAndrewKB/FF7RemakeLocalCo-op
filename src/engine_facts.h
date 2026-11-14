@@ -1900,8 +1900,11 @@ inline constexpr std::array<std::uint8_t, 16> kToadCureEntry{
 inline constexpr std::size_t            kToadSwapFirst = 5;  // the pushes' bytes
 inline constexpr platform::FunctionFact kToadApply{L"BattleToadMgr_ApplyToad", 0x140A176A0, kToadApplyEntry};
 inline constexpr platform::FunctionFact kToadCure{L"BattleToadMgr_CureToad", 0x140A17A50, kToadCureEntry};
-/// BattlePlayerComp_AddStatus(comp, u8 status, u8, float seconds, u8 force): the status sources' one setter; force skips
-/// the resistance test. Frog (59) on a party member's component queues the toad apply for the next battle tick.
+/// BattlePlayerComp_AddStatus(comp, u8 status, u8 level, float scale, u8 force): the status sources' one setter. The time
+/// is the status table's duration for the level (0-2; 64: no timer) times the scale (the game's own callers pass about
+/// 1); force skips the resistance and stacking tests. Frog (59) on a party member's component queues the toad apply for
+/// the next battle tick.
+inline constexpr std::uint8_t kAddStatusLevelMiddle = 1;
 inline constexpr std::array<std::uint8_t, 16> kAddStatusEntry{
     0x44, 0x88, 0x44, 0x24, 0x18, 0x55, 0x53, 0x56, 0x57, 0x41, 0x55, 0x41, 0x57, 0x48, 0x8D, 0x6C};
 inline constexpr platform::FunctionFact kAddStatus{L"BattlePlayerComp_AddStatus", 0x14096D430, kAddStatusEntry};
