@@ -1291,8 +1291,9 @@ inline constexpr platform::SlotFact kCameraManagerUpdateCamera{
     {L"AEndPlayerCameraManager::UpdateCamera", 0x141687090, kCameraManagerUpdateCameraEntry}};
 
 // Lock re-targets from outside both players' contexts (row X9): an enemy's transform (the AI controller's
-// TransformCharacter exec) moves the displayed target to the new form; a script locks the leader on the nearest
-// enemy (the battle API's SetDisableTarget exec). Both call sites sit inside one 16-byte block.
+// TransformCharacter exec) moves the displayed target to the new form; a script makes a character targetable or not
+// (the battle API's SetDisableTarget exec; "lock nearest" in the names is the IDA name, research/RE-scripted-lock-seat.md).
+// Both call sites sit inside one 16-byte block.
 inline constexpr std::array<std::uint8_t, 16> kTransformRetargetEntry{
     0x40, 0x55, 0x53, 0x56, 0x48, 0x8D, 0xAC, 0x24, 0x40, 0xEC, 0xFF, 0xFF, 0xB8, 0xC0, 0x14, 0x00};
 inline constexpr platform::FunctionFact kTransformRetarget{L"BattleAI_TransformCharacter_RetargetDisplayed390", 0x140940950,

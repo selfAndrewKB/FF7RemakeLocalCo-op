@@ -39,8 +39,6 @@ using SysDtFn     = void (*)(void* system, float deltaTime);
 using SetLockFn   = char (*)(void* system, std::uint8_t on, std::int32_t a3);
 using ClearFn     = std::int64_t (*)(void* system, std::int64_t a2, std::int32_t a3);
 
-constexpr unsigned kScopes = players::scopes::Primary | players::scopes::Operator | players::scopes::Leader |
-                             players::scopes::UiSlot | players::scopes::Focus;
 constexpr std::uint32_t kLockAt  = facts::kBattleSysLock - facts::kBattleSysTargetFields;        // in the copy
 constexpr std::uint32_t kLatchAt = facts::kBattleSysDummyLatch - facts::kBattleSysTargetFields;
 
@@ -153,7 +151,7 @@ void RunSeat(int seat, void* system, float deltaTime) noexcept
         return;
     }
     {
-        players::scopes::Scope                 scope(seat, kScopes);
+        players::scopes::Scope                 scope(seat, kTargetingScopes);
         players::pad_buttons::ButtonScope      buttons(static_cast<unsigned>(seat));
         players::seat_camera::StickScope stick(static_cast<std::uint32_t>(seat), true);
         const FieldsScope                      fields(seat);

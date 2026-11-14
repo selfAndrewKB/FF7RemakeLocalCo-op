@@ -5,8 +5,8 @@
 //
 // The Frog status hands the swap to the battle's toad manager, which on its next battle tick copies the status and
 // gauges onto a toad actor, fades the character out and the toad in, and swaps the type's party slot. Only for the
-// party leader does the swap move a controller (the game's leader setter, onto the toad and back). Left alone, a further
-// player's controller and camera stay on the hidden character while the toad walks off on its AI.
+// party leader does the swap move a controller (the game's leader setter, onto the toad and back). Left alone, player
+// 2's or 3's controller and camera stay on the hidden character while the toad walks off on its AI.
 //
 // The manager's apply and cure for a member a seat plays run inside that seat's scopes (its controller as the primary,
 // its member as the leader, its command controller in the UI slot), so the game's own leader branch moves the seat's

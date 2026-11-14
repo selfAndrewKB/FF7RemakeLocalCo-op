@@ -6,10 +6,11 @@
 // so every read inside its tick is the seat's. This module covers the game's lock writers that run outside every
 // player's context, and three readings:
 //   - an enemy's transform (the AI controller's TransformCharacter exec) moves the displayed target to the new form,
-//     and a script locks the leader on the nearest enemy (the battle API's SetDisableTarget exec): each runs the
-//     game's own call again for every seat whose player holds a member, inside the seat's scopes (the primary, the
-//     operator, the leader, and the seat's target-field copy, which must be in), so each seat's lock follows the
-//     transform too and a scripted lock takes every player;
+//     and a script makes a character targetable or not (the battle API's SetDisableTarget exec), which moves a
+//     displayed target off a character disabled under it: each runs the game's own call again for every seat whose
+//     player holds a member, inside the seat's targeting scopes (battle/targeting.h kTargetingScopes: its own command menu
+//     too, so the game's guard never hands it a target picked in player 1's menu) and its target-field copy, so each
+//     seat's target follows the transform and the disable too;
 //   - `lock-camera.requests`: the battle camera requests that re-aimed each operator's lock camera, per seat and
 //     for any other operator;
 //   - `lock-camera.restore`: which context runs the enemy detail window's close delegate (it restores the lock

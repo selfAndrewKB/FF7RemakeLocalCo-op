@@ -37,21 +37,19 @@ using players::SeatName;
 
 using FindRotationFn    = char (*)(void* requests, float* outRotation, void* owner, void* view, void* params, char idFiltered);
 using TransformFn       = void (*)(void* a1, void* a2, void* a3, void* a4);
-using LockNearestFn     = void (*)(void* a1, char a2, char a3, char a4, char a5);
+using DisableTargetFn   = void (*)(void* a1, char a2, char a3, char a4, char a5);
 using RestoreLockFn     = char (*)(void* state, void* a2, void* a3, void* a4);
-
-constexpr unsigned kSeatContexts = players::scopes::Primary | players::scopes::Operator | players::scopes::Leader;
 
 // Set at install, then only read.
 std::uintptr_t         g_requestSite   = 0;
 std::uintptr_t         g_requestTarget = 0;
 std::uintptr_t         g_transform     = 0;
-std::uintptr_t         g_lockNearest   = 0;
+std::uintptr_t         g_disableTarget   = 0;
 std::uintptr_t         g_restoreA      = 0;
 std::uintptr_t         g_restoreB      = 0;
 platform::CallRedirect g_requestCall;
 platform::CallRedirect g_transformCall;
-platform::CallRedirect g_lockNearestCall;
+platform::CallRedirect g_disableTargetCall;
 std::array<platform::VTableEntry, facts::kCmdMenuRestoreLockSlots.size()> g_restoreSlots;
 bool g_placed = false;
 
@@ -119,7 +117,7 @@ struct Seat
     std::uint32_t requestHits  = 0;  // battle camera requests that re-aimed this operator's lock camera
     bool          requestLogged = false;
     std::uint32_t transforms   = 0;  // the game's enemy-transform re-target repeated for the seat
-    std::uint32_t lockNearests = 0;  // the game's scripted lock-nearest repeated for the seat
+    std::uint32_t disableTargets = 0;  // the game's SetDisableTarget repeated for the seat
     FrameReadings frames;
 };
 std::array<Seat, players::scopes::kMaxPlayers> g_seats;
@@ -161,7 +159,7 @@ void ForEachSeatWithTargets(Fn&& fn) noexcept
         {
             continue;
         }
-        const players::scopes::Scope scope(seat, kSeatContexts);
+        const players::scopes::Scope scope(seat, targeting::kTargetingScopes);
         if (!scope.Held())
         {
             continue;
@@ -186,15 +184,18 @@ void Transform(void* a1, void* a2, void* a3, void* a4)
     });
 }
 
-/// A script's lock on the nearest enemy: for player 1, then for each seat (its leader, its lock, its camera).
-void LockNearest(void* a1, char a2, char a3, char a4, char a5)
+/// A script makes a character targetable or not (the battle API's SetDisableTarget): for player 1, then for each seat,
+/// whose displayed target moves off a character disabled under it (its own menu read, so no target of player 1's
+/// command menu is taken).
+void DisableTarget(void* a1, char a2, char a3, char a4, char a5)
 {
-    reinterpret_cast<LockNearestFn>(g_lockNearest)(a1, a2, a3, a4, a5);
+    const auto game = [&] { reinterpret_cast<DisableTargetFn>(g_disableTarget)(a1, a2, a3, a4, a5); };
+    game();
     ForEachSeatWithTargets([&](int seat) {
         Seat& s = g_seats[seat];
-        ++s.lockNearests;
-        reinterpret_cast<LockNearestFn>(g_lockNearest)(a1, a2, a3, a4, a5);
-        platform::LogDebug(L"lock camera: a scripted lock on the nearest enemy ran for {} too ({} so far)", SeatName(seat), s.lockNearests);
+        ++s.disableTargets;
+        game();
+        platform::LogDebug(L"lock camera: a script's targetability call ran for {} too ({} so far)", SeatName(seat), s.disableTargets);
     });
 }
 
@@ -257,7 +258,7 @@ std::wstring RestoreReading()
                                     g_restores[2], g_restores[3]);
     for (int seat = 1; seat <= kSeatsBuilt; ++seat)
     {
-        text += std::format(L"; {}: transforms {}, scripted locks {}", SeatName(seat), g_seats[seat].transforms, g_seats[seat].lockNearests);
+        text += std::format(L"; {}: transforms {}, targetability changes {}", SeatName(seat), g_seats[seat].transforms, g_seats[seat].disableTargets);
     }
     return text;
 }
@@ -431,11 +432,11 @@ bool Install(const platform::GameImage& image) noexcept
     const auto requestSite   = image.Rebase(facts::kBattleCamFindActiveRotationLockCall, 5);
     const auto transform     = platform::FindFunction(image, facts::kTransformRetarget);
     const auto transformSite = image.Rebase(facts::kTransformRetargetCall, 5);
-    const auto lockNearest   = platform::FindFunction(image, facts::kScriptLockNearest);
+    const auto disableTarget = platform::FindFunction(image, facts::kScriptLockNearest);
     const auto lockSite      = image.Rebase(facts::kScriptLockNearestCall, 5);
     const auto restoreA      = platform::FindFunction(image, facts::kCmdMenuRestoreLockA);
     const auto restoreB      = platform::FindFunction(image, facts::kCmdMenuRestoreLockB);
-    if (!requestTarget || !requestSite || !transform || !transformSite || !lockNearest || !lockSite || !restoreA || !restoreB)
+    if (!requestTarget || !requestSite || !transform || !transformSite || !disableTarget || !lockSite || !restoreA || !restoreB)
     {
         platform::Log(L"lock camera: an engine check failed; the seats' lock edges are not covered");
         return false;
@@ -443,17 +444,17 @@ bool Install(const platform::GameImage& image) noexcept
     g_requestTarget = *requestTarget;
     g_requestSite   = *requestSite;
     g_transform     = *transform;
-    g_lockNearest   = *lockNearest;
+    g_disableTarget   = *disableTarget;
     g_restoreA      = *restoreA;
     g_restoreB      = *restoreB;
 
     const bool retargets = g_transformCall.Install(*transformSite, g_transform, reinterpret_cast<std::uintptr_t>(&Transform)) &&
-                           g_lockNearestCall.Install(*lockSite, g_lockNearest, reinterpret_cast<std::uintptr_t>(&LockNearest));
+                           g_disableTargetCall.Install(*lockSite, g_disableTarget, reinterpret_cast<std::uintptr_t>(&DisableTarget));
     if (!retargets)
     {
-        g_lockNearestCall.Restore();
+        g_disableTargetCall.Restore();
         g_transformCall.Restore();
-        platform::Log(L"lock camera: a re-target call could not be redirected; the seats' locks miss enemy transforms and scripted locks");
+        platform::Log(L"lock camera: a re-target call could not be redirected; the seats' targets miss enemy transforms and scripted target changes");
     }
     bool readings = true;
     for (std::size_t i = 0; i < g_restoreSlots.size(); ++i)
@@ -498,7 +499,7 @@ void Remove() noexcept
     {
         slot.Restore();
     }
-    g_lockNearestCall.Restore();
+    g_disableTargetCall.Restore();
     g_transformCall.Restore();
     g_requestCall.Restore();
 }

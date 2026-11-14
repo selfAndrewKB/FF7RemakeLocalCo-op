@@ -21,6 +21,8 @@
 // clear, on its copy.
 // Game thread only.
 
+#include "players/scopes.h"
+
 #include <cstdint>
 
 namespace lss::platform {
@@ -28,6 +30,12 @@ class GameImage;
 }
 
 namespace lss::battle::targeting {
+
+/// The contexts every game call that reads or writes a seat's targeting runs in: its leader and primary, its camera
+/// operator, and its UI slot and focus context, so the game's guards read the seat's own command menu (a target picked
+/// in player 1's menu, a teammate for a heal, never becomes the seat's).
+inline constexpr unsigned kTargetingScopes = players::scopes::Primary | players::scopes::Operator | players::scopes::Leader |
+                                             players::scopes::UiSlot | players::scopes::Focus;
 
 bool Install(const platform::GameImage& image) noexcept;
 void Remove() noexcept;
