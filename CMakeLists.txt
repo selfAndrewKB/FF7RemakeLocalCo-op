@@ -43,6 +43,7 @@ add_library(LocalSplitScreen SHARED
     src/battle/lock_camera.cpp
     src/battle/member_rates.cpp
     src/battle/party_switch.cpp
+    src/battle/encounter_watch.cpp
     src/battle/seat_toad.cpp
     src/battle/sequence_camera.cpp
     src/battle/target_cursor.cpp

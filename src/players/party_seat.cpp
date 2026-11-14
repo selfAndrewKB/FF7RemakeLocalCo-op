@@ -5,6 +5,7 @@
 #include "platform/image.h"
 #include "platform/log.h"
 #include "platform/verified_code.h"
+#include "players/field_root.h"
 #include "players/player_trigger.h"
 #include "players/scopes.h"
 #include "players/seat_objects.h"
@@ -182,6 +183,11 @@ bool Seated(int seat) noexcept
 void* Member(int seat) noexcept
 {
     return ValidSeat(seat) ? g_seats[seat].member : nullptr;
+}
+
+void* PlayerCharacter(int player) noexcept
+{
+    return player == 1 ? field_root::PartyLeader(facts::kLeaderCurrent) : Member(player - 1);
 }
 
 std::uint8_t MemberType(int seat) noexcept

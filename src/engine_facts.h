@@ -2299,6 +2299,21 @@ inline constexpr std::array<std::uint8_t, 16> kInsideBattleAreaEntry{
     0x40, 0x55, 0x53, 0x41, 0x55, 0x41, 0x57, 0x48, 0x8D, 0xAC, 0x24, 0x48, 0xEB, 0xFF, 0xFF, 0xB8};
 inline constexpr platform::FunctionFact kInsideBattleArea{L"BattleCycleLeader_IsCharInsideBattleArea", 0x1409C0030,
                                                           kInsideBattleAreaEntry};
+/// The field encounter, per group (research/RE-field-battle-start-seats.md): EncountGroup_TickStateMachine(group, dt), once
+/// per group from the field encounter tick on the game thread; the group's state byte (0 idle, 1 caution, 2 engage,
+/// 3 battle, 4 escaping, 5 escaped, 6 ended), its own name and its battle area's name (FNames). The area test
+/// (character, the area's FName by value, kind 0 = any, a probe vector) reads the character's own nav-area record.
+inline constexpr std::array<std::uint8_t, 16> kEncountGroupTickEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x20, 0x55, 0x57, 0x41, 0x54, 0x41, 0x55, 0x41, 0x57, 0x48, 0x8D, 0xAC};
+inline constexpr platform::FunctionFact kEncountGroupTick{L"EncountGroup_TickStateMachine", 0x140F9C610, kEncountGroupTickEntry};
+inline constexpr std::size_t            kEncountGroupTickFirst = 5;  // mov [rsp+20h], rbx
+inline constexpr std::array<std::uint8_t, 16> kCharInBattleAreaOfGroupEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x20, 0x48, 0x89, 0x54, 0x24, 0x10, 0x55, 0x56, 0x57, 0x41, 0x54, 0x41};
+inline constexpr platform::FunctionFact kCharInBattleAreaOfGroup{L"EncountMgr_IsCharInBattleAreaOfGroup", 0x140FB24F0,
+                                                                 kCharInBattleAreaOfGroupEntry};
+inline constexpr std::uint32_t kEncountGroupState    = 0x12;
+inline constexpr std::uint32_t kEncountGroupName     = 0x24;
+inline constexpr std::uint32_t kEncountGroupAreaName = 0x2C;
 inline constexpr std::uint32_t  kBattleNoRecovery       = 0x3E8;   // u8 on the battle system: the game warps no member
 inline constexpr std::uint32_t  kBattleRecoveryReady    = 0xDF18;  // u32 on the battle system: non-zero for the warp
 inline constexpr std::uint32_t  kBattleCompFlags        = 0x168;   // the battle component's flags (0x81: may leave)

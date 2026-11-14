@@ -43,5 +43,7 @@ void Forget(int seat) noexcept;
 bool         Seated(int seat) noexcept;
 void*        Member(int seat) noexcept;      // the member seated, or null
 std::uint8_t MemberType(int seat) noexcept;  // 9 (NONE) when none
+/// The character player `player` plays now: 1 the game's party leader, 2 and 3 their seats' members; null when none.
+void*        PlayerCharacter(int player) noexcept;
 
 }  // namespace lss::players::party_seat

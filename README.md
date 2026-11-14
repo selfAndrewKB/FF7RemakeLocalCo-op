@@ -607,6 +607,8 @@ src/
                             (battle/command_menu_tick.h applies them)
     command_menu_tick       Each seat's command controller ticked at the game's own spot, inside the seat's scopes
                             (research/RE-battle.md, RE-command-menu-two.md, RE-battle-member-two.md)
+    encounter_watch         What the field encounter sees, for the option "enemies notice players 2 and 3"
+                            (research/RE-field-battle-start-seats.md)
     enemy_coin              Enemies share their attention between the humans: one coin per enemy decision
                             (research/RE-enemy-attention-coin.md)
     enemy_leader            Enemies follow the human whose member stands when the game's leader is down

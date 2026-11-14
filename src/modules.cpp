@@ -15,6 +15,7 @@
 #include "battle/member_rates.h"
 #include "battle/menu_grey.h"
 #include "battle/party_switch.h"
+#include "battle/encounter_watch.h"
 #include "battle/seat_toad.h"
 #include "battle/sequence_camera.h"
 #include "battle/target_cursor.h"
@@ -313,6 +314,8 @@ constexpr std::array kModules{
     // player 1's switch skips a further player's member
     Module{.name = L"party switch", .install = Call<&battle::party_switch::Install>, .remove = &battle::party_switch::Remove,
            .needs = {Need<&battle::command_menu::Install>()}},
+    // logging only: what the field encounter's groups see, for the option "enemies notice players 2 and 3"
+    Module{.name = L"encounter watch", .install = Call<&battle::encounter_watch::Install>, .remove = &battle::encounter_watch::Remove},
     // without it a toad on player 2's or 3's character leaves that player's camera on the hidden character
     Module{.name = L"seat toad", .install = Call<&battle::seat_toad::Install>, .remove = &battle::seat_toad::Remove,
            .needs = {Need<&players::scopes::Install>()}},
@@ -798,6 +801,7 @@ void TickBattle(const Frame& frame) noexcept
     battle::menu_grey::Tick();
     battle::party_switch::Tick();
     battle::seat_toad::Tick();
+    battle::encounter_watch::Tick();
     players::operator_battle_mode::Tick();
     battle::targeting::Tick();
     battle::target_cursor::Tick();

@@ -123,12 +123,6 @@ std::uint64_t Cure(void* manager, std::uint8_t type)
     return SwapInSeatPlace(g_cureEntry.Original(), manager, type, L"is no longer a toad");
 }
 
-/// The character `player` (1 the game's leader, 2.. a seat's member) plays now, or null.
-void* CharacterOf(int player) noexcept
-{
-    return player == 1 ? players::field_root::PartyLeader(facts::kLeaderCurrent) : players::party_seat::Member(player - 1);
-}
-
 /// The test action: the game's status setter gives the player's character the Frog status, as an enemy's spell does.
 control::Outcome GiveFrog(int player) noexcept
 {
@@ -136,7 +130,7 @@ control::Outcome GiveFrog(int player) noexcept
     {
         return {false, L"not in a fight: the toad is a battle status"};
     }
-    void* const character = CharacterOf(player);
+    void* const character = players::party_seat::PlayerCharacter(player);
     void* const component = character != nullptr ? players::actor_fields::BattleComponent(character) : nullptr;
     if (component == nullptr)
     {
