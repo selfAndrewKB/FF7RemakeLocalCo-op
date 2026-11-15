@@ -162,6 +162,7 @@ add_library(LocalSplitScreen SHARED
     src/world/catch_up_move.cpp
     src/world/env_sets.cpp
     src/world/level_watch.cpp
+    src/world/data_rows.cpp
     src/world/npc_crowd.cpp
     src/world/npc_detail.cpp
     src/world/npc_senses.cpp
@@ -172,6 +173,7 @@ add_library(LocalSplitScreen SHARED
     src/world/search_arrows.cpp
     src/world/shop_act.cpp
     src/world/run_catch_up.cpp
+    src/world/state_signal.cpp
     src/world/story_boxes.cpp
     src/world/talk_gather.cpp
     src/render/area_blend.cpp

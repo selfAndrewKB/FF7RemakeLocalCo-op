@@ -52,8 +52,6 @@ bool                   g_listPlaced = false;
 ListRequestFn          g_request    = nullptr;  // the game's function: the requests the mod asks for itself
 std::uint8_t**         g_manager    = nullptr;  // &the EnvironmentSet manager (its hold mode)
 
-constexpr std::int32_t kSteadyFieldStep = 13;  // the field step machine's steady step (facts::kFieldRootStep)
-
 std::atomic<bool> g_on{true};  // the switch; Remove turns it off from any thread
 bool              g_dirty     = false;  // a request is owed (the switch flipped, or a change came while the game held)
 bool              g_wasSteady = false;  // the field was at its steady step last engine tick
@@ -315,7 +313,7 @@ void Tick() noexcept
     // (fields are sub-levels of one world, so the world check alone does not see it). Nothing is built on it again until
     // the game's own next request (research/RE-world-streaming-levers.md, the field exit and GameMode reset rows).
     const players::game_state::Snapshot& state = players::game_state::Current();
-    const bool steady = state.hasRoot && state.running && state.step == kSteadyFieldStep;
+    const bool steady = players::game_state::SteadyField(state);
     if (g_wasSteady && !steady && g_lastKnown)
     {
         g_lastKnown = false;

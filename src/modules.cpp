@@ -87,6 +87,7 @@
 #include "world/catch_up_move.h"
 #include "world/env_sets.h"
 #include "world/level_watch.h"
+#include "world/data_rows.h"
 #include "world/field_targets.h"
 #include "world/push_events.h"
 #include "world/forced_walk.h"
@@ -100,6 +101,7 @@
 #include "world/search_arrows.h"
 #include "world/shop_act.h"
 #include "world/run_catch_up.h"
+#include "world/state_signal.h"
 #include "world/story_boxes.h"
 #include "world/talk_gather.h"
 #include "world/traversal_action.h"
@@ -286,8 +288,10 @@ constexpr std::array kModules{
            .needs = {Need<&players::pad_table::Install>(), Need<&hud::view_prompt::Install>()}},
     // without it the mod's options are set only from the console and the settings file
     Module{.name = L"Co-op menu", .install = Call<&menu::coop_menu::Install>, .remove = &menu::coop_menu::Remove},
+    // without it nothing reads the level's state data: the lead gate and the state triggers from the console stand aside
+    Module{.name = L"data rows", .install = Call<&world::data_rows::Install>},
     // without it a LEAD or a run to a mark on a further player's member stays the player's
-    Module{.name = L"lead gate", .install = Call<&players::lead_gate::Install>},
+    Module{.name = L"lead gate", .install = Call<&players::lead_gate::Install>, .needs = {Need<&world::data_rows::Install>()}},
     // without it an ambient interest walk hands a further player's member to its AI (which can loop on a ladder)
     Module{.name = L"AI move guard", .install = Call<&players::ai_move_guard::Install>, .remove = &players::ai_move_guard::Remove},
     // the game's single slots answered for a seat for one call: the battle modules need it
@@ -357,6 +361,9 @@ constexpr std::array kModules{
     // The game's state as readings, and the world around the views.
     // readings only; fine without
     Module{.name = L"game state", .install = Call<&players::game_state::Install>},
+    // without it no level state trigger is sent from the console (the repair of a spot's state left on)
+    Module{.name = L"state signal", .install = Call<&world::state_signal::Install>,
+           .needs = {Need<&world::data_rows::Install>(), Need<&players::game_state::Install>()}},
     // without it the split stays through the whole-screen moments in one window (the mirror look)
     Module{.name = L"split switch", .install = Call<&players::split_switch::Install>},
     // without it no moment collapses the split in one window

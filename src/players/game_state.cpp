@@ -87,6 +87,11 @@ const Snapshot& Current() noexcept
     return g_last;
 }
 
+bool SteadyField(const Snapshot& s) noexcept
+{
+    return s.hasRoot && s.running && s.step == facts::kFieldStepSteady;
+}
+
 bool Install(const platform::GameImage& image) noexcept
 {
     const auto gameMode = game_globals::Address(game_globals::Global::GameMode);

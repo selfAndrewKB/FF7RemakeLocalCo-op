@@ -12,16 +12,14 @@
 #include "platform/verified_code.h"
 #include "players/field_hold.h"
 #include "players/field_root.h"
-#include "players/game_globals.h"
 #include "players/lead_keep_rules.h"
 #include "players/leash_rules.h"
 #include "players/party_member.h"
 #include "players/state_path.h"
 #include "world/actor_place.h"
+#include "world/data_rows.h"
 #include "world/story_boxes.h"
 #include "world/traversal_walkup.h"
-
-#include <Unreal/NameTypes.hpp>
 
 #include <algorithm>
 #include <array>
@@ -31,7 +29,6 @@
 #include <format>
 #include <optional>
 #include <string>
-#include <type_traits>
 #include <vector>
 
 namespace lss::players::lead_gate {
@@ -42,9 +39,9 @@ using platform::GameVector;
 using platform::Read;
 using platform::ReadPointer;
 using lead_keep_rules::Verdict;
+namespace data_rows = world::data_rows;
 
 using StoryFlagIsSetFn = char (*)(const std::int64_t* flag);
-using FindRowFn        = void* (*)(void* table, std::int64_t name);
 using FieldPointFindFn = const std::uint8_t* (*)(void* points, const std::int64_t* name);
 
 // A staging lead's or run's waiters are read again this often (the marker each call).
@@ -58,10 +55,6 @@ constexpr std::size_t   kPathLinks        = 16;
 constexpr std::size_t   kPathNexts        = 8;     // next states read per row (the game reads 8 triggers per row)
 constexpr std::uint32_t kEnterActionsRead = 64;    // a state's enter actions read for the leash
 
-std::uintptr_t   g_triggerTables     = 0;
-std::uintptr_t   g_stateChangeTables = 0;
-std::uintptr_t   g_actionTables      = 0;  // 0: the leash is not read (logged at install)
-std::uintptr_t   g_actionGroupTables = 0;
 StoryFlagIsSetFn g_storyFlagIsSet    = nullptr;
 FieldPointFindFn g_fieldPointFind    = nullptr;
 bool             g_keeps             = false; // `lead-holder keeps` (experimental, players/lead_keep_rules.h); guide: every needed move to its AI
@@ -183,18 +176,9 @@ std::int64_t RememberedObject(const void* member) noexcept
 }
 
 /// A name's text for the log: "None" for no name, its bits when the engine cannot say.
-std::wstring Name(std::int64_t bits) noexcept
+std::wstring Name(std::int64_t bits)
 {
-    if (bits == 0)
-    {
-        return L"None";
-    }
-    std::wstring text = platform::NameText(static_cast<std::uint64_t>(bits));
-    if (text.empty())
-    {
-        return std::format(L"name#{:x}", static_cast<std::uint64_t>(bits));
-    }
-    return text;
+    return platform::NameOrBits(bits);
 }
 
 /// An FString's text (`data` pointer, `num` count with the terminator), guarded and capped.
@@ -215,30 +199,10 @@ std::wstring Text(const std::uint8_t* fstring, std::size_t cap = kMaxNameChars) 
     return text;
 }
 
-/// An FName array field (`ptr` at `base`, `num` at `base + 8`): its elements, capped. May throw (allocation): every
-/// caller catches.
-std::vector<std::int64_t> Names(const std::uint8_t* base, std::uint32_t cap)
-{
-    const std::uint8_t* data = nullptr;
-    std::int32_t        num  = 0;
-    std::vector<std::int64_t> out;
-    if (!Read(base, data) || !Read(base + 8, num) || data == nullptr || num <= 0)
-    {
-        return out;
-    }
-    const std::uint32_t count = std::min<std::uint32_t>(static_cast<std::uint32_t>(num), cap);
-    out.resize(count);
-    if (!platform::CopyGuarded(out.data(), data, count * sizeof(std::int64_t)))
-    {
-        out.clear();
-    }
-    return out;
-}
-
 /// A state row's trigger names (the ones the game reads).
 std::vector<std::int64_t> RowTriggers(const std::uint8_t* row)
 {
-    return Names(row + facts::kStateRowTriggers, facts::kStateRowTriggersRead);
+    return data_rows::Names(row + facts::kStateRowTriggers, facts::kStateRowTriggersRead);
 }
 
 struct Slot
@@ -294,50 +258,15 @@ std::vector<Slot> ActiveSlots(const std::uint8_t* sm) noexcept
     return slots;
 }
 
-/// The row named `name` in one of three data tables at `tables`, through the tables' own lookup (the virtual
-/// StateMgr_FireStateTrigger and StateSlot_SetState call).
-const std::uint8_t* TableRow(std::uintptr_t tables, std::int64_t name) noexcept
-{
-    for (std::uint32_t k = 0; k < 3; ++k)
-    {
-        void* table = nullptr;
-        if (!Read(reinterpret_cast<const void*>(tables + 8 * k), table) || table == nullptr)
-        {
-            continue;
-        }
-        void* vtable = ReadPointer(table, 0);
-        auto  find   = reinterpret_cast<FindRowFn>(ReadPointer(vtable, facts::kDataTableFindRowSlot));
-        void* row    = nullptr;
-        if (find != nullptr && platform::CallGuarded(find, row, table, name) && row != nullptr)
-        {
-            return static_cast<const std::uint8_t*>(row);
-        }
-    }
-    return nullptr;
-}
-
-/// The FName of an existing name's text (0 if the pool has no such name; never adds one); a free function for the
-/// guard.
-void FindName(const wchar_t* text, std::int64_t* out) noexcept
-try
-{
-    const RC::Unreal::FName name(text, RC::Unreal::FNAME_Find);
-    *out = (static_cast<std::int64_t>(name.GetNumber()) << 32) | static_cast<std::int64_t>(name.GetComparisonIndex().ToUnstableInt());
-}
-catch (...)
-{
-    *out = 0;
-}
-
 /// The state row named `state` (the game's state-change tables); null if unknown.
 const std::uint8_t* StateRow(const std::wstring& state) noexcept
 {
-    std::int64_t name = 0;
-    if (state.empty() || !platform::CallGuarded(&FindName, state.c_str(), &name) || name == 0)
+    const auto name = static_cast<std::int64_t>(platform::FindName(state.c_str()));
+    if (name == 0)
     {
         return nullptr;
     }
-    return TableRow(g_stateChangeTables, name);
+    return data_rows::Row(data_rows::Table::StateChange, name);
 }
 
 /// A row's next states (NextStateChange, FStrings of 16 bytes), capped; the empty ones skipped.
@@ -429,7 +358,7 @@ try
         return std::nullopt;
     }
     state_path::Row out{.status = Text(row + facts::kStateRowStatus), .next = NextStates(row)};
-    const std::vector<std::int64_t> args = Names(row + facts::kStateRowStringArgs, facts::kStateRowDestinationArg + 1);
+    const std::vector<std::int64_t> args = data_rows::Names(row + facts::kStateRowStringArgs, facts::kStateRowDestinationArg + 1);
     if (args.size() > facts::kStateRowDestinationArg)
     {
         out.destination = args[facts::kStateRowDestinationArg];
@@ -439,27 +368,6 @@ try
 catch (...)
 {
     return std::nullopt;
-}
-
-/// A number array field (`ptr` at `base`, `num` at `base + 8`) of `T`, capped. May throw (allocation): every caller
-/// catches.
-template <typename T>
-std::vector<T> Numbers(const std::uint8_t* base, std::uint32_t cap)
-{
-    static_assert(std::is_trivially_copyable_v<T>, "copied as raw bytes");
-    const std::uint8_t* data = nullptr;
-    std::int32_t        num  = 0;
-    std::vector<T>      out;
-    if (!Read(base, data) || !Read(base + 8, num) || data == nullptr || num <= 0)
-    {
-        return out;
-    }
-    out.resize(std::min<std::uint32_t>(static_cast<std::uint32_t>(num), cap));
-    if (!platform::CopyGuarded(out.data(), data, out.size() * sizeof(T)))
-    {
-        out.clear();
-    }
-    return out;
 }
 
 /// A trigger's special type by the game's name (EEndStateTriggerSpecialType).
@@ -491,7 +399,7 @@ try
         return L"row unread";
     }
     std::wstring                    text;
-    const std::vector<std::int64_t> triggers = Names(row + facts::kStateRowTriggers, facts::kStateRowTriggersRead);
+    const std::vector<std::int64_t> triggers = data_rows::Names(row + facts::kStateRowTriggers, facts::kStateRowTriggersRead);
     const std::uint8_t*             nexts    = nullptr;
     std::int32_t                    count    = 0;
     Read(row + facts::kStateRowNextStates, nexts);
@@ -500,14 +408,14 @@ try
     {
         const bool          known   = nexts != nullptr && static_cast<std::int32_t>(i) < count;
         const std::wstring  next    = known ? Text(nexts + 16 * i, kMaxStateChars) : L"?";
-        const std::uint8_t* trigger = TableRow(g_triggerTables, triggers[i]);
+        const std::uint8_t* trigger = data_rows::Row(data_rows::Table::Trigger, triggers[i]);
         std::wstring        detail  = L"row NOT found";
         if (trigger != nullptr)
         {
             std::int32_t scope = -1;
             Read(trigger + facts::kTriggerRowScope, scope);
             detail = std::format(L"scope {}", scope);
-            const std::vector<std::uint8_t> types = Numbers<std::uint8_t>(trigger + facts::kTriggerRowSpecialTypes, 8);
+            const std::vector<std::uint8_t> types = data_rows::Array<std::uint8_t>(trigger + facts::kTriggerRowSpecialTypes, 8);
             if (!types.empty())
             {
                 detail += L", special types";
@@ -516,7 +424,7 @@ try
                     detail += std::format(L" {}", SpecialTypeName(type));
                 }
             }
-            const std::vector<std::int64_t> sends = Names(trigger + facts::kTriggerRowSendObjects, 4);
+            const std::vector<std::int64_t> sends = data_rows::Names(trigger + facts::kTriggerRowSendObjects, 4);
             for (std::size_t s = 0; s < sends.size(); ++s)
             {
                 detail += std::format(L"{}{}", s == 0 ? L", sends to " : L" ", Name(sends[s]));
@@ -528,13 +436,13 @@ try
     {
         text = L"no trigger";
     }
-    const std::vector<std::int64_t> actions = Names(row + facts::kStateRowEnterActions, 4);
+    const std::vector<std::int64_t> actions = data_rows::Names(row + facts::kStateRowEnterActions, 4);
     for (std::size_t a = 0; a < actions.size(); ++a)
     {
         text += std::format(L"{}{}", a == 0 ? L"; starts " : L" ", Name(actions[a]));
     }
-    const std::vector<std::int64_t> strings = Names(row + facts::kStateRowStringArgs, 12);
-    const std::vector<std::int32_t> ints    = Numbers<std::int32_t>(row + facts::kStateRowIntArgs, 16);
+    const std::vector<std::int64_t> strings = data_rows::Names(row + facts::kStateRowStringArgs, 12);
+    const std::vector<std::int32_t> ints    = data_rows::Array<std::int32_t>(row + facts::kStateRowIntArgs, 16);
     std::wstring                    args;
     for (std::size_t a = 0; a < strings.size(); ++a)
     {
@@ -649,7 +557,7 @@ struct Census
 /// box's group and that it is switched on. 0 when none.
 std::int64_t OwnBoxAhead(const std::vector<Slot>& slots, const Slot& self, std::int64_t arrival, const void* member)
 {
-    std::vector<std::int64_t> exits = Names(self.row + facts::kStateRowTriggers, facts::kStateRowTriggersRead);
+    std::vector<std::int64_t> exits = data_rows::Names(self.row + facts::kStateRowTriggers, facts::kStateRowTriggersRead);
     std::erase_if(exits, [arrival](std::int64_t t) { return t == 0 || t == arrival; });
     if (exits.empty())
     {
@@ -699,7 +607,7 @@ try
         census.text = std::format(L"the member's AI-setting slot not among {} active slots", slots.size());
         return census;
     }
-    const std::vector<std::int64_t> args = Names(self->row + facts::kStateRowStringArgs, 3);
+    const std::vector<std::int64_t> args = data_rows::Names(self->row + facts::kStateRowStringArgs, 3);
     census.read                          = true;
     if (args.size() > facts::kStateRowDestinationArg)
     {
@@ -717,16 +625,16 @@ try
     // Where this move goes (logging).
     census.text = std::format(L"; this move goes to {}", Where(args[facts::kStateRowDestinationArg], markers));
     // The trigger row: its scope and direct sets.
-    const std::uint8_t* trigger = TableRow(g_triggerTables, census.trigger);
+    const std::uint8_t* trigger = data_rows::Row(data_rows::Table::Trigger, census.trigger);
     std::uint8_t        scope   = 0xFF;
     std::vector<std::int64_t> sendObjects;
     if (trigger != nullptr)
     {
         Read(trigger + facts::kTriggerRowScope, scope);
-        sendObjects = Names(trigger + facts::kTriggerRowSendObjects, 64);
-        const std::vector<std::int64_t> objects = Names(trigger + facts::kTriggerRowObjects, facts::kTriggerRowDirectSetsMax);
-        const std::vector<std::int64_t> attrs   = Names(trigger + facts::kTriggerRowAttributes, facts::kTriggerRowDirectSetsMax);
-        const std::vector<std::int64_t> states  = Names(trigger + facts::kTriggerRowStates, facts::kTriggerRowDirectSetsMax);
+        sendObjects = data_rows::Names(trigger + facts::kTriggerRowSendObjects, 64);
+        const std::vector<std::int64_t> objects = data_rows::Names(trigger + facts::kTriggerRowObjects, facts::kTriggerRowDirectSetsMax);
+        const std::vector<std::int64_t> attrs   = data_rows::Names(trigger + facts::kTriggerRowAttributes, facts::kTriggerRowDirectSetsMax);
+        const std::vector<std::int64_t> states  = data_rows::Names(trigger + facts::kTriggerRowStates, facts::kTriggerRowDirectSetsMax);
         for (std::size_t i = 0; i < objects.size(); ++i)
         {
             if (objects[i] == object)
@@ -830,8 +738,8 @@ try
         {
             continue;
         }
-        const std::vector<std::int64_t> targets = Names(row + facts::kStoryRowIconTargets, facts::kStoryRowIconSlots);
-        const std::vector<std::int64_t> hides   = Names(row + facts::kStoryRowIconHideFlags, facts::kStoryRowIconSlots);
+        const std::vector<std::int64_t> targets = data_rows::Names(row + facts::kStoryRowIconTargets, facts::kStoryRowIconSlots);
+        const std::vector<std::int64_t> hides   = data_rows::Names(row + facts::kStoryRowIconHideFlags, facts::kStoryRowIconSlots);
         std::int64_t                    target  = 0;
         for (std::size_t s = 0; s < targets.size(); ++s)
         {
@@ -890,7 +798,7 @@ catch (...)
 std::wstring MemberTag(const void* member) noexcept
 try
 {
-    const std::vector<std::int64_t> tags = Names(static_cast<const std::uint8_t*>(member) + facts::kActorTags, 1);
+    const std::vector<std::int64_t> tags = data_rows::Names(static_cast<const std::uint8_t*>(member) + facts::kActorTags, 1);
     return tags.empty() || tags[0] == 0 ? std::wstring() : Name(tags[0]);
 }
 catch (...)
@@ -935,7 +843,7 @@ std::array<std::uintptr_t, 9> ActTablesKey() noexcept
     for (std::uint32_t k = 0; k < 3; ++k)
     {
         const std::uint8_t* table = nullptr;
-        if (!Read(reinterpret_cast<const void*>(g_actionTables + 8 * k), table) || table == nullptr)
+        if (!Read(reinterpret_cast<const void*>(data_rows::Tables(data_rows::Table::Action) + 8 * k), table) || table == nullptr)
         {
             continue;
         }
@@ -959,8 +867,8 @@ AutoWalk Decode(std::int64_t name, const std::uint8_t* act)
     auto str = [&](std::uint32_t i) {
         return strings != nullptr && static_cast<std::int32_t>(i) < count ? Text(strings + 16 * i) : std::wstring();
     };
-    const std::vector<std::int32_t> ints   = Numbers<std::int32_t>(act + facts::kActionRowIntegers, facts::kAutoWalkIntLookAtBand + 1);
-    const std::vector<float>        floats = Numbers<float>(act + facts::kActionRowFloats, facts::kAutoWalkFltTurnBack + 1);
+    const std::vector<std::int32_t> ints   = data_rows::Array<std::int32_t>(act + facts::kActionRowIntegers, facts::kAutoWalkIntLookAtBand + 1);
+    const std::vector<float>        floats = data_rows::Array<float>(act + facts::kActionRowFloats, facts::kAutoWalkFltTurnBack + 1);
     auto num = [&](std::uint32_t i) { return i < ints.size() ? ints[i] : 0; };
     return AutoWalk{.act              = name,
                     .object           = str(facts::kAutoWalkStrObject),
@@ -999,7 +907,7 @@ bool RefreshAutoWalks()
                                            // table's row of the same name hides it, as FindRow takes the first.
                                            if (Read(row + facts::kActionRowType, type) && type == facts::kActionTypeAutoWalk &&
                                                Read(reinterpret_cast<const void*>(element), name) && name != 0 &&
-                                               TableRow(g_actionTables, name) == row)
+                                               data_rows::Row(data_rows::Table::Action, name) == row)
                                            {
                                                index.acts.push_back(Decode(name, row));
                                            }
@@ -1025,15 +933,15 @@ bool RefreshAutoWalks()
 /// ActSequence_QueueActionOrGroup does) or the name itself.
 bool Enters(const std::uint8_t* row, std::int64_t act)
 {
-    for (const std::int64_t entered : Names(row + facts::kStateRowEnterActions, kEnterActionsRead))
+    for (const std::int64_t entered : data_rows::Names(row + facts::kStateRowEnterActions, kEnterActionsRead))
     {
         if (entered == 0)
         {
             continue;
         }
-        if (const std::uint8_t* group = TableRow(g_actionGroupTables, entered))
+        if (const std::uint8_t* group = data_rows::Row(data_rows::Table::ActionGroup, entered))
         {
-            const std::vector<std::int64_t> acts = Names(group + facts::kActionGroupRowActions, facts::kActionGroupRowActionsMax);
+            const std::vector<std::int64_t> acts = data_rows::Names(group + facts::kActionGroupRowActions, facts::kActionGroupRowActionsMax);
             if (std::find(acts.begin(), acts.end(), act) != acts.end())
             {
                 return true;
@@ -1047,6 +955,12 @@ bool Enters(const std::uint8_t* row, std::int64_t act)
     return false;
 }
 
+/// The act and act-group tables were found: a leash can be read.
+bool ActTablesFound() noexcept
+{
+    return data_rows::Installed(data_rows::Table::Action) && data_rows::Installed(data_rows::Table::ActionGroup);
+}
+
 /// A live AutoWalk act that leashes player 1 to the member (players/leash_rules.h; RE-lead-unlock.md). The search
 /// runs from the level's few AutoWalk acts (the index) rather than from every active slot: an act aimed at the member
 /// and armed is live when an active slot of its object holds its state and that state enters it, as the act runner
@@ -1056,7 +970,7 @@ Leash LeashOn(const std::vector<Slot>& slots, const std::wstring& tag, const std
 try
 {
     Leash leash;
-    if (g_actionTables == 0 || g_actionGroupTables == 0)
+    if (!ActTablesFound())
     {
         leash.text = L"leash not read (the act tables were not found at install)";
         return leash;
@@ -1072,9 +986,9 @@ try
             continue;
         }
         ++aimed;
-        std::int64_t object = 0, state = 0;
-        if (!platform::CallGuarded(&FindName, walk.object.c_str(), &object) || object == 0 ||
-            !platform::CallGuarded(&FindName, walk.state.c_str(), &state) || state == 0)
+        const auto object = static_cast<std::int64_t>(platform::FindName(walk.object.c_str()));
+        const auto state  = static_cast<std::int64_t>(platform::FindName(walk.state.c_str()));
+        if (object == 0 || state == 0)
         {
             continue;  // a name the pool does not hold: no slot holds it
         }
@@ -1154,25 +1068,14 @@ bool MoveOf(const void* fieldAi, std::uint8_t kind, std::int64_t& object, std::i
 
 bool Install(const platform::GameImage& image) noexcept
 {
-    const auto tables = image.Rebase(facts::kStateTriggerTablesGlobal, 3 * sizeof(void*));
-    const auto states = image.Rebase(facts::kStateChangeTablesGlobal, 3 * sizeof(void*));
-    const auto flag   = platform::FindFunction(image, facts::kStoryFlagIsSet);
-    if (!field_root::Installed() || !tables || !states || !flag)
+    const auto flag = platform::FindFunction(image, facts::kStoryFlagIsSet);
+    if (!field_root::Installed() || !data_rows::Installed(data_rows::Table::Trigger) || !flag)
     {
         platform::Log(L"lead gate: an engine check failed; a LEAD or a run to a mark on a further player's member stays the player's");
         return false;
     }
-    g_triggerTables     = *tables;
-    g_stateChangeTables = *states;
-    g_storyFlagIsSet    = reinterpret_cast<StoryFlagIsSetFn>(*flag);
-    const auto acts   = game_globals::Address(game_globals::Global::TableAction);
-    const auto groups = image.Rebase(facts::kActionGroupTablesGlobal, 3 * sizeof(void*));
-    if (acts && groups)
-    {
-        g_actionTables      = acts;
-        g_actionGroupTables = *groups;
-    }
-    else
+    g_storyFlagIsSet = reinterpret_cast<StoryFlagIsSetFn>(*flag);
+    if (!ActTablesFound())
     {
         platform::Log(L"lead gate: the act tables are out of the image; a leash on player 1 is not read (such a lead is judged "
                       L"by its waiters and the marker alone)");

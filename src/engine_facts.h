@@ -82,6 +82,7 @@ inline constexpr std::size_t    kGameStateState       = 0x3B8;  // EGameState by
 inline constexpr std::size_t    kGameStateMenuKind    = 0x4FC;  // the menu's kind while the state is 8
 inline constexpr std::size_t    kGameStatePause       = 0x4F0;  // execIsGamePause: != 0 while paused
 inline constexpr std::size_t    kFieldRootStep        = 0x70;   // dword: the field step machine (13 = steady field, 14-20 exit steps)
+inline constexpr std::int32_t   kFieldStepSteady      = 13;     // the steady field: the state manager drains its trigger queue from it
 inline constexpr std::size_t    kFieldRootRunning     = 0x74;   // byte: the step machine runs
 inline constexpr std::size_t    kFieldRootLocation    = 0x78;   // FName: the current location
 /// UEndMenuAPI::execIsPauseMenuClosed(ctx, FFrame&, bool* result) (RE-pause-menu-any-pad.md §3.4): the Blueprint
@@ -1997,6 +1998,18 @@ inline constexpr std::uint32_t  kTriggerRowAttributes    = 0x40;
 inline constexpr std::uint32_t  kTriggerRowStates        = 0x50;
 inline constexpr std::uint32_t  kTriggerRowSendObjects   = 0x80;
 inline constexpr std::uint32_t  kTriggerRowDirectSetsMax = 32;
+/// EnableBattleSnap (u8): non-zero makes a send of the trigger write a save record (a battle snap, an auto or safety
+/// save) before it is queued or dispatched (StateTrigger_PreQueueBattleSnapSave, StateTrigger_ApplySaveDataType;
+/// research/RE-send-signal.md).
+inline constexpr std::uint32_t  kTriggerRowSaveStep      = 0x60;
+/// StateMgr_SendSignal_Locked(FName trigger by value, FName sender, float delay, uint8 flags): the game's outside
+/// sender of a state trigger, the call the walk-up exit sends a spot's end triggers with ((trigger, 0, -1.0f, 0)). It
+/// takes its own lock, does nothing from field step 15 on, finds the row in the three trigger tables (an unknown name
+/// touches nothing) and, for delay -1, queues it for the state manager's next tick (research/RE-send-signal.md). The
+/// bytes stop before the 16th, which begins a RIP-relative load.
+inline constexpr std::array<std::uint8_t, 15> kStateSendSignalEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x74, 0x24, 0x10, 0x57, 0x48, 0x83, 0xEC, 0x40};
+inline constexpr platform::FunctionFact kStateSendSignal{L"StateMgr_SendSignal_Locked", 0x140FD0570, kStateSendSignalEntry};
 /// The three state-change data tables (g_DT_StateChange; a state row by its FName through the same virtual, as
 /// StateSlot_SetState 0x141169C00 does when a slot steps to its next state). [CONFIRMED code]
 inline constexpr std::uintptr_t kStateChangeTablesGlobal = 0x145843FB0;

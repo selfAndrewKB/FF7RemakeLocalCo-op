@@ -35,6 +35,10 @@ struct Snapshot
 /// The last values Tick read (a reference to them: copy what is kept).
 const Snapshot& Current() noexcept;
 
+/// The steady field: a field root whose step machine runs at its steady step (the field's own play, between a load's
+/// steps and an exit's).
+bool SteadyField(const Snapshot& s) noexcept;
+
 /// The world the game mode names (AEndGameMode::GetWorld), or null. Game thread.
 void* World() noexcept;
 /// The world `object` lives in (UObject::GetWorld through its vtable, the call guarded), or null. Game thread.

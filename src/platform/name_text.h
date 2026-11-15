@@ -12,4 +12,17 @@ namespace lss::platform {
 /// engine cannot say: the lookup faulted or threw. Callers put their own word in its place.
 std::wstring NameText(std::uint64_t bits) noexcept;
 
+/// A name for a log line or a reading: "None" for no name, its text, or its bits ("name#...") when the engine cannot say.
+std::wstring NameOrBits(std::uint64_t bits);
+
+/// The same for a name kept as a signed 8-byte value (the data rows' arrays).
+inline std::wstring NameOrBits(std::int64_t bits)
+{
+    return NameOrBits(static_cast<std::uint64_t>(bits));
+}
+
+/// The 8 bytes of the engine name whose text is `text`, if the engine already has that name; 0 when it has none (never
+/// adds one) or the lookup faulted or threw.
+std::uint64_t FindName(const wchar_t* text) noexcept;
+
 }  // namespace lss::platform
