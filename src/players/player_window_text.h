@@ -9,8 +9,9 @@
 // otherwise draws the last device's, a keyboard's keycaps after a key press), the character in the game's yellow,
 // lines joined by CR LF as the game's own strings are. The plain form is the same lines in words, for the fallback
 // drawn on the engine's canvas (hud/view_prompt) when no game window can be opened. A window says, top to bottom: its
-// player's number and character; then a line for each key the player can press, or a note for a while (a join that
-// waits, a refusal).
+// player's number between the d-pad's left and right (a trade of numbers) and its character between up and down (a
+// step through the party list), each pair shown while it can change; then a line for each other key the player can
+// press, or a note for a while (a join that waits, a refusal).
 
 #include <array>
 #include <cstddef>
@@ -20,7 +21,7 @@
 
 namespace lss::players::player_window_text {
 
-inline constexpr int kLines = 5;  // the most a window says: player 2's or 3's open window in the fallback's words
+inline constexpr int kLines = 6;  // the most a window says: player 2's or 3's open window in the fallback's words
 
 struct ScreenText
 {
@@ -61,7 +62,8 @@ struct Window
     int          seat       = 0;      // 0 player 1's
     std::wstring name;                // the character in capitals ("TIFA")
     bool         open       = false;  // the player's window is open: its keys show (else only a note does)
-    bool         canStep    = false;  // the d-pad steps to another party member (never player 1)
+    bool         canStep    = false;  // the d-pad's up/down step to another party member (never player 1)
+    bool         canTrade   = false;  // another player is in: the d-pad's left/right trade player numbers
     bool         canMove    = false;  // more than one screen: LB/RB move the view
     bool         startJoins = false;  // a seat is free: Start on another pad adds a player (said on player 1's)
     Note         note       = Note::None;
@@ -91,19 +93,26 @@ inline ScreenText TextFor(const Window& w)
     const auto yellow = [](const std::wstring& text) { return L"<color=yellow>" + text + L"</color>"; };
     const auto player = PlayerName(w.seat);
 
+    const bool trade = w.canTrade && w.open;
+    const bool step  = w.canStep && w.open;
     std::vector<Line> lines;
-    lines.push_back({player + L"    " +
-                         (w.canStep && w.open ? icon(L"left") + L"  " + yellow(w.name) + L"  " + icon(L"right") : yellow(w.name)),
-                     player + L"    " + (w.canStep && w.open ? L"<   " + w.name + L"   >" : w.name)});
+    lines.push_back({(trade ? icon(L"left") + L" " + player + L" " + icon(L"right") : player) + L"    " +
+                         (step ? icon(L"up") + L"  " + yellow(w.name) + L"  " + icon(L"down") : yellow(w.name)),
+                     (trade ? L"<  " + player + L"  >" : player) + L"    " + (step ? L"^   " + w.name + L"   v" : w.name)});
     if (w.note != Note::None)
     {
         lines.push_back({NoteText(w.note, w.about), NoteText(w.note, w.about)});
     }
     else if (w.open)
     {
+        // The game window shows the d-pad's pairs beside the number and the name; the fallback says them in words.
         if (w.canStep)
         {
-            lines.push_back({L"", L"Left/Right: character"});  // the game window shows the arrows beside the name
+            lines.push_back({L"", L"Up/Down: character"});
+        }
+        if (w.canTrade)
+        {
+            lines.push_back({L"", L"Left/Right: player number"});
         }
         if (w.canMove)
         {

@@ -2,12 +2,18 @@
 
 // The pure rules of the player windows (players/player_window). Host-tested (tests/player_window_test.cpp).
 //
-// A pad is its player: slot N of the pad table is player N's. Each player has one window, on their own view:
-//   - the d-pad left/right steps a further player to the next party member no other human plays;
+// A pad is its player: slot N of the pad table is player N's. Each player has one window, on their own view, and three
+// independent changes, each a swap:
+//   - the d-pad up/down steps a further player's character through the party list (a member another player holds is
+//     traded);
+//   - the d-pad left/right trades player numbers with the nearest player that way: the two pads trade slots and the two
+//     screens trade numbers, so each person keeps their pad and their screen and takes the other number with its
+//     character (player 1's: the game's leader);
 //   - LB/RB moves the player's view one screen left/right, swapping places with what is there (another player's view or
 //     a copy), so a person's own pad and their view end up in front of them;
 //   - A, Start or a B tap closes it; B held a second takes player 2 or 3 out of the game (player 1 is refused).
-// A pad on the title screen that presses a button becomes player 1's.
+// A pad on the title screen that presses a button becomes player 1's. A spare pad's Start takes back a player whose
+// pad is gone before it adds a new player.
 
 #include "players/pad_rules.h"
 
@@ -22,6 +28,8 @@ namespace pad = pad_rules;
 
 inline constexpr int kSeats = 3;  // player 1 and two further players: the pad slots 0..2, the screens 0..2
 
+inline constexpr std::uint16_t kDpadUp    = 0x0001;
+inline constexpr std::uint16_t kDpadDown  = 0x0002;
 inline constexpr std::uint16_t kDpadLeft  = 0x0004;
 inline constexpr std::uint16_t kDpadRight = 0x0008;
 inline constexpr std::uint16_t kLB        = 0x0100;  // XINPUT_GAMEPAD_LEFT_SHOULDER
@@ -31,7 +39,8 @@ inline constexpr std::uint16_t kRB        = 0x0200;  // XINPUT_GAMEPAD_RIGHT_SHO
 enum class Act : std::uint8_t
 {
     Nothing,
-    Step,     // the next party member, `dir` -1 left or +1 right (a further player's)
+    Step,     // the party member `dir` -1 up or +1 down the party list (a further player's)
+    Trade,    // the player number: trade with the nearest player `dir` -1 lower or +1 higher
     Move,     // the view one screen `dir` -1 left or +1 right
     Close,
     Leave,    // B held: the player leaves the game
@@ -52,8 +61,10 @@ constexpr Action OnPress(int seat, std::uint16_t button) noexcept
 {
     switch (button)
     {
-    case kDpadLeft: return seat >= 1 ? Action{Act::Step, -1} : Action{};
-    case kDpadRight: return seat >= 1 ? Action{Act::Step, +1} : Action{};
+    case kDpadUp: return seat >= 1 ? Action{Act::Step, -1} : Action{};
+    case kDpadDown: return seat >= 1 ? Action{Act::Step, +1} : Action{};
+    case kDpadLeft: return {Act::Trade, -1};
+    case kDpadRight: return {Act::Trade, +1};
     case kLB: return {Act::Move, -1};
     case kRB: return {Act::Move, +1};
     case pad::kA:
@@ -95,6 +106,37 @@ constexpr std::optional<std::array<int, kSeats>> Moved(std::array<int, kSeats> s
     return std::nullopt;
 }
 
+/// `seat` is in while `playing` (bit N: seat N in; player 1 always).
+constexpr bool Plays(std::uint32_t playing, int seat) noexcept
+{
+    return seat < kSeats && pad::PlayerSlot(seat, playing);
+}
+
+/// The player `seat` trades numbers with in `dir` (-1 lower, +1 higher): the nearest number that way a player holds,
+/// else -1 (the end of the numbers).
+constexpr int TradePartner(int seat, int dir, std::uint32_t playing) noexcept
+{
+    for (int other = seat + dir; dir != 0 && other >= 0 && other < kSeats; other += dir)
+    {
+        if (Plays(playing, other))
+        {
+            return other;
+        }
+    }
+    return -1;
+}
+
+/// Each screen's seat after players `a` and `b` trade numbers: each person keeps their screen, so the screen that showed
+/// `a` shows `b` and the other way round; a copy's screen (-1) stays.
+constexpr std::array<int, kSeats> Traded(std::array<int, kSeats> seatOn, int a, int b) noexcept
+{
+    for (std::size_t s = 0; s < seatOn.size(); ++s)
+    {
+        seatOn[s] = seatOn[s] == a ? b : seatOn[s] == b ? a : seatOn[s];
+    }
+    return seatOn;
+}
+
 /// The pad table with `user`'s pad on player 1's slot (swapped with the pad there).
 constexpr pad::PadTable WithPlayerOne(pad::PadTable table, int user) noexcept
 {
@@ -127,7 +169,21 @@ constexpr int SeatOf(const pad::PadTable& table, std::uint32_t playing, int user
     {
         return 0;
     }
-    return slot > 0 && slot < kSeats && (playing & (1u << slot)) != 0 ? slot : -1;
+    return slot > 0 && Plays(playing, slot) ? slot : -1;
+}
+
+/// The lowest player whose pad is gone (`goneUsers`, bit N: XInput user N's pad was connected and is not now), the one
+/// a spare pad's Start takes back, else -1.
+constexpr int SeatWithPadGone(const pad::PadTable& table, std::uint32_t playing, std::uint32_t goneUsers) noexcept
+{
+    for (int seat = 0; seat < kSeats; ++seat)
+    {
+        if (Plays(playing, seat) && (goneUsers & (1u << table[static_cast<std::size_t>(seat)])) != 0)
+        {
+            return seat;
+        }
+    }
+    return -1;
 }
 
 /// The settings file's word for a column order ("213"), from its players left to right.

@@ -29,9 +29,13 @@ The folder carries its own `enabled.txt`, so UE4SS's `mods.txt` needs no line fo
   order and player 3 the third, each with a view of their own, and each keeps that place when you reorder the party. If
   that character is not free at that moment (a solo stretch of the story, a character the story is moving), the player
   joins as soon as it is.
-- **Your own window.** Hold **View** (the small left button) for a second. It opens in your own view: left and right on
-  the d-pad change your character (players 2 and 3), LB and RB move your view to another screen, A closes it, and holding
-  B for a second leaves the game. Player 1 cannot leave.
+- **Your own window.** Hold **View** (the small left button) for a second. It opens in your own view:
+  - up and down on the d-pad change your character (players 2 and 3);
+  - left and right on the d-pad change your player number, trading it with the player next to it. You keep your
+    controller and your screen and take over their character: become player 1 to lead the party, or hand the lead on;
+  - LB and RB move your view to another screen;
+  - A closes it, and holding B for a second leaves the game. Player 1 cannot leave.
+- **Controller died?** Turn it back on and press **Start**: it takes back the player whose controller is gone.
 - **By keyboard**, if you need it: Ctrl+F7 brings player 2 in and Ctrl+F8 takes them out; with Shift added, the same for
   player 3.
 - **Each player** walks, talks, shops, opens chests and doors, climbs and fights on their own controller, with their own

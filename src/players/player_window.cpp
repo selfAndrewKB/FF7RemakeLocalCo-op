@@ -15,6 +15,7 @@
 #include "platform/steady_ms.h"
 #include "players/field_root.h"
 #include "players/game_state.h"
+#include "players/pad_presence.h"
 #include "players/pad_rules.h"
 #include "players/pad_table.h"
 #include "players/party_member.h"
@@ -159,7 +160,13 @@ std::wstring NameOf(int seat)
 
 bool Plays(int seat) noexcept
 {
-    return seat == 0 || (seat > 0 && seat < kSeats && (g_playing & (1u << seat)) != 0);
+    return rules::Plays(g_playing, seat);
+}
+
+/// Another player is in: the d-pad's left/right trade numbers.
+bool CanTrade(int seat) noexcept
+{
+    return rules::TradePartner(seat, -1, g_playing) >= 0 || rules::TradePartner(seat, +1, g_playing) >= 0;
 }
 
 /// A further seat no player holds, waits for, rejoins or is joining now (the lowest), or -1.
@@ -244,6 +251,7 @@ void ShowWindows(const Frame& frame)
         w.name       = NameOf(seat);
         w.open       = g_open[static_cast<std::size_t>(seat)];
         w.canStep    = seat >= 1 && g_session != nullptr && g_session->CanStepMember(seat);
+        w.canTrade   = CanTrade(seat);
         w.canMove    = screens >= 2;
         w.startJoins = seat == 0 && FreeSeat() >= 0;
         w.note       = note.note;
@@ -287,7 +295,15 @@ void SetIdlePads()
     }
 }
 
-/// `seat`'s view one screen `dir`: swapped with what is there, the column order changed and saved.
+/// The column order set and saved (the Co-op page's Screen order).
+void ShowOrder(const views::column_rules::Order& order, const wchar_t* why)
+{
+    views::column_layout::ChangeOrder(order, why);
+    platform::settings::Save(platform::settings::kColumnOrder, rules::OrderWord(order.player));
+    g_redraw = true;
+}
+
+/// `seat`'s view one screen `dir`: swapped with what is there.
 void MoveView(const Frame& frame, int seat, int dir)
 {
     using hud::view_window::Sound;
@@ -301,21 +317,62 @@ void MoveView(const Frame& frame, int seat, int dir)
                            dir < 0 ? L"left" : L"right");
         return;
     }
-    views::column_layout::ChangeOrder(*order, L"a player moved their view");
-    platform::settings::Save(platform::settings::kColumnOrder, rules::OrderWord(order->player));
+    ShowOrder(*order, L"a player moved their view");
     hud::view_window::Play(Sound::Cursor);
-    g_redraw = true;
     platform::Log(L"player window: player {}'s view moves {}; the screen order is now {} {} {}", seat + 1,
                   dir < 0 ? L"left" : L"right", order->player[0], order->player[1], order->player[2]);
 }
 
-/// A spare pad's Start: a join on the lowest seat out (during one view, once the views split).
-void AskJoin(const Frame& frame, int user)
+/// `seat`'s player trades numbers with the nearest player `dir`: the two pads trade slots and the two screens trade
+/// numbers, so each person keeps their pad and their screen and plays the other number, its character and its window.
+/// Held while a join or a leave is on its way (those name a number).
+void TradeNumber(const Frame& frame, int seat, int dir)
+{
+    using hud::view_window::Sound;
+    const int  other = AnyRequest() ? -1 : rules::TradePartner(seat, dir, g_playing);
+    const auto order = other >= 0 ? views::column_rules::OrderShowing(rules::Traded(SeatOnScreens(frame), seat, other))
+                                  : std::nullopt;
+    const auto table = pad_table::Table();
+    if (!order || !pad_table::Set(rules::WithPadOn(table, table[static_cast<std::size_t>(seat)], other),
+                                  L"two players traded numbers"))
+    {
+        hud::view_window::Play(Sound::Cancel);
+        platform::LogDebug(L"player window: player {} trades numbers with no one {} (the end of the numbers, or a join or "
+                           L"leave on its way)",
+                           seat + 1, dir < 0 ? L"lower" : L"higher");
+        return;
+    }
+    ShowOrder(*order, L"two players traded numbers");
+    std::swap(g_open[static_cast<std::size_t>(seat)], g_open[static_cast<std::size_t>(other)]);
+    std::swap(g_notes[static_cast<std::size_t>(seat)], g_notes[static_cast<std::size_t>(other)]);
+    hud::view_window::Play(Sound::Cursor);
+    platform::Log(L"player window: players {} and {} trade numbers: pad {} plays player {}, pad {} player {}; the screen "
+                  L"order is now {} {} {}",
+                  seat + 1, other + 1, table[static_cast<std::size_t>(seat)] + 1, other + 1,
+                  table[static_cast<std::size_t>(other)] + 1, seat + 1, order->player[0], order->player[1], order->player[2]);
+}
+
+/// A spare pad's Start: takes back the lowest player whose pad is gone (a pad that died and came back on another
+/// number), else a join on the lowest seat out (during one view, once the views split).
+void SpareStart(const Frame& frame, int user)
 {
     using hud::view_window::Sound;
     if (std::any_of(g_joins.begin(), g_joins.end(), [user](const JoinAsk& j) { return j.user == user; }))
     {
         return;  // asked already: its join is made before the session's next tick
+    }
+    const auto table = pad_table::Table();
+    if (const int seat = rules::SeatWithPadGone(table, g_playing, pad_presence::GoneUsers()); seat >= 0)
+    {
+        if (pad_table::Set(rules::WithPadOn(table, user, seat), L"a spare pad takes back a player whose pad is gone"))
+        {
+            g_bSeen[static_cast<std::size_t>(user)] = false;
+            g_redraw                                = true;
+            hud::view_window::Play(Sound::Decide);
+            platform::Log(L"player window: pad {} pressed Start: it takes back player {}, whose pad {} is gone", user + 1,
+                          seat + 1, table[static_cast<std::size_t>(seat)] + 1);
+        }
+        return;
     }
     const int free = FreeSeat();
     if (free < 0)
@@ -428,7 +485,8 @@ void WindowInput(const Frame& frame, const Event& e, int seat)
     {
         g_bSeen[at] = true;
     }
-    for (const std::uint16_t button : {rules::kDpadLeft, rules::kDpadRight, rules::kLB, rules::kRB, pad::kA, pad::kStart})
+    for (const std::uint16_t button : {rules::kDpadUp, rules::kDpadDown, rules::kDpadLeft, rules::kDpadRight, rules::kLB,
+                                       rules::kRB, pad::kA, pad::kStart})
     {
         if ((e.pressed & button) == 0 || !g_open[static_cast<std::size_t>(seat)])
         {
@@ -450,6 +508,14 @@ void WindowInput(const Frame& frame, const Event& e, int seat)
                                    L"other player to trade with whose character and theirs are both standing and between actions; "
                                    L"or standing in for player 1's former character)",
                                    seat + 1);
+            }
+            break;
+        case rules::Act::Trade:
+            TradeNumber(frame, seat, a.dir);
+            seat = rules::SeatOf(pad_table::Table(), g_playing, e.user);  // the press's later buttons are the new number's
+            if (seat < 0)
+            {
+                return;
             }
             break;
         case rules::Act::Move: MoveView(frame, seat, a.dir); break;
@@ -482,9 +548,10 @@ bool Install() noexcept
 {
     pad_table::Listen(&Note);
     g_installed = true;
-    platform::Log(L"player window: Start on a pad that plays no one adds a player on it; View held a second opens that "
-                  L"player's own window (d-pad: character, LB/RB: move the view, A: done, B held: leave); on the title "
-                  L"screen the pad that presses plays player 1");
+    platform::Log(L"player window: Start on a pad that plays no one takes back a player whose pad is gone, else adds a "
+                  L"player on it; View held a second opens that player's own window (d-pad up/down: character, left/right: "
+                  L"trade player numbers, LB/RB: move the view, A: done, B held: leave); on the title screen the pad that "
+                  L"presses plays player 1");
     return true;
 }
 
@@ -623,7 +690,7 @@ try
     {
         const int user   = g_startWhenSplit;
         g_startWhenSplit = -1;
-        AskJoin(frame, user);
+        SpareStart(frame, user);
     }
 
     for (std::size_t i = 0; i < count; ++i)
@@ -668,7 +735,7 @@ try
         {
             if ((e.pressed & pad::kStart) != 0 && g_session != nullptr)
             {
-                AskJoin(frame, e.user);
+                SpareStart(frame, e.user);
             }
             continue;
         }

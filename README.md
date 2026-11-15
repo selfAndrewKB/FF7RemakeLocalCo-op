@@ -8,8 +8,8 @@ for working on the mod; the page for players is `PLAYERS.md`, which a release sh
 
 | Keys | What |
 |------|------|
-| Start, on a pad that plays no one | A player joins on that pad (the Ctrl+F7 path below), their view on the next screen and their window open |
-| View held a second | That player's own window, in their own view: d-pad left and right the character (players 2 and 3), LB and RB the view to another screen, A, Start, a B tap or View close it, B held a second leaves the game (player 1 cannot) |
+| Start, on a pad that plays no one | Takes back a player whose pad is gone (a pad that died and came back on another number); otherwise a player joins on that pad (the Ctrl+F7 path below), their view on the next screen and their window open |
+| View held a second | That player's own window, in their own view: d-pad up and down the character (players 2 and 3), d-pad left and right the player number (traded with the nearest player that way; each person keeps their pad and their screen and takes the other number's character, player 1's the party leader), LB and RB the view to another screen, A, Start, a B tap or View close it, B held a second leaves the game (player 1 cannot) |
 | Ctrl+F7 | The keyboard's way in (Ctrl+Shift+F7 the same for player 3). Player 2 joins on the member in the 2nd slot of the party order: own End player controller, camera manager and field camera, the member taken through the game's leader funnel (with its own copy of the PlayerTrigger); it follows that slot. With the member not free (a script, an animation, a guide lead, a solo party) nothing is made yet: player 2 joins once it is free, and leaves again when a party change leaves it without one, so no second camera ever floats over an empty half |
 | Ctrl+F2 | The window across the row of monitors: leaves it when in, else enters, and again on each join |
 | Ctrl+F8 | Player 2 leaves; Ctrl+Shift+F8, player 3 (also cancels a rejoin after a load, and a wait for a member) |

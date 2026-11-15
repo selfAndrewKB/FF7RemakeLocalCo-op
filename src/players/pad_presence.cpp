@@ -27,6 +27,7 @@ constexpr ULONGLONG kPollEveryMs = 1000;  // the game polls every frame; a disco
 struct Pad
 {
     bool          connected = false;
+    bool          seen      = false;  // connected at some poll since the start
     DWORD         packet    = 0;  // XInput's packet number: changes when the pad reports a change
     ULONGLONG     changedAt = 0;  // when it last changed (0: never seen)
 };
@@ -89,6 +90,7 @@ void Poll(ULONGLONG now) noexcept
         XINPUT_STATE state{};
         Pad&         pad = g_pads[user];
         pad.connected    = getState(user, &state) == ERROR_SUCCESS;
+        pad.seen         = pad.seen || pad.connected;
         if (pad.connected && (state.dwPacketNumber != pad.packet || pad.changedAt == 0))
         {
             pad.packet    = state.dwPacketNumber;
@@ -139,6 +141,16 @@ std::wstring Reading(ULONGLONG now)
 }
 
 }  // namespace
+
+std::uint32_t GoneUsers() noexcept
+{
+    std::uint32_t gone = 0;
+    for (unsigned user = 0; user < kUsers; ++user)
+    {
+        gone |= g_pads[user].seen && !g_pads[user].connected ? 1u << user : 0u;
+    }
+    return gone;
+}
 
 void Register()
 {

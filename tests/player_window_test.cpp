@@ -1,5 +1,6 @@
 // Host-side tests for the player windows' pure rules and texts (players/player_window_rules.h,
-// players/player_window_text.h): one layer of keys in a player's own window, the view moving one screen at a time, a
+// players/player_window_text.h): one layer of keys in a player's own window, the view moving one screen at a time, the
+// player numbers traded with each person keeping their screen, a spare pad taking back a player whose pad is gone, a
 // pad that presses on the title screen taking player 1, and each window's lines.
 
 #include "players/player_window_rules.h"
@@ -46,12 +47,15 @@ std::vector<std::wstring> LinesOf(const std::wstring& markup)
     return lines;
 }
 
-/// One layer: the d-pad steps a further player only, LB/RB move anyone's view, A and Start close; B is not a press.
+/// One layer: up/down step a further player's character, left/right trade anyone's number, LB/RB move anyone's view,
+/// A and Start close; B is not a press.
 void OneLayerOfKeys()
 {
-    EXPECT(OnPress(1, kDpadLeft) == (Action{Act::Step, -1}));
-    EXPECT(OnPress(2, kDpadRight) == (Action{Act::Step, +1}));
-    EXPECT(OnPress(0, kDpadRight).act == Act::Nothing);  // player 1's character is the game's leader
+    EXPECT(OnPress(1, kDpadUp) == (Action{Act::Step, -1}));
+    EXPECT(OnPress(2, kDpadDown) == (Action{Act::Step, +1}));
+    EXPECT(OnPress(0, kDpadDown).act == Act::Nothing);  // player 1's character is the game's leader
+    EXPECT(OnPress(0, kDpadRight) == (Action{Act::Trade, +1}));
+    EXPECT(OnPress(2, kDpadLeft) == (Action{Act::Trade, -1}));
     EXPECT(OnPress(0, kLB) == (Action{Act::Move, -1}));
     EXPECT(OnPress(2, kRB) == (Action{Act::Move, +1}));
     EXPECT(OnPress(1, pad::kA).act == Act::Close);
@@ -86,6 +90,69 @@ void TheViewMoves()
     EXPECT(OrderWord({2, 1, 3}) == L"213");
 }
 
+/// A number trade goes to the nearest player that way, stopping at the ends; the two screens trade numbers, so each
+/// person keeps their screen whichever came first, the move or the trade; the two pads trade slots.
+void NumbersTrade()
+{
+    EXPECT(TradePartner(0, +1, 0b011) == 1);
+    EXPECT(TradePartner(1, -1, 0b011) == 0);
+    EXPECT(TradePartner(0, -1, 0b111) == -1);  // the lowest number
+    EXPECT(TradePartner(2, +1, 0b111) == -1);  // the highest
+    EXPECT(TradePartner(1, +1, 0b011) == -1);  // player 3 not in
+    EXPECT(TradePartner(0, +1, 0b101) == 2);   // player 2 not in: the next player that way
+    EXPECT(TradePartner(2, -1, 0b101) == 0);
+    EXPECT(TradePartner(0, +1, 0b001) == -1);  // alone
+
+    // Player 2 moved their view onto the left screen, then trades with player 1: the left screen shows player 1 (them).
+    const auto moved = Moved({0, 1, -1}, 2, 1, -1);
+    EXPECT(moved && (*moved == std::array<int, kSeats>{1, 0, -1}));
+    EXPECT((Traded(*moved, 1, 0) == std::array<int, kSeats>{0, 1, -1}));
+    // Three screens with a copy's: only the two traded numbers change places.
+    EXPECT((Traded({2, -1, 0}, 0, 2) == std::array<int, kSeats>{0, -1, 2}));
+    EXPECT((Traded({0, 1, 2}, 1, 2) == std::array<int, kSeats>{0, 2, 1}));
+    // The pads: player 2's pad onto player 1's slot, player 1's onto player 2's.
+    const pad::PadTable pads{2, 0, 1, 3};
+    EXPECT((WithPadOn(pads, pads[1], 0) == pad::PadTable{0, 2, 1, 3}));
+    EXPECT((Traded({0, 1, -1}, 1, 1) == std::array<int, kSeats>{0, 1, -1}));  // with itself: nothing
+    EXPECT(TradePartner(1, 0, 0b111) == -1);
+    EXPECT(!Plays(0b111, 3) && !Plays(0b111, -1) && Plays(0, 0));
+
+    // Every person keeps their pad and their screen through any trade: three players, each pad's screen before and after.
+    const pad::PadTable         before{1, 3, 0, 2};
+    const std::array<int, kSeats> seatOn{2, 0, 1};
+    for (int seat = 0; seat < kSeats; ++seat)
+    {
+        for (const int dir : {-1, +1})
+        {
+            const int other = TradePartner(seat, dir, 0b111);
+            if (other < 0)
+            {
+                continue;
+            }
+            const pad::PadTable           after    = WithPadOn(before, before[static_cast<std::size_t>(seat)], other);
+            const std::array<int, kSeats> screens  = Traded(seatOn, seat, other);
+            for (int screen = 0; screen < kSeats; ++screen)
+            {
+                const auto shown = [](const pad::PadTable& t, const std::array<int, kSeats>& on, int s) {
+                    return t[static_cast<std::size_t>(on[static_cast<std::size_t>(s)])];  // the pad whose player a screen shows
+                };
+                EXPECT(shown(after, screens, screen) == shown(before, seatOn, screen));
+            }
+        }
+    }
+}
+
+/// A spare pad's Start takes back the lowest player whose pad is gone; none gone, or gone pads nobody plays: -1. (A slot
+/// no pad ever answered, a keyboard player 1's, is never in the gone set: players/pad_presence.)
+void PadsGone()
+{
+    EXPECT(SeatWithPadGone({0, 1, 2, 3}, 0b011, 0b0010) == 1);
+    EXPECT(SeatWithPadGone({0, 1, 2, 3}, 0b111, 0b0101) == 0);  // player 1's and player 3's: the lowest
+    EXPECT(SeatWithPadGone({0, 1, 2, 3}, 0b011, 0b1100) == -1); // gone pads no player holds
+    EXPECT(SeatWithPadGone({3, 1, 2, 0}, 0b001, 0b1000) == 0);  // player 1 on pad 4
+    EXPECT(SeatWithPadGone({0, 1, 2, 3}, 0b111, 0) == -1);
+}
+
 /// The title screen's press takes player 1's slot; a join's pad takes the new player's; a pad's seat is its slot's.
 void PadsAndSeats()
 {
@@ -100,27 +167,30 @@ void PadsAndSeats()
     EXPECT(SeatOf({1, 0, 2, 3}, 0b1, 1) == 0);
 }
 
-/// Player 2's open window: the character with arrows, move, done, leave; one key a line.
+/// Player 2's open window: the number between left and right, the character between up and down, then move, done,
+/// leave; one key a line.
 void FurtherPlayersWindow()
 {
-    Window w{.seat = 1, .name = L"BARRET", .open = true, .canStep = true, .canMove = true};
+    Window w{.seat = 1, .name = L"BARRET", .open = true, .canStep = true, .canTrade = true, .canMove = true};
     const ScreenText t = TextFor(w);
     const std::vector<std::wstring> lines{
-        L"PLAYER 2    <button=left,pad>  <color=yellow>BARRET</color>  <button=right,pad>",
+        L"<button=left,pad> PLAYER 2 <button=right,pad>    <button=up,pad>  <color=yellow>BARRET</color>  <button=down,pad>",
         L"<button=L1,pad> <button=R1,pad> Move my view",
         L"<button=cross,pad> Done",
         L"Hold <button=circle,pad> to leave the game",
     };
     EXPECT(LinesOf(t.markup) == lines);
-    EXPECT(t.plain[0] == L"PLAYER 2    <   BARRET   >");
-    EXPECT(t.plain[1] == L"Left/Right: character");
-    EXPECT(t.plain[2] == L"LB/RB: move my view");
-    EXPECT(t.plain[3] == L"A: done");
-    EXPECT(t.plain[4] == L"Hold B to leave the game");
-    EXPECT(t.plain.size() == 5);  // the longest window fills the fallback's lines exactly
+    EXPECT(t.plain[0] == L"<  PLAYER 2  >    ^   BARRET   v");
+    EXPECT(t.plain[1] == L"Up/Down: character");
+    EXPECT(t.plain[2] == L"Left/Right: player number");
+    EXPECT(t.plain[3] == L"LB/RB: move my view");
+    EXPECT(t.plain[4] == L"A: done");
+    EXPECT(t.plain[5] == L"Hold B to leave the game");
+    EXPECT(t.plain.size() == 6);  // the longest window fills the fallback's lines exactly
 }
 
-/// Player 1's: no arrows, no leave; the Start hint while a seat is free; no move line with one screen.
+/// Player 1's: no character arrows, no leave; the number's arrows while another player is in; the Start hint while a
+/// seat is free; no move line with one screen.
 void PlayerOnesWindow()
 {
     Window w{.seat = 0, .name = L"CLOUD", .open = true, .canMove = false, .startJoins = true};
@@ -130,6 +200,12 @@ void PlayerOnesWindow()
         L"Press <button=options,pad> on another controller to join",
     };
     EXPECT(LinesOf(TextFor(w).markup) == lines);
+    w.canTrade = true;
+    EXPECT(LinesOf(TextFor(w).markup).front() == L"<button=left,pad> PLAYER 1 <button=right,pad>    <color=yellow>CLOUD</color>");
+    EXPECT(TextFor(w).plain[1] == L"Left/Right: player number");
+    w.open = false;  // a shut window shows no arrows
+    EXPECT(TextFor(w).plain[0] == L"PLAYER 1    CLOUD");
+    w.open       = true;
     w.startJoins = false;
     EXPECT(!Has(TextFor(w).markup, L"options"));
     EXPECT(!Has(TextFor(w).markup, L"leave"));
@@ -158,6 +234,8 @@ int main()
     OneLayerOfKeys();
     TheB();
     TheViewMoves();
+    NumbersTrade();
+    PadsGone();
     PadsAndSeats();
     FurtherPlayersWindow();
     PlayerOnesWindow();

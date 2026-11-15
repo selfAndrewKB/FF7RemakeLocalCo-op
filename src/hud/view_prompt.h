@@ -22,7 +22,7 @@ class GameImage;
 
 namespace lss::hud::view_prompt {
 
-inline constexpr int kLines = 5;  // players/player_window_text's
+inline constexpr int kLines = 6;  // players/player_window_text's
 
 struct Prompt
 {

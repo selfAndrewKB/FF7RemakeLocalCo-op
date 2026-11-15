@@ -148,12 +148,17 @@ constexpr Long Hold(Held& h, bool down, std::int64_t nowMs, std::int64_t ms) noe
     return Long::None;
 }
 
-/// What the game sees of a pad on `slot` while `playing` (bit N: slot N holds a player): Start only on a player's slot
-/// (slot 0 always), so a pad that plays no one never pauses the game; its Start joins instead (players/player_window).
+/// `slot` holds a player while `playing` (bit N: slot N holds a player; slot 0, player 1's, always).
+constexpr bool PlayerSlot(int slot, std::uint32_t playing) noexcept
+{
+    return slot == 0 || (slot >= 1 && slot < 32 && (playing & (1u << slot)) != 0);
+}
+
+/// What the game sees of a pad on `slot` while `playing`: Start only on a player's slot, so a pad that plays no one
+/// never pauses the game; its Start joins instead (players/player_window).
 constexpr std::uint16_t StartGate(std::uint16_t buttons, int slot, std::uint32_t playing) noexcept
 {
-    const bool player = slot == 0 || (slot >= 1 && slot < 32 && (playing & (1u << slot)) != 0);
-    return player ? buttons : static_cast<std::uint16_t>(buttons & ~kStart);
+    return PlayerSlot(slot, playing) ? buttons : static_cast<std::uint16_t>(buttons & ~kStart);
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
