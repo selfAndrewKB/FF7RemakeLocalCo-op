@@ -19,6 +19,8 @@
 #include "players/seat_objects.h"
 #include "players/seats.h"
 #include "players/weak_object.h"
+#include "world/field_targets.h"
+#include "world/push_event_rules.h"
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -61,6 +63,7 @@ using StateCallFn  = void (*)(void* state);
 using PhaseFn      = void (*)(void** capture, char phase);
 using FinishFn     = void (*)(void** capture);
 using EndSignalsFn = std::uint64_t (*)(void* actor, void* list, char reached);
+using StartSignalsFn = std::uint64_t (*)(void* spot, void** character, char side);
 using LadderLeaveFn = void (*)(void* flavor, char keepYaw);
 
 constexpr int           kSeats   = players::scopes::kMaxPlayers;
@@ -91,6 +94,8 @@ bool           g_installed = false;
 
 platform::CallRedirect  g_compTick;
 platform::EntryRedirect g_startEnd;
+platform::EntryRedirect g_startSignals;  // a spot's start signals: a seat's member's sent as the game's member's
+std::uint32_t           g_startSignalsAsMember = 0, g_startSignalsBoard = 0;
 platform::CallRedirect  g_crawlLock, g_crawlUnlock, g_squeezeLock, g_squeezeUnlock;
 platform::CallRedirect  g_hookShotLock, g_hookShotUnlock, g_hookShotAbortUnlock;
 bool                    g_hookShotReady = false;  // the three placed: a seat's hookshot takes no field lock
@@ -434,11 +439,18 @@ void SlideDownPostTick(void* state, float dt)
     RunAsSeat(seat, [&] { original(state, dt); });
 }
 
+/// The seat whose member's component the game thread is ticking now, asked on the game thread; 0 otherwise.
+int TickingSeat() noexcept
+{
+    const int seat = g_ticking.load(std::memory_order_relaxed);
+    return seat != 0 && OnGameThreadNow() ? seat : 0;
+}
+
 /// The ticking seat whose member owns `component`, on the game thread; 0 otherwise.
 int TickingSeatOf(const void* component) noexcept
 {
-    const int seat = g_ticking.load(std::memory_order_relaxed);
-    return seat != 0 && OnGameThreadNow() && component == g_seats[seat].component ? seat : 0;
+    const int seat = TickingSeat();
+    return seat != 0 && component == g_seats[seat].component ? seat : 0;
 }
 
 /// A seat number held in one of the markers above for one call, the outer value put back after (nesting).
@@ -466,6 +478,41 @@ void StartEnd(void* component, char start, char end)
         return;
     }
     original(component, start, end);
+}
+
+/// A spot's start signals, sent from the action's state enters inside the component tick. For the party leader's
+/// character the game sends the spot's default start signals, which set level states the save keeps (a spot's camera on
+/// player 1's camera manager among them); the matching end signals go from the state's Exit, which a seat's action runs
+/// with player 1's leader (StartEnd), so a seat's member sending the leader's start would leave that state on for good
+/// (research/RE-camera-slot14-stuck.md). A seat's member's start therefore runs with player 1's leader too: the game's
+/// non-leader branch, an AI member's, and start and end match. A switch board keeps the leader's: its Exit sends the
+/// leader's end for the seat (BoardExit), the trigger the level listens for. Any other call is the game's.
+std::uint64_t StartSignals(void* spot, void** character, char side)
+{
+    const auto original = reinterpret_cast<StartSignalsFn>(g_startSignals.Original());
+    const int  seat     = TickingSeat();
+    void*      who      = nullptr;
+    if (seat == 0 || character == nullptr || !Read(character, who) || who == nullptr || who != g_seats[seat].member)
+    {
+        return original(spot, character, side);
+    }
+    std::uint64_t name = 0;
+    Read(static_cast<const std::uint8_t*>(spot) + facts::kObjectName, name);
+    const std::wstring spotName = world::field_targets::NameOf(name);
+    if (push_event_rules::OperationBoard(spotName))
+    {
+        ++g_startSignalsBoard;
+        return original(spot, character, side);
+    }
+    const players::scopes::LeaderPause pause(seat);  // a no-op inside the action start's own pause: the member branch already
+    if (pause.Paused())
+    {
+        ++g_startSignalsAsMember;
+        platform::LogDebug(L"traversal: {}'s member starts at {}: its start signals go as the game's member's (the spot's level "
+                           L"states stay player 1's)",
+                           players::SeatName(seat), spotName);
+    }
+    return original(spot, character, side);
 }
 
 /// A state's own Start or Exit (`slot` holds the game's). Called by the action start for a seat's member, while the mod
@@ -621,8 +668,8 @@ bool ReplaceStateSlot(const platform::GameImage& image, std::uintptr_t slotFact,
 /// thread).
 bool SkipLock() noexcept
 {
-    const int seat = g_ticking.load(std::memory_order_relaxed);
-    if (seat == 0 || !OnGameThreadNow())
+    const int seat = TickingSeat();
+    if (seat == 0)
     {
         return false;
     }
@@ -1245,6 +1292,8 @@ std::wstring Report()
                                    g_moved ? (g_onGame.load() ? L"moved to the game thread (seen there)" : L"moved, not seen yet")
                                            : L"where the game puts them",
                                    g_gameTicks, g_workerTicks.load());
+    out += std::format(L"; spot start signals of players 2 and 3: {} sent as the game's member's, {} a switch board's as the leader's",
+                       g_startSignalsAsMember, g_startSignalsBoard);
     if (g_cost.gameMs >= 0)
     {
         out += std::format(L"; time inside them per frame (last 5 s): {:.3f} ms on the game thread, {:.3f} ms on workers (summed)", g_cost.gameMs,
@@ -1326,6 +1375,13 @@ bool Install(const platform::GameImage& image) noexcept
     {
         g_startEnd.Restore();
         return fail(L"the component tick's call");
+    }
+    if (const auto signals = platform::FindFunction(image, facts::kSpotStartSignals);
+        !signals || !g_startSignals.Install(*signals, std::span(facts::kSpotStartSignalsEntry.data(), facts::kSpotStartSignalsFirst),
+                                            reinterpret_cast<std::uintptr_t>(&StartSignals)))
+    {
+        platform::LogWarning(L"traversal: a spot's start signals are not as the research read them; a walk-up by player 2 or 3 can "
+                             L"leave a spot's level state on for player 1 (a camera on player 1's view)");
     }
     if (const auto beamEnd = platform::FindFunction(image, facts::kBalanceEndDelegate);
         !beamEnd || !g_balanceEnd.Install(*beamEnd, std::span(facts::kBalanceEndDelegateEntry.data(), facts::kBalanceEndDelegateFirst),
@@ -1615,6 +1671,7 @@ void Remove() noexcept
     }
     g_balanceEnd.Restore();
     g_compTick.Restore();
+    g_startSignals.Restore();
     g_startEnd.Restore();
     if (g_moved)
     {

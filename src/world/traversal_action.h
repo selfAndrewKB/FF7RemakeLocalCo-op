@@ -33,6 +33,12 @@
 // the game's own function on the game thread the next tick (the crawl's through its stub's tail jump: its own first
 // instruction is too short to redirect).
 //
+// A spot's start signals (sent from the action's state enters, for the party leader's character only) set level states
+// the save keeps, and their end signals go from the state's Exit, which a seat's action runs with player 1's leader: a
+// seat's member's start is therefore sent with player 1's leader too (the game's member branch), so the two match and a
+// spot's state (such as a camera on player 1's camera manager) is never left on; a switch board keeps the leader's start,
+// as its Exit sends the leader's end for the seat (research/RE-camera-slot14-stuck.md).
+//
 // What a leader's action does for everyone stays player 1's (a crawl locks only the mover):
 //   - the action start's global switches (the field menu, every walk-up start, encounters) are taken with player 1's
 //     leader in place for a seat's member, so a seat's action takes none of them;
