@@ -164,8 +164,9 @@ std::uint8_t* FieldAiController(const void* member) noexcept;
 /// member). False when unread.
 bool JudgedState(const void* member, field_hold::Judged& out) noexcept;
 
-/// The member's active request is an INTEREST (an ambient interest walk). A hold judged beneath it still hands the
-/// member to its AI, which then runs the walk first, as in single player: the session says so in its hand line.
+/// The member's active request is an interest point's (its ambient walk or its Wait). A hold judged beneath it still
+/// hands the member to its AI, which then runs the interest first, as in single player: the session says so in its hand
+/// line.
 bool InterestOnTop(const void* member) noexcept;
 
 /// The member's actor mode byte (facts::kActorMode*; 0 unread).

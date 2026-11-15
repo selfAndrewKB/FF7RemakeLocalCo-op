@@ -2830,6 +2830,7 @@ inline constexpr std::size_t   kWalkUpCrawl          = 2;      // its TryStart c
 inline constexpr std::size_t   kWalkUpPole           = 18;     // admitted only with its finish's fix (world/traversal_action.h)
 inline constexpr std::uint32_t kCrawlCooldown        = 0x588;  // float
 inline constexpr std::uint32_t kFieldActionIgnore    = 0x520;  // the actor's ignore group: TArray<FName> (data, count +8)
+inline constexpr std::uint32_t kFieldActionIgnoreRow = 0x3D4;  // FName: the ignore group's ActorGroup row (IgnoreActorGroup)
 inline constexpr std::uint32_t kRootStickLatch       = 0x9E4;  // g_EndGameRoot: player 1's camera-cut stick latch (byte)
 inline constexpr std::uint32_t kOnOffDisableFieldAction = 4;  // set by the party leader's action start (actor not forcing its icons), read by the pick and every start
 

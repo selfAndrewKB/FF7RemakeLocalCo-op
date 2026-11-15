@@ -249,18 +249,28 @@ std::uint8_t* FieldAiController(const void* member) noexcept
     return static_cast<std::uint8_t*>(ReadPointer(member, facts::kCharacterFieldAi));
 }
 
+namespace {
+
+/// The field AI's active request (its layer and kind); false when unread.
+bool ActiveRequest(const std::uint8_t* ai, std::uint8_t& layer, std::uint8_t& kind) noexcept
+{
+    return ai != nullptr && Read(ai + facts::kFieldAiActiveLayer, layer) && Read(ai + facts::kFieldAiActiveKind, kind);
+}
+
+}  // namespace
+
 bool JudgedState(const void* member, field_hold::Judged& out) noexcept
 {
     const auto*  ai    = FieldAiController(member);
     std::uint8_t layer = field_hold::kNoLayer, kind = 0;
-    if (ai == nullptr || !Read(ai + facts::kFieldAiActiveLayer, layer) || !Read(ai + facts::kFieldAiActiveKind, kind))
+    if (!ActiveRequest(ai, layer, kind))
     {
         return false;
     }
     std::uint8_t kinds[field_hold::kLayers] = {};
-    // An interest scene never takes a member: it is judged by the request beneath it. Only with the
-    // guard: without it an interest walk could start under the player and fault, so the member is then handed.
-    if (kind == field_hold::kInterest && ai_move_guard::Active())
+    // An interest scene (its walk or its Wait) never takes a member: it is judged by the request beneath it. Only with
+    // the guard: without it an interest walk could start under the player and fault, so the member is then handed.
+    if (field_hold::InterestRequest(layer, kind) && ai_move_guard::Active())
     {
         static_assert(field_hold::kLayers == facts::kFieldAiLayers, "the request stack's layers");
         for (std::size_t i = 0; i < field_hold::kLayers; ++i)
@@ -279,9 +289,8 @@ bool JudgedState(const void* member, field_hold::Judged& out) noexcept
 
 bool InterestOnTop(const void* member) noexcept
 {
-    const auto*  ai   = FieldAiController(member);
-    std::uint8_t kind = 0;
-    return ai != nullptr && Read(ai + facts::kFieldAiActiveKind, kind) && kind == field_hold::kInterest;
+    std::uint8_t top = field_hold::kNoLayer, kind = 0;
+    return ActiveRequest(FieldAiController(member), top, kind) && field_hold::InterestRequest(top, kind);
 }
 
 Wait HoldWait(void* member) noexcept

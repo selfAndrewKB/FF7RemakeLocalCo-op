@@ -133,13 +133,17 @@ void NoStateWaits()
     EXPECT(fh::Of(0xFF, fh::kAccompany) == Hold::NoState);
 }
 
+/// Judged as the party follow on the level layer, which leaves the member its player's.
+bool TheFollowBeneath(const fh::Judged& judged)
+{
+    return judged.layer == fh::kLayerLevel && judged.kind == fh::kAccompany && fh::Of(judged.layer, judged.kind) == Hold::Free;
+}
+
 void AnInterestIsJudgedBeneathIt()
 {
     // As read live: Aerith's layers [1 11 0 0 0 0 0 0 0 12 0 0 0 0 0], active layer 9 kind 12: the follow beneath.
     const std::uint8_t aerith[fh::kLayers] = {1, 11, 0, 0, 0, 0, 0, 0, 0, 12, 0, 0, 0, 0, 0};
-    const fh::Judged   judged              = fh::JudgedState(9, fh::kInterest, aerith);
-    EXPECT(judged.layer == fh::kLayerLevel && judged.kind == fh::kAccompany);
-    EXPECT(fh::Of(judged.layer, judged.kind) == Hold::Free);
+    EXPECT(TheFollowBeneath(fh::JudgedState(9, fh::kInterest, aerith)));
     // A lead written on the level layer meanwhile is still the gate's to judge.
     const std::uint8_t lead[fh::kLayers] = {1, 7, 0, 0, 0, 0, 0, 0, 0, 12, 0, 0, 0, 0, 0};
     const fh::Judged   leadJudged        = fh::JudgedState(9, fh::kInterest, lead);
@@ -154,9 +158,32 @@ void AnInterestIsJudgedBeneathIt()
     // Nothing beneath it: no state yet.
     const std::uint8_t alone[fh::kLayers] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 12, 0, 0, 0, 0, 0};
     EXPECT(fh::Of(fh::JudgedState(9, fh::kInterest, alone).layer, 0) == Hold::NoState);
-    // Any other active kind is judged as it is.
-    EXPECT(fh::JudgedState(9, fh::kStay, aerith).layer == 9);
+    // Any other active kind is judged as it is: a STAY off the interest point's layers (a planner event's, layer 5).
+    const std::uint8_t event[fh::kLayers] = {1, 11, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    EXPECT(fh::JudgedState(5, fh::kStay, event).layer == 5);
+    EXPECT(fh::Of(fh::JudgedState(5, fh::kStay, event).layer, fh::kStay) == Hold::Layer);
     EXPECT(fh::JudgedState(fh::kNoLayer, fh::kInterest, aerith).layer == fh::kNoLayer);
+}
+
+void AnInterestWaitIsJudgedBeneathIt()
+{
+    // As read live while Cloud squeezed into a Wall Market alcove: Tifa's layers [1 11 0 0 0 0 0 0 0 2 ...], active layer 9
+    // kind 2 STAY (the interest point's Wait): the follow beneath, she stays her player's.
+    const std::uint8_t tifa[fh::kLayers] = {1, 11, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0};
+    EXPECT(TheFollowBeneath(fh::JudgedState(9, fh::kStay, tifa)));
+    // On layer 2 the same.
+    const std::uint8_t low[fh::kLayers] = {1, 11, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    EXPECT(fh::JudgedState(2, fh::kStay, low).kind == fh::kAccompany);
+    // A Wait over an interest walk over the follow: both skipped.
+    const std::uint8_t both[fh::kLayers] = {1, 11, 12, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0};
+    EXPECT(fh::JudgedState(9, fh::kStay, both).kind == fh::kAccompany);
+    // A script beneath the Wait still holds.
+    const std::uint8_t script[fh::kLayers] = {1, 11, 0, 0, 0, 2, 0, 0, 0, 2, 0, 0, 0, 0, 0};
+    EXPECT(fh::JudgedState(9, fh::kStay, script).layer == 5);
+    // Not an interest request: a STAY on the level layer, or another kind on layer 9.
+    EXPECT(!fh::InterestRequest(fh::kLayerLevel, fh::kStay));
+    EXPECT(!fh::InterestRequest(9, fh::kLead));
+    EXPECT(fh::InterestRequest(5, fh::kInterest));
 }
 
 void NamesCoverTheEnum()
@@ -216,6 +243,7 @@ int main()
     CinemaCopyFollowsItsKind();
     NoStateWaits();
     AnInterestIsJudgedBeneathIt();
+    AnInterestWaitIsJudgedBeneathIt();
     NamesCoverTheEnum();
     InteractionLocksFreezeTheInteractor();
     AKeptTalkHoldsNoMemberByItself();

@@ -1187,7 +1187,7 @@ void Session::HandForHold(Seat& seat, void* member, party_member::Wait hold, boo
     {
         // Kept rather than handed, the hold beneath could wait for ever (an interest that clears only at its walk's
         // end, a walk refused while held); handed, its AI runs the walk first. research/RE-interest-ladder-loop.md.
-        platform::Log(L"{}'s member has an interest walk on top of that hold: its AI runs the walk first, then the hold",
+        platform::Log(L"{}'s member has an interest point's walk or wait on top of that hold: its AI runs it first, then the hold",
                       seat.Name());
     }
     platform::LogDebug(L"  the member: {}", party_member::AiDetail(member));

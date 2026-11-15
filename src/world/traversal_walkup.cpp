@@ -79,7 +79,8 @@ struct Shadow
     std::size_t                    cls   = 0;
     std::array<std::uint8_t, kBlockA> a{};
     std::array<std::uint8_t, kBlockB> b{};
-    Held                           said = Held::None;  // the last wait logged for this visit; an enter clears it
+    Held                           said     = Held::None;  // the last wait logged for this visit; an enter clears it
+    bool                           liftSaid = false;       // the lifted ignore group logged for this visit
 };
 
 struct SeatState
@@ -409,7 +410,8 @@ char Deliver(int seat, void* actor, std::size_t cls, bool enter, std::uint64_t v
     if (enter)
     {
         ++state.enters;
-        shadow->said = Held::None;  // a new visit says its wait again
+        shadow->said     = Held::None;  // a new visit says its wait again
+        shadow->liftSaid = false;
         platform::LogDebug(L"walk-up: {} is at a {} ({:#x})", players::SeatName(seat), facts::kWalkUpClasses[cls].name,
                            reinterpret_cast<std::uintptr_t>(actor));
     }
@@ -515,6 +517,30 @@ bool InIgnoreGroup(const void* actor, const void* member) noexcept
     return false;
 }
 
+/// The spot ignore groups players 2 and 3 are let through: Wall Market's alley squeezes and crawls, whose group keeps
+/// the companions at the mouth while Cloud ducks in for a chest (it names exactly those ten spots, none of them the
+/// story's); a player playing a listed companion may follow him in. The game's own accept, which also reads the group,
+/// does not bind a seat's member while no field lock is set (research/RE-walkup-ignore-groups.md).
+constexpr const wchar_t* kGroupsLiftedForPlayers[] = {L"agp080_SLU5B_40_PartyMember"};
+
+/// The spot's ignore group is one players are let through.
+bool GroupLifted(const void* actor) noexcept
+{
+    std::uint64_t row = 0;
+    if (!Read(static_cast<const std::uint8_t*>(actor) + facts::kFieldActionIgnoreRow, row) || row == 0)
+    {
+        return false;
+    }
+    for (const wchar_t* group : kGroupsLiftedForPlayers)
+    {
+        if (platform::FindName(group) == row)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
 template <class T>
 struct Kept
 {
@@ -578,8 +604,16 @@ void TryStartFor(int seat, void* actor, std::size_t cls, float dt, TryStartFn or
     }
     if (InIgnoreGroup(actor, state.member))
     {
-        SayHeld(seat, *shadow, actor, Held::IgnoreGroup);
-        return;
+        if (!GroupLifted(actor))
+        {
+            SayHeld(seat, *shadow, actor, Held::IgnoreGroup);
+            return;
+        }
+        if (!std::exchange(shadow->liftSaid, true))
+        {
+            platform::LogDebug(L"walk-up: {}'s member may take this {} ({:#x}): its ignore group is lifted for players", players::SeatName(seat),
+                               facts::kWalkUpClasses[cls].name, reinterpret_cast<std::uintptr_t>(actor));
+        }
     }
     if (players::party_member::HandedToAi(state.member))
     {
