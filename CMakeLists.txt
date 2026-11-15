@@ -769,3 +769,11 @@ add_executable(StuckSpotRulesTests
 target_include_directories(StuckSpotRulesTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_compile_features(StuckSpotRulesTests PRIVATE cxx_std_20)
 add_test(NAME stuck_spot_rules COMMAND StuckSpotRulesTests)
+
+add_executable(StateSlotsWalkTests
+    tests/state_slots_walk_test.cpp
+    src/platform/guarded.cpp
+)
+target_include_directories(StateSlotsWalkTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(StateSlotsWalkTests PRIVATE cxx_std_20)
+add_test(NAME state_slots_walk COMMAND StateSlotsWalkTests)

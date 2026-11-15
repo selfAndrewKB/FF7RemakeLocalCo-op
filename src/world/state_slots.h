@@ -24,8 +24,9 @@ struct Slot
     const std::uint8_t* row    = nullptr;
 };
 
-/// How a walk of the active list ended: `fn` stopped it, the list ended where it began, or the walk was cut short (a
-/// node, an index or a slot pointer unread, or the cap reached): a census that must be whole treats Cut as a failure.
+/// How a walk of the active list ended: `fn` stopped it, the list ended (its last node's next is null, as the game
+/// leaves it, or the walk came back to the list object), or the walk was cut short (a node, an index or a slot pointer
+/// unread, or the cap reached): a census that must be whole treats Cut as a failure.
 enum class Walk : std::uint8_t
 {
     Stopped,
@@ -71,7 +72,7 @@ Walk ForEach(const std::uint8_t* sm, Fn&& fn) noexcept
             return Walk::Cut;
         }
     }
-    return node == end && whole ? Walk::Ended : Walk::Cut;
+    return whole ? Walk::Ended : Walk::Cut;
 }
 
 /// The state manager's active slots (object, state, row), capped at the slot array's size.
