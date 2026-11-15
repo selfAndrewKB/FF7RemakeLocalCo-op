@@ -20,6 +20,7 @@
 #include "players/seats.h"
 #include "players/weak_object.h"
 #include "world/actor_place.h"
+#include "world/field_targets.h"
 #include "world/traversal_action.h"
 
 #include <array>
@@ -57,6 +58,19 @@ constexpr std::size_t kBlockA     = 0x38;
 constexpr std::size_t kBlockB     = 0x30;
 constexpr std::size_t kCellZero   = facts::kControllerTriggerComponent + 8;
 
+/// Why a seat's start test at a spot did not start its action (said once per visit).
+enum class Held : std::uint8_t
+{
+    None,
+    OtherUser,
+    IgnoreGroup,
+    WithAi,
+    NoComponent,
+    NoScope,
+    NoActionSide,
+    GameTest,
+};
+
 /// A seat's copy of one actor's user block.
 struct Shadow
 {
@@ -65,6 +79,7 @@ struct Shadow
     std::size_t                    cls   = 0;
     std::array<std::uint8_t, kBlockA> a{};
     std::array<std::uint8_t, kBlockB> b{};
+    Held                           said = Held::None;  // the last wait logged for this visit; an enter clears it
 };
 
 struct SeatState
@@ -394,6 +409,7 @@ char Deliver(int seat, void* actor, std::size_t cls, bool enter, std::uint64_t v
     if (enter)
     {
         ++state.enters;
+        shadow->said = Held::None;  // a new visit says its wait again
         platform::LogDebug(L"walk-up: {} is at a {} ({:#x})", players::SeatName(seat), facts::kWalkUpClasses[cls].name,
                            reinterpret_cast<std::uintptr_t>(actor));
     }
@@ -480,9 +496,8 @@ std::uint64_t NaviLeave(void* manager, void* volume)
 
 bool InIgnoreGroup(const void* actor, const void* member) noexcept
 {
-    const auto*  tags = players::actor_fields::Tags(member);
-    std::uint64_t tag = 0;
-    if (tags == nullptr || !Read(tags, tag))
+    const std::uint64_t tag = world::field_targets::FirstTag(member);
+    if (tag == 0)
     {
         return false;
     }
@@ -523,31 +538,67 @@ struct Kept
     }
 };
 
+/// Why a seat at a spot has not started its action yet, logged once per visit and wait.
+void SayHeld(int seat, Shadow& shadow, const void* actor, Held why) noexcept
+{
+    if (shadow.said == why)
+    {
+        return;
+    }
+    shadow.said = why;
+    const wchar_t* text = L"";
+    switch (why)
+    {
+    case Held::None: return;
+    case Held::OtherUser: text = L"the spot's copy names another character than the seat's member"; break;
+    case Held::IgnoreGroup: text = L"the member is in the spot's ignore group"; break;
+    case Held::WithAi: text = L"the member is with its AI"; break;
+    case Held::NoComponent: text = L"the member has no field-action component"; break;
+    case Held::NoScope: text = L"the seat's leader scope could not be held"; break;
+    case Held::NoActionSide: text = L"the field actions do not run in the seats' scopes yet"; break;
+    case Held::GameTest: text = L"the game's start test (speed, heading, a busy member or a field gate)"; break;
+    }
+    platform::LogDebug(L"walk-up: {}'s member waits at a {} ({:#x}): {}", players::SeatName(seat),
+                       facts::kWalkUpClasses[shadow.cls].name, reinterpret_cast<std::uintptr_t>(actor), text);
+}
+
 /// One seat's run of the game's TryStart on a spot whose copy names the seat's member.
 void TryStartFor(int seat, void* actor, std::size_t cls, float dt, TryStartFn original) noexcept
 {
     SeatState& state  = g_seats[seat];
     Shadow*    shadow = FindShadow(seat, actor, false, cls);
-    if (shadow == nullptr || state.member == nullptr ||
-        players::weak_object::Resolve(UserOf(*shadow)) != state.member || InIgnoreGroup(actor, state.member))
+    if (shadow == nullptr || state.member == nullptr)
     {
+        return;  // not at this spot
+    }
+    if (players::weak_object::Resolve(UserOf(*shadow)) != state.member)
+    {
+        SayHeld(seat, *shadow, actor, Held::OtherUser);
+        return;
+    }
+    if (InIgnoreGroup(actor, state.member))
+    {
+        SayHeld(seat, *shadow, actor, Held::IgnoreGroup);
         return;
     }
     if (players::party_member::HandedToAi(state.member))
     {
+        SayHeld(seat, *shadow, actor, Held::WithAi);
         return;  // with its AI (a lead, a scene): the game's member, not the player's (world/traversal_action.h)
     }
     auto*       base   = static_cast<std::uint8_t*>(actor);
-    const auto& spot = facts::kWalkUpClasses[cls];
+    const auto& spot   = facts::kWalkUpClasses[cls];
     auto*       root   = players::field_root::Root();
     auto*       comp   = players::actor_fields::FieldAction(state.member);
     if (comp == nullptr)
     {
+        SayHeld(seat, *shadow, actor, Held::NoComponent);
         return;  // a member without a field-action component cannot take a spot
     }
     std::uint8_t pendingBefore = 0;
     Read(comp + facts::kFieldActionPending, pendingBefore);
 
+    bool ran = false;
     Exchange(actor, *shadow);
     {
         Kept<std::uint8_t> exception, latch;
@@ -570,7 +621,8 @@ void TryStartFor(int seat, void* actor, std::size_t cls, float dt, TryStartFn or
         // before the seat's Leader scope below, inside which the party leader is the seat's member.
         const traversal_action::NoActionScope noAction(seat, true);
         const players::scopes::Scope scope(seat, players::scopes::Leader | players::scopes::Primary);
-        if (scope.Held())
+        ran = scope.Held();
+        if (ran)
         {
             const players::seat_camera::StickScope stick(static_cast<std::uint32_t>(seat), true);
             original(actor, dt);
@@ -584,7 +636,12 @@ void TryStartFor(int seat, void* actor, std::size_t cls, float dt, TryStartFn or
     if (pendingAfter != 0 && pendingBefore == 0)
     {
         ++state.requests;
+        shadow->said = Held::None;
         platform::LogDebug(L"walk-up: {}'s member starts the {} ({:#x})", players::SeatName(seat), spot.name, reinterpret_cast<std::uintptr_t>(actor));
+    }
+    else if (pendingBefore == 0)
+    {
+        SayHeld(seat, *shadow, actor, ran ? Held::GameTest : Held::NoScope);
     }
 }
 
@@ -595,7 +652,15 @@ void TryStart(void* actor, float dt)
     original(actor, dt);  // player 1's, the member branch included
     if (!traversal_action::Scoping())
     {
-        return;  // a seat's start would run the game's member version (no pad, no camera): wait for the action side
+        // A seat's start would run the game's member version (no pad, no camera): wait for the action side.
+        for (int seat = 1; seat <= players::kSeatsBuilt; ++seat)
+        {
+            if (Shadow* shadow = FindShadow(seat, actor, false, Cls); shadow != nullptr)
+            {
+                SayHeld(seat, *shadow, actor, Held::NoActionSide);
+            }
+        }
+        return;
     }
     for (int seat = 1; seat <= players::kSeatsBuilt; ++seat)
     {

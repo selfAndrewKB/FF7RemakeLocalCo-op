@@ -3005,10 +3005,11 @@ inline constexpr std::array<std::uint8_t, 16> kActionStartEndEntry{
 inline constexpr std::size_t kActionStartEndFirst = 5;
 inline constexpr platform::FunctionFact kActionStartEnd{L"FieldActionComp_OnActionStartEnd_LeaderOnOffLocks", 0x140FEFB70,
                                                         kActionStartEndEntry};
-/// A spot's start signals (spot actor, &character, side), sent from the action's state enters inside the component tick:
-/// for the party leader's character the spot's default start signals (actor +0x414, and +0x424 or +0x434 by side) go to
-/// the state manager, which saves the states they set; for any other character only its own entries. The end signals
-/// (0x140EEDDB0) go from the state's Exit. Its first instruction: mov [rsp+18h], rbx (research/RE-camera-slot14-stuck.md).
+/// A spot's start signals (spot actor, a pointer to a copy of the character's first tag (an FName), side), sent from the
+/// action's state enters inside the component tick, by every walk-up kind: for the party leader's name the spot's default
+/// start signals (actor +0x414, and +0x424 or +0x434 by side) go to the state manager, which saves the states they set;
+/// for any other name only its own entries. The end signals (0x140EEDDB0) go from the state's Exit. Its first
+/// instruction: mov [rsp+18h], rbx (research/RE-camera-slot14-stuck.md, RE-cave-spot-camera-toggle.md).
 inline constexpr std::array<std::uint8_t, 16> kSpotStartSignalsEntry{
     0x48, 0x89, 0x5C, 0x24, 0x18, 0x55, 0x56, 0x57, 0x41, 0x54, 0x41, 0x57, 0x48, 0x8B, 0xEC, 0x48};
 inline constexpr std::size_t            kSpotStartSignalsFirst = 5;

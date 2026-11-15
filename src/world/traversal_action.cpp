@@ -63,7 +63,7 @@ using StateCallFn  = void (*)(void* state);
 using PhaseFn      = void (*)(void** capture, char phase);
 using FinishFn     = void (*)(void** capture);
 using EndSignalsFn = std::uint64_t (*)(void* actor, void* list, char reached);
-using StartSignalsFn = std::uint64_t (*)(void* spot, void** character, char side);
+using StartSignalsFn = std::uint64_t (*)(void* spot, const std::uint64_t* tag, char side);
 using LadderLeaveFn = void (*)(void* flavor, char keepYaw);
 
 constexpr int           kSeats   = players::scopes::kMaxPlayers;
@@ -480,21 +480,23 @@ void StartEnd(void* component, char start, char end)
     original(component, start, end);
 }
 
-/// A spot's start signals, sent from the action's state enters inside the component tick. For the party leader's
-/// character the game sends the spot's default start signals, which set level states the save keeps (a spot's camera on
-/// player 1's camera manager among them); the matching end signals go from the state's Exit, which a seat's action runs
-/// with player 1's leader (StartEnd), so a seat's member sending the leader's start would leave that state on for good
-/// (research/RE-camera-slot14-stuck.md). A seat's member's start therefore runs with player 1's leader too: the game's
+/// A spot's start signals, sent from the action's state enters inside the component tick for the character whose first
+/// tag `tag` points at (a copy of that name, not the character). For the party leader's name the game sends the spot's
+/// start signals, which set level states the save keeps (a spot's camera on player 1's camera manager among them); the
+/// matching end signals go from the state's Exit, which a seat's action runs with player 1's leader (StartEnd), so a
+/// seat's member sending the leader's start would leave that state on for good (research/RE-camera-slot14-stuck.md,
+/// RE-cave-spot-camera-toggle.md). A seat's member's start therefore runs with player 1's leader too: the game's
 /// non-leader branch, an AI member's, and start and end match. A switch board keeps the leader's: its Exit sends the
 /// leader's end for the seat (BoardExit), the trigger the level listens for. Any other call is the game's.
-std::uint64_t StartSignals(void* spot, void** character, char side)
+std::uint64_t StartSignals(void* spot, const std::uint64_t* tag, char side)
 {
-    const auto original = reinterpret_cast<StartSignalsFn>(g_startSignals.Original());
-    const int  seat     = TickingSeat();
-    void*      who      = nullptr;
-    if (seat == 0 || character == nullptr || !Read(character, who) || who == nullptr || who != g_seats[seat].member)
+    const auto          original = reinterpret_cast<StartSignalsFn>(g_startSignals.Original());
+    const int           seat     = TickingSeat();
+    const std::uint64_t own      = seat != 0 && g_seats[seat].member != nullptr ? world::field_targets::FirstTag(g_seats[seat].member) : 0;
+    std::uint64_t       who      = 0;
+    if (own == 0 || tag == nullptr || !Read(tag, who) || who != own)
     {
-        return original(spot, character, side);
+        return original(spot, tag, side);
     }
     std::uint64_t name = 0;
     Read(static_cast<const std::uint8_t*>(spot) + facts::kObjectName, name);
@@ -502,7 +504,7 @@ std::uint64_t StartSignals(void* spot, void** character, char side)
     if (push_event_rules::OperationBoard(spotName))
     {
         ++g_startSignalsBoard;
-        return original(spot, character, side);
+        return original(spot, tag, side);
     }
     const players::scopes::LeaderPause pause(seat);  // a no-op inside the action start's own pause: the member branch already
     if (pause.Paused())
@@ -512,7 +514,7 @@ std::uint64_t StartSignals(void* spot, void** character, char side)
                            L"states stay player 1's)",
                            players::SeatName(seat), spotName);
     }
-    return original(spot, character, side);
+    return original(spot, tag, side);
 }
 
 /// A state's own Start or Exit (`slot` holds the game's). Called by the action start for a seat's member, while the mod
