@@ -55,6 +55,16 @@ std::wstring NameOrBits(std::uint64_t bits)
     return text.empty() ? std::format(L"name#{:x}", bits) : text;
 }
 
+std::wstring NameList(const std::vector<std::int64_t>& names)
+{
+    std::wstring out;
+    for (const std::int64_t name : names)
+    {
+        out += (out.empty() ? L"" : L", ") + NameOrBits(name);
+    }
+    return out.empty() ? L"none" : out;
+}
+
 std::uint64_t FindName(const wchar_t* text) noexcept
 {
     std::int64_t bits = 0;

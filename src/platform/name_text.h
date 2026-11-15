@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace lss::platform {
 
@@ -20,6 +21,9 @@ inline std::wstring NameOrBits(std::int64_t bits)
 {
     return NameOrBits(static_cast<std::uint64_t>(bits));
 }
+
+/// Names for a log line, comma-separated (NameOrBits each); "none" for an empty list. May throw (allocation).
+std::wstring NameList(const std::vector<std::int64_t>& names);
 
 /// The 8 bytes of the engine name whose text is `text`, if the engine already has that name; 0 when it has none (never
 /// adds one) or the lookup faulted or threw.

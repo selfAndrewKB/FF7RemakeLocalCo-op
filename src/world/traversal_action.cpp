@@ -1153,12 +1153,18 @@ bool SeatActionHoldsNoAction(int seat) noexcept
     return forces != 1;
 }
 
+/// Player 1's leader's running action now (0: none); false when its component cannot be read.
+bool PlayerOneAction(std::uint8_t& action) noexcept
+{
+    const std::uint8_t* comp = nullptr;
+    return PlayerOneLeader(&comp) != nullptr && comp != nullptr && Read(comp + facts::kFieldActionState, action);
+}
+
 /// Player 1's leader is running `action` now.
 bool PlayerOneIn(std::uint8_t action) noexcept
 {
-    const std::uint8_t* comp  = nullptr;
-    std::uint8_t        state = 0;
-    return PlayerOneLeader(&comp) != nullptr && comp != nullptr && Read(comp + facts::kFieldActionState, state) && state == action;
+    std::uint8_t state = 0;
+    return PlayerOneAction(state) && state == action;
 }
 
 /// Closes a 5 s window of the component ticks' cost (game thread, each engine tick).
@@ -1729,6 +1735,16 @@ bool Scoping() noexcept
 bool PoleReady() noexcept
 {
     return g_poleReady;
+}
+
+bool AnyoneActing() noexcept
+{
+    std::uint8_t action = 0;
+    if (!g_installed || !PlayerOneAction(action) || action != 0)
+    {
+        return true;
+    }
+    return std::any_of(g_seats.begin(), g_seats.end(), [](const SeatState& s) { return s.action != 0; });
 }
 
 namespace {

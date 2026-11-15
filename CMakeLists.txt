@@ -174,7 +174,9 @@ add_library(LocalSplitScreen SHARED
     src/world/shop_act.cpp
     src/world/run_catch_up.cpp
     src/world/state_signal.cpp
+    src/world/state_slots.cpp
     src/world/story_boxes.cpp
+    src/world/stuck_spots.cpp
     src/world/talk_gather.cpp
     src/render/area_blend.cpp
     src/world/field_targets.cpp
@@ -760,3 +762,10 @@ add_executable(StoryBoxRulesTests
 target_include_directories(StoryBoxRulesTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_compile_features(StoryBoxRulesTests PRIVATE cxx_std_20)
 add_test(NAME story_box_rules COMMAND StoryBoxRulesTests)
+
+add_executable(StuckSpotRulesTests
+    tests/stuck_spot_rules_test.cpp
+)
+target_include_directories(StuckSpotRulesTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(StuckSpotRulesTests PRIVATE cxx_std_20)
+add_test(NAME stuck_spot_rules COMMAND StuckSpotRulesTests)

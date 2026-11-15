@@ -23,66 +23,9 @@ using SendFn = void (*)(std::uint64_t trigger, std::uint64_t sender, float delay
 
 SendFn g_send = nullptr;
 
-/// A trigger's row as a send would apply it: found, its scope, the objects it sets whatever their state, its save step.
-/// `readable` false when any of the fields a refusal rests on could not be read: such a row is refused.
-struct RowReading
-{
-    std::uint64_t             name       = 0;
-    const std::uint8_t*       row        = nullptr;
-    bool                      readable   = false;
-    std::uint8_t              scope      = 0;
-    std::uint8_t              saveStep   = 0;
-    std::int32_t              directSets = 0;
-    std::vector<std::int64_t> objects, states, sendObjects;
-};
-
-std::wstring List(const std::vector<std::int64_t>& names)
-{
-    std::wstring out;
-    for (const std::int64_t name : names)
-    {
-        out += (out.empty() ? L"" : L", ") + platform::NameOrBits(name);
-    }
-    return out.empty() ? L"none" : out;
-}
-
 RowReading ReadRow(const std::wstring& text)
 {
-    RowReading r;
-    r.name = platform::FindName(text.c_str());
-    r.row  = data_rows::Row(data_rows::Table::Trigger, static_cast<std::int64_t>(r.name));
-    if (r.row == nullptr)
-    {
-        return r;
-    }
-    r.readable = platform::Read(r.row + facts::kTriggerRowScope, r.scope) && platform::Read(r.row + facts::kTriggerRowSaveStep, r.saveStep) &&
-                 platform::Read(r.row + facts::kTriggerRowObjects + 8, r.directSets);
-    r.objects     = data_rows::Names(r.row + facts::kTriggerRowObjects, facts::kTriggerRowDirectSetsMax);
-    r.states      = data_rows::Names(r.row + facts::kTriggerRowStates, facts::kTriggerRowDirectSetsMax);
-    r.sendObjects = data_rows::Names(r.row + facts::kTriggerRowSendObjects, 64);
-    return r;
-}
-
-/// Why a send of this row is refused, empty when it may go.
-std::wstring Refusal(const RowReading& r)
-{
-    if (r.row == nullptr)
-    {
-        return L"no trigger of that name in the level's tables";
-    }
-    if (!r.readable)
-    {
-        return L"its row could not be read";
-    }
-    if (r.saveStep != 0)
-    {
-        return std::format(L"its row writes a save record when sent (save step {})", static_cast<int>(r.saveStep));
-    }
-    if (r.directSets != 0)
-    {
-        return L"its row sets objects directly, whatever their state";
-    }
-    return {};
+    return state_signal::ReadRow(platform::FindName(text.c_str()));
 }
 
 std::wstring Describe(const std::wstring& text, const RowReading& r)
@@ -99,8 +42,9 @@ std::wstring Describe(const std::wstring& text, const RowReading& r)
         sets += std::format(L"{}{} -> {}", sets.empty() ? L"" : L", ", platform::NameOrBits(r.objects[i]), to);
     }
     return std::format(L"{}: scope {} (0 the sender's own, 3 the listed objects, else every active state that waits for it); "
-                       L"objects set directly: {}; listed objects: {}; save step {}; {}",
-                       text, static_cast<int>(r.scope), sets.empty() ? L"none" : sets, List(r.sendObjects), static_cast<int>(r.saveStep),
+                       L"objects set directly: {}; listed objects: {}; save step {}; history cleared: {}; backup act {}; {}",
+                       text, static_cast<int>(r.scope), sets.empty() ? L"none" : sets, platform::NameList(r.sendObjects), static_cast<int>(r.saveStep),
+                       r.clearHistory, platform::NameOrBits(r.backupAct),
                        refused.empty() ? std::wstring(L"state.signal may send it") : L"state.signal refuses it: " + refused);
 }
 
@@ -112,14 +56,12 @@ control::Outcome Signal(const std::wstring& text)
     {
         return {false, std::format(L"{}: not sent: {}", text, refused)};
     }
-    const players::game_state::Snapshot& state = players::game_state::Current();
-    if (!state.valid || !players::game_state::SteadyField(state))
+    if (!players::game_state::SteadyNow())
     {
-        return {false, std::format(L"{}: not sent: the field is not steady (field step {})", text, state.step)};
+        return {false, std::format(L"{}: not sent: the field is not steady (field step {})", text, players::game_state::Current().step)};
     }
-    if (!platform::CallGuarded(g_send, r.name, std::uint64_t{0}, -1.0f, std::uint8_t{0}))
+    if (!Send(r.name))
     {
-        platform::LogWarning(L"state signal: the send of {} faulted", text);
         return {false, std::format(L"{}: the send faulted", text)};
     }
     platform::Log(L"state signal: {} sent from the console, queued for the state manager's next tick", text);
@@ -127,6 +69,69 @@ control::Outcome Signal(const std::wstring& text)
 }
 
 }  // namespace
+
+RowReading ReadRow(std::uint64_t name)
+{
+    RowReading r;
+    r.name = name;
+    r.row  = name == 0 ? nullptr : data_rows::Row(data_rows::Table::Trigger, static_cast<std::int64_t>(name));
+    if (r.row == nullptr)
+    {
+        return r;
+    }
+    r.readable = platform::Read(r.row + facts::kTriggerRowScope, r.scope) && platform::Read(r.row + facts::kTriggerRowSaveStep, r.saveStep) &&
+                 platform::Read(r.row + facts::kTriggerRowObjects + 8, r.directSets) &&
+                 platform::Read(r.row + facts::kTriggerRowClearHistory + 8, r.clearHistory) &&
+                 platform::Read(r.row + facts::kTriggerRowBackupAct, r.backupAct);
+    r.objects     = data_rows::Names(r.row + facts::kTriggerRowObjects, facts::kTriggerRowDirectSetsMax);
+    r.states      = data_rows::Names(r.row + facts::kTriggerRowStates, facts::kTriggerRowDirectSetsMax);
+    r.sendObjects = data_rows::Names(r.row + facts::kTriggerRowSendObjects, 64);
+    return r;
+}
+
+std::wstring Refusal(const RowReading& r)
+{
+    if (r.row == nullptr)
+    {
+        return L"no trigger of that name in the level's tables";
+    }
+    if (!r.readable)
+    {
+        return L"its row could not be read";
+    }
+    if (r.saveStep != 0)
+    {
+        return std::format(L"its row writes a save record when sent (save step {})", static_cast<int>(r.saveStep));
+    }
+    if (r.backupAct != 0)
+    {
+        return std::format(L"its row runs a backup act when sent ({})", platform::NameOrBits(r.backupAct));
+    }
+    if (r.directSets != 0)
+    {
+        return L"its row sets objects directly, whatever their state";
+    }
+    if (r.clearHistory != 0)
+    {
+        return std::format(L"its row clears {} other trigger(s)' fired history, which story conditions read", r.clearHistory);
+    }
+    return {};
+}
+
+bool Send(std::uint64_t name) noexcept
+{
+    if (g_send == nullptr || !platform::CallGuarded(g_send, name, std::uint64_t{0}, -1.0f, std::uint8_t{0}))
+    {
+        platform::LogWarning(L"state signal: the send of {} faulted", platform::NameOrBits(name));
+        return false;
+    }
+    return true;
+}
+
+bool Installed() noexcept
+{
+    return g_send != nullptr;
+}
 
 bool Install(const platform::GameImage& image) noexcept
 {

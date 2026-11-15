@@ -165,6 +165,11 @@ private:
 /// The pole slide's finish fix is installed: a seat's pole slide may be admitted (world/traversal_walkup.h).
 bool PoleReady() noexcept;
 
+/// Some player's character is in a field action now: player 1's leader's component reads a running action, or a seat's
+/// member ran one at its last tick. True too while player 1's component cannot be read or the module is not installed
+/// (asked before a level state is judged at rest). Game thread.
+bool AnyoneActing() noexcept;
+
 /// The `traversal.action` reading.
 std::wstring Reading() noexcept;
 

@@ -18,6 +18,7 @@
 #include "players/state_path.h"
 #include "world/actor_place.h"
 #include "world/data_rows.h"
+#include "world/state_slots.h"
 #include "world/story_boxes.h"
 #include "world/traversal_walkup.h"
 
@@ -39,7 +40,9 @@ using platform::GameVector;
 using platform::Read;
 using platform::ReadPointer;
 using lead_keep_rules::Verdict;
-namespace data_rows = world::data_rows;
+namespace data_rows   = world::data_rows;
+namespace state_slots = world::state_slots;
+using state_slots::Slot;
 
 using StoryFlagIsSetFn = char (*)(const std::int64_t* flag);
 using FieldPointFindFn = const std::uint8_t* (*)(void* points, const std::int64_t* name);
@@ -49,11 +52,8 @@ constexpr std::uint32_t kCensusEveryTicks = 60;
 constexpr float         kAiOnlySpotCensus = 3000.0f;  // cm: how far from a kept move's start an AI-only spot is named in the log
 constexpr std::uint32_t kMaxIconRecords   = 64;
 constexpr std::size_t   kMaxNameChars     = 96;
-constexpr std::size_t   kMaxStateChars    = 1024;  // a next-state name (the FName limit): read whole, or its lookup misses
 // How many of the member's own states ahead are walked for a further move.
 constexpr std::size_t   kPathLinks        = 16;
-constexpr std::size_t   kPathNexts        = 8;     // next states read per row (the game reads 8 triggers per row)
-constexpr std::uint32_t kEnterActionsRead = 64;    // a state's enter actions read for the leash
 
 StoryFlagIsSetFn g_storyFlagIsSet    = nullptr;
 FieldPointFindFn g_fieldPointFind    = nullptr;
@@ -181,113 +181,10 @@ std::wstring Name(std::int64_t bits)
     return platform::NameOrBits(bits);
 }
 
-/// An FString's text (`data` pointer, `num` count with the terminator), guarded and capped.
-std::wstring Text(const std::uint8_t* fstring, std::size_t cap = kMaxNameChars) noexcept
+/// A short FString's text (a status, an act's argument), capped for the log.
+std::wstring Text(const std::uint8_t* fstring) noexcept
 {
-    const wchar_t* data = nullptr;
-    std::int32_t   num  = 0;
-    if (!Read(fstring, data) || !Read(fstring + 8, num) || data == nullptr || num <= 1)
-    {
-        return L"";
-    }
-    const std::size_t count = std::min<std::size_t>(static_cast<std::size_t>(num) - 1, cap);
-    std::wstring      text(count, L'\0');
-    if (!platform::CopyGuarded(text.data(), data, count * sizeof(wchar_t)))
-    {
-        return L"";
-    }
-    return text;
-}
-
-/// A state row's trigger names (the ones the game reads).
-std::vector<std::int64_t> RowTriggers(const std::uint8_t* row)
-{
-    return data_rows::Names(row + facts::kStateRowTriggers, facts::kStateRowTriggersRead);
-}
-
-struct Slot
-{
-    std::int64_t        object = 0, state = 0;
-    const std::uint8_t* row    = nullptr;
-};
-
-/// Walks the state manager's active list, calling `fn(slot)` with each active slot's address (the list's node names a
-/// slot of the array) until `fn` returns true or the list ends; capped at the slot array's size. True when `fn` stopped it.
-template <typename Fn>
-bool ForEachActiveSlot(const std::uint8_t* sm, Fn&& fn) noexcept
-{
-    const std::uint8_t* node = nullptr;
-    const std::uint8_t* end  = sm + facts::kStateManagerActiveList;
-    if (!Read(sm + facts::kStateManagerActiveHead, node))
-    {
-        return false;
-    }
-    for (std::uint32_t n = 0; node != nullptr && node != end && n < facts::kStateManagerSlotCount; ++n)
-    {
-        std::int32_t index = -1;
-        if (Read(node + facts::kStateNodeSlotIndex, index) && index >= 0 && static_cast<std::uint32_t>(index) < facts::kStateManagerSlotCount)
-        {
-            const std::uint8_t* slot = nullptr;
-            if (Read(sm + facts::kStateManagerSlots + 8u * static_cast<std::uint32_t>(index), slot) && slot != nullptr && fn(slot))
-            {
-                return true;
-            }
-        }
-        if (!Read(node + facts::kStateNodeNext, node))
-        {
-            break;
-        }
-    }
-    return false;
-}
-
-/// The state manager's active slots (object, state, row), capped at the slot array's size.
-std::vector<Slot> ActiveSlots(const std::uint8_t* sm) noexcept
-{
-    std::vector<Slot> slots;
-    slots.reserve(8192);
-    ForEachActiveSlot(sm, [&](const std::uint8_t* slot) noexcept {
-        Slot s;
-        if (Read(slot + facts::kStateSlotObject, s.object) && Read(slot + facts::kStateSlotState, s.state) &&
-            Read(slot + facts::kStateSlotRow, s.row))
-        {
-            slots.push_back(s);
-        }
-        return false;
-    });
-    return slots;
-}
-
-/// The state row named `state` (the game's state-change tables); null if unknown.
-const std::uint8_t* StateRow(const std::wstring& state) noexcept
-{
-    const auto name = static_cast<std::int64_t>(platform::FindName(state.c_str()));
-    if (name == 0)
-    {
-        return nullptr;
-    }
-    return data_rows::Row(data_rows::Table::StateChange, name);
-}
-
-/// A row's next states (NextStateChange, FStrings of 16 bytes), capped; the empty ones skipped.
-std::vector<std::wstring> NextStates(const std::uint8_t* row) noexcept
-{
-    std::vector<std::wstring> out;
-    const std::uint8_t*       data = nullptr;
-    std::int32_t              num  = 0;
-    if (!Read(row + facts::kStateRowNextStates, data) || !Read(row + facts::kStateRowNextStates + 8, num) || data == nullptr)
-    {
-        return out;
-    }
-    for (std::int32_t i = 0; i < num && static_cast<std::size_t>(i) < kPathNexts; ++i)
-    {
-        std::wstring next = Text(data + 16 * i, kMaxStateChars);
-        if (!next.empty())
-        {
-            out.push_back(std::move(next));
-        }
-    }
-    return out;
+    return state_slots::Text(fstring, kMaxNameChars);
 }
 
 /// A shown objective marker's target and where the game draws it (the record's shown position, world centimetres).
@@ -352,12 +249,12 @@ catch (...)
 std::optional<state_path::Row> PathRow(const std::wstring& name) noexcept
 try
 {
-    const std::uint8_t* row = StateRow(name);
+    const std::uint8_t* row = state_slots::StateRow(name);
     if (row == nullptr)
     {
         return std::nullopt;
     }
-    state_path::Row out{.status = Text(row + facts::kStateRowStatus), .next = NextStates(row)};
+    state_path::Row out{.status = Text(row + facts::kStateRowStatus), .next = state_slots::NextStates(row)};
     const std::vector<std::int64_t> args = data_rows::Names(row + facts::kStateRowStringArgs, facts::kStateRowDestinationArg + 1);
     if (args.size() > facts::kStateRowDestinationArg)
     {
@@ -393,22 +290,17 @@ constexpr const wchar_t* SpecialTypeName(std::uint8_t type) noexcept
 std::wstring Ends(const std::wstring& state) noexcept
 try
 {
-    const std::uint8_t* row = StateRow(state);
+    const std::uint8_t* row = state_slots::StateRow(state);
     if (row == nullptr)
     {
         return L"row unread";
     }
-    std::wstring                    text;
-    const std::vector<std::int64_t> triggers = data_rows::Names(row + facts::kStateRowTriggers, facts::kStateRowTriggersRead);
-    const std::uint8_t*             nexts    = nullptr;
-    std::int32_t                    count    = 0;
-    Read(row + facts::kStateRowNextStates, nexts);
-    Read(row + facts::kStateRowNextStates + 8, count);
-    for (std::size_t i = 0; i < triggers.size() && triggers[i] != 0; ++i)
+    std::wstring                         text;
+    const std::vector<state_slots::Step> steps = state_slots::Steps(row);
+    for (std::size_t i = 0; i < steps.size(); ++i)
     {
-        const bool          known   = nexts != nullptr && static_cast<std::int32_t>(i) < count;
-        const std::wstring  next    = known ? Text(nexts + 16 * i, kMaxStateChars) : L"?";
-        const std::uint8_t* trigger = data_rows::Row(data_rows::Table::Trigger, triggers[i]);
+        const std::wstring  next    = steps[i].next.value_or(L"?");
+        const std::uint8_t* trigger = data_rows::Row(data_rows::Table::Trigger, steps[i].trigger);
         std::wstring        detail  = L"row NOT found";
         if (trigger != nullptr)
         {
@@ -430,7 +322,7 @@ try
                 detail += std::format(L"{}{}", s == 0 ? L", sends to " : L" ", Name(sends[s]));
             }
         }
-        text += std::format(L"{}{} ({}) -> {}", i == 0 ? L"" : L", ", Name(triggers[i]), detail, next.empty() ? L"None" : next);
+        text += std::format(L"{}{} ({}) -> {}", i == 0 ? L"" : L", ", Name(steps[i].trigger), detail, next.empty() ? L"None" : next);
     }
     if (text.empty())
     {
@@ -557,7 +449,7 @@ struct Census
 /// box's group and that it is switched on. 0 when none.
 std::int64_t OwnBoxAhead(const std::vector<Slot>& slots, const Slot& self, std::int64_t arrival, const void* member)
 {
-    std::vector<std::int64_t> exits = data_rows::Names(self.row + facts::kStateRowTriggers, facts::kStateRowTriggersRead);
+    std::vector<std::int64_t> exits = state_slots::Triggers(self.row);
     std::erase_if(exits, [arrival](std::int64_t t) { return t == 0 || t == arrival; });
     if (exits.empty())
     {
@@ -569,7 +461,7 @@ std::int64_t OwnBoxAhead(const std::vector<Slot>& slots, const Slot& self, std::
         {
             continue;
         }
-        const std::vector<std::int64_t> listens = RowTriggers(s.row);
+        const std::vector<std::int64_t> listens = state_slots::Triggers(s.row);
         for (const std::int64_t exit : exits)
         {
             if (std::find(listens.begin(), listens.end(), exit) == listens.end() ||
@@ -662,23 +554,18 @@ try
         {
             continue;
         }
-        const std::vector<std::int64_t> triggers = RowTriggers(s.row);
-        for (std::size_t i = 0; i < triggers.size() && triggers[i] != 0; ++i)
+        for (const state_slots::Step& step : state_slots::Steps(s.row))
         {
-            if (triggers[i] != census.trigger)
+            if (step.trigger != census.trigger)
             {
                 continue;
             }
-            const std::uint8_t* nextStates = nullptr;
-            std::int32_t        nextCount  = 0;
-            Read(s.row + facts::kStateRowNextStates, nextStates);
-            Read(s.row + facts::kStateRowNextStates + 8, nextCount);
-            const bool         known = nextStates != nullptr && static_cast<std::int32_t>(i) < nextCount;
-            const std::wstring next  = known ? Text(nextStates + 16 * i, kMaxStateChars) : L"?";
+            const std::optional<std::wstring>& known = step.next;
+            const std::wstring                 next  = known.value_or(L"?");
             if (&s == self)
             {
                 census.self     = true;
-                const Path path = PathAhead(known ? next : L"", markers);
+                const Path path = PathAhead(known.value_or(L""), markers);
                 census.chain    = path.move;
                 census.text += std::format(L"; self -> {}", path.text);
             }
@@ -929,30 +816,11 @@ bool RefreshAutoWalks()
     return true;
 }
 
-/// Whether the state row `row` enters `act`: among its enter actions, an act group's list (tried first, as
-/// ActSequence_QueueActionOrGroup does) or the name itself.
+/// Whether the state row `row` enters `act` (state_slots::EnteredActs).
 bool Enters(const std::uint8_t* row, std::int64_t act)
 {
-    for (const std::int64_t entered : data_rows::Names(row + facts::kStateRowEnterActions, kEnterActionsRead))
-    {
-        if (entered == 0)
-        {
-            continue;
-        }
-        if (const std::uint8_t* group = data_rows::Row(data_rows::Table::ActionGroup, entered))
-        {
-            const std::vector<std::int64_t> acts = data_rows::Names(group + facts::kActionGroupRowActions, facts::kActionGroupRowActionsMax);
-            if (std::find(acts.begin(), acts.end(), act) != acts.end())
-            {
-                return true;
-            }
-        }
-        else if (entered == act)
-        {
-            return true;
-        }
-    }
-    return false;
+    const std::vector<std::int64_t> acts = state_slots::EnteredActs(row);
+    return std::find(acts.begin(), acts.end(), act) != acts.end();
 }
 
 /// The act and act-group tables were found: a leash can be read.
@@ -1176,7 +1044,7 @@ try
     if (census)
     {
         const auto              start = std::chrono::steady_clock::now();
-        const std::vector<Slot> slots = ActiveSlots(sm);
+        const std::vector<Slot> slots = state_slots::Active(sm);
         waiters                       = Waiters(slots, object, state, marker.points, member);
         waiters.text += std::format(L" [slots and waiters read in {} us]",
                                     std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start).count());
@@ -1324,7 +1192,7 @@ bool LeadInNoted(std::int64_t object) noexcept
 bool StateOfObject(const std::uint8_t* sm, std::int64_t object, std::int64_t& state) noexcept
 {
     bool read = false;
-    ForEachActiveSlot(sm, [&](const std::uint8_t* slot) noexcept {
+    state_slots::ForEach(sm, [&](const std::uint8_t* slot) noexcept {
         std::int64_t holder = 0;
         if (!Read(slot + facts::kStateSlotObject, holder) || holder != object)
         {

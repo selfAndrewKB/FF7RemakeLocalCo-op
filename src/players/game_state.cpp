@@ -92,6 +92,12 @@ bool SteadyField(const Snapshot& s) noexcept
     return s.hasRoot && s.running && s.step == facts::kFieldStepSteady;
 }
 
+bool SteadyNow() noexcept
+{
+    const Snapshot& s = Current();
+    return s.valid && SteadyField(s);
+}
+
 bool Install(const platform::GameImage& image) noexcept
 {
     const auto gameMode = game_globals::Address(game_globals::Global::GameMode);

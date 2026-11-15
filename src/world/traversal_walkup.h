@@ -38,6 +38,8 @@
 
 #include "platform/game_vectors.h"
 
+#include <cstdint>
+#include <functional>
 #include <string>
 
 namespace lss::platform {
@@ -63,6 +65,11 @@ struct AiOnlySpot
 /// The nearest AI-only spot whose actor stands within `radius` (2D, game units) of `at`, from the field-action manager's
 /// spots (each entry checked: a known spot class, its own first tag the entry's key). False with none. Game thread.
 bool AiOnlySpotNear(const platform::GameVector& at, float radius, AiOnlySpot& out) noexcept;
+
+/// Calls `fn(actor, tag)` for each actor in the field-action manager's spot map that is keyed by its own first tag (a free
+/// slot of the map keeps stale bytes), whatever its class (the map holds other field-action actors too). False when the
+/// manager or its map cannot be read. Game thread.
+bool ForEachSpot(const std::function<void(void* actor, std::uint64_t tag)>& fn) noexcept;
 
 /// Game thread, each engine tick: the seat's controller and member while its player is in (null otherwise). A new
 /// controller or trigger drops the seat's copies (a new controller also its queued entries, at their resolve).

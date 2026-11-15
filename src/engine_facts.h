@@ -2002,6 +2002,11 @@ inline constexpr std::uint32_t  kTriggerRowDirectSetsMax = 32;
 /// save) before it is queued or dispatched (StateTrigger_PreQueueBattleSnapSave, StateTrigger_ApplySaveDataType;
 /// research/RE-send-signal.md).
 inline constexpr std::uint32_t  kTriggerRowSaveStep      = 0x60;
+/// ClearHistory (FName*, count +0x28): the triggers whose fired history a send clears in the save data, which story
+/// conditions read; BackupSaveEndActionID (FName): the act a send's save step runs. [CONFIRMED dump +
+/// research/RE-stuck-spot-repair.md]
+inline constexpr std::uint32_t  kTriggerRowClearHistory  = 0x20;
+inline constexpr std::uint32_t  kTriggerRowBackupAct     = 0x78;
 /// StateMgr_SendSignal_Locked(FName trigger by value, FName sender, float delay, uint8 flags): the game's outside
 /// sender of a state trigger, the call the walk-up exit sends a spot's end triggers with ((trigger, 0, -1.0f, 0)). It
 /// takes its own lock, does nothing from field step 15 on, finds the row in the three trigger tables (an unknown name
@@ -2025,6 +2030,14 @@ inline constexpr std::uint32_t  kActionGroupRowActions    = 0x08;
 inline constexpr std::uint32_t  kActionGroupRowActionsMax = 32;
 inline constexpr std::uint32_t  kActionRowStrings         = 0xC8;
 inline constexpr std::uint32_t  kActionRowFloats          = 0xE8;
+/// What an act does to the story besides its runner (FName arrays, count +8): the triggers its end sends
+/// (EndStateTriggerList), the story flags its start and its end set (StartStoryFlag, EndStoryFlag), the location work
+/// values its start writes (LocationWorkID) (Act_OnEnd_SetStoryFlags_FireEndTriggers 0x140DAADC0). [CONFIRMED dump + code,
+/// research/RE-stuck-spot-repair.md]
+inline constexpr std::uint32_t  kActionRowEndTriggers     = 0x68;
+inline constexpr std::uint32_t  kActionRowStartFlags      = 0x78;
+inline constexpr std::uint32_t  kActionRowEndFlags        = 0x88;
+inline constexpr std::uint32_t  kActionRowLocationWork    = 0x98;
 /// The AutoWalk act (Type 56, ActRunner56_AutoWalkType_*): a leash on the default party leader (player 1's character)
 /// measured to Str[2] each frame while the slot of object Str[0] holds state Str[1]: walk-speed bands, past Int[8] cm
 /// the look at Str[4] (when Int[6]), past Flt[0] cm the turn-back (when Int[4]). RE-lead-unlock.md §3.
@@ -2783,6 +2796,16 @@ inline constexpr std::uint32_t kNameMapPairValue      = 8;
 inline constexpr std::uint32_t kFieldSpotNpcOnly      = 0x58D;  // u8, 1 NPC-only
 inline constexpr std::uint32_t kFieldSpotActivation   = 0x4FC;  // u8
 inline constexpr std::uint8_t  kFieldSpotDeactivated  = 2;
+/// A field-action spot's level signals (AEndFieldActionActorBase, reflected): OnceOnlyReact (u8, a one-shot spot) and six
+/// FNames from +0x414: the default start and end, the left side's start and end, the right side's start and end. A pass
+/// sends the default start with its side's start, and at its end the side's end then the default end
+/// (FieldActionBase_SendStartStateTriggers_LeaderType 0x140EED560, FieldActionBase_SendEndStateTriggers 0x140EEDDB0;
+/// research/RE-stuck-spot-repair.md). Only that class and its children have them: other actors in the manager's map
+/// hold other fields there. [CONFIRMED dump + code]
+inline constexpr std::uint32_t  kFieldSpotOnceOnly     = 0x410;
+inline constexpr std::uint32_t  kFieldSpotSignals      = 0x414;
+inline constexpr std::uint32_t  kFieldSpotSignalCount  = 6;
+inline constexpr const wchar_t* kFieldSpotClass        = L"/Script/EndGame.EndFieldActionActorBase";
 /// AActor::bActorEnableCollision (stock 4.18 bitfield byte and bit), what an NPC-only state turns off. [CONFIRMED code]
 inline constexpr std::uint32_t kActorCollisionByte    = 0x86;
 inline constexpr std::uint8_t  kActorCollisionBit     = 0x04;

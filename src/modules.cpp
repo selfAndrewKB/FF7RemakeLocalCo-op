@@ -103,6 +103,7 @@
 #include "world/run_catch_up.h"
 #include "world/state_signal.h"
 #include "world/story_boxes.h"
+#include "world/stuck_spots.h"
 #include "world/talk_gather.h"
 #include "world/traversal_action.h"
 #include "world/traversal_walkup.h"
@@ -420,6 +421,10 @@ constexpr std::array kModules{
     // without it further players cannot use walk-up spots
     Module{.name = L"traversal walk-up", .install = Call<&world::traversal_walkup::Install>, .remove = &world::traversal_walkup::Remove,
            .removal = Removal::WithPlayersOut},
+    // without it a spot's level state an earlier pass left on (a rail camera over every talk) stays until player 1's own
+    // pass there or the console (without the traversal action module it never sends: nobody's action can be ruled out)
+    Module{.name = L"stuck spots", .install = Call<&world::stuck_spots::Install>,
+           .needs = {Need<&world::state_signal::Install>(), Need<&world::traversal_walkup::Install>()}},
     // without it further players cannot open chests or doors
     Module{.name = L"field targets", .install = Call<&world::field_targets::Install>, .remove = &world::field_targets::Remove,
            .removal = Removal::WithPlayersOut},
@@ -679,6 +684,7 @@ void TickWorld(const Frame& frame) noexcept
         audio::listeners::TickSeat(seat, controller);
     }
     world::traversal_action::Tick(anyIn);
+    world::stuck_spots::Tick();
     players::ai_move_guard::Tick();
     world::story_boxes::Tick(frame.pawnOne);
     world::field_targets::Tick();

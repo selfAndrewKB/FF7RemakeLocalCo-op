@@ -39,6 +39,9 @@ const Snapshot& Current() noexcept;
 /// steps and an exit's).
 bool SteadyField(const Snapshot& s) noexcept;
 
+/// The last tick's values were read and show the steady field.
+bool SteadyNow() noexcept;
+
 /// The world the game mode names (AEndGameMode::GetWorld), or null. Game thread.
 void* World() noexcept;
 /// The world `object` lives in (UObject::GetWorld through its vtable, the call guarded), or null. Game thread.

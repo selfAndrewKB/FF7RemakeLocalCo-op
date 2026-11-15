@@ -766,7 +766,7 @@ constexpr std::int32_t kMaxSpotEntries = 4096;
 
 }  // namespace
 
-bool AiOnlySpotNear(const platform::GameVector& at, float radius, AiOnlySpot& out) noexcept
+bool ForEachSpot(const std::function<void(void* actor, std::uint64_t tag)>& fn) noexcept
 try
 {
     auto* manager = g_installed ? static_cast<std::uint8_t*>(g_fieldActionMgr()) : nullptr;
@@ -775,18 +775,33 @@ try
     {
         return false;
     }
-    bool found = false;
     for (std::int32_t i = 0; i < pairs.num && i < kMaxSpotEntries; ++i)
     {
-        // A free slot of the map keeps stale bytes: an entry counts only as a known spot class keyed by its own first tag.
-        const auto*   pair  = static_cast<const std::uint8_t*>(pairs.data) + static_cast<std::size_t>(i) * facts::kNameMapPairSize;
-        std::uint64_t key   = 0;
-        void*         actor = nullptr;
-        if (!Read(pair, key) || !Read(pair + facts::kNameMapPairValue, actor) || actor == nullptr)
+        const auto*         pair  = static_cast<const std::uint8_t*>(pairs.data) + static_cast<std::size_t>(i) * facts::kNameMapPairSize;
+        std::uint64_t       key   = 0;
+        void*               actor = nullptr;
+        platform::GameArray tags;
+        std::uint64_t       first = 0;
+        if (Read(pair, key) && Read(pair + facts::kNameMapPairValue, actor) && actor != nullptr &&
+            Read(static_cast<const std::uint8_t*>(actor) + facts::kActorTags, tags) && tags.num >= 1 && Read(tags.data, first) &&
+            first == key)
         {
-            continue;
+            fn(actor, key);
         }
-        const std::size_t cls = ClassOfVtable(actor);
+    }
+    return true;
+}
+catch (...)
+{
+    return false;
+}
+
+bool AiOnlySpotNear(const platform::GameVector& at, float radius, AiOnlySpot& out) noexcept
+try
+{
+    bool found = false;
+    ForEachSpot([&](void* actor, std::uint64_t key) {
+        const std::size_t cls  = ClassOfVtable(actor);
         const auto*       spot = static_cast<const std::uint8_t*>(actor);
         // NPC-only by its byte, with its collision off (the state's effect, so a byte left set by another state counts
         // for nothing), and not deactivated.
@@ -795,18 +810,12 @@ try
             !Read(spot + facts::kActorCollisionByte, collision) || (collision & facts::kActorCollisionBit) != 0 ||
             !Read(spot + facts::kFieldSpotActivation, activation) || activation == facts::kFieldSpotDeactivated)
         {
-            continue;
-        }
-        platform::GameArray tags;
-        std::uint64_t       first = 0;
-        if (!Read(spot + facts::kActorTags, tags) || tags.num < 1 || !Read(tags.data, first) || first != key)
-        {
-            continue;
+            return;
         }
         platform::GameVector where;
         if (!actor_place::ActorLocation(actor, where))
         {
-            continue;
+            return;
         }
         const float distance = std::hypot(where.x - at.x, where.y - at.y);
         if (distance <= radius && (!found || distance < out.distance))
@@ -814,7 +823,7 @@ try
             out   = AiOnlySpot{actor, facts::kWalkUpClasses[cls].name, platform::NameText(key), distance};
             found = true;
         }
-    }
+    });
     return found;
 }
 catch (...)
