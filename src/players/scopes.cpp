@@ -36,6 +36,7 @@ struct Player
     std::uint8_t type           = kTypeNone;
     void*        commandCtrl    = nullptr;
     std::uint8_t otherLeaderType = kTypeNone;
+    void*        otherCommandCtrl = nullptr;  // the slot's controller before this player's went in (player 1's)
 };
 std::array<Player, kMaxPlayers> g_players;
 
@@ -251,6 +252,12 @@ std::uint8_t OtherLeaderType(int player) noexcept
     return ValidPlayer(player) && g_players[player].leader.IsOpen() ? g_players[player].otherLeaderType : kTypeNone;
 }
 
+void* PlayerOneCommandController() noexcept
+{
+    const int open = OpenPlayer(UiSlot);
+    return open != 0 ? g_players[open].otherCommandCtrl : field_root::CommandController();
+}
+
 bool FocusPathSet(int player) noexcept
 {
     if (!ValidPlayer(player) || !g_players[player].focus.Defined())
@@ -301,6 +308,12 @@ Scope::Scope(int player, unsigned which) noexcept : player_(player)
         {
             // The game's own leader type (player 1's), read before this player's goes in.
             Read(reinterpret_cast<const void*>(PartyManager() + facts::kPartyLeaderType), p.otherLeaderType);
+        }
+        if (entry.bit == UiSlot)
+        {
+            // Before this player's goes in: player 1's, also inside another open UiSlot scope (its record) or this
+            // player's own (the same value again).
+            p.otherCommandCtrl = PlayerOneCommandController();
         }
         if (entry.bit == Latches && !p.latches.Defined() && p.commandCtrl != nullptr)
         {

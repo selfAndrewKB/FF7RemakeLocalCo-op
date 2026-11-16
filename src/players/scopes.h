@@ -57,6 +57,9 @@ std::uintptr_t PartyManagerAddress() noexcept;  // the live party manager, 0 whe
 void*        CommandController(int player) noexcept;
 /// The leader type the game held before this player's Leader scope opened (player 1's), while it is open.
 std::uint8_t OtherLeaderType(int player) noexcept;
+/// Player 1's command controller, inside a player's UiSlot scope as outside: there the slot holds that player's, so the
+/// one it held before the scope opened. Null when none.
+void* PlayerOneCommandController() noexcept;
 /// This player's focus path holds at least one widget (their menu is up in their own context).
 bool FocusPathSet(int player) noexcept;
 /// The player one of whose `which` contexts is open now (a Scope of theirs is running the game's code), else 0.

@@ -46,6 +46,7 @@ add_library(LocalSplitScreen SHARED
     src/battle/encounter_watch.cpp
     src/battle/seat_toad.cpp
     src/battle/sequence_camera.cpp
+    src/battle/summon_seats.cpp
     src/battle/target_cursor.cpp
     src/battle/targeting.cpp
     src/hud/hud_probe.cpp

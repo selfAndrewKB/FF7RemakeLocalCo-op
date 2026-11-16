@@ -47,7 +47,6 @@ platform::CallRedirect                                            g_soundOff;  /
 // Game thread.
 std::uint32_t g_opensSkipped = 0, g_restoresSkipped = 0, g_flipStops = 0, g_flipStarts = 0, g_settled = 0;
 std::uint32_t g_soundOnsSkipped = 0, g_soundOffsSkipped = 0, g_soundOffsHeld = 0, g_soundLifts = 0, g_soundRaises = 0;
-void*         g_playerOne = nullptr;  // player 1's command controller, noted at the engine tick (outside every scope)
 bool          g_debt      = false;    // a skip or a stop may have left another owner's count with no effect
 bool          g_slows     = true;     // the slow-down switch as last seen at the tick
 
@@ -84,11 +83,10 @@ bool Waits(const void* controller) noexcept
            (state == facts::kCommandWaitOpening || state == facts::kCommandWaitOpen);
 }
 
-/// Player 1's command controller. Inside a seat's UI slot scope the slot holds the seat's, so player 1's is then the one
-/// noted at the engine tick (a plain game object, no UObject: read guarded, noted again every engine tick).
+/// Player 1's command controller, inside a seat's UI slot scope as outside (a plain game object, no UObject: read guarded).
 void* PlayerOneController() noexcept
 {
-    return players::scopes::OpenPlayer(players::scopes::UiSlot) != 0 ? g_playerOne : players::field_root::CommandController();
+    return players::scopes::PlayerOneCommandController();
 }
 
 /// Player 1's or any further player's battle menu waits.
@@ -433,7 +431,6 @@ void Tick() noexcept
     {
         return;
     }
-    g_playerOne = players::field_root::CommandController();  // outside every scope: player 1's own
     if (const bool slows = command_menu_tick::MenuSlow(); slows != g_slows)
     {
         g_slows = slows;

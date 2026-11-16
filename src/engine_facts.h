@@ -1033,6 +1033,20 @@ inline constexpr std::uint32_t kFocusMenuDelegateBytes = 0x40;
 inline constexpr std::uint32_t kUiFilterLatches       = 0x18;   // EndUISystem[37]: the wait-tint (+0x18) and Dying (+0x19) latch bytes
 inline constexpr std::uint32_t kCommandCtrlSlot       = 19;     // EndUISystem[19]: the field command controller
 
+// --- Summons for players 2 and 3 (research/RE-summon-seats.md) ----------------------------------------------------
+// The party's one summon gauge lives in the summon manager; a command controller asks whether it may offer Summon (and,
+// with a summon on the field, its commands) through two readers of the controller's own summon gauge widget (weak at
+// ctrl+0x520, bytes +0x36C shown and +0x36D on the field). The manager makes and sets that widget on player 1's
+// controller only, so a seat's controller always reads 0. Both readers begin with the same 7-byte position-independent
+// instruction, `mov r8d, [rcx+524h]`, inside one aligned block: their entry bytes match, and the address tells them apart.
+inline constexpr std::array<std::uint8_t, 16> kSummonGaugeReaderEntry{
+    0x44, 0x8B, 0x81, 0x24, 0x05, 0x00, 0x00, 0x45, 0x85, 0xC0, 0x74, 0x79, 0x48, 0x63, 0x91, 0x20};
+inline constexpr std::size_t kSummonGaugeReaderFirstBytes = 7;
+inline constexpr platform::FunctionFact kSummonGaugeShown{L"FieldCommandCtrl_IsSummonGaugeShown_W520_36C", 0x14141F690,
+                                                           kSummonGaugeReaderEntry};
+inline constexpr platform::FunctionFact kSummonOnField{L"FieldCommandCtrl_IsSummonOnField_W520_36D", 0x14141F7C0,
+                                                        kSummonGaugeReaderEntry};
+
 // --- A second field command controller (RE-battle.md §2, RE-command-menu-two.md) ----------------------------------
 // FieldCommandCtrl: 0x5D0 bytes from GMalloc, the ctor, then SetupMenuWidgets(ctrl, world) builds its own two widgets
 // (Command_C and the party panel Status_C), pushes its menu as a focus layer and binds its handlers. Its tick (one call

@@ -10,6 +10,7 @@
 #include "battle/enemy_coin.h"
 #include "battle/enemy_leader.h"
 #include "battle/enemy_stall.h"
+#include "battle/summon_seats.h"
 #include "battle/enemy_watch.h"
 #include "battle/lock_camera.h"
 #include "battle/member_rates.h"
@@ -353,6 +354,9 @@ constexpr std::array kModules{
            .needs = {Need<&battle::command_menu::Install>()}},
     // without it the aim reading is off, the UI scope stays
     Module{.name = L"command camera", .install = Call<&battle::command_camera::Install>, .remove = &battle::command_camera::Remove,
+           .needs = {Need<&battle::command_menu::Install>()}},
+    // without it only player 1's menu offers Summon
+    Module{.name = L"summon seats", .install = Call<&battle::summon_seats::Install>, .remove = &battle::summon_seats::Remove,
            .needs = {Need<&battle::command_menu::Install>()}},
     // a further player's member at the player rates (ATB, limit)
     Module{.name = L"member rates", .install = Call<&battle::member_rates::Install>, .remove = &battle::member_rates::Remove,
