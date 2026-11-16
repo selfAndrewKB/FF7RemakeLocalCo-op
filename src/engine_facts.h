@@ -2130,6 +2130,19 @@ inline constexpr std::array<std::uint8_t, 16> kFieldPointFindByNameEntry{
     0x40, 0x53, 0x48, 0x83, 0xEC, 0x20, 0x4C, 0x8B, 0x02, 0x48, 0x8D, 0x59, 0x08, 0x48, 0x8B, 0xCB};
 inline constexpr platform::FunctionFact kFieldPointFindByName{L"FieldPoint_FindByName", 0x140FF89C0, kFieldPointFindByNameEntry};
 
+// --- A scripted one-shot move written on a named character (research/RE-scripted-entry-cut.md) ----------
+/// FieldAI_RequestEventMove_L6(FName actor by value, unused, params*): the game's writer of a scripted one-shot move
+/// (kind 6 SINGLE_ANIMATION on field-AI layer 6) for a named character (an act's event move, type 18; an event's
+/// placement). It finds the character through CharaRegistry_FindActorByName with the level FName at kNamedActorLevel,
+/// returns 0 for a dying one, writes the request and re-selects the active layer, with no test of who possesses the
+/// character. A possession change after the write (the field AI taking a character a player held) runs the request's
+/// Exit, which reports it finished at once: a one-shot animation is cut. First instruction mov [rsp+8], rbx; the check
+/// stops before the RIP-relative load of the registry. [CONFIRMED code]
+inline constexpr std::uintptr_t                kEventMoveWrite      = 0x140FD0C10;
+inline constexpr std::array<std::uint8_t, 16>  kEventMoveWriteEntry{0x48, 0x89, 0x5C, 0x24, 0x08, 0x57, 0x48, 0x83,
+                                                                    0xEC, 0x20, 0x48, 0x8B, 0xD1, 0x49, 0x8B, 0xF8};
+inline constexpr std::array<std::uint8_t, 5>   kEventMoveWriteFirst{0x48, 0x89, 0x5C, 0x24, 0x08};
+
 // --- A held member's own story boxes (research/RE-held-member-story-boxes.md) ---------------------------
 /// EndFieldStateTrigger_OnColliderBeginOverlap(fieldPoints, FName volume by value, AActor* collider): the story box's
 /// enter, once per new box in a character's own sweep (the dispatcher's diff, game thread, world tick): records the

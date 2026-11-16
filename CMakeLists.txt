@@ -92,6 +92,7 @@ add_library(LocalSplitScreen SHARED
     src/players/own_controller.cpp
     src/players/action_key.cpp
     src/players/ai_move_guard.cpp
+    src/players/event_move_hand.cpp
     src/players/pad_buttons.cpp
     src/players/pad_presence.cpp
     src/players/pad_table.cpp
@@ -166,6 +167,7 @@ add_library(LocalSplitScreen SHARED
     src/world/data_rows.cpp
     src/world/npc_crowd.cpp
     src/world/npc_detail.cpp
+    src/world/named_actor.cpp
     src/world/npc_senses.cpp
     src/world/party_fade.cpp
     src/world/party_warp.cpp

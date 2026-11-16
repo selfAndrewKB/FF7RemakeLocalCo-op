@@ -13,10 +13,10 @@
 #include "players/game_globals.h"
 #include "players/scopes.h"
 #include "players/seats.h"
-#include "players/weak_object.h"
 #include "world/actor_place.h"
 #include "world/catch_up_move.h"
 #include "world/field_targets.h"
+#include "world/named_actor.h"
 #include "world/talk_gather_rules.h"
 
 #include <array>
@@ -37,7 +37,6 @@ using players::SeatName;
 using TickFn      = void* (*)(void* channel, float dt, std::uint8_t* out);
 using CamResetFn  = void (*)(void* params);
 using FindRowFn   = void* (*)(const void* tables, std::uint64_t name);
-using FindActorFn = void* (*)(std::uint64_t level, std::uint64_t name);
 
 using talk_gather_rules::kBesideCm;
 using talk_gather_rules::kFarCm;
@@ -45,9 +44,8 @@ using talk_gather_rules::kFarCm;
 using platform::GameVector;
 
 // Set at install, then only read.
-std::uintptr_t         g_tick = 0, g_actions = 0, g_namedLevel = 0;
+std::uintptr_t         g_tick = 0, g_actions = 0;
 FindRowFn              g_findRow  = nullptr;
-FindActorFn            g_findActor = nullptr;
 CamResetFn             g_camReset = nullptr;
 std::array<platform::CallRedirect, facts::kActTickCalls.size()> g_tickCalls;
 
@@ -87,19 +85,6 @@ bool ShowMenuAct(const void* channel) noexcept
     return ActType(channel) == facts::kActionTypeShowMenu;
 }
 
-/// The talked-to NPC, found by name as the game's own field-target dispatch finds it; null when not found (or the
-/// lookup is off) or a dying object.
-void* FindNpc(std::uint64_t name) noexcept
-{
-    std::uint64_t level = 0;
-    void*         actor = nullptr;
-    return g_findActor != nullptr && Read(reinterpret_cast<const void*>(g_namedLevel), level) &&
-                   platform::CallGuarded(g_findActor, actor, level, name) && actor != nullptr &&
-                   players::weak_object::Live(actor)
-               ? actor
-               : nullptr;
-}
-
 std::wstring Report()
 {
     return std::format(L"{}; talk-gather {}, talk-follow {}; player 1's character brought to another player's talk {}, already "
@@ -119,8 +104,6 @@ bool Install(const platform::GameImage& image) noexcept
     const auto camReset = platform::FindFunction(image, facts::kFieldCameraResetBehindLeader);
     const auto actions  = players::game_globals::Address(players::game_globals::Global::TableAction);
     const auto findRow  = platform::FindFunction(image, facts::kFindRowInTables);
-    const auto findNpc  = platform::FindFunction(image, facts::kFindActorByName);  // optional: without it, toward
-    const auto named    = image.Rebase(facts::kNamedActorLevel, 8);                 // where player 1's character stood
     if (!tick || !players::field_root::Installed() || !catch_up_move::Installed() || !camReset || !actions || !findRow)
     {
         platform::Log(L"talk gather: an engine check failed; player 1's character stays where it is when another player "
@@ -131,12 +114,7 @@ bool Install(const platform::GameImage& image) noexcept
     g_camReset = reinterpret_cast<CamResetFn>(*camReset);
     g_actions  = actions;
     g_findRow  = reinterpret_cast<FindRowFn>(*findRow);
-    if (findNpc && named)
-    {
-        g_findActor  = reinterpret_cast<FindActorFn>(*findNpc);
-        g_namedLevel = *named;
-    }
-    else
+    if (!named_actor::Installed())  // optional: without it, toward where player 1's character stood
     {
         platform::Log(L"talk gather: the NPC lookup by name failed its check; player 1's character is brought 1.2 m from the "
                       L"presser toward where it stood, facing the presser, instead of beside the presser facing the NPC");
@@ -332,7 +310,7 @@ void OnLeaderHanded() noexcept
         npcAt   = {spot[0], spot[1], spot[2]};
         npcNote = L", facing the NPC (its place from the game's marker of the pressed object)";
     }
-    else if (void* const npc = FindNpc(object); npc != nullptr && npc != cloud && npc != member)
+    else if (void* const npc = named_actor::Find(object); npc != nullptr && npc != cloud && npc != member)
     {
         known   = actor_place::ActorLocation(npc, npcAt);
         npcNote = L", facing the NPC (its place from the actor of its name)";

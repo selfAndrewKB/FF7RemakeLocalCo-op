@@ -38,6 +38,7 @@
 #include "platform/guarded.h"
 #include "platform/log.h"
 #include "players/ai_move_guard.h"
+#include "players/event_move_hand.h"
 #include "players/game_state.h"
 #include "players/lead_gate.h"
 #include "players/nav_area.h"
@@ -87,6 +88,7 @@
 #include "world/catch_up_move.h"
 #include "world/env_sets.h"
 #include "world/level_watch.h"
+#include "world/named_actor.h"
 #include "world/data_rows.h"
 #include "world/field_targets.h"
 #include "world/push_events.h"
@@ -289,12 +291,19 @@ constexpr std::array kModules{
            .needs = {Need<&players::pad_table::Install>(), Need<&hud::view_prompt::Install>()}},
     // without it the mod's options are set only from the console and the settings file
     Module{.name = L"Co-op menu", .install = Call<&menu::coop_menu::Install>, .remove = &menu::coop_menu::Remove},
+    // without it nothing finds a character by its name: the environment sets and the scripted-move hand stand aside, and
+    // player 1's character is brought toward where it stood for another player's talk instead of beside the presser
+    Module{.name = L"named actor", .install = Call<&world::named_actor::Install>},
     // without it nothing reads the level's state data: the lead gate and the state triggers from the console stand aside
     Module{.name = L"data rows", .install = Call<&world::data_rows::Install>},
     // without it a LEAD or a run to a mark on a further player's member stays the player's
     Module{.name = L"lead gate", .install = Call<&players::lead_gate::Install>, .needs = {Need<&world::data_rows::Install>()}},
     // without it an ambient interest walk hands a further player's member to its AI (which can loop on a ladder)
     Module{.name = L"AI move guard", .install = Call<&players::ai_move_guard::Install>, .remove = &players::ai_move_guard::Remove},
+    // without it a further player's member goes to its AI after the level writes a scripted one-shot move on it, which ends
+    // the move at once (a scripted entry or gesture cut short)
+    Module{.name = L"event move hand", .install = Call<&players::event_move_hand::Install>, .remove = &players::event_move_hand::Remove,
+           .needs = {Need<&world::named_actor::Install>()}},
     // the game's single slots answered for a seat for one call: the battle modules need it
     Module{.name = L"scopes", .install = Call<&players::scopes::Install>},
 
@@ -402,7 +411,7 @@ constexpr std::array kModules{
     // without it NPCs see nobody beyond player 1's grid
     Module{.name = L"npc senses", .install = Call<&world::npc_senses::Install>},
     // without it only player 1's ground hides the area's actors
-    Module{.name = L"env sets", .install = Call<&world::env_sets::Install>},
+    Module{.name = L"env sets", .install = Call<&world::env_sets::Install>, .needs = {Need<&world::named_actor::Install>()}},
     // without it the world follows player 1's area alone (a further player's area unloads when player 1 leaves it)
     Module{.name = L"area levels", .install = Call<&world::area_levels::Install>, .remove = &world::area_levels::Remove,
            .needs = {Need<&world::env_sets::Install>()}},
@@ -686,6 +695,7 @@ void TickWorld(const Frame& frame) noexcept
     world::traversal_action::Tick(anyIn);
     world::stuck_spots::Tick();
     players::ai_move_guard::Tick();
+    players::event_move_hand::Tick();
     world::story_boxes::Tick(frame.pawnOne);
     world::field_targets::Tick();
     world::push_events::Tick();

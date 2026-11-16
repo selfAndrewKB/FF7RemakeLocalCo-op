@@ -15,6 +15,7 @@
 #include "world/actor_place.h"
 #include "world/area_levels.h"
 #include "world/env_set_view.h"
+#include "world/named_actor.h"
 
 #include <algorithm>
 #include <array>
@@ -64,7 +65,6 @@ using IssueFn     = char (*)(void* unused, const TraceArg* arg, std::uint64_t, s
 using ReadFn      = char (*)(void* manager, const std::uint64_t* handle, std::uint8_t* block);
 using ResetFn     = void (*)(std::uint8_t* block);
 using FindIdFn    = std::int32_t* (*)(void* set, std::int32_t* out, std::uint64_t name);
-using FindActorFn = std::uint8_t* (*)(std::uint64_t level, std::uint64_t name);
 using ResizeFn    = void (*)(PointerArray* array, std::int32_t max);
 using AttachedFn  = void (*)(void* actor, PointerArray* out);
 using FreeFn      = void (*)(void* block);
@@ -80,7 +80,6 @@ IssueFn                g_issue     = nullptr;
 ReadFn                 g_read      = nullptr;
 ResetFn                g_reset     = nullptr;
 FindIdFn               g_findId    = nullptr;
-FindActorFn            g_findActor = nullptr;
 ResizeFn               g_resize    = nullptr;
 AttachedFn             g_attached  = nullptr;
 FreeFn                 g_free      = nullptr;
@@ -342,10 +341,9 @@ std::uint8_t* Find(Name name) noexcept
 {
     for (const Name level : g_lookupLevels.View())
     {
-        std::uint8_t* actor = nullptr;
-        if (platform::CallGuarded(g_findActor, actor, Bits(level), Bits(name)) && actor != nullptr)
+        if (void* const actor = named_actor::InLevel(Bits(level), Bits(name)); actor != nullptr)
         {
-            return actor;
+            return static_cast<std::uint8_t*>(actor);
         }
     }
     return nullptr;
@@ -532,14 +530,13 @@ bool Install(const platform::GameImage& image) noexcept
     const auto read      = platform::FindFunction(image, facts::kEnvSetReadResult);
     const auto reset     = platform::FindFunction(image, facts::kEnvSetBlockReset);
     const auto findId    = platform::FindFunction(image, facts::kTSetNameFind);
-    const auto findActor = platform::FindFunction(image, facts::kFindActorByName);
     const auto resize    = platform::FindFunction(image, facts::kPointerArrayResize);
     const auto attached  = platform::FindFunction(image, facts::kGetAttachedActors);
     const auto release   = platform::FindFunction(image, facts::kGameFree);
     const auto save      = players::game_globals::Address(players::game_globals::Global::DataSingleton);
     const auto manager   = players::game_globals::Address(players::game_globals::Global::EnvSetManager);
-    if (!issueCall || !readCall || !issue || !read || !reset || !findId || !findActor || !resize || !attached ||
-        !release || !save || !manager)
+    if (!issueCall || !readCall || !issue || !read || !reset || !findId || !resize || !attached || !release || !save ||
+        !manager)
     {
         platform::LogWarning(L"env sets: the EnvironmentSet code is not what the research read; every further player's "
                              L"view shows what player 1's ground leaves");
@@ -549,7 +546,6 @@ bool Install(const platform::GameImage& image) noexcept
     g_read      = reinterpret_cast<ReadFn>(*read);
     g_reset     = reinterpret_cast<ResetFn>(*reset);
     g_findId    = reinterpret_cast<FindIdFn>(*findId);
-    g_findActor = reinterpret_cast<FindActorFn>(*findActor);
     g_resize    = reinterpret_cast<ResizeFn>(*resize);
     g_attached  = reinterpret_cast<AttachedFn>(*attached);
     g_free      = reinterpret_cast<FreeFn>(*release);

@@ -1193,6 +1193,31 @@ void Session::HandForHold(Seat& seat, void* member, party_member::Wait hold, boo
     platform::LogDebug(L"  the member: {}", party_member::AiDetail(member));
 }
 
+int Session::HandBeforeScriptMove(void* character) noexcept
+try
+{
+    if (field_root::InBattle())
+    {
+        return 0;  // a fight's members follow the battle's switch rules; a hand here would outlast the fight
+    }
+    for (int index = 1; character != nullptr && index <= kSeatsBuilt; ++index)
+    {
+        Seat& seat = seats_[index];
+        if (!In(index) || !Seated(index) || seat.handedToAi || party_seat::Member(index) != character ||
+            party_member::HandedToAi(character))
+        {
+            continue;
+        }
+        HandForHold(seat, character, party_member::Wait::Animation);
+        return seat.handedToAi ? index : 0;
+    }
+    return 0;
+}
+catch (...)
+{
+    return 0;
+}
+
 void Session::ReturnFromHold(Seat& seat, void* member) noexcept
 {
     seat.handedToAi   = false;

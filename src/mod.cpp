@@ -40,6 +40,7 @@
 #include "players/session.h"
 #include "players/single_view.h"
 #include "players/pad_table.h"
+#include "players/event_move_hand.h"
 #include "players/player_window.h"
 #include "players/split_switch.h"
 #include "players/split_render.h"
@@ -69,7 +70,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.214.1-door-listeners";  // the one version string (the log, UE4SS and the setup app)
+constexpr const wchar_t* kVersion = L"0.215.0-event-move-hand";  // the one version string (the log, UE4SS and the setup app)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
@@ -283,6 +284,7 @@ public:
                                        &lss::views::mirror_player::FillAtLeave});
         }
         lss::players::player_window::SetSession(&session_);
+        lss::players::event_move_hand::SetSession(&session_);
         RegisterSessionCommands(session_);
         lss::views::column_source::RegisterCommands(singleViewChoice_);
         remote_.Open();

@@ -122,6 +122,11 @@ public:
     bool HandedToAi(int seat) const noexcept { return SeatBuilt(seat) && seats_[seat].handedToAi; }
     /// The seat's player was asked for and is out until the row's member is free for it.
     bool Awaiting(int seat) const noexcept { return SeatBuilt(seat) && seats_[seat].awaiting; }
+    /// The level is about to write a scripted one-shot move on `character` (players/event_move_hand.h): when it is a seat's
+    /// member that its player holds, the member goes to its AI now, before the write, as a scripted hold of its own (its
+    /// player's view kept); it comes back when nothing holds it, as after any script hold. The seat when handed, else 0.
+    /// Game thread.
+    int HandBeforeScriptMove(void* character) noexcept;
     /// The member the seat plays (type and row), or why it waits for one; for the `p2.member` reading.
     std::wstring MemberReading(int seat) const noexcept;
     /// Every deployed member's AI detail; for the `party.ai` reading.
