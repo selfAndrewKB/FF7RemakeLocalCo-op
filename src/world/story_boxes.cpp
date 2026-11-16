@@ -12,6 +12,7 @@
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
+#include "platform/name_text.h"
 #include "platform/steady_ms.h"
 #include "platform/verified_code.h"
 #include "players/actor_fields.h"
@@ -24,6 +25,7 @@
 #include "players/weak_object.h"
 #include "world/actor_place.h"
 #include "world/field_targets.h"
+#include "world/state_slots.h"
 #include "world/story_box_rules.h"
 
 #include <array>
@@ -150,6 +152,15 @@ std::uint64_t FirstTag(const void* actor) noexcept
     return Read(tags + sizeof(void*), count) && count > 0 && Read(ReadPointer(tags, 0), tag) ? tag : 0;
 }
 
+/// A layout object's actor group (0: none). False when the object has no layout row.
+bool GroupOfObject(std::uint64_t object, std::uint64_t& group) noexcept
+{
+    void* row = nullptr;
+    group     = 0;
+    return CallGuarded(g_findRow, row, g_layoutRows, object) && row != nullptr &&
+           Read(static_cast<const std::uint8_t*>(row) + facts::kLayoutRowActorGroup, group);
+}
+
 /// The box's layout object and its actor group (0: none). False when the box has no layout row.
 bool LayoutOf(std::uint64_t box, std::uint64_t& object, std::uint64_t& group) noexcept
 {
@@ -167,9 +178,7 @@ bool LayoutOf(std::uint64_t box, std::uint64_t& object, std::uint64_t& group) no
     {
         return false;
     }
-    void* row = nullptr;
-    return CallGuarded(g_findRow, row, g_layoutRows, object) && row != nullptr &&
-           Read(static_cast<const std::uint8_t*>(row) + facts::kLayoutRowActorGroup, group);
+    return GroupOfObject(object, group);
 }
 
 /// The group's ActorList holds `tag` (as the enter's own test: at most the first 32). False when the row is missing.
@@ -258,7 +267,9 @@ enum class Sends : std::uint8_t
     NotLoaded,  // the object's states are not loaded
 };
 
-Sends WouldSend(std::uint64_t object) noexcept
+/// The object's trigger slot (attribute 1, found by the game's own slot lookup), or null with `why` NotLoaded or
+/// NoTrigger.
+const std::uint8_t* TriggerSlot(std::uint64_t object, Sends& why) noexcept
 {
     void*        manager = players::field_root::StateManager();
     std::int32_t base = -1, slotIndex = -1;
@@ -266,23 +277,43 @@ Sends WouldSend(std::uint64_t object) noexcept
     if (manager == nullptr || !CallGuarded(g_slotIndex, base, manager, &object, 0) ||
         !CallGuarded(g_baseLoaded, loaded, manager, base) || loaded == 0)
     {
-        return Sends::NotLoaded;
+        why = Sends::NotLoaded;
+        return nullptr;
     }
+    why = Sends::NoTrigger;
     if (!CallGuarded(g_slotIndex, slotIndex, manager, &object, 1) || slotIndex < 0 ||
         static_cast<std::uint32_t>(slotIndex) >= facts::kStateManagerSlotCount)
     {
-        return Sends::NoTrigger;
+        return nullptr;
     }
-    const auto* slot = static_cast<const std::uint8_t*>(
+    return static_cast<const std::uint8_t*>(
         ReadPointer(static_cast<const std::uint8_t*>(manager) + facts::kStateManagerSlots, static_cast<std::uint32_t>(slotIndex) * 8u));
-    if (slot == nullptr)
-    {
-        return Sends::NoTrigger;
-    }
+}
+
+/// Whether a box with this trigger slot sends its trigger now: its switch (the linked base slot's off byte, else its own).
+Sends SwitchOf(const std::uint8_t* slot) noexcept
+{
     const void*  linked = ReadPointer(ReadPointer(slot, facts::kStateSlotLinkedBase), 0);
     std::uint8_t off    = 0;
     Read((linked != nullptr ? static_cast<const std::uint8_t*>(linked) : slot) + facts::kStateSlotOffByte, off);
     return off == 1 ? Sends::Off : Sends::Trigger;
+}
+
+Sends WouldSend(std::uint64_t object) noexcept
+{
+    Sends               why  = Sends::NoTrigger;
+    const std::uint8_t* slot = TriggerSlot(object, why);
+    return slot == nullptr ? why : SwitchOf(slot);
+}
+
+/// The trigger slot's state names `trigger` as its Status: the trigger the box sends.
+bool SendsTrigger(const std::uint8_t* slot, std::uint64_t trigger) noexcept
+{
+    const std::uint8_t* row  = nullptr;
+    const std::wstring  name = platform::NameText(trigger);
+    // One character past the name is read, so a longer Status does not compare equal.
+    return Read(slot + facts::kStateSlotRow, row) && row != nullptr && !name.empty() &&
+           _wcsicmp(state_slots::Text(row + facts::kStateRowStatus, name.size() + 1).c_str(), name.c_str()) == 0;
 }
 
 /// The replay line's account of what was sent, given whether the member is still inside.
@@ -526,18 +557,18 @@ catch (...)
     return 0;
 }
 
-bool ArmedOwnBox(std::uint64_t object, const void* member) noexcept
+bool ArmedOwnBox(std::uint64_t object, const void* member, std::uint64_t trigger) noexcept
 try
 {
-    if (!g_installed || object == 0 || member == nullptr)
+    std::uint64_t group = 0;
+    if (!g_installed || object == 0 || member == nullptr || trigger == 0 || !GroupOfObject(object, group) || group == 0 ||
+        !GroupLists(group, FirstTag(member)) || GroupNamesLeader(group))
     {
         return false;
     }
-    void*         row   = nullptr;
-    std::uint64_t group = 0;
-    return CallGuarded(g_findRow, row, g_layoutRows, object) && row != nullptr &&
-           Read(static_cast<const std::uint8_t*>(row) + facts::kLayoutRowActorGroup, group) && group != 0 &&
-           GroupLists(group, FirstTag(member)) && !GroupNamesLeader(group) && WouldSend(object) == Sends::Trigger;
+    Sends               why  = Sends::NoTrigger;
+    const std::uint8_t* slot = TriggerSlot(object, why);
+    return slot != nullptr && SendsTrigger(slot, trigger) && SwitchOf(slot) == Sends::Trigger;
 }
 catch (...)
 {

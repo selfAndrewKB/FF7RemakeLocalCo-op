@@ -70,7 +70,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.215.0-event-move-hand";  // the one version string (the log, UE4SS and the setup app)
+constexpr const wchar_t* kVersion = L"0.215.1-own-box-trigger";  // the one version string (the log, UE4SS and the setup app)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;

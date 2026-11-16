@@ -444,9 +444,10 @@ struct Census
 /// The member's move step moves on at a trigger (other than its arrival) that a member-only story box of the member's own
 /// sends, and the box is armed: the level expects the run to carry the member into that box, on the clock of whatever
 /// else runs meanwhile (the Ch. 5 dash crosses Tifa's fence box within 3 s, before the talk's timed "head for the
-/// stairs"; held by its player, she would miss it and stall). The box's state slot lists the trigger it sends
-/// (its sending state waits on it, RE-held-member-story-boxes.md) and its Status names it; world/story_boxes checks the
-/// box's group and that it is switched on. 0 when none.
+/// stairs"; held by its player, she would miss it and stall). Any active object that waits for the trigger or names it
+/// as a state's Status is asked (a box's switch waits for the trigger it sends; its trigger state names it but need not
+/// list it); world/story_boxes reads the box's own trigger state through the game's slot lookup and checks that it names
+/// the trigger, the box's group and that it is switched on (RE-held-member-story-boxes.md). 0 when none.
 std::int64_t OwnBoxAhead(const std::vector<Slot>& slots, const Slot& self, std::int64_t arrival, const void* member)
 {
     std::vector<std::int64_t> exits = state_slots::Triggers(self.row);
@@ -455,6 +456,12 @@ std::int64_t OwnBoxAhead(const std::vector<Slot>& slots, const Slot& self, std::
     {
         return 0;
     }
+    std::vector<std::wstring> exitNames;
+    exitNames.reserve(exits.size());
+    for (const std::int64_t exit : exits)
+    {
+        exitNames.push_back(Name(exit));
+    }
     for (const Slot& s : slots)
     {
         if (s.row == nullptr || s.object == self.object)
@@ -462,14 +469,21 @@ std::int64_t OwnBoxAhead(const std::vector<Slot>& slots, const Slot& self, std::
             continue;
         }
         const std::vector<std::int64_t> listens = state_slots::Triggers(s.row);
-        for (const std::int64_t exit : exits)
+        std::optional<std::wstring>     status;  // read only for a slot that waits for none of the exits
+        for (std::size_t i = 0; i < exits.size(); ++i)
         {
-            if (std::find(listens.begin(), listens.end(), exit) == listens.end() ||
-                _wcsicmp(Text(s.row + facts::kStateRowStatus).c_str(), Name(exit).c_str()) != 0)
+            if (std::find(listens.begin(), listens.end(), exits[i]) == listens.end())
             {
-                continue;  // not the box's sending state for this trigger (a name that does not match only drops this reason)
+                if (!status)
+                {
+                    status = Text(s.row + facts::kStateRowStatus);
+                }
+                if (_wcsicmp(status->c_str(), exitNames[i].c_str()) != 0)
+                {
+                    continue;  // this object neither waits for the trigger nor sends it: not the box
+                }
             }
-            if (world::story_boxes::ArmedOwnBox(static_cast<std::uint64_t>(s.object), member))
+            if (world::story_boxes::ArmedOwnBox(static_cast<std::uint64_t>(s.object), member, static_cast<std::uint64_t>(exits[i])))
             {
                 return s.object;
             }

@@ -44,9 +44,10 @@ bool Install(const platform::GameImage& image) noexcept;
 void Remove() noexcept;
 
 /// The layout object `object` is a member-only story box (its group lists `member`'s tag and not the party leader's,
-/// as the enter tests) and is switched on, so `member` walking in sends its trigger. False when not installed or unread.
-/// players/lead_gate asks it of a level run's way out (OwnBoxAhead). Game thread.
-bool ArmedOwnBox(std::uint64_t object, const void* member) noexcept;
+/// as the enter tests) whose trigger state names `trigger` (FName bits: what it sends) and is switched on, so `member`
+/// walking in sends `trigger`. False when not installed or unread. players/lead_gate asks it of a level run's way out
+/// (OwnBoxAhead). Game thread.
+bool ArmedOwnBox(std::uint64_t object, const void* member, std::uint64_t trigger) noexcept;
 
 /// The placed shape of the story box registered under `tag` (its layout node name). False when not installed, not
 /// registered or not a box component.
