@@ -46,7 +46,7 @@ platform::CallRedirect g_victoryCall;
 platform::CallRedirect g_escapeCall;
 
 // Game thread.
-Mode g_mode = Mode::Game;
+Mode g_mode = Mode::PlayersStay;
 
 const wchar_t* ModeWord(Mode mode) noexcept
 {
@@ -199,7 +199,7 @@ bool Install(const platform::GameImage& image) noexcept
 
     // The file's word is one of the table's (platform/settings.h); set before the redirects are placed.
     g_mode = ModeOf(platform::settings::Of(platform::settings::kBattleWarps).word)
-                 .value_or(ModeOf(platform::settings::kBattleWarps.fallback).value_or(Mode::Game));
+                 .value_or(ModeOf(platform::settings::kBattleWarps.fallback).value_or(Mode::PlayersStay));
 
     // All three calls lie inside one code block each.
     if (!g_startCall.Install(*startCall, g_getActor, reinterpret_cast<std::uintptr_t>(&StartMember)) ||

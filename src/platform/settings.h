@@ -102,10 +102,10 @@ inline constexpr Option kMenuSlow{  // battle/command_menu_tick
     false, L"Command Menu Slow-Down", kOnOffLabels,
     L"Whether opening the command menu during battle slows down the game."};
 inline constexpr Option kBattleWarps{  // battle/battle_warps
-    L"Battle", L"battle-warps", kOnOffWords, L"on",
-    L"whether the game warps the players' characters into place at a battle's start and end: on (the default: the whole "
-    L"party, as in single player) or off (players 2 and 3's characters stay where they are; the members no player controls "
-    L"are warped as the game does)",
+    L"Battle", L"battle-warps", kOnOffWords, L"off",
+    L"whether the game warps the players' characters into place at a battle's start and end: on (the whole party, as in "
+    L"single player) or off (the default: players 2 and 3's characters stay where they are; the members no player "
+    L"controls are warped as the game does)",
     false, L"Gather at Battle Start/End", kOnOffLabels,
     L"Whether the game teleports players into place at the beginning and end of a battle encounter."};
 // The battle's rates (battle/battle_rates): each a multiplier from 0.1 to 10.0 in steps of 0.1, written "1.5" in the file

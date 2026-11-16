@@ -79,8 +79,8 @@ void TableConsistent()
     }
     EXPECT(kOptions.size() == 19);
     EXPECT(kLeadHolder.experimental && std::wcscmp(kLeadHolder.fallback, L"keeps") == 0);
-    // The battle's gathering: on by default (the game's own warps); off keeps the players' characters where they are.
-    EXPECT(std::wcscmp(kBattleWarps.fallback, L"on") == 0 && kBattleWarps.words.size() == 2);
+    // The battle's gathering: off by default (the players' characters stay where they are); on is the game's own warps.
+    EXPECT(std::wcscmp(kBattleWarps.fallback, L"off") == 0 && kBattleWarps.words.size() == 2);
     // The battle multipliers: the file's words plain, the page's values read "times".
     EXPECT(std::wcscmp(kEnemyHp.words[14], L"1.5") == 0 && std::wcscmp(kEnemyHp.wordLabels[14], L"x1.5") == 0);
     EXPECT(std::wcscmp(kApGain.wordLabels[99], L"x10.0") == 0 && kApGain.wordLabels.size() == kApGain.words.size());
@@ -114,7 +114,7 @@ void JudgeFile()
     // A word that is none of the option's: the default, the file's text kept for the warning.
     const Reading bad = Judge(kBattleWarps, L" sometimes ");
     EXPECT(bad.source == Source::Invalid);
-    EXPECT(bad.word == L"on");
+    EXPECT(bad.word == L"off");
     EXPECT(bad.raw == L"sometimes");
     EXPECT(Judge(kColumnOrder, L"2 1 3").word == L"213");  // player 1 may take any screen
     EXPECT(Judge(kColumnOrder, L"1 2 4").source == Source::Invalid);
@@ -186,7 +186,7 @@ void FileTextFromTable()
     EXPECT(text.find(L"\r\nmulti-monitor = off\r\n") != std::wstring::npos);
     EXPECT(text.find(L"\r\ncolumn-order = 213\r\n") != std::wstring::npos);
     EXPECT(text.find(L"\r\nbattle-warps = sometimes\r\n") != std::wstring::npos);
-    EXPECT(Count(text, L"none of these words: read as on") == 1);
+    EXPECT(Count(text, L"none of these words: read as off") == 1);
     EXPECT(text.find(L"; 0.1 to 10.0 (the default: 1.0)") != std::wstring::npos);
     EXPECT(text.find(L"; on | off (the default: off)") != std::wstring::npos);
     std::size_t lineStart = 0;

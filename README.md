@@ -39,8 +39,8 @@ readings are `<switch>.<what>`, and an area's readings `<area>.<what>`. Today:
   `log-level error|warning|info|debug|trace` (debug at start; trace holds the per-frame lines).
 - **The settings file's options**, switched in play: `multi-monitor on|off`, `column-order 123|132`,
   `menu-slow on|off` (off: an open battle command menu no longer slows the world or greys the screen),
-  `battle-warps on|off` (on: the game warps the whole party at a battle's start and end; off: players 2 and 3's
-  characters stay where they are), the battle's rates
+  `battle-warps on|off` (on: the game warps the whole party at a battle's start and end; off, the default: players 2
+  and 3's characters stay where they are), the battle's rates
   `enemy-damage`, `enemy-hp`, `boss-hp`, `enemy-stagger`, `exp-gain`, `ap-gain` (each `0.1` to `10.0`). Every option of
   `LocalSplitScreen.ini` is one row of the table in `src/platform/settings.h`, and its command is built from that row.
 - **The game:** `game.state` (title|loading|play|pause|menu|leaving|…), `game.paused`, `game.menu-kind`,

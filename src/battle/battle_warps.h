@@ -13,8 +13,8 @@
 //     enough". Two call sites redirected.
 // The setting (LocalSplitScreen.ini [Battle] battle-warps, the console's `battle-warps`, the Co-op page's "Gather at
 // Battle Start/End"):
-//   on   the game's warps for everyone (the default);
-//   off  every player's own character stays where it is; the game warps the members no player controls.
+//   on   the game's warps for everyone;
+//   off  every player's own character stays where it is; the game warps the members no player controls (the default).
 // A member stays in the battle wherever it is: the encounter, battle area and escape tests read the leader only.
 // Not changed: the warp of a member revived outside the battle area, and of a leader switched onto a
 // character outside it. Logged: the setting (Info); each member the start or end decides, kept or warped,
