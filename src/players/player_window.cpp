@@ -71,9 +71,12 @@ struct SeatNote
     text::Note   note  = text::Note::None;
     int          about = 0;
     std::int64_t until = 0;
+    std::wstring aboutName;  // the character the note names, when it names one
 };
 
 constexpr std::int64_t kNoteMs = 3000;
+/// A join's wait note: longer, and said again at each Start of the waiting pad.
+constexpr std::int64_t kWaitNoteMs = 6000;
 
 // Noted by the pad table's listener during the engine's pad poll, taken in Tick. Game thread both.
 constexpr std::size_t     kQueue = 32;
@@ -126,9 +129,9 @@ catch (...)
     out->clear();
 }
 
-/// The seat's character in capitals, from its class ("PC0001_00_Barret_Standard_C": BARRET), else "PLAYER n". A
-/// further seat's is its row's (the rank's, so a step shows at once; the member follows a tick later).
-std::wstring NameOf(int seat)
+/// The seat's character in capitals, from its class ("PC0001_00_Barret_Standard_C": BARRET), else empty. Player 2 or
+/// 3's is its row's (the rank's, so a step shows at once; the member follows a tick later).
+std::wstring CharacterOf(int seat)
 {
     void* member = seat == 0 ? players::field_root::PartyLeader(facts::kLeaderCurrent)
                    : g_session != nullptr ? g_session->RowActor(seat)
@@ -155,7 +158,14 @@ std::wstring NameOf(int seat)
             return name;
         }
     }
-    return std::format(L"PLAYER {}", seat + 1);
+    return {};
+}
+
+/// The seat's character in capitals, else "PLAYER n".
+std::wstring NameOf(int seat)
+{
+    std::wstring name = CharacterOf(seat);
+    return name.empty() ? std::format(L"PLAYER {}", seat + 1) : name;
 }
 
 bool Plays(int seat) noexcept
@@ -169,7 +179,7 @@ bool CanTrade(int seat) noexcept
     return rules::TradePartner(seat, -1, g_playing) >= 0 || rules::TradePartner(seat, +1, g_playing) >= 0;
 }
 
-/// A further seat no player holds, waits for, rejoins or is joining now (the lowest), or -1.
+/// The lowest seat of players 2 and 3 that no player holds, waits for, rejoins or is joining now, or -1.
 int FreeSeat()
 {
     for (int seat = 1; g_session != nullptr && seat <= kSeatsBuilt; ++seat)
@@ -185,8 +195,43 @@ int FreeSeat()
 
 void SetNote(int seat, text::Note note, int about)
 {
-    g_notes[static_cast<std::size_t>(seat)] = {note, about, NowMs() + kNoteMs};
+    g_notes[static_cast<std::size_t>(seat)] = {note, about, NowMs() + kNoteMs, {}};
     g_redraw                                = true;
+}
+
+/// The member of a waiting join is with the game: a script, a cutscene, an animation, a field action, or the game's
+/// leader handed to its AI. The other waits (another controller on it, no actor yet) name no character.
+bool WaitsOnGameAi(party_member::Wait why) noexcept
+{
+    using party_member::Wait;
+    return party_member::ScriptHold(why) || why == Wait::FieldAction || why == Wait::LeaderHanded ||
+           why == Wait::PushButtonEvent;
+}
+
+/// Player 1's window says for a while that `seat`'s join waits: naming the character when the game holds it.
+void SetWaitNote(int seat)
+{
+    const bool         onAi = g_session != nullptr && WaitsOnGameAi(g_session->WaitReason(seat));
+    const std::wstring name = onAi ? CharacterOf(seat) : std::wstring();
+    g_notes[0] = {name.empty() ? text::Note::Waits : text::Note::WaitsOnAi, seat, NowMs() + kWaitNoteMs, name};
+    g_redraw   = true;
+}
+
+/// The seat of players 2 and 3 whose player is out for now with `user`'s pad on it (a join that waits, a player the
+/// session put back into a wait, a rejoin after a world change), or -1. Such a pad plays no one yet but is no spare.
+int WaitingSeatOf(int user) noexcept
+{
+    const auto table = pad_table::Table();
+    for (int seat = 1; seat < kSeats; ++seat)
+    {
+        const bool out = g_waiting[static_cast<std::size_t>(seat)] ||
+                         (g_session != nullptr && (g_session->Awaiting(seat) || g_session->RejoinPending(seat)));
+        if (out && !Plays(seat) && table[static_cast<std::size_t>(seat)] == user)
+        {
+            return seat;
+        }
+    }
+    return -1;
 }
 
 bool AnyRequest()
@@ -256,6 +301,7 @@ void ShowWindows(const Frame& frame)
         w.startJoins = seat == 0 && FreeSeat() >= 0;
         w.note       = note.note;
         w.about      = note.about;
+        w.aboutName  = note.aboutName;
         const text::ScreenText t = text::TextFor(w);
         shown[static_cast<std::size_t>(seat)]       = true;
         g_stepShown[static_cast<std::size_t>(seat)] = w.canStep;
@@ -361,6 +407,18 @@ void SpareStart(const Frame& frame, int user)
     {
         return;  // asked already: its join is made before the session's next tick
     }
+    // A pad whose player is out for now plays no one yet: its Start says the wait again (in the field), never a second
+    // join.
+    if (const int waiting = WaitingSeatOf(user); waiting >= 0)
+    {
+        if (!frame.single && !views::whole_screen::Shown())
+        {
+            SetWaitNote(waiting);
+        }
+        hud::view_window::Play(Sound::Cursor);
+        platform::LogDebug(L"player window: pad {} pressed Start while its join as player {} waits", user + 1, waiting + 1);
+        return;
+    }
     const auto table = pad_table::Table();
     if (const int seat = rules::SeatWithPadGone(table, g_playing, pad_presence::GoneUsers()); seat >= 0)
     {
@@ -426,7 +484,7 @@ void AnswerJoin(const JoinAsk& j)
         else
         {
             g_waiting[static_cast<std::size_t>(j.seat)] = true;
-            SetNote(0, text::Note::Waits, j.seat);
+            SetWaitNote(j.seat);
             platform::Log(L"player window: player {} joins once its member is free ({})", j.seat + 1, party_member::Describe(why));
         }
         return;
@@ -610,6 +668,7 @@ void Remove() noexcept
     hud::view_prompt::ClearAll();
     g_open           = {};
     g_notes          = {};
+    g_waiting        = {};
     g_joins          = {};
     g_leaves         = {-1, -1, -1};
     g_startWhenSplit = -1;
@@ -654,15 +713,23 @@ try
             Close(seat, L"the player is out");
             g_notes[static_cast<std::size_t>(seat)] = {};
         }
-        // A join that waited is in now: its window opens.
-        if (g_waiting[static_cast<std::size_t>(seat)] && Plays(seat))
+        // A join that waited is in now: its window opens. In or stopped, player 1's note of the wait goes.
+        const bool wasWaiting = g_waiting[static_cast<std::size_t>(seat)];
+        if (wasWaiting && Plays(seat))
         {
             g_waiting[static_cast<std::size_t>(seat)] = false;
             Open(seat, L"its join was waiting for a party member");
         }
-        else if (g_waiting[static_cast<std::size_t>(seat)] && g_session != nullptr && !g_session->Awaiting(seat))
+        else if (wasWaiting && g_session != nullptr && !g_session->Awaiting(seat))
         {
             g_waiting[static_cast<std::size_t>(seat)] = false;  // the wait was stopped (Ctrl+F8, a field exit)
+        }
+        SeatNote& one = g_notes[0];
+        if (wasWaiting && !g_waiting[static_cast<std::size_t>(seat)] && one.about == seat &&
+            (one.note == text::Note::Waits || one.note == text::Note::WaitsOnAi))
+        {
+            one      = {};
+            g_redraw = true;
         }
     }
     if (frame.single || title)

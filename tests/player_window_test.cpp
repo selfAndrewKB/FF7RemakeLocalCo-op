@@ -226,6 +226,11 @@ void Notes()
     EXPECT(!Has(TextFor(w).markup, L"Done"));
     EXPECT(NoteText(Note::NoMember, 2) == L"No available party members");
     EXPECT(NoteText(Note::Failed, 2) == L"Player 3's join failed. See UE4SS.log.");
+    // A member in the party but with the game's AI: named; without a name, the plain wait.
+    EXPECT(NoteText(Note::WaitsOnAi, 1, L"TIFA") == L"Player 2 has joined and is waiting for TIFA to be released from AI control");
+    EXPECT(NoteText(Note::WaitsOnAi, 1) == NoteText(Note::Waits, 1));
+    Window named{.seat = 0, .name = L"CLOUD", .note = Note::WaitsOnAi, .about = 2, .aboutName = L"BARRET"};
+    EXPECT(LinesOf(TextFor(named).markup).back() == L"Player 3 has joined and is waiting for BARRET to be released from AI control");
 }
 
 }  // namespace

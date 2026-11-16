@@ -126,6 +126,8 @@ void Texts()
     EXPECT(WordList(kMultiMonitor) == L"on or off");
     EXPECT(WordList(kMenuSlow) == L"on or off");
     EXPECT(WordList(kLeadHolder) == L"guide or keeps");
+    // A help line on two lines on the Co-op page is one comment in the file: its break is a space there.
+    EXPECT(CommentLines(L"One line.\r\nThe next.") == L"; One line. The next.\r\n");
     EXPECT(WhyText(kMenuSlow, Judge(kMenuSlow, L"off")) == L"the settings file");
     EXPECT(WhyText(kMenuSlow, Judge(kMenuSlow, L"")) == L"the default; LocalSplitScreen.ini has no [Battle] menu-slow");
     EXPECT(WhyText(kMenuSlow, Judge(kMenuSlow, L"maybe")) ==

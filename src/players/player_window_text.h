@@ -34,19 +34,23 @@ enum class Note : std::uint8_t
 {
     None,
     Waits,           // the new player (`about`) joins once a party member is free
+    WaitsOnAi,       // the new player's party member (`aboutName`) is in the party, with the game's AI until released
     NoMember,        // refused: no party member is free for a new player
     AllIn,           // refused: every player is in already
     Failed,          // the join did not work (the log says why)
     PlayerOneStays,  // B held on player 1's pad (on player 1's own window)
 };
 
-/// The note's words; `about` the player it concerns (seat, 0 player 1's).
-inline std::wstring NoteText(Note note, int about)
+/// The note's words; `about` the player it concerns (seat, 0 player 1's), `aboutName` that player's character in capitals.
+inline std::wstring NoteText(Note note, int about, const std::wstring& aboutName = {})
 {
     const std::wstring player = L"Player " + std::to_wstring(about + 1);
     switch (note)
     {
     case Note::Waits: return player + L" has joined and is waiting for a free party member";
+    case Note::WaitsOnAi:
+        return aboutName.empty() ? NoteText(Note::Waits, about)
+                                 : player + L" has joined and is waiting for " + aboutName + L" to be released from AI control";
     case Note::NoMember: return L"No available party members";
     case Note::AllIn: return L"All players are currently present";
     case Note::Failed: return player + L"'s join failed. See UE4SS.log.";
@@ -68,6 +72,7 @@ struct Window
     bool         startJoins = false;  // a seat is free: Start on another pad adds a player (said on player 1's)
     Note         note       = Note::None;
     int          about      = 0;      // the note's player
+    std::wstring aboutName;           // the note's player's character in capitals, when the note names it
 };
 
 /// The notice after a press on the title screen: which controller is set as Player 1 (`user` the physical pad, 0-based).
@@ -101,7 +106,8 @@ inline ScreenText TextFor(const Window& w)
                      (trade ? L"<  " + player + L"  >" : player) + L"    " + (step ? L"^   " + w.name + L"   v" : w.name)});
     if (w.note != Note::None)
     {
-        lines.push_back({NoteText(w.note, w.about), NoteText(w.note, w.about)});
+        const std::wstring note = NoteText(w.note, w.about, w.aboutName);
+        lines.push_back({note, note});
     }
     else if (w.open)
     {

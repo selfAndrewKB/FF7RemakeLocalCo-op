@@ -24,14 +24,15 @@ namespace lss::platform::settings {
 /// The longest line the file's comments are wrapped to.
 inline constexpr std::size_t kFileWidth = 118;
 
-/// `text` as comment lines ("; " and the words), wrapped at kFileWidth, each line ended by CR LF.
+/// `text` as comment lines ("; " and the words), wrapped at kFileWidth, each line ended by CR LF. A line break in the
+/// text (a Co-op page help line on two lines) is a space here: the file wraps on its own.
 inline std::wstring CommentLines(std::wstring_view text)
 {
     std::wstring out, line = L";";
     std::size_t  at = 0;
     while (at < text.size())
     {
-        const std::size_t end  = text.find(L' ', at);
+        const std::size_t end  = text.find_first_of(L" \r\n", at);
         const auto        word = text.substr(at, end == std::wstring_view::npos ? std::wstring_view::npos : end - at);
         at = end == std::wstring_view::npos ? text.size() : end + 1;
         if (word.empty())
