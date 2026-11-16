@@ -19,6 +19,9 @@
 //     its tag) are pressed, the doors, curtains, machines, hooks and swings while the member's field actions run as the
 //     player's (world/traversal_action.h). A machine's press is noted for the shop act the level then queues (matched
 //     by time, world/shop_act.h); it lapses after 15 s, at player 1's next press, the player's leave or a world change.
+//     A door whose actor names a level signal (its open's start or end, or turning its handle) stays player 1's: those
+//     signals go out for the party leader's open only, and a further player's open runs the member's version, as an AI
+//     companion's would, so the door would stand open while the story waits for the signal (research/RE-scripted-door.md).
 //     Situations, examine points, push-button and battle-start objects, enemy and party objects stay player 1's: for
 //     the player's pick every other active target is marked disabled (the entry's own byte, the pick's rejection test;
 //     put back after, unless the run applied the game's own pending write to it), so the game gives the player neither

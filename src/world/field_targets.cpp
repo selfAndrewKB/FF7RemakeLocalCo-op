@@ -9,6 +9,7 @@
 #include "platform/image.h"
 #include "platform/log.h"
 #include "platform/name_text.h"
+#include "platform/object_class.h"
 #include "platform/text.h"
 #include "platform/verified_code.h"
 #include "platform/vtable_entry.h"
@@ -24,13 +25,18 @@
 #include "world/target_icons.h"
 #include "world/talk_presses.h"
 #include "world/traversal_action.h"
+#include "world/traversal_walkup.h"
 
+#include <algorithm>
 #include <array>
 #include <bitset>
 #include <cstdint>
 #include <cstring>
 #include <format>
 #include <string>
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
 
 #include <Windows.h>
 
@@ -69,6 +75,7 @@ enum class Kind : std::uint8_t
     Chest,      // an ObjectTreasure row: a chest or a shining item on the ground
     Party,   // an ObjectParty row
     Door,      // Door_ / HeavyDoor_: the member's own door action
+    StoryDoor, // a door whose open sends a level signal: the level listens for the party leader's open (player 1's)
     Swing,     // TarzanJump_ with the member's own tag: its swing's press
     HookShot,  // HookShot_: the grappling hook (its target shows only while the member stands in its hook area)
     Curtain,   // Curtain_: a door-like pass-through (admitted as an experiment)
@@ -91,6 +98,7 @@ const wchar_t* KindName(Kind kind) noexcept
         case Kind::Chest: return L"a chest or item";
         case Kind::Party: return L"a party member";
         case Kind::Door: return L"a door";
+        case Kind::StoryDoor: return L"a door the story listens to (player 1's)";
         case Kind::Swing: return L"a swing";
         case Kind::HookShot: return L"a grappling-hook point";
         case Kind::Curtain: return L"a curtain";
@@ -344,6 +352,60 @@ catch (...)
     return false;
 }
 
+/// The doors judged story doors or not, by target name (a door's signals are level data and its target name names its
+/// level, so a verdict holds for the session), and the doors whose actor was not found (logged once; judged again only
+/// when a seat's pick classifies that target again).
+std::unordered_map<std::uint64_t, bool> g_storyDoors;
+std::unordered_set<std::uint64_t>       g_doorsUnfound;
+
+/// Whether the door target `name` (`door`: a Door_ target, else a HeavyDoor_ one) is one the level listens to: its actor
+/// names a level signal (the six a spot sends for the party leader's pass, and for a door its two handle signals,
+/// research/RE-scripted-door.md). A further player's open runs the member's version of the door action, which sends none
+/// of them (as an AI companion's open would), so the door would stand open while the story waits for its signal, and
+/// player 1 could no longer press it; such a door stays player 1's. A door whose actor is not found, or is not of the
+/// target's door class, is left to every player (logged once).
+bool StoryDoor(std::uint64_t name, bool door) noexcept
+try
+{
+    if (const auto known = g_storyDoors.find(name); known != g_storyDoors.end())
+    {
+        return known->second;
+    }
+    void* const actor = traversal_walkup::SpotOfTarget(name);
+    std::array<std::int64_t, facts::kFieldSpotSignalCount>     spot{};
+    std::array<std::int64_t, facts::kFieldDoorTurnSignalCount> turn{};
+    if (!platform::IsA(actor, platform::FindClass(door ? facts::kFieldDoorClass : facts::kFieldHeavyDoorClass)) ||
+        !traversal_walkup::SpotSignals(actor, spot) ||
+        (door && !platform::CopyGuarded(turn.data(), static_cast<const std::uint8_t*>(actor) + facts::kFieldDoorTurnSignals, sizeof(turn))))
+    {
+        if (g_doorsUnfound.insert(name).second)
+        {
+            platform::Log(L"field targets: no door actor of {} was found to read its signals; every player may open it", Name(name));
+        }
+        return false;
+    }
+    std::vector<std::int64_t> signals;
+    const auto keep = [&](std::int64_t s) {
+        if (s != 0)
+        {
+            signals.push_back(s);
+        }
+    };
+    std::for_each(spot.begin(), spot.end(), keep);
+    std::for_each(turn.begin(), turn.end(), keep);
+    g_storyDoors[name] = !signals.empty();
+    if (!signals.empty())
+    {
+        platform::Log(L"field targets: {} stays player 1's: its open sends {} (the level listens for the party leader's open)", Name(name),
+                      platform::NameList(signals));
+    }
+    return !signals.empty();
+}
+catch (...)
+{
+    return false;
+}
+
 /// What the target is, in the dispatch's order.
 Kind Classify(std::uint64_t name, std::uint64_t state, const void* member) noexcept
 {
@@ -375,9 +437,9 @@ Kind Classify(std::uint64_t name, std::uint64_t state, const void* member) noexc
     {
         return Kind::Party;
     }
-    if (StartsWith(name, "Door_") || StartsWith(name, "HeavyDoor_"))
+    if (const bool door = StartsWith(name, "Door_"); door || StartsWith(name, "HeavyDoor_"))
     {
-        return Kind::Door;
+        return StoryDoor(name, door) ? Kind::StoryDoor : Kind::Door;
     }
     if (StartsWith(name, "TarzanJump_"))
     {

@@ -69,7 +69,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.213.1-repair-off";  // the one version string (the log, UE4SS and the setup app)
+constexpr const wchar_t* kVersion = L"0.214.0-story-doors";  // the one version string (the log, UE4SS and the setup app)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;

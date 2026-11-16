@@ -2837,6 +2837,14 @@ inline constexpr std::uint32_t  kFieldSpotOnceOnly     = 0x410;
 inline constexpr std::uint32_t  kFieldSpotSignals      = 0x414;
 inline constexpr std::uint32_t  kFieldSpotSignalCount  = 6;
 inline constexpr const wchar_t* kFieldSpotClass        = L"/Script/EndGame.EndFieldActionActorBase";
+/// A door (AEndFieldActionActorDoor, reflected) also signals turning its handle: StartTurnHandleTrigger and
+/// EndTurnHandleTrigger (FNames). Like the base's six, they go out for the party leader's open only, so a door that names
+/// any of them is one the level listens to (chapter 13's entrance to Aerith's house: DefaultStartStateTrigger
+/// trg080_ArtDoorEnt_Night_Start). [CONFIRMED dump + level data]
+inline constexpr const wchar_t* kFieldDoorClass        = L"/Script/EndGame.EndFieldActionActorDoor";
+inline constexpr const wchar_t* kFieldHeavyDoorClass   = L"/Script/EndGame.EndFieldActionActorHeavyDoor";  // not a door child
+inline constexpr std::uint32_t  kFieldDoorTurnSignals  = 0x654;
+inline constexpr std::uint32_t  kFieldDoorTurnSignalCount = 2;
 /// AActor::bActorEnableCollision (stock 4.18 bitfield byte and bit), what an NPC-only state turns off. [CONFIRMED code]
 inline constexpr std::uint32_t kActorCollisionByte    = 0x86;
 inline constexpr std::uint8_t  kActorCollisionBit     = 0x04;

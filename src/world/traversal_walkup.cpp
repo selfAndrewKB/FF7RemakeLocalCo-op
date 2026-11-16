@@ -8,6 +8,7 @@
 #include "platform/image.h"
 #include "platform/log.h"
 #include "platform/name_text.h"
+#include "platform/text.h"
 #include "platform/verified_code.h"
 #include "platform/vtable_entry.h"
 #include "players/actor_fields.h"
@@ -794,6 +795,43 @@ try
 catch (...)
 {
     return false;
+}
+
+void* SpotOfTarget(std::uint64_t target) noexcept
+try
+{
+    // The actor's part ends at the name's last underscore (a volume's name has none): the spot whose tag ends there,
+    // after an underscore. Names compare without case, as the engine's do.
+    const std::wstring text = platform::Lower(platform::NameText(target));
+    const std::size_t  last = text.rfind(L'_');
+    if (last == std::wstring::npos)
+    {
+        return nullptr;
+    }
+    const std::wstring head  = text.substr(0, last);
+    void*              found = nullptr;
+    std::size_t        size  = 0;
+    ForEachSpot([&](void* actor, std::uint64_t tag) {
+        const std::wstring own = L"_" + platform::Lower(platform::NameText(tag));
+        // The longest such tag: a shorter one can end the actor's part too ("_Door" against "..._EntranceDoor").
+        if (own.size() > 1 && own.size() > size && head.size() > own.size() && head.ends_with(own))
+        {
+            found = actor;
+            size  = own.size();
+        }
+    });
+    return found;
+}
+catch (...)
+{
+    return nullptr;
+}
+
+bool SpotSignals(const void* actor, std::array<std::int64_t, 6>& out) noexcept
+{
+    static_assert(facts::kFieldSpotSignalCount == 6, "the six signals of a spot");
+    return actor != nullptr &&
+           platform::CopyGuarded(out.data(), static_cast<const std::uint8_t*>(actor) + facts::kFieldSpotSignals, sizeof(out));
 }
 
 bool AiOnlySpotNear(const platform::GameVector& at, float radius, AiOnlySpot& out) noexcept

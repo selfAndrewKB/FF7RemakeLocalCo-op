@@ -38,6 +38,7 @@
 
 #include "platform/game_vectors.h"
 
+#include <array>
 #include <cstdint>
 #include <functional>
 #include <string>
@@ -70,6 +71,16 @@ bool AiOnlySpotNear(const platform::GameVector& at, float radius, AiOnlySpot& ou
 /// slot of the map keeps stale bytes), whatever its class (the map holds other field-action actors too). False when the
 /// manager or its map cannot be read. Game thread.
 bool ForEachSpot(const std::function<void(void* actor, std::uint64_t tag)>& fn) noexcept;
+
+/// The spot actor a field target was named after: a target is named <prefix>_<level>_<actor>_<volume> after the actor
+/// that registered it (research/RE-further-player-levers.md), and a volume's name has no underscore, so the spot whose
+/// own tag ends the name's part before its last underscore, after an underscore (without case; the longest such tag);
+/// null when none. Game thread.
+void* SpotOfTarget(std::uint64_t target) noexcept;
+
+/// The six level signals a spot sends for the party leader's pass, as the actor holds them: default, left and right, each
+/// start then end (0 for None); false when unread.
+bool SpotSignals(const void* actor, std::array<std::int64_t, 6>& out) noexcept;
 
 /// Game thread, each engine tick: the seat's controller and member while its player is in (null otherwise). A new
 /// controller or trigger drops the seat's copies (a new controller also its queued entries, at their resolve).

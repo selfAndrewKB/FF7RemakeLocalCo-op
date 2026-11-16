@@ -1,17 +1,12 @@
 #include "world/stuck_spots.h"
 
-#define RC_UNREAL_DISABLE_PROPERTY_DEPRECATION_WARNINGS
-#define RC_UNREAL_DISABLE_CLASS_DEPRECATION_WARNINGS
-#include <Unreal/CoreUObject/UObject/Class.hpp>
-#include <Unreal/UObject.hpp>
-#include <Unreal/UObjectGlobals.hpp>
-
 #include "control/registry.h"
 #include "engine_facts.h"
 #include "platform/game_array.h"
 #include "platform/guarded.h"
 #include "platform/log.h"
 #include "platform/name_text.h"
+#include "platform/object_class.h"
 #include "platform/steady_ms.h"
 #include "platform/image.h"
 #include "platform/verified_code.h"
@@ -42,8 +37,6 @@ namespace lss::world::stuck_spots {
 namespace {
 
 using platform::Read;
-using RC::Unreal::UClass;
-using RC::Unreal::UObject;
 namespace rules          = stuck_spot_rules;
 using rules::Name;
 
@@ -57,7 +50,6 @@ constexpr std::int64_t kSpotCheckMs = 2000;
 // A sent pass's moves are read back this long after the send (the state manager fires it on its next tick).
 constexpr std::int64_t kReadBackMs  = 500;
 
-UClass* g_spotClass     = nullptr;  // the field-action spot class, looked up when first needed
 bool    g_spotClassTold = false;
 bool    g_installed     = false;
 bool    g_auto          = false;  // off: only saves made before seats sent their own start signals need it
@@ -159,36 +151,15 @@ int                                        g_spotCount   = -1;
 bool                                       g_repairAsked = false;  // stuck.repair: scan and send even with stuck.auto off
 std::uint32_t                              g_scans = 0, g_held = 0, g_refused = 0, g_sentPasses = 0;
 
-bool IsSpotRaw(void* actor)
-{
-    return static_cast<UObject*>(actor)->IsA(g_spotClass);
-}
-
 /// The field-action spot class (the class whose actors carry a pass's signals), looked up until found.
-bool SpotClassFound()
+void* SpotClass()
 {
-    if (g_spotClass == nullptr)
+    void* cls = platform::FindClass(facts::kFieldSpotClass);
+    if (cls == nullptr && !std::exchange(g_spotClassTold, true))
     {
-        try
-        {
-            g_spotClass = RC::Unreal::UObjectGlobals::StaticFindObject<UClass*>(nullptr, nullptr, facts::kFieldSpotClass);
-        }
-        catch (...)
-        {
-            g_spotClass = nullptr;
-        }
-        if (g_spotClass == nullptr && !std::exchange(g_spotClassTold, true))
-        {
-            platform::LogWarning(L"stuck spots: the field-action spot class was not found; no spot is judged until it is");
-        }
+        platform::LogWarning(L"stuck spots: the field-action spot class was not found; no spot is judged until it is");
     }
-    return g_spotClass != nullptr;
-}
-
-bool IsSpot(void* actor) noexcept
-{
-    bool is = false;
-    return platform::CallGuarded(&IsSpotRaw, is, actor) && is;
+    return cls;
 }
 
 /// A state row's steps for the rules (an unread next state as no state).
@@ -278,17 +249,17 @@ std::vector<Spot> Spots()
         g_knownSpots.clear();
         g_knownField = field;
     }
-    if (SpotClassFound())
+    if (void* spotClass = SpotClass())
     {
         traversal_walkup::ForEachSpot([&](void* actor, std::uint64_t tag) {
-            if (!IsSpot(actor))
+            if (!platform::IsA(actor, spotClass))
             {
                 return;
             }
-            const auto*                                    at = static_cast<const std::uint8_t*>(actor);
             std::array<Name, facts::kFieldSpotSignalCount> s{};
             std::uint8_t                                   once = 0;
-            if (!platform::CopyGuarded(s.data(), at + facts::kFieldSpotSignals, sizeof(s)) || !Read(at + facts::kFieldSpotOnceOnly, once))
+            if (!traversal_walkup::SpotSignals(actor, s) ||
+                !Read(static_cast<const std::uint8_t*>(actor) + facts::kFieldSpotOnceOnly, once))
             {
                 return;
             }
