@@ -6,7 +6,10 @@
 // rail camera on player 1's camera manager that outranks every talk and look-at camera, a box left armed. Player 1's
 // own pass through that spot, or the spot's end signals sent from the console (world/state_signal), end it.
 //
-// This module does it by itself, as player 1's pass would: once a field is steady (a load, a field change, a retry) and
+// Off by default: since a seat's pass sends only its own member's signals, single-player passes and co-op passes alike
+// send a start with its end, so only a save made before that carries such a state; `stuck.auto on` (or one
+// `stuck.repair`) turns the repair on for the session when such a save is loaded.
+// Switched on, this module does it by itself, as player 1's pass would: once a field is steady (a load, a field change, a retry) and
 // whenever more spots stream in, with nobody in a field action, a talk, an event, a battle or a menu, it reads every
 // loaded spot's passes against the active level states (world/stuck_spot_rules), dry-runs each held pass's end triggers
 // over every state that waits on them (the census must be whole), and accepts the ones that move nothing but what that
@@ -26,7 +29,7 @@
 //
 //   stuck.scan     the verdicts now, without sending
 //   stuck.repair   scans now and sends what a second scan confirms (with stuck.auto off too)
-//   stuck.auto     the repair at a field's load and as spots stream in (on)
+//   stuck.auto     the repair at a field's load and as spots stream in (off)
 //
 // Game thread only.
 

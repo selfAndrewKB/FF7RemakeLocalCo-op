@@ -60,7 +60,7 @@ constexpr std::int64_t kReadBackMs  = 500;
 UClass* g_spotClass     = nullptr;  // the field-action spot class, looked up when first needed
 bool    g_spotClassTold = false;
 bool    g_installed     = false;
-bool    g_auto          = true;
+bool    g_auto          = false;  // off: only saves made before seats sent their own start signals need it
 
 /// An active state waiting on one of a spot's ends: its slot, object, state and row, and where that end leads it
 /// (nullopt: the row's next list could not be read there).
@@ -893,8 +893,8 @@ bool Install(const platform::GameImage& image) noexcept
                        },
                        .get = [] { return Value{g_auto}; }});
     g_installed = true;
-    platform::Log(L"stuck spots: installed, on (a spot's level state left on by a pass without its end is ended at a field's "
-                  L"load, as player 1's pass would end it; stuck.scan, stuck.repair, stuck.auto)");
+    platform::Log(L"stuck spots: installed, off until `stuck.auto on` or `stuck.repair` (a spot's level state left on by a pass "
+                  L"without its end is ended at a field's load, as player 1's pass would end it; stuck.scan reads them any time)");
     return true;
 }
 
