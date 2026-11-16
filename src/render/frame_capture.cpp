@@ -177,8 +177,10 @@ struct Stats
     std::array<int, kEngineNumbers>    engineCount{};
     std::array<double, kFrameThreads>  cpuSum{};
     std::array<int, kFrameThreads>     cpuCount{};
-    double                             modSum   = 0.0;
-    int                                modCount = 0;
+    double                             modSum      = 0.0;
+    int                                modCount    = 0;
+    double                             ribbonSum   = 0.0;
+    int                                ribbonCount = 0;
 };
 
 std::wstring Average(double sum, int count)
@@ -205,10 +207,10 @@ std::wstring StatsText(Segment segment, Stats& s)
         cpu += std::format(L"{}{} {}", i == 0 ? L"" : L", ", kThreadNames[i], Average(s.cpuSum[i], s.cpuCount[i]));
     }
     return std::format(L"{}: {} frames, {:.1f} fps, frame {:.2f} ms (95 % under {:.1f}, worst {:.1f}); the engine's {} ms; CPU {} ms; "
-                       L"the mod's tick {} ms",
+                       L"the mod's tick {} ms; the ribbon trails' fill {} ms",
                        kSegmentNames[static_cast<std::size_t>(segment)], s.frames.size(), s.frames.size() * 1000.0 / s.sumMs,
                        s.sumMs / static_cast<double>(s.frames.size()), s.frames[at], s.worstMs, engine, cpu,
-                       Average(s.modSum, s.modCount));
+                       Average(s.modSum, s.modCount), Average(s.ribbonSum, s.ribbonCount));
 }
 
 std::wstring ReasonText()
@@ -265,7 +267,7 @@ std::string CsvText(int views)
     {
         text += std::string(",") + column;
     }
-    text += ",mod_tick_ms,action,views\n";
+    text += ",mod_tick_ms,ribbon_fill_ms,action,views\n";
     text.reserve(text.size() + g_rows.size() * kRowBytes);
     auto         out    = std::back_inserter(text);
     const double origin = g_rows.empty() ? 0.0 : g_rows.front().kept.atMs;
@@ -282,6 +284,7 @@ std::string CsvText(int views)
             Cell(text, ms);
         }
         Cell(text, s.modMs);
+        Cell(text, s.ribbonMs);
         std::format_to(out, ",{},{}\n", row.kept.action ? 1 : 0, row.kept.views);
     }
     return text;
@@ -356,6 +359,11 @@ void Report()
         {
             s.modSum += in.modMs;
             ++s.modCount;
+        }
+        if (in.ribbonMs >= 0.0)
+        {
+            s.ribbonSum += in.ribbonMs;
+            ++s.ribbonCount;
         }
         if (row.segment != Segment::Before)
         {

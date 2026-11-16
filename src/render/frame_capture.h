@@ -12,7 +12,8 @@
 // start from the ring, runs while the trigger holds, keeps 3 s after (60 s at most), then writes one CSV file per
 // capture to `captures\` beside the settings file (one row per frame, each marked before, during or after; its head
 // names the trigger, the actions seen and the views) and one Info line comparing before, during and after: the frame
-// rate, the average, 95th-percentile and worst frame, each engine number, each thread's CPU time and the mod's tick.
+// rate, the average, 95th-percentile and worst frame, each engine number, each thread's CPU time, the mod's tick and the
+// render thread's ribbon trail fills.
 // The views (1, 2 or 3) are in both, so a solo run and a split run of the same attack compare directly. The file is
 // written on the game thread when the capture ends: a hitch there is the writer's. At most 30 captures a launch.
 // Logging only: nothing of the game's is written.
@@ -52,6 +53,9 @@ struct Sample
     std::array<double, kEngineNumbers>     engineMs{-1.0, -1.0, -1.0, -1.0};
     std::array<double, kFrameThreads>      cpuMs{-1.0, -1.0, -1.0};
     double                                 modMs = -1.0;  // the mod's engine-tick callback
+    // the render thread's ribbon trail fills since the last frame's start (render/ribbon_fill.h): the render thread
+    // runs a frame or so behind, so a row holds the fills of the frame the render thread was drawing then
+    double                                 ribbonMs = -1.0;
 };
 
 /// Registers the settings and asks the enemy watch for its actions. True.

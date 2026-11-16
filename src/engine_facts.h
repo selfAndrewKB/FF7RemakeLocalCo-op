@@ -383,6 +383,20 @@ inline constexpr std::uint32_t kD3D12PsBytecode       = 0x48;  // const uint8* (
 inline constexpr std::uint32_t kD3D12PsBytecodeLength = 0x50;  // SIZE_T
 inline constexpr std::uint32_t kD3D12PsCode           = 0x58;  // TArray<uint8> {Data, Num, Max}
 
+// --- Square Enix's ribbon trails' vertex fill (RE-ribbon-fill-cost.md §3) ------------------------------------------
+/// FillVertexData(emitter data, FAsyncBufferFillData*): writes every ribbon point's two 80-byte vertices into the locked
+/// dynamic vertex buffer, and reads each position back from it (write-combined memory on the GPU's upload heap).
+/// Square Enix's ribbon emitter data only; its DoBufferFill 0x140D832F0 calls it through this slot on the render thread.
+inline constexpr std::array<std::uint8_t, 16> kRibbonFillVertexEntry{
+    0x48, 0x89, 0x4C, 0x24, 0x08, 0x55, 0x53, 0x57, 0x41, 0x55, 0x48, 0x8D, 0xAC, 0x24, 0x08, 0xFE};
+inline constexpr platform::SlotFact kRibbonFillVertexSlot{
+    L"EndDynamicRibbonEmitterData::FillVertexData (slot 21)", 0x144B8E9F8 + 21 * 8,
+    {L"EndDynamicRibbonEmitterData::FillVertexData", 0x140D87120, kRibbonFillVertexEntry}};
+/// FAsyncBufferFillData (stock 4.18), as ParticleEmitter_AllocDynamicVertexIndexBuffers 0x14312D5A0 fills it.
+inline constexpr std::uint32_t kBufferFillVertexCount = 0x88;  // int32
+inline constexpr std::uint32_t kBufferFillVertexSize  = 0x8C;  // int32, bytes
+inline constexpr std::uint32_t kBufferFillVertexData  = 0x90;  // void*, inside the locked buffer
+
 // --- The sun's cascades per view, and the translucency lighting volume (RE-haze-per-view.md §2, §3, §9) -------------
 /// FProjectedShadowInfo::DependentView: the view a cascade was made for (SetupWholeSceneProjection 0x1425EC850 writes
 /// it; AddViewDependentWholeSceneShadowsForView passes &Views[i]); null for a shadow of no one view.

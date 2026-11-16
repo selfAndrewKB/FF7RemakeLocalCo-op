@@ -133,6 +133,7 @@ add_library(LocalSplitScreen SHARED
     src/render/family_boundary.cpp
     src/render/frame_capture.cpp
     src/render/frame_watch.cpp
+    src/render/ribbon_fill.cpp
     src/render/family_now.cpp
     src/render/motion_history.cpp
     src/render/view_marks.cpp

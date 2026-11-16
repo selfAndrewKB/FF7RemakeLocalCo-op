@@ -68,6 +68,7 @@
 #include "render/low_health.h"
 #include "render/movie_frame.h"
 #include "render/occlusion_exempt.h"
+#include "render/ribbon_fill.h"
 #include "render/motion_history.h"
 #include "render/one_family.h"
 #include "render/pass_marks.h"
@@ -227,6 +228,8 @@ constexpr std::array kModules{
     Module{.name = L"frame watch", .install = Call<&render::frame_watch::Install>},
     // logging only: every frame around an Airbuster beam or a frame-rate drop in battle, to a file
     Module{.name = L"frame capture", .install = Call<&render::frame_capture::Install>, .needs = {Need<&render::frame_watch::Install>()}},
+    // without it Square Enix's ribbon trails read every point back from GPU memory: tens of ms a frame in a trail-heavy attack
+    Module{.name = L"ribbon fill", .install = Call<&render::ribbon_fill::Install>},
     // The render per view: each view's own origins, shadows, reflections, cascades and fades.
     // without it a further player's half keeps the AO ghost
     Module{.name = L"ao origin", .install = Call<&render::ao_origin::Install>},

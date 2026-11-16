@@ -9,6 +9,7 @@
 #include "platform/perf_counter.h"
 #include "platform/verified_code.h"
 #include "render/frame_capture.h"
+#include "render/ribbon_fill.h"
 
 #include <algorithm>
 #include <array>
@@ -110,6 +111,8 @@ double                                g_frameWorstMs = 0.0;
 double                                g_modMs        = -1.0;  // the mod's last engine-tick callback; negative: none yet
 double                                g_modSumMs     = 0.0;
 std::uint32_t                         g_modFrames    = 0;
+ribbon_fill::Totals                   g_ribbonLast;      // the ribbon fills' totals at the last frame's start
+ribbon_fill::Totals                   g_ribbonWindow;    // the window's ribbon fills so far
 std::array<Number, kEngineNumbers>    g_numbers{};
 std::array<Thread, kFrameThreads>     g_threads{};
 std::int64_t                          g_windowSeconds = kWindowSeconds;
@@ -204,6 +207,8 @@ void EndWindow(std::int64_t now)
     const double rhiCpu    = EndThreadWindow(g_threads[kRhiThread]);
     const bool   rhiOwn    = g_rhiThread != nullptr && g_threads[kRhiThread].id != 0;
     const double modMs     = g_modFrames != 0 ? g_modSumMs / g_modFrames : -1.0;
+    const ribbon_fill::Totals ribbon = g_ribbonWindow;
+    g_ribbonWindow = {};
     g_windowStart  = now;
     g_frames       = 0;
     g_hitches      = 0;
@@ -238,6 +243,14 @@ void EndWindow(std::int64_t now)
                          hitches, engine, Ms(gameCpu), Ms(renderCpu),
                          rhiOwn ? Ms(rhiCpu) : std::wstring(L"none (no thread of its own: its work runs on the task threads)"),
                          Ms(modMs));
+    if (ribbon_fill::Installed() && frames != 0)
+    {
+        const double ribbonMs = static_cast<double>(ribbon.ticks) * g_msPerTick;
+        g_last += std::format(L"; the render thread's ribbon trail fills {:.2f} ms per frame ({} fills, {} vertices per frame{})",
+                              ribbonMs / frames, ribbon.fills / frames, ribbon.vertices / frames,
+                              ribbon.vertices != 0 ? std::format(L", {:.0f} ns a vertex", ribbonMs * 1e6 / static_cast<double>(ribbon.vertices))
+                                                   : std::wstring());
+    }
     platform::LogDebug(L"frame watch: {}", g_last);
 }
 
@@ -309,6 +322,7 @@ try
     {
         g_lastTick = g_windowStart = now;
         g_lastStamp                = stamp;
+        g_ribbonLast               = ribbon_fill::Read();
         return;
     }
     frame_capture::Sample sample;
@@ -344,6 +358,15 @@ try
         ++g_modFrames;
     }
     g_modMs = -1.0;
+    if (ribbon_fill::Installed())
+    {
+        const ribbon_fill::Totals ribbon = ribbon_fill::Read();
+        sample.ribbonMs = static_cast<double>(ribbon.ticks - g_ribbonLast.ticks) * g_msPerTick;
+        g_ribbonWindow.ticks += ribbon.ticks - g_ribbonLast.ticks;
+        g_ribbonWindow.vertices += ribbon.vertices - g_ribbonLast.vertices;
+        g_ribbonWindow.fills += ribbon.fills - g_ribbonLast.fills;
+        g_ribbonLast = ribbon;
+    }
     g_tickStart = now;
     if (platform::HitchStep(g_hitch, sample.frameMs, kHitchRatio, kHitchMarginMs, kNewNormalRun, kAverageWeight) ==
         platform::FrameKind::Hitch)

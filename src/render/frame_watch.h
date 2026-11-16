@@ -10,7 +10,8 @@
 // number for the RHI thread); and the mod's own engine-tick callback (OnTickEnd: its hooks elsewhere are not counted).
 // Each frame goes to the frame capture (render/frame_capture.h). At the end of each window (10 s; `frame-watch.window`
 // sets 1 to 10 s) one Debug line gives the frames and the frame rate, the average and worst frame, the hitches, each
-// engine number's average and worst, each thread's CPU time per frame and the mod's tick. A thread whose CPU time is
+// engine number's average and worst, each thread's CPU time per frame, the mod's tick and the render thread's ribbon
+// trail fills (render/ribbon_fill.h: their time, fills and vertices per frame, and the time a vertex). A thread whose CPU time is
 // near the frame's time binds; with none near it, the GPU does. A GPU number unchanged through a window is stale (the
 // engine's recorder of it is off) and is named so. Each hitch gets a Debug line with its time and the engine's numbers.
 // `frame-watch` reads the last window's line. Logging only: nothing of the game's is written.
