@@ -1046,6 +1046,12 @@ inline constexpr platform::FunctionFact kSummonGaugeShown{L"FieldCommandCtrl_IsS
                                                            kSummonGaugeReaderEntry};
 inline constexpr platform::FunctionFact kSummonOnField{L"FieldCommandCtrl_IsSummonOnField_W520_36D", 0x14141F7C0,
                                                         kSummonGaugeReaderEntry};
+// The summon manager (a plain game object, the global holds a pointer to it, or 0 outside a battle with summons): its
+// state (u8; views/whole_screen_rules.h names the values) and the event lock it takes for a summon's call
+// (SummonMgr_EventLock_Take_3AC 0x1409E5410, the only writer of a nonzero value; released by 0x1409E54B0).
+inline constexpr std::uintptr_t kSummonManager       = 0x1457E9748;
+inline constexpr std::uint32_t  kSummonManagerState  = 0x2B0;
+inline constexpr std::uint32_t  kSummonManagerEvent  = 0x3AC;
 
 // --- A second field command controller (RE-battle.md §2, RE-command-menu-two.md) ----------------------------------
 // FieldCommandCtrl: 0x5D0 bytes from GMalloc, the ctor, then SetupMenuWidgets(ctrl, world) builds its own two widgets

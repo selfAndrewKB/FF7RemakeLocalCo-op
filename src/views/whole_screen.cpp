@@ -29,9 +29,24 @@ constexpr std::uint32_t                kShowSkipPauseMenu = 12;
 constexpr std::array<std::uint32_t, 3> kBlackIds{39, 40, 53};  // Game_Blackout, Level_Blackout, ContinueEntryLocationBlackout
 constexpr std::uint32_t                kShowLoadingScreen = 41;
 
-// Set at install: the addresses holding the shared bike state and its reference block (0: not read).
-std::uintptr_t g_bikeShared  = 0;
-std::uintptr_t g_bikeRefCtrl = 0;
+// Set at install: the addresses holding the shared bike state and its reference block, and the summon manager's
+// pointer (0: not read).
+std::uintptr_t g_bikeShared     = 0;
+std::uintptr_t g_bikeRefCtrl    = 0;
+std::uintptr_t g_summonManager  = 0;
+
+/// The summon manager's state and event lock into `s` (both 0 without a manager).
+void ReadSummon(Signals& s) noexcept
+{
+    std::uintptr_t manager = 0;
+    if (g_summonManager == 0 || !platform::Read(reinterpret_cast<const void*>(g_summonManager), manager) || manager == 0 ||
+        !platform::Read(reinterpret_cast<const void*>(manager + facts::kSummonManagerState), s.summonState) ||
+        !platform::Read(reinterpret_cast<const void*>(manager + facts::kSummonManagerEvent), s.summonEvent))
+    {
+        s.summonState = 0;
+        s.summonEvent = 0;
+    }
+}
 
 /// The game's own "a bike chase runs" test (facts::kBikeGameShared).
 bool BikeChase() noexcept
@@ -78,6 +93,9 @@ Signals Read(const void* managerOne) noexcept
     s.bike        = BikeChase();
     s.shopUp      = players::game_state::ShopUp();
     s.pauseWidget = players::game_state::PauseWidgetAlive();
+    // A summon's introduction: the summon manager's own hold of the call (its event lock), a battle camera sequence the
+    // game plays as one moment for the whole party; the summon's fight after it stays split.
+    ReadSummon(s);
     // The cutscene manager and the field control lock's mask come through the scene camera's read (Scene{} while its
     // globals failed their check: no cutscene, skip, bit or held scene is known then, and so no event camera reason).
     // The lock itself is no reason: a free talk or a pickup holds it, and those play on every view;
@@ -107,14 +125,14 @@ std::wstring SignalsText(const Signals& s)
     }
     return std::format(L"game state {} ({}, menu kind {}), script menu {}, shop {}, pause widget {}, arena {} (minigame bit {}, "
                        L"in battle {}), minigame {} (by {}), cutscene {}, event camera {} (scene held {}), bike {}, skippable {}, skip {}, "
-                       L"black {}, loading {}, title {}",
+                       L"black {}, loading {}, title {}, summon state {} (event {})",
                        players::game_state::StateName(s.gameState), s.gameState, s.menuKind, s.scriptMenu ? L"on" : L"off",
                        s.shopUp ? L"up" : L"down", s.pauseWidget ? L"alive" : L"none", s.arena ? L"on" : L"off",
                        s.minigameBit ? L"on" : L"off", s.inBattle ? L"yes" : L"no", s.minigame ? L"on" : L"off",
                        players::field_root::OnOffOwnerText(s.minigameAct), s.cutscene ? L"playing" : L"no",
                        s.eventCamera ? L"on" : L"off", s.sceneHeld ? L"yes" : L"no", s.bike ? L"yes" : L"no",
                        s.skippable ? L"on" : L"off", s.skipping ? L"on" : L"off", s.black ? L"on" : L"off",
-                       s.loading ? L"on" : L"off", s.title ? L"yes" : L"no");
+                       s.loading ? L"on" : L"off", s.title ? L"yes" : L"no", s.summonState, s.summonEvent);
 }
 
 }  // namespace
@@ -132,6 +150,14 @@ bool Install(const platform::GameImage& image) noexcept
     {
         platform::Log(L"whole screen: the bike state's globals are outside the image; a bike chase is not read");
     }
+    if (const auto summon = image.Rebase(facts::kSummonManager, sizeof(std::uintptr_t)))
+    {
+        g_summonManager = *summon;
+    }
+    else
+    {
+        platform::Log(L"whole screen: the summon manager's global is outside the image; a summon's introduction stays split");
+    }
     control::Register({.name  = L"whole-screen",
                        .shape = control::Shape::Text,
                        .help  = L"what takes the whole screen now (the reason the one-window single view collapses the split), "
@@ -144,7 +170,8 @@ bool Install(const platform::GameImage& image) noexcept
                   L"camera manager while the field lock or a cutscene holds the players, outside a battle), a cutscene skip, a "
                   L"held black screen, the loading screen and the title are read "
                   L"from the game's own state each tick (the one-window single view's reasons; a free talk or a pickup holding the "
-                  L"field lock alone is none); minigames by on/off 36 (held up to {} ticks over the gap between a segment's "
+                  L"field lock alone is none); a summon's introduction by the summon manager's call; "
+                  L"minigames by on/off 36 (held up to {} ticks over the gap between a segment's "
                   L"chained acts), the bike chase by its shared state, the VR simulator's and colosseum's menus by on/off 78 with the "
                   L"minigame bit outside a battle (research/RE-minigame-signal.md)",
                   kMinigameGapTicks);

@@ -71,7 +71,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.223.0-summon-seats";  // the one version string (the log, UE4SS and the setup app)
+constexpr const wchar_t* kVersion = L"0.224.0-summon-intro-single";  // the one version string (the log, UE4SS and the setup app)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;

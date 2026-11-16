@@ -39,6 +39,10 @@
 //   - a bike chase (chapters 4 and 18): the game's own test of its shared bike state (research/RE-minigame-signal.md:
 //     the chases are a mode of their own, neither a cutscene nor an act with on/off 36; Fort Condor holds the
 //     controller-exclusion bit 21 for its whole act and 36 with it);
+//   - a summon's introduction: the summon manager's call (its state) and the event lock it takes for the call, until
+//     the summon's entry ends and the battle resumes (research/RE-summon-seats.md); a battle camera sequence the game
+//     plays as one moment for the whole party, whoever called; the summon's fight stays split, and its departure is a
+//     cutscene of the game's own;
 //   - the title, by the field root's location name.
 // Read once per engine tick before the session (Tick): logged at Info when something takes the whole screen or lets
 // go, at Debug for a reason changing within a moment, for the hold over a gap between acts, and for each change of
@@ -54,8 +58,8 @@ class GameImage;
 
 namespace lss::views::whole_screen {
 
-/// Rebases the bike state's globals and registers the reading. False (logged) if a global is outside the image: the
-/// bike chase is then not read; the rest is another module's.
+/// Rebases the bike state's globals and the summon manager's, and registers the reading. A global outside the image is
+/// logged and its signal not read (the bike chase, a summon's introduction); the rest is another module's. Always true.
 bool Install(const platform::GameImage& image) noexcept;
 
 /// Once per engine tick, after the game state's tick: reads the signals (the event camera's slot on player 1's

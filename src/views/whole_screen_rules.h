@@ -4,9 +4,9 @@
 // tests/whole_screen_rules_test.cpp), over the signals views/whole_screen.cpp reads each tick (views/whole_screen.h
 // names the game state behind each one). The reason is what the one-window single view collapses the split for
 // (players/single_view.h; views/column_source.h Why::WholeScreen): the menus, the cutscenes, the minigames the game's
-// own signals pick up, and the scripted talks and events that take the game's event camera (not
-// a free talk in the field camera or a field pickup, which hold the field control lock only; those play on every
-// view). The signals and their order: research/RE-lifecycle-world.md.
+// own signals pick up, the scripted talks and events that take the game's event camera (not a free talk in the field
+// camera or a field pickup, which hold the field control lock only; those play on every view), and a summon's
+// introduction. The signals and their order: research/RE-lifecycle-world.md, research/RE-summon-seats.md.
 
 #include <cstdint>
 #include <string_view>
@@ -38,9 +38,24 @@ struct Signals
     std::uint64_t minigameAct = 0;  // who turned 36 on: the act's FName (0 while off), for the log
     bool bike        = false;  // a bike chase: the game's own test of its shared bike state
     bool title       = false;  // the field root's location is the title's
+    std::uint8_t summonState = 0;  // the summon manager's state (0 without a manager; 5 a summon's call, 6 a summon present)
+    std::uint8_t summonEvent = 0;  // the event lock it holds (1 the call's introduction, 2 the departing summon's cutscene)
 
     bool operator==(const Signals&) const noexcept = default;  // every field (the log's change test)
 };
+
+/// The summon manager's states and event lock (research/RE-summon-seats.md, the introduction's section).
+inline constexpr std::uint8_t kSummonStateCall    = 5;
+inline constexpr std::uint8_t kSummonStatePresent = 6;
+inline constexpr std::uint8_t kSummonEventCall    = 1;
+
+/// A summon's introduction plays: from its call (state 5, the camera started, before the event lock's first tick) while
+/// the manager holds the call's event lock (state 6 with lock 1), until the summon's entry ends and the battle resumes.
+/// The summon's fight (lock 0) and its departure (lock 2, a cutscene of its own) are not the introduction.
+constexpr bool SummonCall(const Signals& s) noexcept
+{
+    return s.summonState == kSummonStateCall || (s.summonState == kSummonStatePresent && s.summonEvent == kSummonEventCall);
+}
 
 /// The first reason that holds, in this order.
 enum class Reason : std::uint8_t
@@ -55,6 +70,7 @@ enum class Reason : std::uint8_t
     ArenaMenu,       // a VR simulator or colosseum session outside its fights (78 with bit 21, not in battle): its menus
     Minigame,        // on/off 36
     Bike,            // a bike chase (chapters 4 and 18)
+    SummonCall,      // a summon's introduction (the summon manager's call and its event lock)
     Cutscene,        // the cutscene manager playing
     EventCamera,     // the event camera on player 1's manager while a scene holds the players, outside a battle (a
                      // scripted talk's angles, an event; a rail camera in free play is none)
@@ -120,6 +136,10 @@ constexpr Reason ReasonOf(const Signals& s) noexcept
     {
         return Reason::Bike;
     }
+    if (SummonCall(s))
+    {
+        return Reason::SummonCall;
+    }
     if (s.cutscene)
     {
         return Reason::Cutscene;
@@ -184,6 +204,7 @@ constexpr const wchar_t* NameOf(Reason reason) noexcept
         case Reason::ArenaMenu: return L"a VR simulator or colosseum menu (on/off 78 with the minigame bit, not in battle)";
         case Reason::Minigame: return L"a minigame (on/off 36)";
         case Reason::Bike: return L"a bike chase";
+        case Reason::SummonCall: return L"a summon's introduction";
         case Reason::Cutscene: return L"a cutscene";
         case Reason::EventCamera: return L"an event camera (a scripted talk, an event; slot 18 on player 1's manager)";
         case Reason::SkippableScene: return L"a skippable scene (on/off 12)";

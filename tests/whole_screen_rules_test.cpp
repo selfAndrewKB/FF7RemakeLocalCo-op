@@ -77,6 +77,21 @@ void EachSignal()
     s      = Readable();
     s.bike = true;
     EXPECT(ReasonOf(s) == Reason::Bike);
+    // A summon: its call (state 5) and its introduction (present with the call's event lock) take the screen; its fight
+    // (present, no lock) and its departure (lock 2, the game's own cutscene) do not by this signal.
+    s             = Readable();
+    s.summonState = kSummonStateCall;
+    EXPECT(ReasonOf(s) == Reason::SummonCall);
+    s.summonState = kSummonStatePresent;
+    s.summonEvent = kSummonEventCall;
+    EXPECT(ReasonOf(s) == Reason::SummonCall);
+    s.summonEvent = 0;
+    EXPECT(ReasonOf(s) == Reason::None);
+    s.summonEvent = 2;
+    EXPECT(ReasonOf(s) == Reason::None);
+    s.summonState = 0;
+    s.summonEvent = kSummonEventCall;  // a reset that zeroes the state but leaves the lock: not a summon's call
+    EXPECT(ReasonOf(s) == Reason::None);
     s          = Readable();
     s.cutscene = true;
     EXPECT(ReasonOf(s) == Reason::Cutscene);
@@ -112,6 +127,15 @@ void EachSignal()
 /// over an event camera.
 void Order()
 {
+    // A summon's call: under a battle pause the pause menu; over a cutscene flag the call; in a battle still the call.
+    auto summon        = Readable();
+    summon.summonState = kSummonStateCall;
+    summon.inBattle    = true;
+    EXPECT(ReasonOf(summon) == Reason::SummonCall);
+    summon.cutscene = true;
+    EXPECT(ReasonOf(summon) == Reason::SummonCall);
+    summon.gameState = kStatePauseMenu;
+    EXPECT(ReasonOf(summon) == Reason::PauseMenu);
     auto s      = Readable();
     s.gameState = kStateCinemaPause;
     s.cutscene  = true;
