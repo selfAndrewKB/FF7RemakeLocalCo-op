@@ -24,6 +24,8 @@
 #include "world/push_events.h"
 #include "world/target_icons.h"
 #include "world/talk_presses.h"
+#include "platform/steady_ms.h"
+#include "world/state_slots.h"
 #include "world/traversal_action.h"
 #include "world/traversal_walkup.h"
 
@@ -36,6 +38,7 @@
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include <Windows.h>
@@ -75,7 +78,7 @@ enum class Kind : std::uint8_t
     Chest,      // an ObjectTreasure row: a chest or a shining item on the ground
     Party,   // an ObjectParty row
     Door,      // Door_ / HeavyDoor_: the member's own door action
-    StoryDoor, // a door whose open sends a level signal: the level listens for the party leader's open (player 1's)
+    SignalDoor, // a door whose open sends a level signal: player 1's while a level state waits for it (DoorListened)
     Swing,     // TarzanJump_ with the member's own tag: its swing's press
     HookShot,  // HookShot_: the grappling hook (its target shows only while the member stands in its hook area)
     Curtain,   // Curtain_: a door-like pass-through (admitted as an experiment)
@@ -98,7 +101,7 @@ const wchar_t* KindName(Kind kind) noexcept
         case Kind::Chest: return L"a chest or item";
         case Kind::Party: return L"a party member";
         case Kind::Door: return L"a door";
-        case Kind::StoryDoor: return L"a door the story listens to (player 1's)";
+        case Kind::SignalDoor: return L"a door with a level signal";
         case Kind::Swing: return L"a swing";
         case Kind::HookShot: return L"a grappling-hook point";
         case Kind::Curtain: return L"a curtain";
@@ -118,17 +121,21 @@ bool BoardMember(int seat) noexcept
     return type == facts::kPlayerTypeCloud || type == facts::kPlayerTypeBarret || type == facts::kPlayerTypeTifa;
 }
 
+bool DoorListened(std::uint64_t name) noexcept;
+
 /// Pressed for a further player now: a chest and an NPC always; a door, a curtain, a vending machine or the member's own
-/// swing only while the member's field actions run as its player's (world/traversal_action.h), a switch board the same and only for a member
+/// swing only while the member's field actions run as its player's (world/traversal_action.h), a door with a level signal
+/// the same and only while nothing waits for its signal (DoorListened), a switch board the same and only for a member
 /// with its animation, the grappling hook only while its three lock calls are also redirected
 /// (traversal_action::HookShotReady), a lever only while its event calls are placed and no event runs
 /// (push_events::Admitted); read at each use (a level change can stop that).
-bool Admitted(Kind kind, int seat) noexcept
+bool Admitted(Kind kind, int seat, std::uint64_t name) noexcept
 {
     switch (kind)
     {
         case Kind::Chest:
         case Kind::Npc: return true;
+        case Kind::SignalDoor: return traversal_action::Scoping() && !DoorListened(name);
         case Kind::Door:
         case Kind::Swing:
         case Kind::Curtain:
@@ -352,22 +359,114 @@ catch (...)
     return false;
 }
 
-/// The doors judged story doors or not, by target name (a door's signals are level data and its target name names its
-/// level, so a verdict holds for the session), and the doors whose actor was not found (logged once; judged again only
-/// when a seat's pick classifies that target again).
-std::unordered_map<std::uint64_t, bool> g_storyDoors;
-std::unordered_set<std::uint64_t>       g_doorsUnfound;
+/// A door's level signals, by target name (the six a spot sends for the party leader's pass, and for a door its two
+/// handle signals; empty for a plain door): level data, and the target name names its level, so a reading holds for the
+/// session. The doors whose actor was not found are logged once and read again when a seat's pick classifies them again.
+std::unordered_map<std::uint64_t, std::vector<std::int64_t>> g_doorSignals;
+std::unordered_set<std::uint64_t>                            g_doorsUnfound;
 
-/// Whether the door target `name` (`door`: a Door_ target, else a HeavyDoor_ one) is one the level listens to: its actor
-/// names a level signal (the six a spot sends for the party leader's pass, and for a door its two handle signals,
-/// research/RE-scripted-door.md). A further player's open runs the member's version of the door action, which sends none
-/// of them (as an AI companion's open would), so the door would stand open while the story waits for its signal, and
-/// player 1 could no longer press it; such a door stays player 1's. A door whose actor is not found, or is not of the
-/// target's door class, is left to every player (logged once).
-bool StoryDoor(std::uint64_t name, bool door) noexcept
+/// The signals the signalled doors send, each with the level object that waits for it now (absent: nothing waits), and
+/// each signalled door's last verdict (true: kept for player 1), for the log. Refreshed by ReadListeners.
+std::unordered_map<std::int64_t, std::int64_t> g_listeners;
+std::unordered_map<std::uint64_t, bool>        g_doorKept;
+std::int64_t                                   g_listenersAt = 0;  // the last refresh (ms)
+bool                                           g_listenersCostTold = false;
+constexpr std::int64_t                         kListenersMs  = 1000;
+// A seat's press of a signalled door reads the listeners again when the reading is older than this: a story state that
+// came in since the last reading must keep the door player 1's.
+constexpr std::int64_t                         kListenersAtPressMs = 100;
+
+/// Reads which active level states wait now for a signalled door's signal (one walk of the active list; a walk not read
+/// whole keeps the last reading), then logs each signalled door whose verdict changed.
+void ReadListeners() noexcept
 try
 {
-    if (const auto known = g_storyDoors.find(name); known != g_storyDoors.end())
+    g_listenersAt = platform::NowMs();
+    std::unordered_set<std::int64_t> wanted;
+    for (const auto& [door, signals] : g_doorSignals)
+    {
+        wanted.insert(signals.begin(), signals.end());
+    }
+    const std::uint8_t* sm = players::field_root::StateManager();
+    if (wanted.empty() || sm == nullptr)
+    {
+        return;
+    }
+    std::unordered_map<std::int64_t, std::int64_t> listeners;
+    bool                                           whole = true;
+    const world::state_slots::Walk walk = world::state_slots::ForEach(sm, [&](const std::uint8_t* slot) noexcept {
+        try
+        {
+            std::int64_t        object = 0;
+            const std::uint8_t* row    = nullptr;
+            if (!Read(slot + facts::kStateSlotObject, object) || !Read(slot + facts::kStateSlotRow, row))
+            {
+                whole = false;
+                return true;
+            }
+            for (const std::int64_t trigger : row != nullptr ? world::state_slots::Triggers(row) : std::vector<std::int64_t>{})
+            {
+                if (trigger == 0)
+                {
+                    break;
+                }
+                if (wanted.contains(trigger))
+                {
+                    listeners.try_emplace(trigger, object);
+                }
+            }
+            return false;
+        }
+        catch (...)
+        {
+            whole = false;
+            return true;
+        }
+    });
+    if (!whole || walk != world::state_slots::Walk::Ended)
+    {
+        return;
+    }
+    if (!std::exchange(g_listenersCostTold, true))
+    {
+        platform::LogDebug(L"field targets: the signalled doors' listeners read in {} ms (one walk of the level's active states)",
+                           platform::NowMs() - g_listenersAt);
+    }
+    g_listeners = std::move(listeners);
+    for (const auto& [door, signals] : g_doorSignals)
+    {
+        const auto heard = std::find_if(signals.begin(), signals.end(), [](std::int64_t s) { return g_listeners.contains(s); });
+        const bool kept  = heard != signals.end();
+        const auto last  = g_doorKept.find(door);
+        if (signals.empty() || (last != g_doorKept.end() && last->second == kept))
+        {
+            continue;
+        }
+        g_doorKept[door] = kept;
+        if (kept)
+        {
+            platform::Log(L"field targets: {} is player 1's while {} waits for its {} (the level listens for the party leader's open)",
+                          Name(door), Name(static_cast<std::uint64_t>(g_listeners.at(*heard))), Name(static_cast<std::uint64_t>(*heard)));
+        }
+        else
+        {
+            platform::Log(L"field targets: {} is every player's: nothing waits for its {} now", Name(door), platform::NameList(signals));
+        }
+    }
+}
+catch (...)
+{
+}
+
+const std::vector<std::int64_t> kNoSignals;
+
+/// The door target `name`'s signals (`door`: a Door_ target, else a HeavyDoor_ one), read once from its actor
+/// (research/RE-scripted-door.md); empty for a plain door, or when no actor of the target's door class was found (logged
+/// once). A newly seen signalled door has its listeners read at once.
+const std::vector<std::int64_t>& DoorSignals(std::uint64_t name, bool door) noexcept
+try
+{
+    if (const auto known = g_doorSignals.find(name); known != g_doorSignals.end())
     {
         return known->second;
     }
@@ -382,7 +481,7 @@ try
         {
             platform::Log(L"field targets: no door actor of {} was found to read its signals; every player may open it", Name(name));
         }
-        return false;
+        return kNoSignals;
     }
     std::vector<std::int64_t> signals;
     const auto keep = [&](std::int64_t s) {
@@ -393,17 +492,26 @@ try
     };
     std::for_each(spot.begin(), spot.end(), keep);
     std::for_each(turn.begin(), turn.end(), keep);
-    g_storyDoors[name] = !signals.empty();
-    if (!signals.empty())
+    const std::vector<std::int64_t>& kept = g_doorSignals[name] = std::move(signals);
+    if (!kept.empty())
     {
-        platform::Log(L"field targets: {} stays player 1's: its open sends {} (the level listens for the party leader's open)", Name(name),
-                      platform::NameList(signals));
+        ReadListeners();
     }
-    return !signals.empty();
+    return kept;
 }
 catch (...)
 {
-    return false;
+    return kNoSignals;
+}
+
+/// A further player's open runs the member's version of the door action, which sends none of the door's signals (as an AI
+/// companion's open would): while a level state waits for one, the door would stand open while the story waits, and player 1
+/// could no longer press it, so a signalled door is player 1's while something listens and every player's otherwise.
+bool DoorListened(std::uint64_t name) noexcept
+{
+    const auto signals = g_doorSignals.find(name);
+    return signals != g_doorSignals.end() &&
+           std::any_of(signals->second.begin(), signals->second.end(), [](std::int64_t s) { return g_listeners.contains(s); });
 }
 
 /// What the target is, in the dispatch's order.
@@ -439,7 +547,7 @@ Kind Classify(std::uint64_t name, std::uint64_t state, const void* member) noexc
     }
     if (const bool door = StartsWith(name, "Door_"); door || StartsWith(name, "HeavyDoor_"))
     {
-        return StoryDoor(name, door) ? Kind::StoryDoor : Kind::Door;
+        return DoorSignals(name, door).empty() ? Kind::Door : Kind::SignalDoor;
     }
     if (StartsWith(name, "TarzanJump_"))
     {
@@ -514,7 +622,7 @@ public:
             constexpr std::uint8_t disabled = 1;
             // The target of the seat's own running lever event stays admitted: the game's pick keeps that icon in its hold
             // state with the gauge, as it keeps player 1's; disabled, the pick would set it to none, which ends the hold.
-            if (name == 0 || Admitted(state.itemKind[i], seat) || push_events::Running(seat, name) ||
+            if (name == 0 || Admitted(state.itemKind[i], seat, name) || push_events::Running(seat, name) ||
                 !Read(item + facts::kTargetsItemDisabled, off) || off != 0 ||
                 !platform::WriteGuarded(item + facts::kTargetsItemDisabled, &disabled, 1))
             {
@@ -830,8 +938,12 @@ void PressFor(int seat, void* mgr, float dt, TickFn original) noexcept
         }
         std::uint8_t latch = 0;
         Read(live + facts::kTargetsLatch, latch);
+        if (state.kind == Kind::SignalDoor && platform::NowMs() - g_listenersAt >= kListenersAtPressMs)
+        {
+            ReadListeners();
+        }
         // Released too: the game's press then resets the hold timer.
-        if (ok && Admitted(state.kind, seat))
+        if (ok && Admitted(state.kind, seat, state.target))
         {
             std::uint8_t pushHeld = 0;
             const bool   kept     = push != nullptr && Read(push + facts::kPushButtonsHeld, pushHeld);
@@ -1173,6 +1285,10 @@ void Tick() noexcept
     target_icons::Tick(players::field_root::FieldTargets());
     TickTalkPresses();
     TickVendingPress();
+    if (!g_doorSignals.empty() && platform::NowMs() - g_listenersAt >= kListenersMs)
+    {
+        ReadListeners();  // a signalled door's listener comes and goes with the story
+    }
     const std::uint64_t* queue = nullptr;
     std::int32_t         count = 0;
     if (!ChestQueue(queue, count))
