@@ -542,6 +542,10 @@ void Tick() noexcept
         g_filled = false;  // gone: its address may become another page's
     }
     RunQueued();
+    if (g_open)
+    {
+        help_spacing::Tick();
+    }
 }
 
 }  // namespace lss::menu::coop_page

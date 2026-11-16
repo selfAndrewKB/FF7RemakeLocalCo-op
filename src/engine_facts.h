@@ -3709,6 +3709,11 @@ inline constexpr std::array<std::uint8_t, 16> kTextBlockSynchronizeEntry{
     0x48, 0x89, 0x5C, 0x24, 0x10, 0x48, 0x89, 0x74, 0x24, 0x18, 0x48, 0x89, 0x7C, 0x24, 0x20, 0x55};
 inline constexpr platform::FunctionFact kTextBlockSynchronize{L"UEndTextBlock_SynchronizeProperties_cand", 0x141378790,
                                                                kTextBlockSynchronizeEntry};
+// Lifting the help bar (research/RE-options-help-bar.md §10): its slot is a UEndCanvasPanelSlot whose position is the top
+// the text grows down from, moved by the slot's reflected SetPosition (kCanvasSlotSetPosition below). The Slate text
+// block's desired height is rebuilt by SetText at once: shadow and margins plus every line's advance.
+inline constexpr std::uint32_t kTextBlockDesiredHeight = 0x9A4;  // SEndTextBlock: float
+inline constexpr float         kHelpBarOneLineHeight   = 29.0f;  // a stock one-line help: shadow 2 + one line of 27
 // (UWidget::SetVisibility and its Visibility byte: kWidgetSetVisibilityFn and kWidgetVisibility above.)
 // Read only, for the first-open gap (research/RE-game-widgets.md §11.6.5): a text block's drawing state.
 inline constexpr std::uint32_t kTextBlockFont      = 0x1D0;  // UEndTextBlock: UEndFont*
@@ -3890,6 +3895,7 @@ inline constexpr std::uint32_t kGaugeHead         = 0x380;  // gauge: Img_Gauge_
 inline constexpr std::uint32_t kGaugeText         = 0x390;  // gauge: Txt_Setting (UEndTextBlock*)
 inline constexpr std::uint32_t kWidgetSlot        = 0x28;   // UWidget::Slot
 inline constexpr std::uint32_t kWidgetClipping    = 0xB6;   // UWidget::Clipping (u8; 1 ClipToBounds)
+inline constexpr std::uint32_t kCanvasSlotLeft    = 0x38;   // UCanvasPanelSlot: LayoutData.Offsets.Left (float)
 inline constexpr std::uint32_t kCanvasSlotTop     = 0x3C;   // UCanvasPanelSlot: LayoutData.Offsets.Top (float)
 inline constexpr std::uint32_t kScrollBoxDesired  = 0x75C;  // UEndVirtualScrollBox: i32 DesiredCount
 inline constexpr std::uint32_t kScrollBoxBar      = 0x721;  //   u8 ScrollBarVisibility; +0x72C AlwaysShowScrollbar

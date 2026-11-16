@@ -1,6 +1,7 @@
 #include "menu/help_spacing.h"
 
 #include "engine_facts.h"
+#include "menu/coop_slider.h"
 #include "menu/game_ui.h"
 #include "platform/game_thread.h"
 #include "platform/guarded.h"
@@ -27,6 +28,30 @@ constexpr float kPageLineHeight = 0.5f;
 std::uintptr_t g_synchronize = 0;
 weak::Weak     g_block{};                                     // the help bar while the page holds its line height
 float          g_gameHeight = facts::kTextBlockLineHeightDefault;  // the bar's own line height, put back at the close
+weak::Weak     g_slot{};          // the bar's canvas slot while the page may lift it
+float          g_homeX = 0.0f, g_homeY = 0.0f;  // the slot's own position, put back at the close
+float          g_lift  = 0.0f;    // how far the bar stands above its own position now
+bool           g_liftSaid = false;  // a failed lift logged for this open
+
+/// The slot back at its own position, if the page lifted it.
+void PutBackSlot() noexcept
+{
+    void* const slot = weak::Resolve(g_slot);
+    g_slot           = {};
+    if (slot == nullptr || g_lift == 0.0f)
+    {
+        return;
+    }
+    if (coop_slider::PlaceCanvasSlot(slot, g_homeX, g_homeY))
+    {
+        platform::Log(L"help spacing: the help bar back at its own place");
+    }
+    else
+    {
+        platform::LogWarning(L"help spacing: the help bar could not be put back at its own place");
+    }
+    g_lift = 0.0f;
+}
 
 /// The bar's line height set to `height` through its own SynchronizeProperties, if its vtable holds the text block's. A
 /// call that faults after the write puts the old value back, so the bar never keeps a height the mod no longer tracks.
@@ -115,6 +140,50 @@ void Tighten(void* menu) noexcept
     g_gameHeight = game;
     g_block      = held;
     platform::Log(L"help spacing: the help bar's line height {:.2f} -> {:.2f} while the Co-op page is open", game, kPageLineHeight);
+
+    // The slot the bar is lifted by, with its own position to put back.
+    void* const slot = game_ui::SlotOf(block);
+    if (slot == nullptr || !platform::Read(At(slot, facts::kCanvasSlotLeft), g_homeX) ||
+        !platform::Read(At(slot, facts::kCanvasSlotTop), g_homeY))
+    {
+        platform::LogWarning(L"help spacing: the help bar's slot could not be read; a help of several lines is not lifted");
+        return;
+    }
+    g_slot     = weak::MakeWeak(slot);
+    g_lift     = 0.0f;
+    g_liftSaid = false;
+    platform::LogDebug(L"help spacing: the help bar's own place ({:.1f}, {:.1f})", g_homeX, g_homeY);
+}
+
+void Tick() noexcept
+{
+    if (!g_slot.Set() || g_liftSaid)
+    {
+        return;  // no slot, or a lift failed this open: not tried again until the next open
+    }
+    void* const block = weak::Resolve(g_block);
+    void* const slot  = weak::Resolve(g_slot);
+    void* const text  = block != nullptr ? platform::ReadPointer(block, facts::kTextBlockSlate) : nullptr;
+    float       height = 0.0f;
+    if (slot == nullptr || text == nullptr || !platform::Read(At(text, facts::kTextBlockDesiredHeight), height) || height <= 0.0f)
+    {
+        return;
+    }
+    // The help's last line where a one-line help's line ends: a taller help stands up by the difference.
+    const float lift = height > facts::kHelpBarOneLineHeight ? height - facts::kHelpBarOneLineHeight : 0.0f;
+    if (lift == g_lift)
+    {
+        return;
+    }
+    if (!coop_slider::PlaceCanvasSlot(slot, g_homeX, g_homeY - lift))
+    {
+        g_liftSaid = true;
+        platform::LogWarning(L"help spacing: the help bar could not be lifted (its slot is no canvas slot, or the call failed); "
+                             L"not tried again until the page opens again");
+        return;
+    }
+    platform::LogDebug(L"help spacing: a help {:.1f} tall: the bar {:.1f} above its own place", height, lift);
+    g_lift = lift;
 }
 
 void Restore() noexcept
@@ -123,15 +192,18 @@ void Restore() noexcept
     {
         return;
     }
-    // The mod's unload may run off the game thread: no UI call there. The bar keeps the page's height until the game
-    // makes it again, and the next open of the page takes the class default as the game's.
+    // The mod's unload may run off the game thread: no UI call there. The bar keeps the page's height and place until the
+    // game makes it again. The next open takes the class default as the game's height; a place left lifted is not
+    // recognised, so the bar stays that much higher until the game makes it again.
     if (!platform::OnGameThread())
     {
         g_block = {};
-        platform::LogWarning(L"help spacing: closed off the game thread; the help bar keeps the page's line height until the "
-                             L"game makes it again");
+        g_slot  = {};
+        platform::LogWarning(L"help spacing: closed off the game thread; the help bar keeps the page's line height and place "
+                             L"until the game makes it again");
         return;
     }
+    PutBackSlot();
     void* const block = weak::Resolve(g_block);
     g_block           = {};
     if (block == nullptr)

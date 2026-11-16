@@ -34,4 +34,9 @@ void Unplace() noexcept;
 /// The sliders are placed: the page builds its long rows as sliders.
 bool Ready() noexcept;
 
+/// `slot`, checked to be a UEndCanvasPanelSlot, moved to (x, y) by its reflected SetPosition, the setter the game uses
+/// at run time. False if it is no such slot, the setter or its class did not check out at install, or the call failed.
+/// Game thread.
+bool PlaceCanvasSlot(void* slot, float x, float y) noexcept;
+
 }  // namespace lss::menu::coop_slider

@@ -172,13 +172,9 @@ void Fit(void* page, void* gauge, const std::uint8_t* info, bool opened) noexcep
     // The marker, by the setter the game placed it with: its x within the window, its y as the game left it.
     void* const head = ReadPointer(gauge, facts::kGaugeHead);
     void* const slot = game_ui::SlotOf(head);
-    bool        canvas = false;
-    struct
-    {
-        float x, y;
-    } position{static_cast<float>(marker - first) * facts::kGaugePitch + facts::kGaugeHeadX, 0.0f};
-    const bool placed = slot != nullptr && platform::CallGuarded(&IsCanvasSlot, slot, &canvas) && canvas &&
-                        Read(At(slot, facts::kCanvasSlotTop), position.y) && Call(slot, g_calls.setPosition, &position);
+    float       y    = 0.0f;
+    const bool placed = slot != nullptr && Read(At(slot, facts::kCanvasSlotTop), y) &&
+                        PlaceCanvasSlot(slot, static_cast<float>(marker - first) * facts::kGaugePitch + facts::kGaugeHeadX, y);
     const wchar_t* const word    = row.wordLabels[static_cast<std::size_t>(value)];
     const bool           labeled = SetText(ReadPointer(gauge, facts::kGaugeText), word);
     const bool failed = !placed || !labeled;
@@ -291,6 +287,13 @@ try
     const auto shaped = [](UFunction* function, std::int32_t bytes) {
         return function != nullptr && function->GetParmsSize() == bytes;
     };
+    // The slot setter serves PlaceCanvasSlot on its own (the help bar's lift): kept only when it and its class check out,
+    // whatever the slider's other checks say.
+    if (!shaped(g_calls.setPosition, 8) || g_calls.canvasSlot == nullptr)
+    {
+        g_calls.setPosition = nullptr;
+        g_calls.canvasSlot  = nullptr;
+    }
     if (!marker || !fromInt || !openSite || !stepSite || !rowSite || !shaped(g_calls.setDesiredCount, 4) ||
         !shaped(g_calls.setScrollOffset, 4) || !shaped(g_calls.getScrollOffset, 4) || !shaped(g_calls.getMaxOffset, 4) ||
         !shaped(g_calls.setPosition, 8) || !shaped(g_calls.setText, sizeof(platform::GameArray)) || g_calls.canvasSlot == nullptr)
@@ -308,6 +311,7 @@ try
 }
 catch (...)
 {
+    g_calls = {};  // nothing half-checked is kept
     return false;
 }
 
@@ -345,6 +349,18 @@ void Unplace() noexcept
 bool Ready() noexcept
 {
     return g_ready;
+}
+
+bool PlaceCanvasSlot(void* slot, float x, float y) noexcept
+{
+    bool canvas = false;
+    struct
+    {
+        float x, y;
+    } position{x, y};
+    return slot != nullptr && g_calls.canvasSlot != nullptr && g_calls.setPosition != nullptr &&
+           platform::CallGuarded(&IsCanvasSlot, slot, &canvas) && canvas &&
+           Call(slot, g_calls.setPosition, &position);
 }
 
 }  // namespace lss::menu::coop_slider
