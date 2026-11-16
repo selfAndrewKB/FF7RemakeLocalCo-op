@@ -239,7 +239,7 @@ inline constexpr Option kLeadHolder{  // players/lead_gate
     L"walk, the player's view on it) or keeps (the default: the player keeps it, the stop marked in that player's view, "
     L"its AI finishing the arrival within 2 m of the stop)",
     true, L"Scripted Sequences", kLeadHolderLabels,
-    L"Determines whether additional players get to control their selected characters during certain scripted segments.\r\n"
+    L"Determines whether additional players get to control their selected characters during certain scripted segments.\r\n\r\n"
     L"AI-controlled: The game takes over and automatically drives the party members as required.\r\nPlayer-controlled: the "
     L"player directs the party member to marked locations."};
 inline constexpr Option kAreaLevels{  // world/area_levels
@@ -247,7 +247,7 @@ inline constexpr Option kAreaLevels{  // world/area_levels
     L"on: every player's area stays loaded and solid, not only player 1's, at the cost of more memory (player 2 and "
     L"3's areas stay loaded beside player 1's); off: the world follows player 1's area alone; from the next request",
     true, L"World Loading", kAreaLevelsLabels,
-    L"Only Player 1: the visible world loads only around Player 1's immediate area.\r\nAll Players: the world loads around "
+    L"Only Player 1: the visible world loads only around Player 1's immediate area.\r\n\r\nAll Players: the world loads around "
     L"every player's position, preventing the world from unloading when no longer in range of Player 1. Uses more "
     L"memory."};
 

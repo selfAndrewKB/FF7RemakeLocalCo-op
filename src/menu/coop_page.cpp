@@ -9,6 +9,7 @@
 #include "engine_facts.h"
 #include "menu/coop_slider.h"
 #include "menu/game_ui.h"
+#include "menu/help_spacing.h"
 #include "platform/entry_redirect.h"
 #include "platform/game_array.h"
 #include "platform/guarded.h"
@@ -373,6 +374,7 @@ bool Install(const platform::GameImage& image) noexcept
 try
 {
     namespace f = facts;
+    help_spacing::Install(image);  // without it, a blank line in a help keeps the game's whole-line spacing
     const auto getValue  = platform::FindFunction(image, f::kOptionsGetValue);
     const auto setValue  = platform::FindFunction(image, f::kOptionsSetValue);
     const auto create    = platform::FindFunction(image, f::kOptionsCreate);
@@ -517,6 +519,10 @@ bool IsOpen() noexcept
 void SetOpen(bool open) noexcept
 {
     g_open = open;
+    if (!open)
+    {
+        help_spacing::Restore();  // every close passes here: the help bar's own spacing back
+    }
 }
 
 bool Failed() noexcept

@@ -202,7 +202,7 @@ void Remove() noexcept
     {
         return;
     }
-    // The unload may run off the game thread: no UI calls here, only the mod's own state and its changes put back.
+    // The unload may run off the game thread: no UI calls off it, only the mod's own state and its changes put back.
     coop_page_open::Remove();
     g_placed = false;
     Unplace();

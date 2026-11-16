@@ -8,6 +8,7 @@
 #include "menu/coop_menu_rules.h"
 #include "menu/coop_page.h"
 #include "menu/game_ui.h"
+#include "menu/help_spacing.h"
 #include "platform/game_thread.h"
 #include "platform/guarded.h"
 #include "platform/image.h"
@@ -546,6 +547,7 @@ try
     {
         platform::LogWarning(L"Co-op page: the title menu's frame could not be titled; it reads Options");
     }
+    help_spacing::Tighten(frame);
     ++g_opens;
     platform::Log(L"Co-op page: opened over the title menu ({} categories, {} options)", coop_page::Categories().size(), settings::kOptions.size());
 }
@@ -611,6 +613,7 @@ try
         Closed(L"its opening faulted");
         return;
     }
+    help_spacing::Tighten(game_ui::WeakAt(mgr, facts::kMainMenuMgrMenu));
     ++g_opens;
     platform::Log(L"Co-op page: opened ({} categories, {} options; the main menu's first page hidden, its title Co-op)",
                   coop_page::Categories().size(), settings::kOptions.size());

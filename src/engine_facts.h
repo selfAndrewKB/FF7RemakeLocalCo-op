@@ -3699,6 +3699,16 @@ inline constexpr std::uint32_t kMainMenuTitleText  = 0x3A0;  // UEndTextBlock*
 inline constexpr std::uint32_t kMainMenuHelpText   = 0x3B8;
 inline constexpr std::uint32_t kMainMenuGuideText  = 0x3C0;
 inline constexpr std::uint32_t kTextBlockText      = 0x118;  // UEndTextBlock: FString Text
+// A text block's line height (research/RE-options-help-bar.md): a reflected float with no reflected setter, which the
+// block's SynchronizeProperties pushes to its Slate text (the game's own path from property to widget). An empty line
+// advances one line height; a line with glyphs at least its glyphs' height.
+inline constexpr std::uint32_t kTextBlockLineHeight   = 0x110;  // UEndTextBlock: float LineHeightPercentage
+inline constexpr float         kTextBlockLineHeightDefault = 1.0f;  // its class default (the constructor's)
+inline constexpr std::uint32_t kWidgetSynchronizeSlot = 0x260;  // UWidget vtable: SynchronizeProperties
+inline constexpr std::array<std::uint8_t, 16> kTextBlockSynchronizeEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x10, 0x48, 0x89, 0x74, 0x24, 0x18, 0x48, 0x89, 0x7C, 0x24, 0x20, 0x55};
+inline constexpr platform::FunctionFact kTextBlockSynchronize{L"UEndTextBlock_SynchronizeProperties_cand", 0x141378790,
+                                                               kTextBlockSynchronizeEntry};
 // (UWidget::SetVisibility and its Visibility byte: kWidgetSetVisibilityFn and kWidgetVisibility above.)
 // Read only, for the first-open gap (research/RE-game-widgets.md §11.6.5): a text block's drawing state.
 inline constexpr std::uint32_t kTextBlockFont      = 0x1D0;  // UEndTextBlock: UEndFont*
