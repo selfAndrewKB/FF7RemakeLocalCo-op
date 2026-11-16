@@ -2015,6 +2015,37 @@ inline constexpr std::uint32_t  kTriggerRowBackupAct     = 0x78;
 inline constexpr std::array<std::uint8_t, 15> kStateSendSignalEntry{
     0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x74, 0x24, 0x10, 0x57, 0x48, 0x83, 0xEC, 0x40};
 inline constexpr platform::FunctionFact kStateSendSignal{L"StateMgr_SendSignal_Locked", 0x140FD0570, kStateSendSignalEntry};
+/// SaveData_GatherFieldBlock_IfValid(SaveSystem*, unused, Options*): the save-time gather of the live field block (the
+/// save system, kDataSingletonGlobal, + kSaveFieldBlock) from the live level states, their act queues, the trigger history
+/// and the party's transforms, as every save point and the field entry's snapshot do. It writes the block only (no retry
+/// checkpoint, no disk, no flag); field init re-reads that block at an area change inside the same field, so a level
+/// state repaired after the last gather comes back there unless the block is gathered again. Game thread; a zeroed
+/// options buffer of kGatherOptionsBytes means "everything, the party from its actors"; does nothing unless the block is
+/// present (+kFieldBlockPresent) and valid. The bytes stop at the block's offset (lea rbx, [rcx+0x50880]).
+/// research/RE-field-block-regather.md. [CONFIRMED code]
+inline constexpr std::array<std::uint8_t, 22> kGatherFieldBlockEntry{0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x74, 0x24, 0x10, 0x57,
+                                                                     0x48, 0x83, 0xEC, 0x20, 0x48, 0x8D, 0x99, 0x80, 0x08, 0x05, 0x00};
+inline constexpr platform::FunctionFact kGatherFieldBlock{L"SaveData_GatherFieldBlock_IfValid", 0x140B2BBB0, kGatherFieldBlockEntry};
+inline constexpr std::uint32_t  kGatherOptionsBytes      = 0x440;
+inline constexpr std::uint32_t  kSaveFieldBlock          = 0x50880;
+inline constexpr std::uint32_t  kFieldBlockPresent       = 24;      // u8
+/// The block's slot records (16 bytes each, at most 0x2000, the list ends at slot 0): i32 slot, i32 the state row's
+/// UniqueIndex, u16 the first act id's index, u8 the act count (+10). A state row's UniqueIndex is at its +8.
+inline constexpr std::uint32_t  kFieldBlockSlotRecords   = 216048;
+inline constexpr std::uint32_t  kFieldBlockSlotRecordMax = 0x2000;
+inline constexpr std::uint32_t  kFieldBlockRecordBytes   = 16;
+inline constexpr std::uint32_t  kFieldBlockRecordActs    = 10;
+inline constexpr std::uint32_t  kStateRowUniqueIndex     = 0x08;
+/// Each slot's act sequence (SM + this + 8 * slot index): its running act's runner (+0x08, null when none) and its queue
+/// of act names (+0x10, 32 FNames, the head first; None when empty). A rail camera act's runner (vtable kRailActVtable)
+/// keeps the level object (+0x30) and the state it holds the rail for (+0x38); it ends once the object leaves that
+/// state, and while its rail is not loaded it waits in the queue (research/RE-stuck-spot-repair.md). [CONFIRMED code]
+inline constexpr std::uint32_t  kStateManagerActSequences = 0xD45230;
+inline constexpr std::uint32_t  kActSequenceRunner        = 0x08;
+inline constexpr std::uint32_t  kActSequenceQueue         = 0x10;
+inline constexpr std::uintptr_t kRailActVtable            = 0x144B92280;
+inline constexpr std::uint32_t  kRailActObject            = 0x30;
+inline constexpr std::uint32_t  kRailActHoldState         = 0x38;
 /// The three state-change data tables (g_DT_StateChange; a state row by its FName through the same virtual, as
 /// StateSlot_SetState 0x141169C00 does when a slot steps to its next state). [CONFIRMED code]
 inline constexpr std::uintptr_t kStateChangeTablesGlobal = 0x145843FB0;

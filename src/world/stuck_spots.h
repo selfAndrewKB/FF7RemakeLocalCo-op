@@ -16,6 +16,13 @@
 // moved states are read back and the outcome logged. An end is sent at most once per field. Each verdict is logged once
 // per field at Info (held, sent or refused and why), each scan at Debug; refused passes stay for player 1's pass or the
 // console.
+// The field's spots seen this session are remembered by the field's name: their level states belong to the field and stay
+// in its slots after a spot streams out (an area change inside the field), so their passes are still judged there.
+// After a repair reads back, once the repaired slots' act queues are idle (or 5 s on), the game's own save-time gather
+// refreshes the field block: field init re-reads that block at the next area change, which would otherwise bring the old
+// state back (research/RE-field-block-regather.md). Its one visible effect is a save's: the block's party places become
+// the party's places then. A running rail camera act whose object rests in its hold state and that no known pass explains
+// is logged once per field, not sent.
 //
 //   stuck.scan     the verdicts now, without sending
 //   stuck.repair   scans now and sends what a second scan confirms (with stuck.auto off too)
@@ -23,12 +30,18 @@
 //
 // Game thread only.
 
+namespace lss::platform {
+class GameImage;
+}
+
 namespace lss::world::stuck_spots {
 
-/// Registers the commands; false (logged) when the state signal sender or the act tables are missing. Needs
-/// world/state_signal and world/traversal_walkup (its spot map); without world/traversal_action nothing is ever sent
-/// (nobody's field action can be ruled out). The spot class is looked up when first needed.
-bool Install() noexcept;
+/// Finds the field block's gather and the rail act's class, and registers the commands; false (logged) when the state
+/// signal sender or the act tables are missing (a gather that is not as the research read it only warns: repairs then hold
+/// until the next area change). Needs world/state_signal and world/traversal_walkup (its spot map); without
+/// world/traversal_action nothing is ever sent (nobody's field action can be ruled out). The spot class is looked up when
+/// first needed.
+bool Install(const platform::GameImage& image) noexcept;
 
 /// Game thread, each engine tick.
 void Tick() noexcept;

@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 namespace lss::world::state_slots {
@@ -34,8 +35,9 @@ enum class Walk : std::uint8_t
     Cut,
 };
 
-/// Walks the state manager `sm`'s active list, calling `fn(slot)` with each active slot's address (the list's node names
-/// a slot of the array) until `fn` returns true or the list ends; capped at the slot array's size.
+/// Walks the state manager `sm`'s active list, calling `fn(slot)` (or `fn(slot, index)`) with each active slot's address
+/// and its index in the slot array (the list's node names it) until `fn` returns true or the list ends; capped at the
+/// slot array's size.
 template <typename Fn>
 Walk ForEach(const std::uint8_t* sm, Fn&& fn) noexcept
 {
@@ -58,7 +60,16 @@ Walk ForEach(const std::uint8_t* sm, Fn&& fn) noexcept
             static_cast<std::uint32_t>(index) < facts::kStateManagerSlotCount &&
             platform::Read(sm + facts::kStateManagerSlots + 8u * static_cast<std::uint32_t>(index), slot) && slot != nullptr)
         {
-            if (fn(slot))
+            bool stop = false;
+            if constexpr (std::is_invocable_v<Fn&, const std::uint8_t*, std::uint32_t>)
+            {
+                stop = fn(slot, static_cast<std::uint32_t>(index));
+            }
+            else
+            {
+                stop = fn(slot);
+            }
+            if (stop)
             {
                 return Walk::Stopped;
             }
