@@ -60,6 +60,7 @@
 #include "render/bloom_origin.h"
 #include "render/distortion_apply.h"
 #include "render/family_boundary.h"
+#include "render/frame_watch.h"
 #include "render/fog_volume_watch.h"
 #include "render/history_cut.h"
 #include "render/lighting_volume.h"
@@ -221,6 +222,8 @@ void RemoveOverlayLayout() noexcept
 // The table. The order is the install order; a row's comment says what the module does for the players, as the
 // entry point's did. "Optional" rows leave the game as it was without them (their own line says what is missing).
 constexpr std::array kModules{
+    // logging only: the frame rate, the worst frame, the hitches and which thread takes the frame
+    Module{.name = L"frame watch", .install = Call<&render::frame_watch::Install>},
     // The render per view: each view's own origins, shadows, reflections, cascades and fades.
     // without it a further player's half keeps the AO ghost
     Module{.name = L"ao origin", .install = Call<&render::ao_origin::Install>},

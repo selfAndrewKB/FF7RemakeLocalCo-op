@@ -4091,4 +4091,21 @@ inline constexpr std::uint32_t kSaveSystemQueuedJobs = 0x210;
 inline constexpr const wchar_t* kEndMenuApiClassPath    = L"/Script/EndGame.EndMenuAPI";
 inline constexpr const wchar_t* kHideDataAccessIconPath = L"/Script/EndGame.EndMenuAPI:BPHideDataAccessIcon";
 
+// --- The engine's own frame times: the numbers `stat unit` shows (research/RE-frame-stats.md) ------------------------
+/// Stock UE 4.18 globals, each a u32 count of QueryPerformanceCounter ticks for the last frame: the game thread's work
+/// (GGameThreadTime, written by FViewport::Draw on the game thread), the render thread's work less its waits and its
+/// present (GRenderThreadTime, the Slate window draw on the render thread), the render thread's present (the swap
+/// buffer time, the same draw) and the GPU's frame (GGPUFrameTime, D3D12's gap recorder at the end of the RHI frame,
+/// which keeps its last value while the recorder is off). render/frame_watch checks each through an instruction that
+/// refers to it RIP-relatively: its writer's store, the GPU's through RHIGetGPUFrameCycles' load. [CONFIRMED code]
+inline constexpr std::uintptr_t kGameThreadTime   = 0x14582C4CC;
+inline constexpr std::uintptr_t kRenderThreadTime = 0x14582C4D0;
+inline constexpr std::uintptr_t kSwapBufferTime   = 0x14582C4BC;
+inline constexpr std::uintptr_t kGpuFrameTime     = 0x145831140;
+/// GRenderingThread and GRHIThread_InternalUseOnly (FRunnableThread*; the second null without a dedicated RHI thread),
+/// each thread's id at +0x44; set when the render thread starts, set again at a restart. [CONFIRMED code]
+inline constexpr std::uintptr_t kRenderingThread  = 0x1457FACF8;
+inline constexpr std::uintptr_t kRhiThread        = 0x1457FA4E0;
+inline constexpr std::uint32_t  kRunnableThreadId = 0x44;
+
 }  // namespace lss::facts

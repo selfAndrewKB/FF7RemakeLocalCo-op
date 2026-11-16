@@ -44,6 +44,7 @@
 #include "players/player_window.h"
 #include "players/split_switch.h"
 #include "players/split_render.h"
+#include "render/frame_watch.h"
 #include "players/weak_object.h"
 #include "views/column_rules.h"
 #include "views/column_source.h"
@@ -70,7 +71,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.215.1-own-box-trigger";  // the one version string (the log, UE4SS and the setup app)
+constexpr const wchar_t* kVersion = L"0.216.0-frame-watch";  // the one version string (the log, UE4SS and the setup app)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
@@ -300,6 +301,7 @@ private:
     void OnEngineTick() noexcept
     {
         lss::platform::MarkGameThread();  // before anything of this tick asks which thread it is on
+        lss::render::frame_watch::OnFrameStart();  // first, so the frame's time is the engine's alone between two ticks
         // Ctrl+F7/F8 for the first further player, Ctrl+Shift+F7/F8 for the next (players/seats.h names the keys).
         static_assert(lss::players::kSeatsBuilt <= 2, "the keys: Ctrl+F7/F8 and Ctrl+Shift+F7/F8, one pair per built seat");
         for (int seat = 1; seat <= lss::players::kSeatsBuilt; ++seat)

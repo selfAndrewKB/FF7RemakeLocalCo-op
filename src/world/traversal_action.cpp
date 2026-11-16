@@ -8,6 +8,7 @@
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
+#include "platform/perf_counter.h"
 #include "platform/verified_code.h"
 #include "platform/vtable_entry.h"
 #include "players/actor_fields.h"
@@ -159,31 +160,13 @@ struct CostWindow
 };
 CostWindow g_cost;
 
-std::int64_t Now() noexcept
-{
-    LARGE_INTEGER value{};
-    QueryPerformanceCounter(&value);
-    return value.QuadPart;
-}
-
-/// Performance-counter ticks per second.
-std::int64_t Frequency() noexcept
-{
-    static const std::int64_t frequency = [] {
-        LARGE_INTEGER value{};
-        QueryPerformanceFrequency(&value);
-        return value.QuadPart;
-    }();
-    return frequency;
-}
-
 /// Adds the time from its construction to its end to a game-thread total.
 struct TimeSpent
 {
     std::int64_t& into;
-    std::int64_t  began = Now();
+    std::int64_t  began = platform::Ticks();
     explicit TimeSpent(std::int64_t& total) noexcept : into(total) {}
-    ~TimeSpent() { into += Now() - began; }
+    ~TimeSpent() { into += platform::Ticks() - began; }
     TimeSpent(const TimeSpent&)            = delete;
     TimeSpent& operator=(const TimeSpent&) = delete;
 };
@@ -264,10 +247,10 @@ void CompTick(void* component, float dt)
     const auto original = reinterpret_cast<CompTickFn>(g_compTick.Original());
     if (!OnGameThreadNow())
     {
-        const std::int64_t began = Now();
+        const std::int64_t began = platform::Ticks();
         g_workerTicks.fetch_add(1, std::memory_order_relaxed);
         original(component, dt);
-        g_workerTime.fetch_add(Now() - began, std::memory_order_relaxed);
+        g_workerTime.fetch_add(platform::Ticks() - began, std::memory_order_relaxed);
         return;
     }
     ++g_gameTicks;
@@ -1170,8 +1153,8 @@ bool PlayerOneIn(std::uint8_t action) noexcept
 /// Closes a 5 s window of the component ticks' cost (game thread, each engine tick).
 void CountCost() noexcept
 {
-    const std::int64_t frequency = Frequency();
-    const std::int64_t now       = Now();
+    const std::int64_t frequency = platform::TicksPerSecond();
+    const std::int64_t now       = platform::Ticks();
     if (g_cost.began == 0)
     {
         g_cost = CostWindow{.began = now, .game = g_gameTime, .worker = g_workerTime.load(std::memory_order_relaxed)};
@@ -1249,7 +1232,7 @@ void WatchSqueezeCameras() noexcept
         return;
     }
     constexpr double kSampleAt[] = {0.0, 0.1, 0.3, 0.6, 1.0, 1.5, 2.0, 3.0};
-    const std::int64_t now = Now();
+    const std::int64_t now = platform::Ticks();
     for (int player = 0; player <= players::kSeatsBuilt; ++player)
     {
         const void* member    = nullptr;
@@ -1280,7 +1263,7 @@ void WatchSqueezeCameras() noexcept
             g_squeezeStarted[player] = now;
             g_squeezeSamples[player] = 0;
         }
-        const double seconds = static_cast<double>(now - g_squeezeStarted[player]) / static_cast<double>(Frequency());
+        const double seconds = static_cast<double>(now - g_squeezeStarted[player]) / static_cast<double>(platform::TicksPerSecond());
         int&         taken   = g_squeezeSamples[player];
         if (taken < static_cast<int>(std::size(kSampleAt)) && seconds >= kSampleAt[taken])
         {
