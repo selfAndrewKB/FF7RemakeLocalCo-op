@@ -131,6 +131,7 @@ add_library(LocalSplitScreen SHARED
     src/render/movie_frame.cpp
     src/render/occlusion_exempt.cpp
     src/render/family_boundary.cpp
+    src/render/frame_capture.cpp
     src/render/frame_watch.cpp
     src/render/family_now.cpp
     src/render/motion_history.cpp
@@ -773,6 +774,13 @@ add_executable(HitchStepTests
 target_include_directories(HitchStepTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_compile_features(HitchStepTests PRIVATE cxx_std_20)
 add_test(NAME hitch_step COMMAND HitchStepTests)
+
+add_executable(CaptureRulesTests
+    tests/capture_rules_test.cpp
+)
+target_include_directories(CaptureRulesTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(CaptureRulesTests PRIVATE cxx_std_20)
+add_test(NAME capture_rules COMMAND CaptureRulesTests)
 
 add_executable(StuckSpotRulesTests
     tests/stuck_spot_rules_test.cpp

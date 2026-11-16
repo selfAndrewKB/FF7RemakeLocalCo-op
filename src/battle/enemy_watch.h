@@ -36,9 +36,11 @@
 // Distances are 3D, between the characters' root components, in metres. The hooks run on any thread: they read the
 // humans' members from copies the game thread refreshes each tick. Runs only while the log writes Debug lines (the
 // reading says so otherwise); each gate call then costs two guarded calls and two guarded reads, each ready test one
-// table scan.
+// table scan. The gate also hands enemies here while the frame capture watches actions (RunningOneOf, without the
+// lines): the table alone is then kept.
 
 #include <cstdint>
+#include <span>
 #include <string>
 
 namespace lss::platform {
@@ -47,8 +49,19 @@ class GameImage;
 
 namespace lss::battle::enemy_watch {
 
-/// Whether the gate should hand enemies here. Any thread.
+/// Whether the watch logs (its Debug lines, the hooks' records and the reading). Any thread.
 bool Watching() noexcept;
+
+/// Whether the gate should hand enemies here: while the watch logs, or while another module reads the running actions
+/// (WantActions). Any thread.
+bool Recording() noexcept;
+
+/// Asks the gate to hand enemies here even without Debug lines (render/frame_capture). Any thread.
+void WantActions(bool on) noexcept;
+
+/// The first of `actions` (engine names' bits) that an enemy handed here in the last second runs; 0 if none, or while
+/// nothing records. Reads the table only: no game object. Any thread.
+std::uint64_t RunningOneOf(std::span<const std::uint64_t> actions) noexcept;
 
 /// An enemy's gate call: its controller, its battle component and its running action (0: none). Any thread.
 void Observe(void* controller, const void* component, std::uint64_t action) noexcept;

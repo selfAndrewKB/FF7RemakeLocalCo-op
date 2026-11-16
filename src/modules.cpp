@@ -60,6 +60,7 @@
 #include "render/bloom_origin.h"
 #include "render/distortion_apply.h"
 #include "render/family_boundary.h"
+#include "render/frame_capture.h"
 #include "render/frame_watch.h"
 #include "render/fog_volume_watch.h"
 #include "render/history_cut.h"
@@ -224,6 +225,8 @@ void RemoveOverlayLayout() noexcept
 constexpr std::array kModules{
     // logging only: the frame rate, the worst frame, the hitches and which thread takes the frame
     Module{.name = L"frame watch", .install = Call<&render::frame_watch::Install>},
+    // logging only: every frame around an Airbuster beam or a frame-rate drop in battle, to a file
+    Module{.name = L"frame capture", .install = Call<&render::frame_capture::Install>, .needs = {Need<&render::frame_watch::Install>()}},
     // The render per view: each view's own origins, shadows, reflections, cascades and fades.
     // without it a further player's half keeps the AO ghost
     Module{.name = L"ao origin", .install = Call<&render::ao_origin::Install>},

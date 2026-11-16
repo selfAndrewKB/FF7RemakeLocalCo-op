@@ -71,7 +71,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.216.0-frame-watch";  // the one version string (the log, UE4SS and the setup app)
+constexpr const wchar_t* kVersion = L"0.217.0-frame-capture";  // the one version string (the log, UE4SS and the setup app)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
@@ -382,6 +382,7 @@ private:
         lss::world::shop_act::SetOneWindow(!columns.columnsHeld &&
                                            singleViewChoice_ != lss::views::column_source::Override::Split);
         lss::modules::TickAfterSession(FrameNow());
+        lss::render::frame_watch::OnTickEnd();
     }
 
     /// The engine's local-player list as columns (views/columns.h): each listed place's seat (0 player 1, then the

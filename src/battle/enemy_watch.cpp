@@ -21,6 +21,7 @@
 #include "players/weak_object.h"
 #include "world/actor_place.h"
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <climits>
@@ -104,7 +105,8 @@ std::array<Reported, kEntries> g_reported;  // game thread
 // first sight is taken only from a later write, so a dead enemy's address is never touched again. Game thread.
 std::array<std::int64_t, kEntries> g_goneSeenMs{};
 std::atomic<bool>                  g_installed{false};
-PawnCompFn                         g_pawnComp = nullptr;  // set at install (published by g_installed), then only read
+std::atomic<bool>                  g_actionsWanted{false};  // another module reads the running actions (RunningOneOf)
+PawnCompFn                        g_pawnComp = nullptr;  // set at install (published by g_installed), then only read
 IsAFn                              g_isAi     = nullptr;
 ComponentTest                      g_isPartySide = nullptr;
 ComponentTest                      g_isHate      = nullptr;
@@ -512,6 +514,39 @@ bool Watching() noexcept
     return g_installed.load(std::memory_order_acquire) && platform::Enabled(platform::Level::Debug);
 }
 
+bool Recording() noexcept
+{
+    return g_installed.load(std::memory_order_acquire) &&
+           (g_actionsWanted.load(std::memory_order_relaxed) || platform::Enabled(platform::Level::Debug));
+}
+
+void WantActions(bool on) noexcept
+{
+    g_actionsWanted.store(on, std::memory_order_relaxed);
+}
+
+std::uint64_t RunningOneOf(std::span<const std::uint64_t> actions) noexcept
+{
+    if (actions.empty() || !Recording())
+    {
+        return 0;
+    }
+    const auto now = NowMs();
+    for (const Entry& e : g_entries)
+    {
+        if (e.controller.load(std::memory_order_relaxed) == 0 || now - e.seenMs.load(std::memory_order_acquire) > kSeenMs)
+        {
+            continue;
+        }
+        const std::uint64_t action = e.action.load(std::memory_order_relaxed);
+        if (action != 0 && std::find(actions.begin(), actions.end(), action) != actions.end())
+        {
+            return action;
+        }
+    }
+    return 0;
+}
+
 void Ready(const void* component, char ready) noexcept
 {
     if (!Watching())
@@ -571,6 +606,7 @@ void Observe(void* controller, const void* component, std::uint64_t action) noex
         {
             entry = &e;  // claimed: the previous enemy's hook fields start over, its component key first
             e.component.store(0, std::memory_order_relaxed);
+            e.action.store(0, std::memory_order_relaxed);
             e.ready.store(0, std::memory_order_relaxed);
             e.setMs.store(0, std::memory_order_relaxed);
             e.setCaller.store(0, std::memory_order_relaxed);

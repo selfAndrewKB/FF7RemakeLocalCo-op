@@ -416,14 +416,14 @@ void* GamesOrInstead(void* game) noexcept
 char GateFor(platform::EntryRedirect& redirect, void* controller) noexcept
 {
     const bool tossing  = Tossing();
-    const bool watching = enemy_watch::Watching();
-    void*      enemy    = tossing || watching ? EnemyComponent(controller) : nullptr;
+    const bool recording = enemy_watch::Recording();
+    void*      enemy     = tossing || recording ? EnemyComponent(controller) : nullptr;
     if (enemy != nullptr)
     {
         const auto    key    = reinterpret_cast<std::uintptr_t>(controller);
         std::uint64_t action = 0;
         const bool    read   = Read(static_cast<const std::uint8_t*>(controller) + facts::kBattleAICurrentAction, action);
-        if (watching)
+        if (recording)
         {
             enemy_watch::Observe(controller, enemy, read ? action : 0);
         }
