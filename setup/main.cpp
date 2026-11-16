@@ -271,13 +271,12 @@ int ShowWindowAndRun(HINSTANCE instance, int show)
     g_app.path        = FindFile();
     g_app.inModFolder = InModFolder(g_app.path);
     g_app.readings    = settings::ReadFile(g_app.path);
-    // A record with no game running: the game died and so did its guard.
-    if (!GameIsRunning())
+    // A record with no game running: the game died and so did its guard. Only a failed restore that leaves the desktop
+    // unlike Windows' own is the player's to act on, through the Restore Monitors button that then shows; every other
+    // outcome is silent.
+    if (!GameIsRunning() && displays::Heal(RecordPath(), 0) == displays::Healed::Failed && !displays::IsSavedLayout())
     {
-        if (const auto healed = displays::Heal(RecordPath(), 0); healed != displays::Healed::NoRecord)
-        {
-            Say(std::format(L"From the last game: {}.", displays::Name(healed)), healed == displays::Healed::Failed ? rules::Tone::Problem : rules::Tone::Good);
-        }
+        Say(L"Unable to restore monitors after the last session. Click Restore Monitors.", rules::Tone::Problem);
     }
     g_app.fileWord = g_app.readings[IndexOf(settings::kMonitors)].word;
     ReadMonitors();

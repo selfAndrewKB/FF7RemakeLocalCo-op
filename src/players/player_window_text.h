@@ -46,10 +46,10 @@ inline std::wstring NoteText(Note note, int about)
     const std::wstring player = L"Player " + std::to_wstring(about + 1);
     switch (note)
     {
-    case Note::Waits: return player + L" joins once a party member is free";
-    case Note::NoMember: return L"No party member is free for a new player";
-    case Note::AllIn: return L"Every player is in already";
-    case Note::Failed: return player + L"'s join did not work";
+    case Note::Waits: return player + L" has joined and is waiting for a free party member";
+    case Note::NoMember: return L"No available party members";
+    case Note::AllIn: return L"All players are currently present";
+    case Note::Failed: return player + L"'s join failed. See UE4SS.log.";
     case Note::PlayerOneStays: return L"Player 1 cannot be removed from the game";
     case Note::None: break;
     }

@@ -21,7 +21,7 @@ namespace lss::setup::app {
 namespace {
 
 constexpr const wchar_t* kRestoreHelp =
-    L"Puts your monitors back as Windows has them saved, in case a game ended without doing so.";
+    L"Puts your monitors back as Windows has them saved, in case the game failed to do so.";
 
 }  // namespace
 
@@ -279,7 +279,7 @@ void Save()
     bool written = false;
     if (const unsigned long error = settings::WriteFromTable(g_app.path, next, &written); error != 0)
     {
-        Say(std::format(L"Couldn't save (Windows error {}).", error), rules::Tone::Problem);
+        Say(std::format(L"Unable to save (Windows error {}).", error), rules::Tone::Problem);
     }
     else
     {
@@ -310,7 +310,7 @@ void PutMonitorsBack()
         }
         else
         {
-            Say(std::format(L"Windows couldn't restore them (error {}).", result), rules::Tone::Problem);
+            Say(std::format(L"Windows was unable to restore the monitors (error {}).", result), rules::Tone::Problem);
         }
     }
     else

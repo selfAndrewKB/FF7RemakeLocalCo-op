@@ -27,8 +27,7 @@ inline constexpr std::size_t kMostInRow = static_cast<std::size_t>(views::monito
 
 /// What happens to the desktop while the game holds a row whose monitors do not already stand in it.
 inline constexpr const wchar_t* kMovesNote =
-    L"While the game runs, your monitors move into this order. They go back afterwards, even after a crash, and Windows' own "
-    L"arrangement is never changed.";
+    L"While the game runs, your monitors are arranged in this order and returned to the original layout when done.";
 
 /// `monitors` fitted into a box of `width` x `height` with `margin` all round, keeping the desktop's arrangement and shape.
 inline std::vector<row::Rect> Fit(std::span<const row::Monitor> monitors, std::int32_t width, std::int32_t height, std::int32_t margin)
@@ -116,7 +115,7 @@ inline Look LookAt(std::span<const row::Monitor> monitors, std::span<const std::
         look.picked = true;
         look.waits  = true;
         look.text   = L"No saved monitor is connected.";
-        look.detail = L"The game waits for them in one window. Click monitors, in order, to choose others.";
+        look.detail = L"Reconnect or pick new ones.";
         look.tone   = Tone::Warning;
         return look;
     }
@@ -126,13 +125,14 @@ inline Look LookAt(std::span<const row::Monitor> monitors, std::span<const std::
         look.ok                  = choice.ok;
         if (!choice.ok)
         {
-            look.text = std::format(L"No row found. Click 2 to {} monitors, left to right.", kMostInRow);
+            look.text = L"Unable to select monitors automatically. Please choose at least 2 monitors.";
             look.tone = Tone::Warning;
             return look;
         }
         look.screens = ScreensOf(monitors, choice);
-        look.text    = std::format(L"Automatic: the longest row, {} monitors.", look.screens.size());
-        look.detail  = L"No monitors are picked, so the game takes the longest row it finds. Click monitors, in order, to choose your own.";
+        look.text    = std::format(L"No monitors selected. The game will use the {} monitors already arranged side by side.",
+                                   look.screens.size());
+        look.detail  = L"Click monitors to choose your own.";
         look.tone    = Tone::Good;
         return look;
     }
@@ -141,15 +141,15 @@ inline Look LookAt(std::span<const row::Monitor> monitors, std::span<const std::
     if (picks.size() == 1)
     {
         look.waits  = true;
-        look.text   = std::format(L"A row needs 2 or more: click up to {} more, left to right.", kMostInRow - 1);
-        look.detail = L"Save waits until the clicked monitors make a row. Click this one again to take it out.";
+        look.text   = L"Please choose at least 2 monitors.";
+        look.detail = L"Unable to save until at least 2 monitors are selected. Click a selected monitor again to deselect it.";
         return look;
     }
     // Only a click too many comes here, and the app saves no such choice. A settings word that names more, written by hand,
     // reads as its first monitors (monitor_picks::FindPicks).
     if (picks.size() > kMostInRow)
     {
-        look.text = std::format(L"A row takes at most {} monitors.", kMostInRow);
+        look.text = std::format(L"A maximum of {} monitors can be selected.", kMostInRow);
         look.tone = Tone::Warning;
         return look;
     }
@@ -157,7 +157,8 @@ inline Look LookAt(std::span<const row::Monitor> monitors, std::span<const std::
     look.ok                  = choice.ok;
     if (!choice.ok)
     {
-        look.text = L"Can't make a row: " + choice.why + L".";
+        // One sentence for the player; the reason is the mod's, written to its log when the game tries this choice.
+        look.text = L"Unable to arrange the selected monitors. Please choose different monitors.";
         look.tone = Tone::Problem;
         return look;
     }
@@ -166,7 +167,8 @@ inline Look LookAt(std::span<const row::Monitor> monitors, std::span<const std::
     look.tone = Tone::Good;
     if (std::any_of(choice.widths.begin(), choice.widths.end(), [](std::int32_t width) { return width > row::kWidestCleanView; }))
     {
-        look.text = std::format(L"A view over {} px wide shows a band of wrong colours.", row::kWidestCleanView);
+        look.text = std::format(L"Monitors over {} pixels wide currently show a band of incorrect colors due to a lingering bug.",
+                                row::kWidestCleanView);
         look.tone = Tone::Warning;
     }
     if (!choice.moves.empty())
@@ -210,8 +212,7 @@ inline Status StatusLine(const Look& look, const Notes& notes)
 {
     if (notes.gameRunning)
     {
-        return {L"Close the game to save changes.", L"While the game runs it keeps its own values and would write them over this file.",
-                Tone::Warning};
+        return {L"Close the game to save changes.", {}, Tone::Warning};
     }
     if (!notes.note.empty() && notes.noteTone == Tone::Problem)
     {
@@ -219,7 +220,7 @@ inline Status StatusLine(const Look& look, const Notes& notes)
     }
     if (!notes.inModFolder)
     {
-        return {(notes.note.empty() ? std::wstring() : std::wstring(notes.note) + L" ") + L"Not in the mod's folder: the game won't read this file.",
+        return {(notes.note.empty() ? std::wstring() : std::wstring(notes.note) + L" ") + L"Not in the mod's folder: the game won't read these settings.",
                 L"Put this app beside the mod's settings file, in the game's ue4ss\\Mods\\LocalSplitScreen folder.", Tone::Problem};
     }
     if (!notes.note.empty())
@@ -233,21 +234,21 @@ inline Status StatusLine(const Look& look, const Notes& notes)
         if (look.ok)
         {
             return {count + L".",
-                    L"The game makes its row from the saved monitors that are connected and takes the others in when they arrive. Save "
-                    L"keeps them unless you click a monitor.",
+                    L"One or more monitors from the last saved layout are missing. The game will use the remaining monitors until "
+                    L"they are reconnected.",
                     Tone::Warning};
         }
-        // Too few of them here, or the ones here make no row: the second has a reason of its own to give.
-        return {count + L": the game stays in one window.",
-                look.waits ? std::wstring(L"The game waits until at least two of the saved monitors are connected. Save keeps them unless "
-                                          L"you click a monitor.")
-                           : look.text + L" Save keeps the saved monitors unless you click a monitor.",
+        // Too few of them here, or the ones here make no row.
+        return {count + L": the game will start in split-screen mode.",
+                look.waits ? L"At least 2 of the saved monitors must be connected for this feature to function. Reconnect them or "
+                             L"choose new monitors."
+                           : L"Unable to arrange the connected monitors. Reconnect the missing monitors or choose new ones.",
                 Tone::Warning};
     }
     // Clicked monitors that make no row stop a save whatever the option says: that comes first.
     if (!notes.spanOn && (look.ok || !look.picked))
     {
-        return {L"Multiple Monitors is off: the game stays in one window.", {}, Tone::Plain};
+        return {L"Multiple Monitors is off: the game will start in split-screen mode.", {}, Tone::Plain};
     }
     if (look.text.empty())
     {

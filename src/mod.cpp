@@ -71,7 +71,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.218.0-ribbon-fill";  // the one version string (the log, UE4SS and the setup app)
+constexpr const wchar_t* kVersion = L"0.219.0-player-texts";  // the one version string (the log, UE4SS and the setup app)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;

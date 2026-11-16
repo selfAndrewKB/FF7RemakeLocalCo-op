@@ -30,10 +30,9 @@ namespace {
 void Stays()
 {
     using namespace lss::battle::battle_warps_rules;
-    static_assert(!Stays(Mode::Game, 0) && !Stays(Mode::Game, 1));            // the game's warps for everyone
-    static_assert(Stays(Mode::Off, 0) && Stays(Mode::Off, 1) && Stays(Mode::Off, 2));  // nobody warped
+    static_assert(!Stays(Mode::Game, 0) && !Stays(Mode::Game, 1) && !Stays(Mode::Game, 2));  // the game's warps for everyone
     static_assert(!Stays(Mode::PlayersStay, 0));  // player 1's character: the game's leader logic
-    static_assert(Stays(Mode::PlayersStay, 1) && Stays(Mode::PlayersStay, 2)); // the further players' stay
+    static_assert(Stays(Mode::PlayersStay, 1) && Stays(Mode::PlayersStay, 2)); // players 2 and 3's characters stay
 }
 
 void DoubleClicks()

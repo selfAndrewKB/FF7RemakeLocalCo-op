@@ -24,7 +24,7 @@ namespace settings = platform::settings;
 
 /// The main menu's row, in the place of the trial's "Buy Now" row (kind 12, which the full game never shows).
 inline constexpr const wchar_t* kRowLabel = L"Co-op";
-inline constexpr const wchar_t* kRowHelp  = L"Split-screen co-op settings: the players' screens, battle and experimental options.";
+inline constexpr const wchar_t* kRowHelp  = L"Split-screen co-op settings";
 inline constexpr const wchar_t* kTitle    = L"Co-op";
 
 /// The first category byte of the mod's rows; the game's own end below 0x35.
@@ -42,9 +42,9 @@ struct SectionText
     const wchar_t* help;
 };
 inline constexpr std::array<SectionText, 3> kSections{{
-    {L"Views", L"Screens", L"How the players' views are laid out on one or more monitors."},
-    {L"Battle", L"Battle", L"How battles run with more than one player."},
-    {L"Experimental", L"Experimental", L"Newer options still being tried; their defaults play as before."},
+    {L"Views", L"Screens", L"Settings pertaining to how the players' views are arranged on one or more displays."},
+    {L"Battle", L"Battle", L"Various settings related to combat."},
+    {L"Experimental", L"Experimental", L"Neat features that have not been totally confirmed to be bug-free."},
 }};
 
 /// The name and help of a section (the section's own name and no help when the list has none).

@@ -14,6 +14,7 @@
 #include "players/seats.h"
 #include "world/actor_place.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -31,10 +32,9 @@ using NeedsWarpFn      = bool (*)(void* unused, void* member, void* leader, void
 using battle_warps_rules::Mode;
 
 // The words of the setting's row in the table, in the enum's order.
-constexpr auto& kModeWords = platform::settings::kBattleWarpsWords;
-static_assert(kModeWords.size() == 3 && std::wstring_view(kModeWords[static_cast<std::size_t>(Mode::PlayersStay)]) == L"players-stay" &&
-                  std::wstring_view(kModeWords[static_cast<std::size_t>(Mode::Off)]) == L"off" &&
-                  std::wstring_view(kModeWords[static_cast<std::size_t>(Mode::Game)]) == L"game",
+constexpr auto& kModeWords = platform::settings::kOnOffWords;
+static_assert(kModeWords.size() == 2 && std::wstring_view(kModeWords[static_cast<std::size_t>(Mode::Game)]) == L"on" &&
+                  std::wstring_view(kModeWords[static_cast<std::size_t>(Mode::PlayersStay)]) == L"off",
               "the table's words name the modes in the enum's order");
 
 // Set once at install.
@@ -46,7 +46,7 @@ platform::CallRedirect g_victoryCall;
 platform::CallRedirect g_escapeCall;
 
 // Game thread.
-Mode g_mode = Mode::PlayersStay;
+Mode g_mode = Mode::Game;
 
 const wchar_t* ModeWord(Mode mode) noexcept
 {
@@ -162,9 +162,6 @@ void SetMode(Mode mode, const wchar_t* why)
                           L"game warps the members no player controls ({})",
                           why);
             break;
-        case Mode::Off:
-            platform::Log(L"battle warps: no party member is warped at a battle's start or end ({})", why);
-            break;
     }
 }
 
@@ -201,7 +198,8 @@ bool Install(const platform::GameImage& image) noexcept
     g_escape   = *escape;
 
     // The file's word is one of the table's (platform/settings.h); set before the redirects are placed.
-    g_mode = ModeOf(platform::settings::Of(platform::settings::kBattleWarps).word).value_or(Mode::PlayersStay);
+    g_mode = ModeOf(platform::settings::Of(platform::settings::kBattleWarps).word)
+                 .value_or(ModeOf(platform::settings::kBattleWarps.fallback).value_or(Mode::Game));
 
     // All three calls lie inside one code block each.
     if (!g_startCall.Install(*startCall, g_getActor, reinterpret_cast<std::uintptr_t>(&StartMember)) ||

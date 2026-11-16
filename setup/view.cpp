@@ -297,7 +297,7 @@ struct Painter
         Fill(dc, client, theme::kWindow);
         Option(scene.frame.multi, rules::Part::Multi, scene.multiLabel, scene.multiValue);
         Option(scene.frame.order, rules::Part::Order, scene.orderLabel, scene.orderValue);
-        Caption(scene.frame.caption, L"DISPLAYS", L"Click monitors in order, left to right");
+        Caption(scene.frame.caption, L"DISPLAYS", L"Click 2 to 3 monitors to determine order of arrangement");
         Picture();
         Status();
         if (scene.canRestore)

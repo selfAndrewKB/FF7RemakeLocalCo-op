@@ -992,8 +992,8 @@ bool Install(const platform::GameImage& image) noexcept
                            platform::Log(L"lead gate: lead.path {}: {}", *state, text);
                            return control::Outcome{.detail = text};
                        }});
-    // The experimental option (platform/settings.h kLeadHolder, `guide` by default): the console, the file and later the mod
-    // menu set it through the one setter.
+    // The experimental option (platform/settings.h kLeadHolder, `keeps` by default): the console, the file and the Co-op page
+    // set it through the one setter.
     g_keeps = platform::settings::Of(platform::settings::kLeadHolder).word == L"keeps";
     control::RegisterOption(
         platform::settings::kLeadHolder,

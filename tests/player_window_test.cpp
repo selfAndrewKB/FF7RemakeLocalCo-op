@@ -217,14 +217,15 @@ void Notes()
     Window w{.seat = 0, .name = L"CLOUD", .open = false, .note = Note::Waits, .about = 1};
     const std::vector<std::wstring> lines{
         L"PLAYER 1    <color=yellow>CLOUD</color>",
-        L"Player 2 joins once a party member is free",
+        L"Player 2 has joined and is waiting for a free party member",
     };
     EXPECT(LinesOf(TextFor(w).markup) == lines);
     w.open = true;
     w.note = Note::PlayerOneStays;
     EXPECT(LinesOf(TextFor(w).markup).back() == L"Player 1 cannot be removed from the game");
     EXPECT(!Has(TextFor(w).markup, L"Done"));
-    EXPECT(NoteText(Note::NoMember, 2) == L"No party member is free for a new player");
+    EXPECT(NoteText(Note::NoMember, 2) == L"No available party members");
+    EXPECT(NoteText(Note::Failed, 2) == L"Player 3's join failed. See UE4SS.log.");
 }
 
 }  // namespace

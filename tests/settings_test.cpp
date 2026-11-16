@@ -78,7 +78,12 @@ void TableConsistent()
         }
     }
     EXPECT(kOptions.size() == 19);
-    EXPECT(kLeadHolder.experimental && std::wcscmp(kLeadHolder.fallback, L"guide") == 0);
+    EXPECT(kLeadHolder.experimental && std::wcscmp(kLeadHolder.fallback, L"keeps") == 0);
+    // The battle's gathering: on by default (the game's own warps); off keeps the players' characters where they are.
+    EXPECT(std::wcscmp(kBattleWarps.fallback, L"on") == 0 && kBattleWarps.words.size() == 2);
+    // The battle multipliers: the file's words plain, the page's values read "times".
+    EXPECT(std::wcscmp(kEnemyHp.words[14], L"1.5") == 0 && std::wcscmp(kEnemyHp.wordLabels[14], L"x1.5") == 0);
+    EXPECT(std::wcscmp(kApGain.wordLabels[99], L"x10.0") == 0 && kApGain.wordLabels.size() == kApGain.words.size());
     EXPECT(std::wcscmp(kLeadHolder.section, L"Experimental") == 0);
     // The two talk options: experimental, on by default (the behaviour without them), on|off words with their labels.
     for (const Option* talk : {&kTalkGather, &kTalkFollow})
@@ -101,7 +106,7 @@ void JudgeFile()
     EXPECT(Judge(kColumnOrder, L"1 3 2").source == Source::File);
     EXPECT(Judge(kColumnOrder, L"132").word == L"132");
     EXPECT(Judge(kColumnOrder, L"1, 3, 2").word == L"132");  // the form ParseOrder took before the table
-    EXPECT(Judge(kBattleWarps, L"Players-Stay").word == L"players-stay");
+    EXPECT(Judge(kBattleWarps, L"Off").word == L"off");
     // No key, or an empty value: the default.
     EXPECT(Judge(kMenuSlow, L"").word == L"off");
     EXPECT(Judge(kMenuSlow, L"").source == Source::Default);
@@ -109,7 +114,7 @@ void JudgeFile()
     // A word that is none of the option's: the default, the file's text kept for the warning.
     const Reading bad = Judge(kBattleWarps, L" sometimes ");
     EXPECT(bad.source == Source::Invalid);
-    EXPECT(bad.word == L"players-stay");
+    EXPECT(bad.word == L"on");
     EXPECT(bad.raw == L"sometimes");
     EXPECT(Judge(kColumnOrder, L"2 1 3").word == L"213");  // player 1 may take any screen
     EXPECT(Judge(kColumnOrder, L"1 2 4").source == Source::Invalid);
@@ -120,7 +125,7 @@ void Texts()
 {
     EXPECT(WordList(kMultiMonitor) == L"on or off");
     EXPECT(WordList(kMenuSlow) == L"on or off");
-    EXPECT(WordList(kBattleWarps) == L"players-stay, off or game");
+    EXPECT(WordList(kLeadHolder) == L"guide or keeps");
     EXPECT(WhyText(kMenuSlow, Judge(kMenuSlow, L"off")) == L"the settings file");
     EXPECT(WhyText(kMenuSlow, Judge(kMenuSlow, L"")) == L"the default; LocalSplitScreen.ini has no [Battle] menu-slow");
     EXPECT(WhyText(kMenuSlow, Judge(kMenuSlow, L"maybe")) ==
@@ -181,7 +186,7 @@ void FileTextFromTable()
     EXPECT(text.find(L"\r\nmulti-monitor = off\r\n") != std::wstring::npos);
     EXPECT(text.find(L"\r\ncolumn-order = 213\r\n") != std::wstring::npos);
     EXPECT(text.find(L"\r\nbattle-warps = sometimes\r\n") != std::wstring::npos);
-    EXPECT(Count(text, L"none of these words: read as players-stay") == 1);
+    EXPECT(Count(text, L"none of these words: read as on") == 1);
     EXPECT(text.find(L"; 0.1 to 10.0 (the default: 1.0)") != std::wstring::npos);
     EXPECT(text.find(L"; on | off (the default: off)") != std::wstring::npos);
     std::size_t lineStart = 0;
@@ -223,7 +228,7 @@ void FileWrittenAndReadBack()
     readings[PlaceOf(kMultiMonitor)] = Judge(kMultiMonitor, L"on");
     readings[PlaceOf(kColumnOrder)]  = Judge(kColumnOrder, L"213");
     readings[PlaceOf(kEnemyDamage)]  = Judge(kEnemyDamage, L"1.5");
-    readings[PlaceOf(kBattleWarps)]   = Judge(kBattleWarps, L"sometimes");
+    readings[PlaceOf(kBattleWarps)]  = Judge(kBattleWarps, L"sometimes");
     const std::string bytes = Utf8(FileText(readings));
     EXPECT(WriteFileBytes(path.c_str(), bytes) == 0);
     EXPECT(FileBytes(path.c_str()) == bytes);
@@ -251,7 +256,8 @@ void FileWrittenAndReadBack()
     EXPECT(WriteFileBytes(path.c_str(), first) == 0);
     auto again  = readings;
     again[PlaceOf(kEnemyHp)] = ReadBack(path, kEnemyHp);
-    EXPECT(again[PlaceOf(kEnemyHp)].source == Source::Invalid && again[PlaceOf(kEnemyHp)].raw == L"1,5? ?");    EXPECT(Utf8(FileText(again)) == first);
+    EXPECT(again[PlaceOf(kEnemyHp)].source == Source::Invalid && again[PlaceOf(kEnemyHp)].raw == L"1,5? ?");
+    EXPECT(Utf8(FileText(again)) == first);
     const std::string text = FileBytes(path.c_str());
     EXPECT(text.find("an old copy") == std::string::npos);
     EXPECT(text.find("old-option") == std::string::npos);

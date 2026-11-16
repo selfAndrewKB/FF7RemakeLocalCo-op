@@ -39,7 +39,8 @@ readings are `<switch>.<what>`, and an area's readings `<area>.<what>`. Today:
   `log-level error|warning|info|debug|trace` (debug at start; trace holds the per-frame lines).
 - **The settings file's options**, switched in play: `multi-monitor on|off`, `column-order 123|132`,
   `menu-slow on|off` (off: an open battle command menu no longer slows the world or greys the screen),
-  `battle-warps players-stay|off|game` (who the game warps at a battle's start and end), the battle's rates
+  `battle-warps on|off` (on: the game warps the whole party at a battle's start and end; off: players 2 and 3's
+  characters stay where they are), the battle's rates
   `enemy-damage`, `enemy-hp`, `boss-hp`, `enemy-stagger`, `exp-gain`, `ap-gain` (each `0.1` to `10.0`). Every option of
   `LocalSplitScreen.ini` is one row of the table in `src/platform/settings.h`, and its command is built from that row.
 - **The game:** `game.state` (title|loading|play|pause|menu|leaving|…), `game.paused`, `game.menu-kind`,
@@ -102,8 +103,9 @@ view, except that in one window a scripted talk on the game's event camera shows
 when more than 8 m away, is brought beside the player who started it, facing the NPC). Each player walks only in the rooms (shops, homes) their own character stands in. A shop a further player opens zooms on that player's view and faces that player's
 character; while any shop is up every pad drives it, as in the pause menu. Examine points and object events stay
 player 1's. While player 1 opens a chest, picks up an item or works a switch or a terminal, the further players keep
-their characters and views; a story's guide (a lead, or a run ahead the level waits on) is walked by the character's
-AI with that player's view on it, and comes back after.
+their characters and views; a story's guide (a lead, or a run ahead the level waits on) stays the player's by default,
+its stop marked in that player's view and the character's AI finishing the last steps (Scripted Sequences on the Co-op
+page; AI-controlled: the character's AI walks it with that player's view on it, and it comes back after).
 
 In one window the views collapse to player 1's single view for menus, shops, cutscenes, minigames and scripted talks,
 and split again after; on a monitor row the further columns show player 1's picture instead.

@@ -58,8 +58,8 @@ void PickedPair()
     // Any monitors, in the order clicked: a gap between them, one above the other, the order reversed.
     look = LookOf(kDesktop, {1, 2});
     EXPECT(look.ok && (look.screens == std::vector<std::size_t>{1, 2}));
-    EXPECT(look.detail.find(L"go back afterwards") != std::wstring::npos);  // said on hover, the line itself stays short
-    EXPECT(look.text.find(L"go back") == std::wstring::npos);
+    EXPECT(look.detail.find(L"returned to the original layout") != std::wstring::npos);  // said on hover only
+    EXPECT(look.text.find(L"returned") == std::wstring::npos);
     EXPECT(LookOf(kDesktop, {0, 3}).ok);
     look = LookOf(kDesktop, {1, 0, 2});
     EXPECT(look.ok && (look.screens == std::vector<std::size_t>{1, 0, 2}));
@@ -98,10 +98,11 @@ void AnyMonitors()
     const std::vector<Monitor> mixed{At(0, 0, 3440), At(3440, 0, 1280, 720), At(-2560, 0, 2560, 1440, 144), At(4720, 0, 5120, 1440)};
     Look look = LookOf(mixed, {0, 1});
     EXPECT(look.ok && (look.screens == std::vector<std::size_t>{0, 1}));
-    EXPECT(look.text.find(L"wrong colours") == std::wstring::npos);
+    EXPECT(look.text.find(L"incorrect colors") == std::wstring::npos);
     EXPECT(LookOf(mixed, {2, 0}).ok);
     look = LookOf(mixed, {0, 3});
-    EXPECT(look.ok && look.text.find(L"A view over") == 0 && look.text.find(L"wrong colours") != std::wstring::npos && look.tone == Tone::Warning);
+    EXPECT(look.ok && look.text.find(L"Monitors over 4096 pixels") == 0 && look.text.find(L"incorrect colors") != std::wstring::npos &&
+           look.tone == Tone::Warning);
 }
 
 /// One line, the most pressing thing first: what stops a save, what the last action did, then the choice itself.
@@ -147,16 +148,16 @@ void OneStatusLine()
     EXPECT(StatusLine(row, notes).text.find(L"Saved. Not in the mod's folder") == 0 && StatusLine(row, notes).tone == Tone::Problem);
     notes.note = {};
     EXPECT(StatusLine(row, notes).text.find(L"Not in the mod's folder") == 0);
-    notes.note     = L"Couldn't save (Windows error 5).";
+    notes.note     = L"Unable to save (Windows error 5).";
     notes.noteTone = Tone::Problem;  // a failure is said alone
     EXPECT(StatusLine(row, notes).text == notes.note);
     notes.gameRunning = true;
     EXPECT(StatusLine(row, notes).text.find(L"Close the game") == 0);
 
-    // Every line is short enough for one line of the window.
+    // Every line is short enough for one line of the window at its smallest (about 100 characters of the status font).
     for (const Look& look : {wide, none, LookOf(kDesktop, {}), LookOf(kDesktop, {0, 1, 2, 3})})
     {
-        EXPECT(!look.text.empty() && look.text.size() <= 70);
+        EXPECT(!look.text.empty() && look.text.size() <= 100);
     }
 }
 
@@ -167,35 +168,36 @@ void SavedMonitorsAway()
     EXPECT(LookAt(kDesktop, {}, 0).ok);  // the desktop has a row of its own
     const Look away = LookAt(kDesktop, {}, 0, 2);
     EXPECT(!away.ok && away.picked && away.waits && away.screens.empty() && away.tone == Tone::Warning);
-    EXPECT(!away.text.empty() && away.text.size() <= 70);
+    EXPECT(!away.text.empty() && away.text.size() <= 100);
 
     Notes notes;
     notes.notConnected = 2;
     Status status = StatusLine(away, notes);
-    EXPECT(status.text == L"2 saved monitors are not connected: the game stays in one window." && status.tone == Tone::Warning);
-    EXPECT(status.text.size() <= 70 && status.detail.find(L"at least two") != std::wstring::npos);
+    EXPECT(status.text == L"2 saved monitors are not connected: the game will start in split-screen mode." &&
+           status.tone == Tone::Warning);
+    EXPECT(status.text.size() <= 100 && status.detail.find(L"At least 2 of the saved monitors") == 0);
     EXPECT(CanSave(away, notes) && PictureHelp(away, notes).empty());  // another option can still be changed and saved
 
     const std::vector<std::size_t> one{0};
     const Look alone = LookAt(kDesktop, one, 0, 1);
     notes.notConnected = 1;
-    EXPECT(!alone.ok && StatusLine(alone, notes).text == L"1 saved monitor is not connected: the game stays in one window.");
+    EXPECT(!alone.ok && StatusLine(alone, notes).text == L"1 saved monitor is not connected: the game will start in split-screen mode.");
 
     const std::vector<std::size_t> two{0, 1};
     const Look rest = LookAt(kDesktop, two, 0, 1);
     EXPECT(rest.ok && StatusLine(rest, notes).text == L"1 saved monitor is not connected.");
-    EXPECT(StatusLine(rest, notes).detail.find(L"takes the others in") != std::wstring::npos);
+    EXPECT(StatusLine(rest, notes).detail.find(L"use the remaining monitors") != std::wstring::npos);
 
-    // The connected ones make no row: the line is the same, and the hover text gives the reason in place of the wait.
+    // The connected ones make no row: the line is the same, and the hover text says so in place of the wait.
     const std::vector<std::size_t> many{0, 1, 2, 3};
     const Look tooMany = LookAt(kDesktop, many, 0, 1);
     EXPECT(!tooMany.ok && !tooMany.waits);
-    EXPECT(StatusLine(tooMany, notes).text == L"1 saved monitor is not connected: the game stays in one window.");
-    EXPECT(StatusLine(tooMany, notes).detail.find(tooMany.text) == 0);
+    EXPECT(StatusLine(tooMany, notes).text == L"1 saved monitor is not connected: the game will start in split-screen mode.");
+    EXPECT(StatusLine(tooMany, notes).detail.find(L"Unable to arrange the connected monitors") == 0);
 
     // The missing monitors come before the option being off: the row would not form either way.
     notes.spanOn = false;
-    EXPECT(StatusLine(away, notes).text == L"1 saved monitor is not connected: the game stays in one window.");
+    EXPECT(StatusLine(away, notes).text == L"1 saved monitor is not connected: the game will start in split-screen mode.");
     notes.spanOn = true;
 
     // A click on a monitor ends the wait for the file's own: the choice is the player's again, and taking every monitor out

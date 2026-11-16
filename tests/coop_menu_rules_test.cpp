@@ -100,13 +100,13 @@ void RowBytesApartFromTheGame()
 /// Values are the words' places; a value outside them commits nothing; an unknown word has no value.
 void ValuesAndWords()
 {
-    const settings::Option& warps = settings::kBattleWarps;
-    EXPECT(ValueOf(warps, L"players-stay") == 0);
-    EXPECT(ValueOf(warps, L"game") == 2);
-    EXPECT(!ValueOf(warps, L"nonsense").has_value());
-    EXPECT(WordOf(warps, 1) == std::wstring(L"off"));
-    EXPECT(!WordOf(warps, 3).has_value());
-    EXPECT(!WordOf(warps, -1).has_value());
+    const settings::Option& order = settings::kColumnOrder;
+    EXPECT(ValueOf(order, L"123") == 0);
+    EXPECT(ValueOf(order, L"321") == 5);
+    EXPECT(!ValueOf(order, L"nonsense").has_value());
+    EXPECT(WordOf(order, 1) == std::wstring(L"132"));
+    EXPECT(!WordOf(order, 6).has_value());
+    EXPECT(!WordOf(order, -1).has_value());
     for (const settings::Option* option : settings::kOptions)
     {
         for (int value = 0; value < static_cast<int>(option->words.size()); ++value)
@@ -121,7 +121,7 @@ void CommandValues()
 {
     EXPECT(std::get<bool>(CommandValue(control::Shape::OnOff, L"on")));
     EXPECT(!std::get<bool>(CommandValue(control::Shape::OnOff, L"off")));
-    EXPECT(std::get<std::wstring>(CommandValue(control::Shape::Word, L"game")) == L"game");
+    EXPECT(std::get<std::wstring>(CommandValue(control::Shape::Word, L"keeps")) == L"keeps");
     EXPECT(WordOfReading(control::Value{true}) == std::wstring(L"on"));
     EXPECT(WordOfReading(control::Value{false}) == std::wstring(L"off"));
     EXPECT(WordOfReading(control::Value{std::wstring(L"132")}) == std::wstring(L"132"));
