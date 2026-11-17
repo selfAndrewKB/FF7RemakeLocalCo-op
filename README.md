@@ -1,7 +1,7 @@
 # LocalSplitScreen (FF7 Remake)
 
 Split-screen co-op for up to three players in FINAL FANTASY VII REMAKE (Intergrade, UE 4.18), as a UE4SS C++ mod. This page is
-for working on the mod; the page for players is `PLAYERS.md`, which a release ships as its README. Plan and research:
+for working on the mod. Plan and research:
 `../Documentation/plan/README.md` and `../Documentation/research/RE-*.md`.
 
 ## Keys
@@ -178,8 +178,7 @@ same check by hand, and a game term that matches by accident goes in `comment_st
 ## Packaging
 
 `python package.py` builds, runs the host tests and writes `dist/LocalSplitScreen-v<version>.zip`: the folder `LocalSplitScreen` to copy
-into UE4SS's `Mods` folder, with `dlls/main.dll`, the setup app, `PLAYERS.md` as its `README.md`, the licence when the repository has
-one, and an empty `enabled.txt`, which makes UE4SS start the mod without a line in `mods.txt`. `--no-build` zips what is built, and
+into UE4SS's `Mods` folder, with `dlls/main.dll`, the setup app, the licence and its exception, and an empty `enabled.txt`, which makes UE4SS start the mod without a line in `mods.txt`. `--no-build` zips what is built, and
 refuses a DLL that is not this source's version. No settings file is packed: the mod writes it.
 
 ## Layout

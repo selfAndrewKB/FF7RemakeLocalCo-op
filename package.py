@@ -5,7 +5,7 @@
                                    a change to the source without a new version is not seen: build)
 
 The zip holds LocalSplitScreen/ with dlls/main.dll, the setup app, enabled.txt (so UE4SS starts the mod without a line in
-mods.txt), README.md (PLAYERS.md) and the licence when the repository has one. The version is src/mod.cpp's and the setup
+mods.txt) and the licence with its exception when the repository has them. The version is src/mod.cpp's and the setup
 app's name src/views/display_move.h's, the lines the build reads too. No settings file is packed: the mod writes it.
 """
 import argparse
@@ -62,11 +62,12 @@ def main() -> int:
 
     files = [(f"{FOLDER}/dlls/main.dll", dll.read_bytes()),
              (f"{FOLDER}/{setup}", app.read_bytes()),
-             (f"{FOLDER}/enabled.txt", b""),
-             (f"{FOLDER}/README.md", (ROOT / "PLAYERS.md").read_bytes())]
+             (f"{FOLDER}/enabled.txt", b"")]
     licence = next((p for name in ("LICENSE", "LICENSE.md", "LICENSE.txt") if (p := ROOT / name).exists()), None)
     if licence is not None:
         files.append((f"{FOLDER}/{licence.name}", licence.read_bytes()))
+        if (exception := ROOT / "LICENSE-EXCEPTION").exists():
+            files.append((f"{FOLDER}/{exception.name}", exception.read_bytes()))
     else:
         print("note: the repository has no licence file, so the zip carries none")
 
