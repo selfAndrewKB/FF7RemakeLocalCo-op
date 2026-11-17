@@ -211,8 +211,9 @@ per-session cap: a cap once silenced the failure lines it shared a counter with.
 - Build: `cmake --build build --config Game__Shipping__Win64` (the mod's DLL, the setup app and the host tests);
   tests: `ctest --test-dir build -C Game__Shipping__Win64`. Every change builds clean and passes the tests.
 - `python package.py` builds, runs the tests and makes the release zip, with UE4SS's game config for this game
-  (`HookLoadMap = 0`); `--nexus` makes the Nexus Mods one, without the setup app. `python tools/release.py vX.Y.Z`
-  makes both from a tag and creates the GitHub release (the zip and the setup app attached), when the maintainer asks.
+  (`HookLoadMap = 0`); `--nexus` makes the Nexus Mods one, without the setup app. `python tools/release.py vX.Y.Z
+  --notes "..."` makes both from a tag and creates the GitHub release (the zip and the setup app attached) with the
+  maintainer's own description, when the maintainer asks.
 - The repository's checks run at every commit once turned on (`git config core.hooksPath .githooks`):
   `tools/checks/comment_style.py` (the comment rule above) and `tools/checks/code_hygiene.py` (a raw offset outside
   the facts header; a line, value or predicate that already exists; a game global rebased or a pointer hop written in a
@@ -228,7 +229,7 @@ per-session cap: a cap once silenced the failure lines it shared a counter with.
 - **Commits are made by hand,** one step each: read the diffs, stage the files by name, build each step. Never a commit
   script. Never commit someone else's uncommitted work along with yours.
 - A milestone is titled `vX.Y.Z-name: <a plain sentence about what changes for the player>`, with `kVersion` bumped in
-  `src/mod.cpp` and a git tag `vX.Y.Z`.
+  `src/mod.cpp` and a git tag `vX.Y.Z`; a version made for release may carry the plain number.
 - Nothing of the game's goes into a commit: no game files, no decompiled code, no extracted assets, no keys. Addresses
   and offsets are fine.
 - Push only when the maintainer asks, but offer reminders.

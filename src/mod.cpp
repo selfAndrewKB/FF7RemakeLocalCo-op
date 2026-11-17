@@ -71,7 +71,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.226.0-own-hook-arrows";  // the one version string (the log, UE4SS and the setup app)
+constexpr const wchar_t* kVersion = L"1.0.0";  // the one version string (the log, UE4SS and the setup app)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
