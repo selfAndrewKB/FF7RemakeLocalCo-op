@@ -28,9 +28,15 @@
 // Not covered: sequence shakes start on player 1's camera manager only (the game has no path for the others, and the
 // mod does not recreate one), and the Command/LeaderChange flavors' own evaluation of the last active entry
 // (player 1's block).
-// Game thread only (the operator ticks and the sequence actors' ticks).
+// The shots' kinds (research/RE-scene-like-battle-shots.md): each shot's row gives its request a mode, and every
+// operator's apply leaves the mode of the shot it applied in the lists, the byte the game's own summon check reads;
+// AppliedShotMode reads it for the whole-screen rule (views/whole_screen.h). Logged at Debug: each shot's start
+// (the game's starter redirected at its entry, passed through: its row, owner, caller and mode), and while a seat is
+// in, each shot's activity on every player's camera, its stop and its end, on change.
+// Game thread only (the operator ticks and the sequence actors' ticks); a shot started off it is counted, not logged.
 
 #include <cstdint>
+#include <optional>
 
 namespace lss::platform {
 class GameImage;
@@ -41,9 +47,12 @@ namespace lss::battle::sequence_camera {
 bool Install(const platform::GameImage& image) noexcept;
 void Remove() noexcept;
 
-/// Each engine tick: the frame's start (the first operator to evaluate is not known yet) and the straddling cut
-/// redirect placed once from the game thread.
+/// Each engine tick: the last frame's shots logged on change, the frame's start (the first operator to evaluate is not
+/// known yet) and the straddling cut redirect placed once from the game thread.
 void Tick() noexcept;
+
+/// The mode of the shot the operators applied in their last tick (4: none), the game's own byte; empty outside a battle.
+std::optional<std::uint8_t> AppliedShotMode() noexcept;
 
 /// Right after an operator's tick (`seat` 0: player 1's, the game's; else the seat's): its view of each entry's
 /// active byte recorded, and the OR written once every operator in play has ticked this frame.

@@ -1,5 +1,6 @@
 #include "views/whole_screen.h"
 
+#include "battle/sequence_camera.h"
 #include "control/registry.h"
 #include "engine_facts.h"
 #include "platform/guarded.h"
@@ -96,6 +97,9 @@ Signals Read(const void* managerOne) noexcept
     // A summon's introduction: the summon manager's own hold of the call (its event lock), a battle camera sequence the
     // game plays as one moment for the whole party; the summon's fight after it stays split.
     ReadSummon(s);
+    // The battle camera shot the operators applied last tick, by the kind the game gave it: a scene-like one (a phase
+    // change, a summon's entry or special, a boss's finish) plays on every player's camera as one scene.
+    s.shotMode = battle::sequence_camera::AppliedShotMode().value_or(kShotModeNone);
     // The cutscene manager and the field control lock's mask come through the scene camera's read (Scene{} while its
     // globals failed their check: no cutscene, skip, bit or held scene is known then, and so no event camera reason).
     // The lock itself is no reason: a free talk or a pickup holds it, and those play on every view;
@@ -125,14 +129,15 @@ std::wstring SignalsText(const Signals& s)
     }
     return std::format(L"game state {} ({}, menu kind {}), script menu {}, shop {}, pause widget {}, arena {} (minigame bit {}, "
                        L"in battle {}), minigame {} (by {}), cutscene {}, event camera {} (scene held {}), bike {}, skippable {}, skip {}, "
-                       L"black {}, loading {}, title {}, summon state {} (event {})",
+                       L"black {}, loading {}, title {}, summon state {} (event {}), battle shot mode {}",
                        players::game_state::StateName(s.gameState), s.gameState, s.menuKind, s.scriptMenu ? L"on" : L"off",
                        s.shopUp ? L"up" : L"down", s.pauseWidget ? L"alive" : L"none", s.arena ? L"on" : L"off",
                        s.minigameBit ? L"on" : L"off", s.inBattle ? L"yes" : L"no", s.minigame ? L"on" : L"off",
                        players::field_root::OnOffOwnerText(s.minigameAct), s.cutscene ? L"playing" : L"no",
                        s.eventCamera ? L"on" : L"off", s.sceneHeld ? L"yes" : L"no", s.bike ? L"yes" : L"no",
                        s.skippable ? L"on" : L"off", s.skipping ? L"on" : L"off", s.black ? L"on" : L"off",
-                       s.loading ? L"on" : L"off", s.title ? L"yes" : L"no", s.summonState, s.summonEvent);
+                       s.loading ? L"on" : L"off", s.title ? L"yes" : L"no", s.summonState, s.summonEvent,
+                       s.shotMode == kShotModeNone ? std::wstring(L"none") : std::to_wstring(s.shotMode));
 }
 
 }  // namespace
@@ -170,7 +175,8 @@ bool Install(const platform::GameImage& image) noexcept
                   L"camera manager while the field lock or a cutscene holds the players, outside a battle), a cutscene skip, a "
                   L"held black screen, the loading screen and the title are read "
                   L"from the game's own state each tick (the one-window single view's reasons; a free talk or a pickup holding the "
-                  L"field lock alone is none); a summon's introduction by the summon manager's call; "
+                  L"field lock alone is none); a summon's introduction by the summon manager's call; a scene-like battle shot "
+                  L"(a phase change, a summon's entry or special, a boss's finish) by the kind the game gives it; "
                   L"minigames by on/off 36 (held up to {} ticks over the gap between a segment's "
                   L"chained acts), the bike chase by its shared state, the VR simulator's and colosseum's menus by on/off 78 with the "
                   L"minigame bit outside a battle (research/RE-minigame-signal.md)",

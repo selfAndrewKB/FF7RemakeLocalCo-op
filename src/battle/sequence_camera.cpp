@@ -3,10 +3,12 @@
 #include "control/registry.h"
 #include "engine_facts.h"
 #include "platform/call_redirect.h"
+#include "platform/entry_redirect.h"
 #include "platform/game_thread.h"
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
+#include "platform/name_text.h"
 #include "platform/verified_code.h"
 #include "players/field_root.h"
 #include "players/seat_camera.h"
@@ -15,12 +17,16 @@
 #include "players/seats.h"
 
 #include <Windows.h>
+#include <intrin.h>
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <cstdint>
 #include <cstring>
 #include <format>
+#include <optional>
+#include <span>
 #include <string>
 
 namespace lss::battle::sequence_camera {
@@ -36,6 +42,7 @@ using EvalFn      = char (*)(void* a1, void* outPose, void* a3, void* a4, void* 
 using CutChangeFn = std::int64_t (*)(void* sequence, float time, void* params, void* pose);
 using JumpToCutFn = char (*)(void* sequence, std::uint8_t kind, void* a3, void* a4);
 using CutFn       = std::int64_t (*)();
+using PlayFn      = std::int64_t (*)(const std::uint64_t* row, void* owner, void* holder);
 
 constexpr int kMaxPlayers = players::scopes::kMaxPlayers;
 
@@ -76,6 +83,26 @@ platform::CallRedirect g_cutChangeCall;
 platform::CallRedirect g_jumpToCutCall;
 platform::CallRedirect g_cutCall;
 bool                   g_cutPlaced = false;
+platform::EntryRedirect g_play;  // every shot's start, for the log
+
+/// One shot as the log last described it: its entry, id and mode, each operator's active byte, its stop and its end.
+struct Shot
+{
+    const void*   entry = nullptr;
+    std::int32_t  id    = -1;
+    std::uint8_t  mode  = 0;
+    std::uint8_t  bytes[kMaxPlayers]{};
+    bool          seen[kMaxPlayers]{};
+    std::uint8_t  play     = 0;
+    std::uint8_t  finished = 0;
+    bool          here     = false;  // in the frame just walked
+
+    bool Same(const Shot& o) const noexcept
+    {
+        return entry == o.entry && id == o.id && mode == o.mode && play == o.play && finished == o.finished &&
+               std::memcmp(bytes, o.bytes, sizeof(bytes)) == 0 && std::memcmp(seen, o.seen, sizeof(seen)) == 0;
+    }
+};
 
 // Game thread. Index = seat ([0] unused): each seat's copies and counts.
 struct Seat
@@ -90,6 +117,8 @@ int                   g_firstSeat = -1;        // the operator that evaluated fi
 std::uint8_t          g_firstActive[12]{};     // its out pose's active camera weak (index, serial) and valid byte
 std::array<Active, 8> g_actives;
 std::uint32_t         g_seeds = 0, g_unions = 0;
+std::array<Shot, 8>   g_shots;
+std::atomic<std::uint32_t> g_starts{0}, g_startsOffThread{0};  // counted on any thread, read by the console's
 
 /// The operators that must tick in a frame, as bits: player 1's (bit 0) and every seat's whose player holds a
 /// member. Bit 0 alone: the game alone, nothing of this module runs.
@@ -320,13 +349,20 @@ std::int64_t Cut()
     return reinterpret_cast<CutFn>(g_primaryCut)();
 }
 
+/// The battle system's request lists, or null outside a battle.
+std::uint8_t* Lists() noexcept
+{
+    auto*         system = static_cast<std::uint8_t*>(players::field_root::BattleSystem());
+    std::uint8_t* lists  = nullptr;
+    return system != nullptr && Read(system + facts::kBattleSysCamRequests, lists) ? lists : nullptr;
+}
+
 /// Both request lists of the battle system, entry by entry.
 template <class Fn>
 void ForEachEntry(Fn&& fn) noexcept
 {
-    auto*         system = static_cast<std::uint8_t*>(players::field_root::BattleSystem());
-    std::uint8_t* lists  = nullptr;
-    if (system == nullptr || !Read(system + facts::kBattleSysCamRequests, lists) || lists == nullptr)
+    std::uint8_t* const lists = Lists();
+    if (lists == nullptr)
     {
         return;
     }
@@ -346,7 +382,171 @@ void ForEachEntry(Fn&& fn) noexcept
     }
 }
 
-/// Each seat's swaps, cuts and captures; the frame seeds and the active-byte unions.
+/// What a shot's mode means (research/RE-scene-like-battle-shots.md), for the log.
+const wchar_t* ModeText(std::uint8_t mode) noexcept
+{
+    switch (mode)
+    {
+        case 0: return L"plays for the player it involves";
+        case 1: return L"plays for every player, a command menu takes a view back";
+        case 2: return L"plays for its user";
+        case 3: return L"scene-like, plays for every player";
+        default: return L"unknown";
+    }
+}
+
+/// An actor's name, and whose member it is when a player's.
+std::wstring WhoText(const void* actor)
+{
+    if (actor == nullptr)
+    {
+        return L"none";
+    }
+    std::uint64_t bits = 0;
+    std::wstring  text = Read(static_cast<const std::uint8_t*>(actor) + facts::kObjectName, bits) ? platform::NameOrBits(bits) : L"?";
+    for (int seat = 0; seat <= kSeatsBuilt; ++seat)
+    {
+        if (players::scopes::Member(seat) == actor)
+        {
+            return std::format(L"{} ({}'s member)", text, SeatName(seat));
+        }
+    }
+    return text;
+}
+
+/// The entry whose sequence carries `id`, or null.
+std::uint8_t* EntryOf(std::int32_t id) noexcept
+{
+    std::uint8_t* found = nullptr;
+    ForEachEntry([&found, id](std::uint8_t* entry) {
+        const auto*  sequence = static_cast<const std::uint8_t*>(Sequence(entry));
+        std::int32_t own      = -1;
+        if (found == nullptr && sequence != nullptr && Read(sequence + facts::kSeqSequenceId, own) && own == id)
+        {
+            found = entry;
+        }
+    });
+    return found;
+}
+
+/// BattleCamera_PlaySequenceForOwner: every battle shot's start, logged with its row, its owner, its starter (the call's
+/// return address, as IDA names it) and the mode the game gave it. The game's function runs unchanged.
+std::int64_t Play(const std::uint64_t* row, void* owner, void* holder)
+{
+    const auto         from = reinterpret_cast<std::uintptr_t>(_ReturnAddress());
+    const std::int64_t id   = reinterpret_cast<PlayFn>(g_play.Original())(row, owner, holder);
+    if (!platform::OnGameThread())
+    {
+        g_startsOffThread.fetch_add(1, std::memory_order_relaxed);
+        return id;
+    }
+    g_starts.fetch_add(1, std::memory_order_relaxed);
+    if (!platform::Enabled(platform::Level::Debug))
+    {
+        return id;
+    }
+    try
+    {
+        std::uint64_t rowName = 0;
+        Read(row, rowName);
+        const auto          shot     = static_cast<std::int32_t>(id);  // -1: no shot (no row, no sequence)
+        const std::uint8_t* entry    = shot != -1 ? EntryOf(shot) : nullptr;
+        const std::uint8_t* data     = nullptr;
+        std::uint8_t        mode     = 0xFF;
+        std::uint8_t        priority = 0xFF;
+        if (entry != nullptr && Read(entry + facts::kSeqEntryMode, mode) && Read(entry + facts::kSeqEntryRow, data) && data != nullptr)
+        {
+            Read(data + facts::kSeqRowPriorityType, priority);
+        }
+        platform::LogDebug(L"battle shot: {} started by {}{} (called from 0x{:X}): id {}, priority type {}, mode {} ({})",
+                           platform::NameOrBits(rowName), WhoText(owner),
+                           holder != nullptr && holder != owner ? L", held by " + WhoText(holder) : std::wstring(),
+                           platform::IdaAddress(from), shot, priority, mode, entry != nullptr ? ModeText(mode) : L"no entry");
+    }
+    catch (...)
+    {
+    }
+    return id;
+}
+
+/// The frame just ticked: each shot's activity on every operator, its stop and its end, logged when it changes (the
+/// records AfterOperatorTick kept, so only while a seat is in and the operators tick). A frame with no record (the
+/// operators did not tick) changes nothing; a kept shot with no record is gone only once its entry has left the lists.
+void WatchShots() noexcept
+{
+    if (!platform::Enabled(platform::Level::Debug) ||
+        std::none_of(g_actives.begin(), g_actives.end(), [](const Active& record) { return record.entry != nullptr && record.frame == g_frame; }))
+    {
+        return;
+    }
+    for (Shot& kept : g_shots)
+    {
+        kept.here = false;
+    }
+    for (const Active& record : g_actives)
+    {
+        const auto* sequence = record.entry != nullptr && record.frame == g_frame ? static_cast<const std::uint8_t*>(Sequence(record.entry)) : nullptr;
+        Shot        now;
+        now.entry = record.entry;
+        if (sequence == nullptr || !Read(sequence + facts::kSeqSequenceId, now.id))
+        {
+            continue;
+        }
+        Read(static_cast<const std::uint8_t*>(record.entry) + facts::kSeqEntryMode, now.mode);
+        Read(sequence + facts::kSeqPlayState, now.play);
+        Read(sequence + facts::kSeqFinished, now.finished);
+        std::memcpy(now.bytes, record.bytes, sizeof(now.bytes));
+        std::memcpy(now.seen, record.seen, sizeof(now.seen));
+        now.here = true;
+        Shot* slot = nullptr;
+        for (Shot& kept : g_shots)
+        {
+            if (kept.entry == now.entry && kept.id == now.id)
+            {
+                slot = &kept;
+                break;
+            }
+            if (slot == nullptr && kept.entry == nullptr)
+            {
+                slot = &kept;
+            }
+        }
+        if (slot == nullptr)
+        {
+            continue;  // more shots at once than the log follows
+        }
+        if (!slot->Same(now))
+        {
+            try
+            {
+                std::wstring active;
+                for (int seat = 0; seat < kMaxPlayers; ++seat)
+                {
+                    if (now.seen[seat])
+                    {
+                        active += std::format(L"{}{}'s camera {}", active.empty() ? L"" : L", ", SeatName(seat), now.bytes[seat] != 0 ? L"yes" : L"no");
+                    }
+                }
+                platform::LogDebug(L"battle shot {} (mode {}): active on {}; {}{}", now.id, now.mode, active.empty() ? L"no camera read" : active,
+                                   now.play == facts::kSeqPlayStateStopped ? L"stopped" : L"playing", now.finished != 0 ? L", finished" : L"");
+            }
+            catch (...)
+            {
+            }
+        }
+        *slot = now;
+    }
+    for (Shot& kept : g_shots)
+    {
+        if (kept.entry != nullptr && !kept.here && EntryOf(kept.id) == nullptr)
+        {
+            platform::LogDebug(L"battle shot {}: gone from the game's list", kept.id);
+            kept = Shot{};
+        }
+    }
+}
+
+/// Each seat's swaps, cuts and captures; the frame seeds and the active-byte unions; the shots started.
 std::wstring Reading()
 {
     std::wstring text;
@@ -355,7 +555,9 @@ std::wstring Reading()
         const Seat& s = g_seats[seat];
         text += std::format(L"{}: swaps {}, cuts to its own view {}, captures {}; ", SeatName(seat), s.swaps, s.cuts, s.captures);
     }
-    return text + std::format(L"seeds {}, unions {}", g_seeds, g_unions);
+    return text + std::format(L"seeds {}, unions {}; battle shots started {} ({} off the game thread){}", g_seeds, g_unions,
+                              g_starts.load(std::memory_order_relaxed), g_startsOffThread.load(std::memory_order_relaxed),
+                              g_play.IsInstalled() ? L"" : L" (their start is not followed)");
 }
 
 }  // namespace
@@ -401,7 +603,30 @@ bool Install(const platform::GameImage& image) noexcept
                        .get  = [] { return control::Value{Reading()}; }});
     platform::Log(L"sequence camera: installed; each seat's operator evaluates sequence cameras on its own copy of their state");
     g_installed.store(true, std::memory_order_relaxed);
+    // The shots' start, for the log only: a single instruction swapped atomically, so any thread may be inside.
+    const auto play = platform::FindFunction(image, facts::kSeqPlayForOwner);
+    if (!play || !g_play.Install(*play, std::span(facts::kSeqPlayForOwnerEntry.data(), facts::kSeqPlayForOwnerFirst),
+                                 reinterpret_cast<std::uintptr_t>(&Play)))
+    {
+        platform::Log(L"sequence camera: a battle shot's start could not be followed; its activity and end are still logged");
+    }
+    else
+    {
+        platform::Log(L"sequence camera: each battle shot's start is logged (its row, owner and mode), and while a seat is in, its "
+                      L"activity on each player's camera and its end");
+    }
     return true;
+}
+
+std::optional<std::uint8_t> AppliedShotMode() noexcept
+{
+    std::uint8_t* const lists = Lists();
+    std::uint8_t        mode  = 0;
+    if (lists == nullptr || !Read(lists + facts::kSeqListsAppliedMode, mode))
+    {
+        return std::nullopt;
+    }
+    return mode;
 }
 
 void Remove() noexcept
@@ -413,6 +638,7 @@ void Remove() noexcept
         platform::Log(L"sequence camera: the cut call is left in place (not on the game thread, or changed after us); it "
                       L"passes the game's cut through");
     }
+    g_play.Restore();
     g_applyCall.Restore();
     g_jumpToCutCall.Restore();
     g_cutChangeCall.Restore();
@@ -421,6 +647,7 @@ void Remove() noexcept
 
 void Tick() noexcept
 {
+    WatchShots();
     ++g_frame;
     g_firstSeat = -1;
     if (!g_cutPlaced && g_cutSite != 0)

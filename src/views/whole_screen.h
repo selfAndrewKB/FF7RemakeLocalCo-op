@@ -43,6 +43,11 @@
 //     the summon's entry ends and the battle resumes (research/RE-summon-seats.md); a battle camera sequence the game
 //     plays as one moment for the whole party, whoever called; the summon's fight stays split, and its departure is a
 //     cutscene of the game's own;
+//   - a scene-like battle camera shot, in a battle: the kind the game gives each shot from its row, read as the game's
+//     own summon check reads it (battle/sequence_camera.h AppliedShotMode; research/RE-scene-like-battle-shots.md).
+//     The scene-like kind plays on every player's camera and over the command menu: a boss's phase change, a summon's
+//     entry or special, a boss's finish. Grabs and targeted specials, limit breaks and stagger shots play from a
+//     player's side and stay split. Read one tick late (the operators' last apply);
 //   - the title, by the field root's location name.
 // Read once per engine tick before the session (Tick): logged at Info when something takes the whole screen or lets
 // go, at Debug for a reason changing within a moment, for the hold over a gap between acts, and for each change of

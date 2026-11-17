@@ -1752,6 +1752,17 @@ inline constexpr std::uint32_t kSeqCameraHistory         = 0xBF0;
 inline constexpr std::uint32_t kSeqCameraHistoryBytes    = 0xB8;
 inline constexpr std::uint32_t kSeqCameraLatchBytes      = 7;
 inline constexpr std::uint32_t kSeqOutPoseActiveWeak     = 0x38;   // the operator's out pose (op+0x3A8): the active camera weak (index, serial), valid byte at +0x40
+
+// The shot's kind (RE-scene-like-battle-shots.md): an entry's mode byte is `{0,2,3,1}[row PriorityType]`, and each
+// operator's apply writes the mode of the shot it applied to the lists (4 first: none), which the game's own summon
+// check and leader-change camera read. Mode 3 is active on every operator: the phase changes, the summons' entries
+// and specials, the boss finish.
+inline constexpr std::uint32_t kSeqListsAppliedMode      = 0x50;
+inline constexpr std::uint32_t kSeqEntryRow              = 0x00;   // the BattleCameraSequence row
+inline constexpr std::uint32_t kSeqEntryMode             = 0x18;
+inline constexpr std::uint32_t kSeqRowPriorityType       = 0x08;
+inline constexpr std::uint32_t kSeqSequenceId            = 0x470;  // the id the starter returns
+inline constexpr std::uint32_t kSeqFinished              = 0x474;  // set when the blend-out ends; the battle tick prunes the entry
 inline constexpr std::uint32_t kCameraManagerCachePointer = 0x22F8;  // AEndPlayerCameraManager: the cached view, when set
 inline constexpr std::uint32_t kCameraManagerInlineCache  = 0x1E48;  // else its inline cache
 inline constexpr std::uint32_t kCameraCachePov            = 0x480;   // the POV block inside the cache (0x30 bytes)
@@ -1779,6 +1790,12 @@ inline constexpr std::uintptr_t kSeqCutRaiseCall = 0x140A15E2D;  // E8 3E DF 5B 
 inline constexpr std::array<std::uint8_t, 16> kSeqCutPrimaryEntry{
     0x48, 0x83, 0xEC, 0x28, 0xE8, 0x37, 0x4B, 0x8E, 0x00, 0x48, 0x85, 0xC0, 0x74, 0x0A, 0x81, 0x88};
 inline constexpr platform::FunctionFact kSeqCutPrimary{L"PrimaryPCM_SetCameraCutBit400", 0x140DB29E0, kSeqCutPrimaryEntry};
+/// BattleCamera_PlaySequenceForOwner(const FName* row, AActor* owner, AActor* holder): every battle shot's start; returns
+/// the sequence's id or -1.
+inline constexpr std::array<std::uint8_t, 16> kSeqPlayForOwnerEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x20, 0x55, 0x56, 0x57, 0x41, 0x54, 0x41, 0x55, 0x41, 0x56, 0x41, 0x57};
+inline constexpr platform::FunctionFact kSeqPlayForOwner{L"BattleCamera_PlaySequenceForOwner", 0x1409FD5B0, kSeqPlayForOwnerEntry};
+inline constexpr std::size_t            kSeqPlayForOwnerFirst = 5;  // mov [rsp+20h], rbx
 
 // --- The battle switch (RE-battle-switch.md §4) -----------------------------------------------------------------
 // BattleSystem_CycleLeader walks the members from the leader; BattleSystem_CanSwitchLeader counts them. Each fetches

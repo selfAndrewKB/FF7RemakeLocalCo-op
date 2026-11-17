@@ -92,6 +92,21 @@ void EachSignal()
     s.summonState = 0;
     s.summonEvent = kSummonEventCall;  // a reset that zeroes the state but leaves the lock: not a summon's call
     EXPECT(ReasonOf(s) == Reason::None);
+    // A battle shot: the scene-like kind takes the screen in a battle; the kinds played from a player's side (grabs 0,
+    // stagger 1, limits 2) and no shot do not; outside a battle no byte counts.
+    s          = Readable();
+    s.inBattle = true;
+    s.shotMode = kShotModeScene;
+    EXPECT(ReasonOf(s) == Reason::SceneShot);
+    for (const std::uint8_t mode : {std::uint8_t{0}, std::uint8_t{1}, std::uint8_t{2}, kShotModeNone})
+    {
+        s.shotMode = mode;
+        EXPECT(ReasonOf(s) == Reason::None);
+    }
+    s.shotMode = kShotModeScene;
+    s.inBattle = false;
+    EXPECT(ReasonOf(s) == Reason::None);
+    EXPECT(Readable().shotMode == kShotModeNone);
     s          = Readable();
     s.cutscene = true;
     EXPECT(ReasonOf(s) == Reason::Cutscene);
@@ -136,6 +151,17 @@ void Order()
     EXPECT(ReasonOf(summon) == Reason::SummonCall);
     summon.gameState = kStatePauseMenu;
     EXPECT(ReasonOf(summon) == Reason::PauseMenu);
+    // A scene-like shot: the summon's call names the moment it starts; the shot over the cutscene that follows it; a
+    // battle pause over both.
+    auto shot     = Readable();
+    shot.inBattle = true;
+    shot.shotMode = kShotModeScene;
+    shot.cutscene = true;
+    EXPECT(ReasonOf(shot) == Reason::SceneShot);
+    shot.summonState = kSummonStateCall;
+    EXPECT(ReasonOf(shot) == Reason::SummonCall);
+    shot.gameState = kStatePauseMenu;
+    EXPECT(ReasonOf(shot) == Reason::PauseMenu);
     auto s      = Readable();
     s.gameState = kStateCinemaPause;
     s.cutscene  = true;

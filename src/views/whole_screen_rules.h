@@ -5,13 +5,21 @@
 // names the game state behind each one). The reason is what the one-window single view collapses the split for
 // (players/single_view.h; views/column_source.h Why::WholeScreen): the menus, the cutscenes, the minigames the game's
 // own signals pick up, the scripted talks and events that take the game's event camera (not a free talk in the field
-// camera or a field pickup, which hold the field control lock only; those play on every view), and a summon's
-// introduction. The signals and their order: research/RE-lifecycle-world.md, research/RE-summon-seats.md.
+// camera or a field pickup, which hold the field control lock only; those play on every view), a summon's
+// introduction, and the battle camera shots the game itself plays as scenes. The signals and their order:
+// research/RE-lifecycle-world.md, research/RE-summon-seats.md, research/RE-scene-like-battle-shots.md.
 
 #include <cstdint>
 #include <string_view>
 
 namespace lss::views::whole_screen {
+
+/// The battle camera shots' modes (research/RE-scene-like-battle-shots.md): the game gives each shot one from its
+/// row. Mode 3 is the scene-like kind: active on every player's camera, shown over the command menu, no summon
+/// while it plays: a boss's phase change, a summon's entry or special, a boss's finish. The other modes play from a
+/// player's side and stay split: 0 grabs and targeted specials, 2 limit breaks, 1 stagger shots.
+inline constexpr std::uint8_t kShotModeScene = 3;
+inline constexpr std::uint8_t kShotModeNone  = 4;  // no shot applied
 
 /// The game's signals, as read this tick.
 struct Signals
@@ -40,9 +48,17 @@ struct Signals
     bool title       = false;  // the field root's location is the title's
     std::uint8_t summonState = 0;  // the summon manager's state (0 without a manager; 5 a summon's call, 6 a summon present)
     std::uint8_t summonEvent = 0;  // the event lock it holds (1 the call's introduction, 2 the departing summon's cutscene)
+    std::uint8_t shotMode    = kShotModeNone;  // the mode of the battle camera shot the operators applied last tick
+                                               // (none also outside a battle)
 
     bool operator==(const Signals&) const noexcept = default;  // every field (the log's change test)
 };
+
+/// A scene-like battle shot plays, in a battle (outside one the battle system is gone and nothing is read).
+constexpr bool SceneShot(const Signals& s) noexcept
+{
+    return s.inBattle && s.shotMode == kShotModeScene;
+}
 
 /// The summon manager's states and event lock (research/RE-summon-seats.md, the introduction's section).
 inline constexpr std::uint8_t kSummonStateCall    = 5;
@@ -71,6 +87,7 @@ enum class Reason : std::uint8_t
     Minigame,        // on/off 36
     Bike,            // a bike chase (chapters 4 and 18)
     SummonCall,      // a summon's introduction (the summon manager's call and its event lock)
+    SceneShot,       // a scene-like battle camera shot (mode 3)
     Cutscene,        // the cutscene manager playing
     EventCamera,     // the event camera on player 1's manager while a scene holds the players, outside a battle (a
                      // scripted talk's angles, an event; a rail camera in free play is none)
@@ -140,6 +157,10 @@ constexpr Reason ReasonOf(const Signals& s) noexcept
     {
         return Reason::SummonCall;
     }
+    if (SceneShot(s))
+    {
+        return Reason::SceneShot;
+    }
     if (s.cutscene)
     {
         return Reason::Cutscene;
@@ -205,6 +226,7 @@ constexpr const wchar_t* NameOf(Reason reason) noexcept
         case Reason::Minigame: return L"a minigame (on/off 36)";
         case Reason::Bike: return L"a bike chase";
         case Reason::SummonCall: return L"a summon's introduction";
+        case Reason::SceneShot: return L"a scene-like battle shot (mode 3: a phase change, a summon's entry or special, a boss's finish)";
         case Reason::Cutscene: return L"a cutscene";
         case Reason::EventCamera: return L"an event camera (a scripted talk, an event; slot 18 on player 1's manager)";
         case Reason::SkippableScene: return L"a skippable scene (on/off 12)";
