@@ -10,7 +10,8 @@
     python tools/game.py quit                       players 3 and 2 leave, then the engine's quit; waits for the exit
     python tools/game.py relaunch [--deploy [--label v0.8.0]] [--no-launch]
                                                     quit, optionally install the build (hash-checked, backed up) and
-                                                    the setup app, keep the old UE4SS.log, launch, wait for the console
+                                                    the setup app and set console = on in the settings file, keep the
+                                                    old UE4SS.log, launch, wait for the console
     python tools/game.py load-save                  from the title screen: any button, Continue, Yes; waits on the
                                                     mod's game.state / field.step readings for the load
     python tools/game.py shot [--out file] [--width 1280]
@@ -26,6 +27,7 @@ The game is found through Steam's library list; FF7R_GAME_DIR (the game's End/Bi
 Screenshots go to LSS_SHOTS_DIR, else a folder in the temp directory.
 """
 import argparse
+import ctypes
 import hashlib
 import os
 import pathlib
@@ -87,6 +89,7 @@ def ps_quote(path: pathlib.Path) -> str:
     """`path` as a PowerShell single-quoted string (a quote inside doubled)."""
     return "'" + str(path).replace("'", "''") + "'"
 MOD_DIR   = GAME_DIR / "ue4ss" / "Mods" / "LocalSplitScreen"
+SETTINGS_FILE = "LocalSplitScreen.ini"  # src/platform/settings.h kFileName
 UE4SS_LOG = GAME_DIR / "ue4ss" / "UE4SS.log"
 TOOLS     = pathlib.Path(__file__).resolve().parent
 BUILD_DLL = TOOLS.parent / "build" / "Game__Shipping__Win64" / "LocalSplitScreen.dll"
@@ -165,7 +168,8 @@ def connect(timeout: float = 120.0):
     try:
         return Console(timeout)
     except OSError:
-        sys.exit(f"the mod is not listening on {HOST}:{PORT} (is the game running with the mod?)")
+        sys.exit(f"the mod is not listening on {HOST}:{PORT} (is the game running with the mod, and is console = on under "
+             f"[Development] in {MOD_DIR / SETTINGS_FILE}? relaunch --deploy sets it)")
 
 
 def game_process():
@@ -382,7 +386,13 @@ def deploy(label: str) -> int:
                 print(f"installed {setup.name} (the app is open: its old file is set aside as {aside.name})")
             except OSError as error:
                 print(f"{setup.name} is running and could not be set aside ({error}): the installed one was NOT replaced")
-    # No settings file is copied: the mod writes LocalSplitScreen.ini itself from its options at every start.
+    # No settings file is copied: the mod writes LocalSplitScreen.ini itself from its options at every start. Only the
+    # console's key is set, through the profile API the mod reads with, so the build installed here opens its console.
+    settings = MOD_DIR / SETTINGS_FILE
+    if ctypes.windll.kernel32.WritePrivateProfileStringW("Development", "console", "on", str(settings)):
+        print("console = on in the settings file")
+    else:
+        print(f"console = on could not be written to {settings}: the tools cannot reach this build")
     built, now = sha256(BUILD_DLL), sha256(installed)
     print(f"installed {now[:8]}")
     if built != now:

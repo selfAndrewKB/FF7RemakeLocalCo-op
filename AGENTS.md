@@ -210,7 +210,8 @@ per-session cap: a cap once silenced the failure lines it shared a counter with.
 
 - Build: `cmake --build build --config Game__Shipping__Win64` (the mod's DLL, the setup app and the host tests);
   tests: `ctest --test-dir build -C Game__Shipping__Win64`. Every change builds clean and passes the tests.
-- `python package.py` builds, runs the tests and makes the release zip.
+- `python package.py` builds, runs the tests and makes the release zip, with UE4SS's game config for this game
+  (`HookLoadMap = 0`); `--nexus` makes the Nexus Mods one, without the setup app.
 - The repository's checks run at every commit once turned on (`git config core.hooksPath .githooks`):
   `tools/checks/comment_style.py` (the comment rule above) and `tools/checks/code_hygiene.py` (a raw offset outside
   the facts header; a line, value or predicate that already exists; a game global rebased or a pointer hop written in a
@@ -234,7 +235,8 @@ per-session cap: a cap once silenced the failure lines it shared a counter with.
 ## Driving the game
 
 - Close the game before installing a DLL (it holds the file open), and close it at the end of a task.
-  `python tools/game.py relaunch --deploy --label <name>` installs and starts it (`--no-launch` to install only).
+  `python tools/game.py relaunch --deploy --label <name>` installs and starts it (`--no-launch` to install only), and
+  turns on the development console the tools use (`console = on` under `[Development]`; off by default).
 - Install only this mod's DLL and the setup app, never the `UE4SS.dll` this build produces.
 - The tools run from the repository with Python 3.11 or later; each one's first lines say how to use it. They find
   the game through Steam's library list and their helpers where those install by default; to point them elsewhere:

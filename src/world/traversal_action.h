@@ -139,6 +139,10 @@ bool PlayerOneMoveHolds(std::uint32_t mask) noexcept;
 /// redirected (any thread).
 bool HookShotReady() noexcept;
 
+/// The seat whose member's field-action component the game thread ticks now (its actions start and end inside that
+/// tick: a grappling hook's flight among them); 0 for player 1's, for none, or off the game thread.
+int ActingSeat() noexcept;
+
 /// For one seat's run of the game's target pick or walk-up start (game thread; opened before the seat's Leader scope,
 /// which would make player 1's leader read as the seat's member): the game's "no new action" switch (OnOff 4, a count)
 /// as the seat's own play sees it. The seat's own running action's share is added, as the game's action start adds it

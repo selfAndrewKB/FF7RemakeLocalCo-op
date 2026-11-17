@@ -20,12 +20,22 @@
 // the game tick), so its arrow turns toward the hook point from the seat's camera; hud/pass_hide.h shows each search
 // widget only in its owner's view (OwnerSeat). An area's EndPlay clears every seat's arrow of it with the game's own
 // clear, the game mode's reset clears the seats' slots where it clears player 1's, and a seat's slot is cleared when its
-// player leaves or changes local player. Player 1's slot, flags and arrows stay the game's own throughout; only in a
+// player leaves or changes local player.
+//
+// A hook point used once shows no guide arrow again: every flight's start marks the area in use (facts::kFieldActionInUse),
+// its enter and re-show make no arrow while it is marked, and the mark never clears before the level reloads
+// (research/RE-hookshot-in-use.md). The mark is one per area, so player 1's flight alone would take the arrow from players
+// 2 and 3. Each seat keeps its own copy of the mark beside its flag and arrow: a flight a seat's member starts (inside that
+// seat's action tick, world/traversal_action.h ActingSeat) marks only the seat's copy, the area's own mark staying player
+// 1's, and the seat's copy is put into the area for its enter and re-show. A switched-off area is left as it is for
+// everyone. A seat's marks outlive its slot's clears and last until the area ends, as the area's own does. Player 1's
+// slot, flags and arrows stay the game's own throughout; only in a
 // mirror's own HUD pass are player 1's arrows placed again through the mirror's camera, and put back for player 1's pass
 // (PlaceForMirror). Switch
 // `search-arrows` (on: each player's own; off: the game's one arrow, as before). Game thread only.
 // Logged: Info at install and at the switch; Debug per enter, leave, focus, re-show and EndPlay of a seat (the flag and
-// arrow before and after, the seat's and player 1's arrow counts) and when a seat's slot is made or cleared; Trace per
+// arrow before and after, the seat's and player 1's arrow counts), per seat's flight that marks its copy, and when a
+// seat's slot is made or cleared; Trace per
 // stay; Warning when an arrow made for a seat is not owned by its player (cleared at once), when a seat's slot cannot be
 // made (its calls then stay the game's, not retried) and when a put-back fails; the `world.search-arrows` reading.
 
@@ -37,8 +47,8 @@ class GameImage;
 
 namespace lss::world::search_arrows {
 
-/// Checks the six area functions, the slot's functions and the allocator, and replaces the six slots (logged; false
-/// unless all six were placed, and then none is kept).
+/// Checks the seven area functions (the six above and the in-use mark), the slot's functions and the allocator, and
+/// replaces the seven slots (logged; false unless all seven were placed, and then none is kept).
 bool Install(const platform::GameImage& image) noexcept;
 
 /// The slots back; on the game thread also the seats' arrows cleared and the reset call put back.

@@ -1710,6 +1710,11 @@ bool HookShotReady() noexcept
     return g_hookShotReady && Scoping();
 }
 
+int ActingSeat() noexcept
+{
+    return TickingSeat();
+}
+
 bool Scoping() noexcept
 {
     return g_onGame.load(std::memory_order_relaxed) && g_locksOk.load(std::memory_order_relaxed);

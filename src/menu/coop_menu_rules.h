@@ -76,7 +76,7 @@ inline std::vector<Category> BuildPage()
     std::vector<Category> page;
     for (std::size_t i = 0; i < settings::kOptions.size(); ++i)
     {
-        if (settings::kOptions[i]->appOnly)
+        if (!settings::OnCoopPage(*settings::kOptions[i]))
         {
             continue;
         }

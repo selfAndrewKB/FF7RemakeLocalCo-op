@@ -2995,6 +2995,14 @@ inline constexpr std::uint32_t  kSearchSlotMapNum = 0x38, kSearchSlotMapBits = 0
 inline constexpr std::uint32_t  kHookAreaIface = 0x3C8;
 inline constexpr std::uint32_t  kHookAreaFields = 0x638, kHookAreaFieldsBytes = 16;  // the flag (u8), padding, the arrow (widget*)
 inline constexpr std::uint32_t  kHookAreaArrow = 0x640;
+/// A field-action actor's in-use value (i32; research/RE-hookshot-in-use.md): 0 free, 1 in use, 2 switched off. Every
+/// flight's start sets 1 through vtable +0x660; the one clear (+0x668, from the flight's exit) needs the point's user list
+/// empty, and the finishing user is still on it then, so a hook point's 1 stays until the level reloads. Its enter and its
+/// target-lost re-show make no arrow unless it is 0: a used point shows no guide arrow again.
+inline constexpr std::uint32_t  kFieldActionInUse    = 0x4FC;
+inline constexpr std::int32_t   kFieldActionInUseOff = 2;
+inline constexpr std::array<std::uint8_t, 16> kFieldActionSetInUseEntry{
+    0xC7, 0x81, 0xFC, 0x04, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0xC3, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC};
 inline constexpr std::array<std::uint8_t, 16> kHookAreaEnterEntry{
     0x40, 0x55, 0x41, 0x56, 0x41, 0x57, 0x48, 0x8D, 0x6C, 0x24, 0xB9, 0x48, 0x81, 0xEC, 0xD0, 0x00};
 inline constexpr std::array<std::uint8_t, 16> kHookAreaStayEntry{
@@ -3019,6 +3027,8 @@ inline constexpr platform::SlotFact kHookAreaTargetLost{L"the hook area's target
     {L"HookShotChild_vt6C0_OnTargetLost_ShowSearchIfLeaderIdle", 0x140F2B2D0, kHookAreaTargetLostEntry}};
 inline constexpr platform::SlotFact kHookAreaEndPlay{L"the hook area's EndPlay (vtable +0x4D0)", 0x144BA3DA8,
     {L"HookShotChild_vt4D0_EndPlay_ClearSearchWidget", 0x140F2AF10, kHookAreaEndPlayEntry}};
+inline constexpr platform::SlotFact kHookAreaSetInUse{L"the hook point's in-use mark at a flight's start (vtable +0x660)", 0x144BA3F38,
+    {L"FieldActionBase_vt660_SetState4FC_InUse", 0x140ECE740, kFieldActionSetInUseEntry}};
 /// The slot's own functions (each takes the slot object), the bit array's init the constructor calls on the map's
 /// allocation bits (void(bits, bool value, int32 count)), and the one ClearAll of player 1's slot in the game mode's reset
 /// (crosses a block).

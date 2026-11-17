@@ -72,7 +72,7 @@ void PageFromTheTable()
     std::size_t onPage = 0;
     for (const settings::Option* option : settings::kOptions)
     {
-        onPage += option->appOnly ? 0 : 1;
+        onPage += settings::OnCoopPage(*option) ? 1 : 0;
     }
     EXPECT(rows.size() == onPage);
     EXPECT(std::wcscmp(page[0].text.label, L"Screens") == 0);

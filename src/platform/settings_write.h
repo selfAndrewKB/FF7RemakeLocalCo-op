@@ -88,8 +88,9 @@ inline std::wstring FileText(std::span<const Reading, kOptions.size()> readings)
         L"LocalSplitScreen (FF7 Remake): the mod's settings, read once when the game starts. The mod writes this file "
         L"itself at every start, from its own list of options, so every option here is current: change a value after an "
         L"\"=\" and the next start reads it. Comments added here are not kept, and an option the mod no longer has is "
-        L"dropped. A choice made on the Co-op page is saved here at once. Every option is also a console command of the "
-        L"same name, for the session only. A value's case, spaces and commas do not matter; a value that is none of the "
+        L"dropped. A choice made on the Co-op page is saved here at once. Every option of the Co-op page is also a "
+        L"console command of the same name, for the session only. A value's case, spaces and commas do not matter; a "
+        L"value that is none of the "
         L"option's words is kept as written, with a note, and the option takes its default.");
     const wchar_t* section = nullptr;
     for (std::size_t i = 0; i < kOptions.size(); ++i)

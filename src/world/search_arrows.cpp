@@ -15,6 +15,7 @@
 #include "players/seats.h"
 #include "players/weak_object.h"
 #include "world/target_icons.h"
+#include "world/traversal_action.h"
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -59,24 +60,28 @@ enum Call : std::size_t
     Focus,
     Lost,
     EndPlay,
+    MarkInUse,
     kCalls,
 };
 
 constexpr std::array<const platform::SlotFact*, kCalls> kFacts{&facts::kHookAreaEnter,      &facts::kHookAreaStay,
                                                                 &facts::kHookAreaLeave,      &facts::kHookAreaFocusClear,
-                                                                &facts::kHookAreaTargetLost, &facts::kHookAreaEndPlay};
-constexpr std::array<const wchar_t*, kCalls> kCallNames{L"enter", L"stay", L"leave", L"focus clear", L"re-show", L"EndPlay"};
+                                                                &facts::kHookAreaTargetLost, &facts::kHookAreaEndPlay,
+                                                                &facts::kHookAreaSetInUse};
+constexpr std::array<const wchar_t*, kCalls> kCallNames{L"enter", L"stay", L"leave", L"focus clear", L"re-show", L"EndPlay",
+                                                        L"in-use mark"};
 
 constexpr int         kSeats   = players::scopes::kMaxPlayers;
 constexpr std::size_t kRecords = 32;  // hook areas a seat holds a flag or an arrow of (a level has a handful)
 using Fields                   = std::array<std::uint8_t, facts::kHookAreaFieldsBytes>;
 
-/// A seat's copy of one hook area's flag and arrow.
+/// A seat's copy of one hook area's flag and arrow, and of its in-use mark (1 once that seat's member flew from it).
 struct Record
 {
-    void*  actor = nullptr;
-    Weak   id{};
-    Fields fields{};
+    void*        actor = nullptr;
+    Weak         id{};
+    Fields       fields{};
+    std::int32_t inUse = 0;
 };
 
 struct Seat
@@ -89,6 +94,7 @@ struct Seat
     bool                          slotFailed = false;  // its slot could not be made: its calls stay the game's (not retried)
     bool                          fellBack   = false;  // a call of its ran on player 1's objects (logged once)
     std::uint32_t enters = 0, leaves = 0, focus = 0, lost = 0, endPlays = 0, cleared = 0, notOwned = 0, full = 0;
+    std::uint32_t flights = 0, sharedMarks = 0;  // in-use marks kept as the seat's own; marks left shared (no record)
     std::uint64_t passTicks = 0, gameTicks = 0;
 };
 
@@ -276,9 +282,50 @@ private:
     bool  held_  = false;
 };
 
+/// The area's in-use mark exchanged with a seat's copy for the scope's life, then the area's own put back. A switched-off
+/// area (2) is everyone's: left as it is. A value the game wrote into the area meanwhile (a flight started on another
+/// thread) is the area's and is kept; one equal to the seat's copy cannot be told apart and is lost, so player 1's arrow
+/// may come back at a point that seat has used too.
+class InUseIn
+{
+public:
+    InUseIn(void* actor, std::int32_t seatMark) noexcept
+        : at_(static_cast<std::uint8_t*>(actor) + facts::kFieldActionInUse), seat_(seatMark)
+    {
+        held_ = Read(at_, shared_) && shared_ != facts::kFieldActionInUseOff && platform::WriteGuarded(at_, &seatMark, sizeof(seatMark));
+    }
+    ~InUseIn()
+    {
+        if (!held_)
+        {
+            return;
+        }
+        std::int32_t live = seat_;
+        if (Read(at_, live) && live != seat_)
+        {
+            platform::LogDebug(L"search arrows: hook point {}'s in-use mark changed to {} during a player's call; the change kept",
+                               static_cast<void*>(at_ - facts::kFieldActionInUse), live);
+            return;
+        }
+        platform::WriteGuarded(at_, &shared_, sizeof(shared_));
+    }
+    InUseIn(const InUseIn&)            = delete;
+    InUseIn& operator=(const InUseIn&) = delete;
+
+    bool         Held() const noexcept { return held_; }
+    std::int32_t Shared() const noexcept { return shared_; }
+
+private:
+    std::uint8_t* at_     = nullptr;
+    std::int32_t  seat_   = 0;
+    std::int32_t  shared_ = 0;
+    bool          held_   = false;
+};
+
 /// The seat's slot cleared with the game's ClearAll and its copies forgotten (its player left, a new local player, the
-/// switch). `keepFlags` (the game mode's reset): only the arrows forgotten, as the game's reset leaves player 1's in-area
-/// flags.
+/// switch), all but its in-use marks: a point the seat has used stays used for it until the area ends (EndPlay), as the
+/// area's own mark does. `keepFlags` (the game mode's reset): only the arrows forgotten, as the game's reset leaves player
+/// 1's in-area flags.
 void ClearSeat(int index, const wchar_t* why, bool keepFlags = false) noexcept
 {
     Seat& seat = g_seats[index];
@@ -291,13 +338,26 @@ void ClearSeat(int index, const wchar_t* why, bool keepFlags = false) noexcept
     }
     if (!keepFlags)
     {
-        seat.records.fill({});
+        for (Record& record : seat.records)
+        {
+            record.fields = {};
+            if (record.inUse == 0)
+            {
+                record = {};
+            }
+        }
         return;
     }
     for (Record& record : seat.records)
     {
         std::memset(record.fields.data() + (facts::kHookAreaArrow - facts::kHookAreaFields), 0, sizeof(void*));
     }
+}
+
+/// The seat's area calls run on its own objects: its player is in and its slot did not fail.
+bool OwnCalls(int seat) noexcept
+{
+    return players::SeatBuilt(seat) && g_seats[seat].localPlayer != nullptr && !g_seats[seat].slotFailed;
 }
 
 /// The seat whose call this is: one of its Leader or UiSlot scopes runs the game's code now and its player is in.
@@ -308,7 +368,7 @@ int CallingSeat() noexcept
         return 0;
     }
     const int seat = players::scopes::OpenPlayer(players::scopes::Leader | players::scopes::UiSlot);
-    return players::SeatBuilt(seat) && g_seats[seat].localPlayer != nullptr && !g_seats[seat].slotFailed ? seat : 0;
+    return OwnCalls(seat) ? seat : 0;
 }
 
 /// One call of a hook-area function for a seat: its slot in EndUISystem[55] and its copy of the area's flag and arrow in
@@ -355,6 +415,7 @@ public:
         playerOneBefore_ = ArrowCount(slotIn_->Saved());
         if (call == Enter || call == Lost)
         {
+            inUse_.emplace(actor, record_->inUse);  // the two calls that read it: the seat's own flights decide its arrow
             creating_.emplace(s.localPlayer);
             if (!creating_->Held())
             {
@@ -373,6 +434,12 @@ public:
             return;
         }
         creating_.reset();
+        if (inUse_)
+        {
+            inUseRead_   = true;
+            inUseShared_ = inUse_->Held() ? inUse_->Shared() : -1;
+        }
+        inUse_.reset();
         Seat& s = g_seats[seat_];
         if (completed_)
         {
@@ -403,14 +470,17 @@ public:
             return;  // the game's call faulted: put back, nothing counted
         }
         Count();
-        if (record_ != &scratch_ && record_->fields == Fields{})
+        if (record_ != &scratch_ && record_->fields == Fields{} && record_->inUse == 0)
         {
-            *record_ = {};  // out of the area, no arrow: the record is free again
+            *record_ = {};  // out of the area, no arrow, never flown from: the record is free again
         }
+        const std::wstring marks = !inUseRead_         ? std::wstring{}
+                                   : inUseShared_ < 0 ? L"; in use: the area's left as it is (switched off, or unread)"
+                                                       : std::format(L"; in use: the area's {}, the player's {}", inUseShared_, record_->inUse);
         platform::LogAt(call_ == Stay ? platform::Level::Trace : platform::Level::Debug,
-                        L"search arrows: {}'s {} of hook area {}: in area {} -> {}, arrow {} -> {}; its arrows {}, player 1's {} -> {}",
+                        L"search arrows: {}'s {} of hook area {}: in area {} -> {}, arrow {} -> {}; its arrows {}, player 1's {} -> {}{}",
                         SeatName(seat_), kCallNames[call_], actor_, before_[0], record_->fields[0], ArrowOf(before_), ArrowOf(record_->fields),
-                        seatArrows, playerOneBefore_, playerOne);
+                        seatArrows, playerOneBefore_, playerOne, marks);
     }
 
     SeatCall(const SeatCall&)            = delete;
@@ -458,6 +528,9 @@ private:
     std::int32_t                              playerOneBefore_ = -1;
     std::optional<SlotIn>                     slotIn_;
     std::optional<target_icons::CreatingAs>   creating_;
+    std::optional<InUseIn>                    inUse_;
+    bool                                      inUseRead_   = false;  // an enter or re-show: its marks are logged
+    std::int32_t                              inUseShared_ = 0;      // the area's own mark during the call (-1: left alone)
     bool                                      held_      = false;
     bool                                      completed_ = false;
 };
@@ -491,7 +564,7 @@ R RunForSeat(int seat, Call call, void* actor, R (*original)(P...), A... args)
     }
 }
 
-// --- The six slots ----------------------------------------------------------------------------------------------------
+// --- The seven slots --------------------------------------------------------------------------------------------------
 
 template <Call C>
 std::uint64_t IfaceCall(void* iface)
@@ -566,6 +639,39 @@ char EndPlayCall(void* actor, std::uint32_t reason)
     return result;
 }
 
+/// A flight's start marks its hook point in use, which hides that point's guide arrow from then on. Player 2's or 3's
+/// flight marks it in that player's copy only, so each player's arrow goes when that player has used the point, as in
+/// single player; player 1's flight, and any flight outside a seat's own action tick, is the game's own mark. The
+/// action tick is the seat's member's own (traversal_action runs a seat's tick only for the member its player controls).
+void MarkInUseCall(void* actor)
+{
+    const auto original = reinterpret_cast<ActorFn>(g_slots[MarkInUse].Original());
+    const int  seat     = OnGameThread() && g_enabled && !g_inside ? traversal_action::ActingSeat() : 0;
+    if (seat == 0 || !OwnCalls(seat))
+    {
+        original(actor);  // a seat whose area calls run on the game's objects shares the game's mark too
+        return;
+    }
+    Seat&   s      = g_seats[seat];
+    Record* record = RecordFor(s, actor);
+    if (record == nullptr)
+    {
+        original(actor);  // no copy to hold it in: the mark is shared, as the game makes it
+        if (s.sharedMarks++ == 0)
+        {
+            platform::LogDebug(L"search arrows: {}'s flight from hook point {} marked it for every player (no copy of it free)",
+                               SeatName(seat), actor);
+        }
+        return;
+    }
+    record->inUse = 1;
+    ++s.flights;
+    std::int32_t shared = -1;
+    Read(static_cast<const std::uint8_t*>(actor) + facts::kFieldActionInUse, shared);
+    platform::LogDebug(L"search arrows: {}'s flight from hook point {} marks it used for that player only (the area's own mark stays {})",
+                       SeatName(seat), actor, shared);
+}
+
 /// The game mode's reset clears player 1's slot here: every seat's too.
 std::uint64_t ResetClearAll(void* slot)
 {
@@ -586,7 +692,8 @@ std::uint64_t ResetClearAll(void* slot)
 const std::array<std::uintptr_t, kCalls> kWrappers{
     reinterpret_cast<std::uintptr_t>(&IfaceCall<Enter>), reinterpret_cast<std::uintptr_t>(&IfaceCall<Stay>),
     reinterpret_cast<std::uintptr_t>(&LeaveCall),        reinterpret_cast<std::uintptr_t>(&FocusCall),
-    reinterpret_cast<std::uintptr_t>(&LostCall),         reinterpret_cast<std::uintptr_t>(&EndPlayCall)};
+    reinterpret_cast<std::uintptr_t>(&LostCall),         reinterpret_cast<std::uintptr_t>(&EndPlayCall),
+    reinterpret_cast<std::uintptr_t>(&MarkInUseCall)};
 
 void RestoreSlots() noexcept
 {
@@ -889,10 +996,17 @@ try
         {
             held += record.actor != nullptr ? 1 : 0;
         }
-        out += std::format(L"; {}: slot {}, compass {}, arrows {}, hook areas held {}; enters {}, leaves {}, focus clears {}, re-shows {}, "
-                           L"EndPlays {}, cleared {}, not the player's {}, table full {}; ticked in its pass {}, from the game tick {}",
+        std::size_t used = 0;
+        for (const Record& record : s.records)
+        {
+            used += record.actor != nullptr && record.inUse != 0 ? 1 : 0;
+        }
+        out += std::format(L"; {}: slot {}, compass {}, arrows {}, hook areas held {} (used by the player {}); enters {}, leaves {}, "
+                           L"focus clears {}, re-shows {}, EndPlays {}, cleared {}, not the player's {}, table full {}; flights kept "
+                           L"the player's {}, left shared {}; ticked in its pass {}, from the game tick {}",
                            SeatName(seat), s.slot != nullptr ? L"made" : L"none", HasCompass(s.slot) ? L"up" : L"none", ArrowCount(s.slot),
-                           held, s.enters, s.leaves, s.focus, s.lost, s.endPlays, s.cleared, s.notOwned, s.full, s.passTicks, s.gameTicks);
+                           held, used, s.enters, s.leaves, s.focus, s.lost, s.endPlays, s.cleared, s.notOwned, s.full, s.flights,
+                           s.sharedMarks, s.passTicks, s.gameTicks);
     }
     return out;
 }

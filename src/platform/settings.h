@@ -44,7 +44,15 @@ struct Option
     const wchar_t*                  menuHelp = L"";
     // Set by the setup app, no row on the Co-op page: `words` is empty and the option takes any word, an empty one its default.
     bool                            appOnly = false;
+    // Set in the file only, no row on the Co-op page: read once at the mod's start.
+    bool                            fileOnly = false;
 };
+
+/// The option has a row on the Co-op page.
+constexpr bool OnCoopPage(const Option& option) noexcept
+{
+    return !option.appOnly && !option.fileOnly;
+}
 
 // The table. An option's owner (the module named beside it) applies the reading at its install.
 inline constexpr std::array<const wchar_t*, 6> kColumnOrderWords{L"123", L"132", L"213", L"231", L"312", L"321"};
@@ -267,11 +275,20 @@ inline constexpr Option kTalkFollow{  // world/talk_gather, players/session
     true, L"Gather Party for Conversations", kOnOffLabels,
     L"Whether Player 1 speaking to an NPC gathers other players from their current location."};
 
+inline constexpr Option kConsole{  // mod.cpp, control/remote
+    L"Development", L"console", kOnOffWords, L"off",
+    L"the development console on 127.0.0.1:4418, for tools/game.py: on opens it at the next start; off (the default) opens no "
+    L"port",
+    false, L"Development Console", kOnOffLabels,
+    L"Opens the mod's development console at the next start, reachable from this computer only (127.0.0.1:4418), for the "
+    L"repository's tools/game.py. Off by default.",
+    false, true};
+
 /// Every option, in the order the settings file lists them.
 inline constexpr std::array kOptions{&kMultiMonitor, &kMonitors,    &kColumnOrder,  &kTwoPlayerSplit, &kThreePlayerSplit, &kHorizontalFov,
                                      &kVerticalFov,  &kMenuSlow,    &kBattleWarps,  &kEnemyDamage,    &kEnemyHp,          &kBossHp,
                                      &kEnemyStagger, &kExpGain,     &kApGain,       &kLeadHolder,     &kAreaLevels,       &kTalkGather,
-                                     &kTalkFollow};
+                                     &kTalkFollow,   &kConsole};
 
 /// The option is a row of the table (Of and Why answer by the row).
 consteval bool Listed(const Option& option)
@@ -285,7 +302,7 @@ consteval bool Listed(const Option& option)
 static_assert(Listed(kMultiMonitor) && Listed(kMonitors) && Listed(kColumnOrder) && Listed(kTwoPlayerSplit) && Listed(kThreePlayerSplit) &&
                   Listed(kHorizontalFov) && Listed(kVerticalFov) && Listed(kMenuSlow) && Listed(kBattleWarps) && Listed(kEnemyDamage) && Listed(kEnemyHp) && Listed(kBossHp) &&
                   Listed(kEnemyStagger) && Listed(kExpGain) && Listed(kApGain) && Listed(kLeadHolder) && Listed(kAreaLevels) &&
-                  Listed(kTalkGather) && Listed(kTalkFollow),
+                  Listed(kTalkGather) && Listed(kTalkFollow) && Listed(kConsole),
               "every option is a row of kOptions");
 
 /// Where an option's word came from.

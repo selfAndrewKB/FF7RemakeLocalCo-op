@@ -77,7 +77,9 @@ void TableConsistent()
             open = option->section;
         }
     }
-    EXPECT(kOptions.size() == 19);
+    EXPECT(kOptions.size() == 20);
+    // The console: off by default, in the file only (no Co-op page row).
+    EXPECT(std::wcscmp(kConsole.fallback, L"off") == 0 && kConsole.fileOnly && !OnCoopPage(kConsole));
     EXPECT(kLeadHolder.experimental && std::wcscmp(kLeadHolder.fallback, L"keeps") == 0);
     // The battle's gathering: off by default (the players' characters stay where they are); on is the game's own warps.
     EXPECT(std::wcscmp(kBattleWarps.fallback, L"off") == 0 && kBattleWarps.words.size() == 2);

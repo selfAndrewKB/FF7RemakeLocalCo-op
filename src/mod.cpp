@@ -71,7 +71,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"0.225.1-trace-levels";  // the one version string (the log, UE4SS and the setup app)
+constexpr const wchar_t* kVersion = L"0.226.0-own-hook-arrows";  // the one version string (the log, UE4SS and the setup app)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
@@ -288,7 +288,16 @@ public:
         lss::players::event_move_hand::SetSession(&session_);
         RegisterSessionCommands(session_);
         lss::views::column_source::RegisterCommands(singleViewChoice_);
-        remote_.Open();
+        // The development console opens only when the settings file asks for it: a player's game opens no port.
+        if (const auto& console = lss::platform::settings::Of(lss::platform::settings::kConsole); console.word == L"on")
+        {
+            remote_.Open();
+        }
+        else
+        {
+            Log(L"console: off ({}); console = on under [Development] in LocalSplitScreen.ini opens it at the next start",
+                lss::platform::settings::Why(lss::platform::settings::kConsole));
+        }
         const Hook::FCallbackOptions options{false, false, STR("LocalSplitScreen"), STR("player intent")};
         tickCallback_ = Hook::RegisterEngineTickPreCallback(
             [this](Hook::TCallbackIterationData<void>&, RC::Unreal::UEngine*, float, bool) { OnEngineTick(); }, options);
