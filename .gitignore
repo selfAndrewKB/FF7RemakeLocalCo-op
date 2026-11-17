@@ -11,3 +11,5 @@ deps/
 tools/vigem/
 __pycache__/
 captures/
+# the monitor layout tools/displays.py saves before it moves a monitor, for its restore
+tools/displays.saved*.json
