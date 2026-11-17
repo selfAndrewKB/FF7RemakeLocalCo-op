@@ -246,18 +246,55 @@ void CatchUp(int seat, Seat& s) noexcept
 
 // --- The game's calls, each made again on every seat's controller -------------------------------------------------
 
-/// The seats' menus are on and the game's call ran on the controller in the UI slot: `object` is that controller, or
-/// its member at `field`.
-bool OnSlotController(const void* object, std::uint32_t field = 0) noexcept
+/// The seats' menus are on and the game's call `what` ran on player 1's controller: `object` is that controller, or its
+/// member at `field`. Inside a seat's scope the UI slot holds the seat's own controller, so player 1's is the scopes'
+/// record. A call on a seat's own controller is that seat's alone: logged, never repeated on the others.
+bool OnPlayerOneController(const void* object, const wchar_t* what, std::uint32_t field = 0) noexcept
 {
-    const std::uint8_t* controller = CommandController();
-    return g_enabled && controller != nullptr && object == controller + field;
+    if (!g_enabled)
+    {
+        return false;
+    }
+    const auto* one = static_cast<const std::uint8_t*>(players::scopes::PlayerOneCommandController());
+    if (one != nullptr && object == one + field)
+    {
+        return true;
+    }
+    for (int seat = 1; seat <= kSeatsBuilt; ++seat)
+    {
+        const auto* own = static_cast<const std::uint8_t*>(g_seats[seat].ctrl);
+        if (own != nullptr && object == own + field)
+        {
+            platform::LogDebug(L"command menu: the game's {} on {}'s own controller, not repeated on the others", what,
+                               SeatName(seat));
+            return false;
+        }
+    }
+    return false;
+}
+
+/// `repeat(seat)` for each ready seat inside that seat's scopes: the game's call `what` made again on its controller.
+/// A seat whose scopes cannot open (already open, the call coming from inside them, or not bound) is logged and passed
+/// over.
+template <class Repeat>
+void RepeatOnSeats(const wchar_t* what, Repeat repeat) noexcept
+{
+    ForEachReady([what, &repeat](int seat) {
+        players::scopes::Scope scope(seat, kScopes);
+        if (!scope.Held())
+        {
+            platform::LogDebug(L"command menu: the game's {} not repeated on {}'s controller: its scopes could not open",
+                               what, SeatName(seat));
+            return;
+        }
+        repeat(seat);
+    });
 }
 
 std::uint64_t Setup(void* controller, void* world)
 {
     const std::uint64_t result = g_setup(controller, world);
-    if (OnSlotController(controller))
+    if (OnPlayerOneController(controller, L"Setup"))
     {
         for (int seat = 1; seat <= kSeatsBuilt; ++seat)
         {
@@ -275,7 +312,7 @@ std::uint64_t Setup(void* controller, void* world)
 void ResetAll(void* controller)
 {
     g_resetAll(controller);
-    if (!OnSlotController(controller))
+    if (!OnPlayerOneController(controller, L"ResetAll"))
     {
         return;
     }
@@ -297,34 +334,26 @@ void ResetAll(void* controller)
 void SetHudMode(void* controller, std::uint8_t mode)
 {
     reinterpret_cast<HudModeFn>(g_hudMode.Original())(controller, mode);
-    if (!OnSlotController(controller))
+    if (!OnPlayerOneController(controller, L"battle HUD mode"))
     {
         return;
     }
-    ForEachReady([mode](int seat) {
-        players::scopes::Scope scope(seat, kScopes);
-        if (scope.Held())
-        {
-            platform::LogDebug(L"command menu: battle HUD mode {} on {}'s controller", mode, SeatName(seat));
-            platform::CallGuarded(reinterpret_cast<HudModeFn>(g_hudMode.Original()), g_seats[seat].ctrl, mode);
-        }
+    RepeatOnSeats(L"battle HUD mode", [mode](int seat) {
+        platform::LogDebug(L"command menu: battle HUD mode {} on {}'s controller", mode, SeatName(seat));
+        platform::CallGuarded(reinterpret_cast<HudModeFn>(g_hudMode.Original()), g_seats[seat].ctrl, mode);
     });
 }
 
 std::uint64_t Rebuild(void* partyList, std::uint64_t a2)
 {
     const std::uint64_t result = reinterpret_cast<RebuildFn>(g_rebuildCall.Original())(partyList, a2);
-    if (!OnSlotController(partyList, facts::kCommandCtrlPartyList))
+    if (!OnPlayerOneController(partyList, L"party panel rebuild", facts::kCommandCtrlPartyList))
     {
         return result;
     }
-    ForEachReady([](int seat) {
-        players::scopes::Scope scope(seat, kScopes);
-        if (scope.Held())
-        {
-            platform::LogDebug(L"command menu: the party panel rebuilt on {}'s controller", SeatName(seat));
-            platform::CallGuarded(g_refresh, g_seats[seat].ctrl);  // its own pass through here: a different list, the game's call only
-        }
+    RepeatOnSeats(L"party panel rebuild", [](int seat) {
+        platform::LogDebug(L"command menu: the party panel rebuilt on {}'s controller", SeatName(seat));
+        platform::CallGuarded(g_refresh, g_seats[seat].ctrl);  // its own pass through here: a different list, the game's call only
     });
     return result;
 }
@@ -332,34 +361,26 @@ std::uint64_t Rebuild(void* partyList, std::uint64_t a2)
 void RebuildLists(void* commandLists, std::uint64_t a2)
 {
     reinterpret_cast<ListsFn>(g_lists.Original())(commandLists, a2);
-    if (!OnSlotController(commandLists, facts::kCommandCtrlCommandLists))
+    if (!OnPlayerOneController(commandLists, L"command lists rebuild", facts::kCommandCtrlCommandLists))
     {
         return;
     }
-    ForEachReady([a2](int seat) {
-        players::scopes::Scope scope(seat, kScopes);
-        if (scope.Held())
-        {
-            platform::CallGuarded(reinterpret_cast<ListsFn>(g_lists.Original()),
-                                  static_cast<void*>(static_cast<std::uint8_t*>(g_seats[seat].ctrl) + facts::kCommandCtrlCommandLists), a2);
-        }
+    RepeatOnSeats(L"command lists rebuild", [a2](int seat) {
+        platform::CallGuarded(reinterpret_cast<ListsFn>(g_lists.Original()),
+                              static_cast<void*>(static_cast<std::uint8_t*>(g_seats[seat].ctrl) + facts::kCommandCtrlCommandLists), a2);
     });
 }
 
 double SetMenuAllowed(void* controller, std::uint8_t on, std::uint8_t keep, std::uint8_t a4)
 {
     const double result = reinterpret_cast<MenuAllowedFn>(g_menuAllowed.Original())(controller, on, keep, a4);
-    if (!OnSlotController(controller))
+    if (!OnPlayerOneController(controller, L"menu permission"))
     {
         return result;
     }
-    ForEachReady([on, keep, a4](int seat) {
-        players::scopes::Scope scope(seat, kScopes);
-        if (scope.Held())
-        {
-            double ignored = 0.0;
-            platform::CallGuarded(reinterpret_cast<MenuAllowedFn>(g_menuAllowed.Original()), ignored, g_seats[seat].ctrl, on, keep, a4);
-        }
+    RepeatOnSeats(L"menu permission", [on, keep, a4](int seat) {
+        double ignored = 0.0;
+        platform::CallGuarded(reinterpret_cast<MenuAllowedFn>(g_menuAllowed.Original()), ignored, g_seats[seat].ctrl, on, keep, a4);
     });
     return result;
 }

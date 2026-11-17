@@ -81,14 +81,7 @@ void* PlayerOne() noexcept
 /// ever is, nothing is copied rather than a seat's member being taken for player 1's).
 bool AnySeatLeaderScope() noexcept
 {
-    for (int seat = 1; seat <= players::kSeatsBuilt; ++seat)
-    {
-        if (players::scopes::OtherLeaderType(seat) != facts::kPlayerTypeNone)
-        {
-            return true;
-        }
-    }
-    return false;
+    return players::scopes::OpenPlayer(players::scopes::Leader) != 0;
 }
 
 /// A seat's member, if it is a live object (a level change can leave a stale pointer for a tick).

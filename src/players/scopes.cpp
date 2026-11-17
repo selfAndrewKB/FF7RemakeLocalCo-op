@@ -35,7 +35,7 @@ struct Player
     void*        member         = nullptr;
     std::uint8_t type           = kTypeNone;
     void*        commandCtrl    = nullptr;
-    std::uint8_t otherLeaderType = kTypeNone;
+    std::uint8_t otherLeaderType = kTypeNone;  // the party's leader type before this player's went in (player 1's)
     void*        otherCommandCtrl = nullptr;  // the slot's controller before this player's went in (player 1's)
 };
 std::array<Player, kMaxPlayers> g_players;
@@ -62,6 +62,18 @@ std::uintptr_t PartyManager() noexcept
 {
     void* manager = nullptr;
     return Read(g_partyManager, manager) ? reinterpret_cast<std::uintptr_t>(manager) : 0;
+}
+
+/// Player 1's leader type, inside a player's Leader scope as outside: there the party manager holds that player's, so
+/// the one it held before the scope opened. kTypeNone when it cannot be read.
+std::uint8_t PlayerOneLeaderType() noexcept
+{
+    if (const int open = OpenPlayer(Leader); open != 0)
+    {
+        return g_players[open].otherLeaderType;
+    }
+    std::uint8_t type = kTypeNone;
+    return Read(reinterpret_cast<const void*>(PartyManager() + facts::kPartyLeaderType), type) ? type : kTypeNone;
 }
 
 std::uintptr_t Object(std::uint8_t** global) noexcept
@@ -291,7 +303,8 @@ Scope::Scope(int player, unsigned which) noexcept : player_(player)
         return;
     }
     Player& p = g_players[player];
-    // The order matters for the leader: its saved byte is read after it opens.
+    // The contexts open in this order; player 1's leader type and command controller are recorded just before their
+    // own contexts open.
     const struct
     {
         unsigned     bit;
@@ -304,15 +317,14 @@ Scope::Scope(int player, unsigned which) noexcept : player_(player)
         {
             continue;
         }
-        if (entry.bit == Leader)
+        // Player 1's values, recorded before this player's go in: inside another player's open scope that scope's
+        // record. A context of this player's already open keeps its record (its Open below refuses).
+        if (entry.bit == Leader && !entry.context->IsOpen())
         {
-            // The game's own leader type (player 1's), read before this player's goes in.
-            Read(reinterpret_cast<const void*>(PartyManager() + facts::kPartyLeaderType), p.otherLeaderType);
+            p.otherLeaderType = PlayerOneLeaderType();
         }
-        if (entry.bit == UiSlot)
+        if (entry.bit == UiSlot && !entry.context->IsOpen())
         {
-            // Before this player's goes in: player 1's, also inside another open UiSlot scope (its record) or this
-            // player's own (the same value again).
             p.otherCommandCtrl = PlayerOneCommandController();
         }
         if (entry.bit == Latches && !p.latches.Defined() && p.commandCtrl != nullptr)
