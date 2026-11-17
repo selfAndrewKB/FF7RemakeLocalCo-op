@@ -6,8 +6,7 @@ Local split-screen co-op for up to three players in FINAL FANTASY VII REMAKE INT
 
 - FINAL FANTASY VII REMAKE INTERGRADE on Steam.
 - UE4SS 4.0.0 (`UE4SS_v4.0.0.zip` from the RE-UE4SS releases on GitHub). The mod is built against that release's
-  headers and runs on no other UE4SS (an older one fails to load it with error 0x7f). UE4SS's custom game config for
-  this game comes in the mod's zip.
+  headers and runs on no other UE4SS (an older one fails to load it with error 0x7f).
 - To build: Visual Studio 2022 with the C++ desktop workload, CMake 3.22 or later, a Rust toolchain (UE4SS builds part
   of itself with it), Python 3.11 or later (a test and the tools), and a GitHub account linked to Epic Games (UE4SS
   fetches Unreal's headers from Epic's repository).
@@ -15,16 +14,11 @@ Local split-screen co-op for up to three players in FINAL FANTASY VII REMAKE INT
 ## Installing
 
 1. Unpack UE4SS into `<game>\End\Binaries\Win64\`: `dwmapi.dll` beside the game's exe, and the `ue4ss` folder.
-2. With the game closed, unpack the mod's zip into the same folder. It holds the mod (`ue4ss\Mods\LocalSplitScreen\`,
-   started by its `enabled.txt`) and UE4SS's custom game config for this game, its `UE4SS-settings.ini` with
-   `HookLoadMap = 0`: with it on, every exit crashes. The Nexus Mods download leaves out `MultiMonitorSetup.exe`, which
-   picks the monitors for a row of them; it is in the GitHub release.
+2. Unpack the mod's zip into the same folder. It holds the mod, in `ue4ss\Mods\LocalSplitScreen\`, and UE4SS's custom
+   game config for this game, whose `UE4SS-settings.ini` has `HookLoadMap = 0`: with it on, every exit crashes.
+3. Optional, to play across multiple monitors: put `MultiMonitorSetup.exe` in `ue4ss\Mods\LocalSplitScreen\`.
 
-A build of your own: `python tools/game.py relaunch --deploy --label <name>` copies `LocalSplitScreen.dll` to
-`ue4ss\Mods\LocalSplitScreen\dlls\main.dll` and `MultiMonitorSetup.exe` beside it, turns the console on, and starts the
-game. The build also makes a `UE4SS.dll`, which is only there to link the mod against; the game keeps the release's.
-
-The mod writes its settings to `LocalSplitScreen.ini` in its folder.
+The mod writes its settings to `LocalSplitScreen.ini` in that folder.
 
 ## Building
 
@@ -40,7 +34,11 @@ ctest --test-dir build -C Game__Shipping__Win64 --output-on-failure
 ```
 
 This gives `LocalSplitScreen.dll` and `MultiMonitorSetup.exe` in `build/Game__Shipping__Win64/`, and the host tests.
-The first build compiles UE4SS and takes a while; later ones only rebuild the mod.
+The first build takes a while; later ones only rebuild the mod.
+
+`python tools/game.py relaunch --deploy --label <name>` installs a build: `LocalSplitScreen.dll` as
+`ue4ss\Mods\LocalSplitScreen\dlls\main.dll` and `MultiMonitorSetup.exe` in that folder. It turns the console on and
+starts the game.
 
 With `console = on` under `[Development]` in its settings file, the mod takes console commands on `127.0.0.1:4418`, from
 this computer only (`python tools/game.py shell`; `help` lists the commands). It is off by default.
@@ -50,9 +48,10 @@ this computer only (`python tools/game.py shell`; `help` lists the commands). It
 
 ## Game version
 
-The mod's addresses were read from one build of the game, whose `ff7remake_.exe` is named by a shortened SHA-256 at the
-top of `src/engine_facts.h`. Before the mod patches the game's code, and before most of its calls into it, it checks
-the bytes there against the ones it was written for; where they differ, that feature is left off and the log says why.
+The mod is written for the Steam version of the game whose `ff7remake_.exe` has file version 1.0.0.7 (SHA-256
+`25B54C345C94EE9F6C6876B9C7537A69E6B0EEF25F322207C32A8DDCEE816635`, also named at the top of `src/engine_facts.h`).
+Before the mod patches the game's code, and before most of its calls into it, it checks the bytes there against the ones
+it was written for. Where they differ, as on another version, that feature stays off and the log says why.
 
 ## Project map
 
