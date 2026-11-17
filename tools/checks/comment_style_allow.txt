@@ -1,0 +1,13 @@
+# comment_style.py takes these pieces out of a comment before its rules run: one regular expression per line.
+# Only the game's and the engine's own terms belong here, each with the reason beside it.
+RE-[\w.-]+\.md                      # a research file's name may carry a date
+user[- ]controlled                  # the game's "user-controlled player character" (UCPC)
+\bUUserWidget\b|\buser widgets?\b   # Unreal's widget class
+\bfield step \d+\b                  # the game's own field steps
+\b1\.00[45]\b                       # the game's versions, not the mod's
+\b0x140000000\b                     # the image base, a convention, not an address
+UE4SS v[\d.]+ \w*,? ?Git SHA \w+ \(20\d\d-\d\d-\d\d\)   # the UE4SS build the shims are written against is identified by its own release
+src/engine_facts.h :: \xa7\s*[\d.]+(?:\s*(?:,|and)\s*\xa7?\s*[\d.]+)*   # the facts header is the declared home of the pointers into the research (its section marks)
+src/engine_facts.h :: \bS-RMK-[A-Z0-9]+\b|\b[Pp]ass \d+\b   # the same for its pass tags: which reading of a research file found the fact
+\[DXBC\]   # the shader container format, not a pass tag
+\bthe user(?:'s)? (?:block|weak pair)\b   # a walk-up spot's user is the character using it

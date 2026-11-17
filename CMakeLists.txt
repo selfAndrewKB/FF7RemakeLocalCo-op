@@ -1,24 +1,21 @@
 cmake_minimum_required(VERSION 3.18)
 
 # LocalSplitScreen: split-screen co-op for up to three players in FINAL FANTASY VII REMAKE, as a UE4SS C++ mod.
-#
-# Plan and research: Remake/Documentation/plan/README.md and research/RE-*.md.
-# The platform layer (src/platform) is shared in design with Rebirth/LocalSplitScreen; every engine address
-# here is Remake's own (src/engine_facts.h).
+# Every engine address is in src/engine_facts.h.
 #
 # This is a standalone CMake root. The one external dependency is RE-UE4SS, which provides the `UE4SS`
-# target the mod links against. It is referenced where it already lives rather than copied.
+# target the mod links against; the checkout must be the commit of the UE4SS the game runs (README.md, Building).
 project(LocalSplitScreen CXX)
 
-set(UE4SS_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../Rebirth/_tools/UE4SS_CppMods/RE-UE4SS"
+set(UE4SS_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/deps/RE-UE4SS"
     CACHE PATH "Path to the RE-UE4SS checkout that provides the UE4SS target")
 
 if(NOT EXISTS "${UE4SS_ROOT}/CMakeLists.txt")
     message(FATAL_ERROR "RE-UE4SS not found at UE4SS_ROOT='${UE4SS_ROOT}'. "
-                        "Pass -DUE4SS_ROOT=<path to the RE-UE4SS checkout>.")
+                        "Clone it there (README.md, Building) or pass -DUE4SS_ROOT=<path to the RE-UE4SS checkout>.")
 endif()
 
-# The source lives outside this tree, so CMake needs an explicit build directory for it.
+# UE4SS_ROOT may lie outside this tree, so CMake needs an explicit build directory for it.
 add_subdirectory("${UE4SS_ROOT}" "${CMAKE_BINARY_DIR}/RE-UE4SS")
 
 add_library(LocalSplitScreen SHARED

@@ -1,0 +1,12 @@
+# Smoke test: player 2 joins (taking the 2nd slot's member), walks forward on their own camera, and leaves.
+# Start from a loaded save, in the field, with player 2 out:  python tools/game.py run tools/scripts/smoke.txt
+note smoke: start
+get p2.state
+join
+wait-until p2.state == playing 300
+hold 2 stick 0 1 0 0 120
+wait 120
+status
+leave
+wait-until p2.state == out 600
+note smoke: done

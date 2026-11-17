@@ -1,8 +1,7 @@
 # LocalSplitScreen (FF7 Remake)
 
 Split-screen co-op for up to three players in FINAL FANTASY VII REMAKE (Intergrade, UE 4.18), as a UE4SS C++ mod. This page is
-for working on the mod. Plan and research:
-`../Documentation/plan/README.md` and `../Documentation/research/RE-*.md`.
+for working on the mod; `AGENTS.md` is how it is built, `CONTRIBUTING.md` how to send changes.
 
 ## Keys
 
@@ -23,10 +22,10 @@ The mod listens on `127.0.0.1:4418` (`src/control/remote.h`): one command per li
 each (`ok`, `failed`, `rejected`, `dropped`, `value`, `help`, `note`; `src/control/runner.h`). From the host:
 
 ```
-python ../tools/game.py shell                                  an interactive console (tab completes commands)
-python ../tools/game.py -c join -c "wait-until p2.state == playing" -c "hold 2 stick 0 1 0 0 120"
-python ../tools/game.py run ../tools/scripts/smoke.txt         a file of commands, stopping at the first failure
-python ../tools/game.py status | launch | quit | relaunch --deploy --label v0.8.0 | shot | keys Enter
+python tools/game.py shell                                  an interactive console (tab completes commands)
+python tools/game.py -c join -c "wait-until p2.state == playing" -c "hold 2 stick 0 1 0 0 120"
+python tools/game.py run tools/scripts/smoke.txt           a file of commands, stopping at the first failure
+python tools/game.py status | launch | quit | relaunch --deploy --label v0.8.0 | shot | keys Enter
 ```
 
 Every module registers its own commands (`src/control/registry.h`), so `help` on the running build is the list, with
@@ -94,7 +93,7 @@ the keyboard; pad 2 = user 1; pad 3 = user 2): a further pad's presses never ope
 actions. In battle each further player fights through its own command controller: its own command menu and party
 panel in its view, attacks, guard, dodge and its Tactical Mode from its own pad, the world slowed by any menu, its own lock-on (R3) and target with the lock camera
 on its own view, and its member fills ATB and staggers at the player's rates; neither player's switch lands on the other's
-member. A virtual pad 2 for unattended tests: `python ../tools/pad2.py serve`, then `press A`, `hold RB --ms 2000`,
+member. A virtual pad 2 for unattended tests: `python tools/pad2.py serve`, then `press A`, `hold RB --ms 2000`,
 `stick L 0 1`.
 
 In the field each further player opens chests, picks up items, opens doors, uses the grappling hook and talks to NPCs
@@ -112,16 +111,22 @@ and split again after; on a monitor row the further columns show player 1's pict
 
 ## Building
 
-Its own CMake root; builds RE-UE4SS from `../../Rebirth/_tools/UE4SS_CppMods/RE-UE4SS` (override with `-DUE4SS_ROOT`).
+Its own CMake root. It builds RE-UE4SS from `deps/RE-UE4SS` (or `-DUE4SS_ROOT=<path>`), which must be the commit of
+the UE4SS the game runs: a C++ mod is built against that UE4SS's headers. RE-UE4SS's own submodules include Epic's
+Unreal headers, which need a GitHub account linked to Epic Games.
 
 ```
+git clone https://github.com/UE4SS-RE/RE-UE4SS deps/RE-UE4SS
+git -C deps/RE-UE4SS checkout e31aaaa6
+git -C deps/RE-UE4SS -c url."https://github.com/".insteadOf="git@github.com:" submodule update --init --recursive
 cmake -S . -B build -G "Visual Studio 17 2022"
-cmake --build build --config Game__Shipping__Win64 --target LocalSplitScreen
+cmake --build build --config Game__Shipping__Win64
+ctest --test-dir build -C Game__Shipping__Win64
 ```
 
 ## Installing
 
-UE4SS v3.0.1 (the build Rebirth uses) with the RE-UE4SS custom config `Final Fantasy 7 Remake`, and
+UE4SS built from RE-UE4SS `e31aaaa6` with the RE-UE4SS custom config `Final Fantasy 7 Remake`, and
 **`HookLoadMap = 0`** in `UE4SS-settings.ini` (with it on, every exit crashes). Copy
 `build/Game__Shipping__Win64/LocalSplitScreen.dll` to `<game>/End/Binaries/Win64/ue4ss/Mods/LocalSplitScreen/dlls/main.dll`
 and add `LocalSplitScreen : 1` to `Mods/mods.txt`. Close the game first.
@@ -155,8 +160,8 @@ one leaves. A streaming host's virtual monitor (Apollo, Vibepollo, SudoVDA) work
 so give each client a name of its own.
 
 The app's look is drawn by its own code (`setup/view.cpp`, colours in `setup/theme.h`); its icon, `setup/app.ico`, is drawn by
-`../tools/make_setup_icon.py`. Its file properties carry the mod's version, read by CMake from `src/mod.cpp`; its file name is the one the mod
-starts the guard by, read by CMake and by `../tools/game.py` from `src/views/display_move.h` (`kSetupExe`).
+`tools/make_setup_icon.py`. Its file properties carry the mod's version, read by CMake from `src/mod.cpp`; its file name is the one the mod
+starts the guard by, read by CMake and by `tools/game.py` from `src/views/display_move.h` (`kSetupExe`).
 
 Picked monitors may differ in size and Windows scaling: each view fits its own monitor, top-aligned, and the window's part below a
 shorter monitor is simply not seen. A view wider than about 4096 px (a 32:9 monitor) shows a band of wrong colours at its right
@@ -166,14 +171,55 @@ side. With none picked, a row needs monitors of one height at 100 % scaling.
 
 A comment says what the code does and why, in plain sentences, and stays true as the code ages. It carries no date, no
 version number, no quote of or credit to a person, and no history (`until`, `used to`, `now`): the reason behind a rule is
-stated as a fact, and a fault the code prevents as what would happen without it. It does not name the Rebirth mod: where a
-piece came from, and how the two mods differ, is in the topic's History in the documentation. Addresses live in
-`src/engine_facts.h`, research in `../Documentation/research`: a comment names the game's function without its address (in a
-machine-code stub, the file's named constant, with an offset where needed), and may name a research file, without a section
-number or pass tag. It may mark a claim `[CONFIRMED]` or `[ASSUMPTION]`.
-A hook enforces this (`../../.claude/hooks/comment_style.py`): an edit or a commit whose new comment text breaks the
-rule is refused with the line and the reason; `python ../../.claude/hooks/comment_style.py check src tests` runs the
-same check by hand, and a game term that matches by accident goes in `comment_style_allow.txt` beside it.
+stated as a fact, and a fault the code prevents as what would happen without it. It does not name the sibling mod for
+FINAL FANTASY VII REBIRTH: where a piece came from belongs in the commit message. Addresses live in `src/engine_facts.h`: a
+comment names the game's function without its address (in a machine-code stub, the file's named constant, with an offset
+where needed), and may name a research file, without a section number or pass tag. It may mark a claim `[CONFIRMED]` or
+`[ASSUMPTION]`.
+
+## Checks before a commit
+
+Two checks read the staged change: `tools/checks/comment_style.py` (the rule above) and `tools/checks/code_hygiene.py`
+(a raw offset outside the facts header; a line, value or predicate that already exists; a game global rebased or a
+pointer hop written in a second place; a struct another file has; a function nothing calls). Turn them on once per
+clone with `git config core.hooksPath .githooks`; a commit with findings is refused with the line and the reason. Fix
+them, or name each in the commit message with its reason and commit with `LSS_COMMENT_STYLE_REVIEWED=1` or
+`LSS_HYGIENE_REVIEWED=1` set (PowerShell: `$env:LSS_HYGIENE_REVIEWED = 1` before `git commit`, removed after). A
+fault in a check itself is reported and never blocks a commit. By hand: `python tools/checks/comment_style.py check src tests`,
+`python tools/checks/code_hygiene.py census .`. A game term that matches the comment rule by accident goes in
+`tools/checks/comment_style_allow.txt`. For Claude Code, `.claude/settings.json` runs the same checks at each edit and
+commit.
+
+## Tools
+
+Run from the repository; Python 3.11 or later on Windows. Each script's first lines say how to use it.
+
+| Tool | What |
+|------|------|
+| `tools/game.py` | The console client, and launch, quit, relaunch with a hash-checked install of the build, load the last save, screenshots, keys |
+| `tools/pad2.py` | A virtual pad 2 (ViGEmBus driver; the client DLL from the `vgamepad` Python package) |
+| `tools/watch.py` | Records every change of the mod's readings while someone plays |
+| `tools/displays.py` | Lists the monitors, places one, puts a saved layout back |
+| `tools/keys.ps1`, `tools/shot.ps1` | Keys to the game window; a screenshot of the game window or a monitor |
+| `tools/crash/` | Read a crash or hang minidump; name a DLL's functions from its PDB |
+| `tools/perf/` | ETW and Nsight GPU Trace captures and their analysis |
+| `tools/rdc_*.py`, `tools/npy_view.py` | RenderDoc: capture, dump actions, fetch textures, read constant buffers |
+| `tools/read_bytes.ps1`, `tools/dataobject.py` | The game exe's bytes at a disassembler address; the game's DataObject tables |
+| `tools/layout_doc.py`, `tools/make_setup_icon.py` | The README's Layout; the setup app's icon |
+| `tools/checks/` | The commit checks (above) and `ida_db_guard.py`, which tells a broken IDA database before it is trusted or copied |
+
+Found by themselves, or set in the environment:
+
+| Variable | For |
+|----------|-----|
+| `FF7R_GAME_DIR` | The game's `End\Binaries\Win64` folder, when Steam's libraries do not hold it |
+| `VIGEM_CLIENT_DLL` | `ViGEmClient.dll` (x64), when not at `tools/vigem/` |
+| `RENDERDOC_DIR` | RenderDoc's install folder, when not `C:\Program Files\RenderDoc` |
+| `NGFX` | Nsight Graphics' `ngfx.exe`, when not the newest under `C:\Program Files\NVIDIA Corporation` |
+| `LLVM_SYMBOLIZER` | `llvm-symbolizer.exe`, when not on PATH |
+| `LSS_CAPTURES_DIR`, `LSS_SHOTS_DIR` | Where captures and screenshots go (default: `captures/` here, the temp folder) |
+| `LSS_MODDLL`, `LSS_DUMP` | The perf analysis: a saved copy of the captured mod DLL; the capture's dump folder |
+| `IDA_DATABASES` | The `.i64` files `ida_db_guard.py` watches as a Claude Code hook (`;` between paths) |
 
 ## Packaging
 
@@ -191,7 +237,7 @@ src/
   modules.cpp               The module table: every module the entry point installs after the session, in install order,
                             each with its removal or none and the rows it needs (modules.cpp)
   platform/                 the image, verified functions and vtable slots, code and call redirects, guards, the log,
-                            the settings file (shared design with Rebirth's)
+                            the settings file
     byte_scope              The game's single slots answered for one player for the length of a call
     call_redirect           Sends one `call rel32` (or one tail call, `jmp rel32`) in the game's code to a function of
                             ours instead of its usual target, and puts it back
@@ -206,6 +252,8 @@ src/
     game_vectors.h          The engine's FVector and FVector2D as this engine lays them out: 4-byte floats, packed, no
                             padding
     guarded                 Structured-exception guards for touching engine memory and calling engine code
+    hitch_step.h            The frame watch's hitch rule (render/frame_watch.h) as a pure step, tested on the host
+                            (tests/hitch_step_test.cpp)
     image                   The game's executable image in memory, and the translation from IDA addresses to live ones
                             and back (the IDA form of a live address, for log lines)
     instruction_patch       Rewrites one instruction of the game's code in place, with one of the same length, and puts
@@ -214,6 +262,12 @@ src/
     module_pin              Keeps this DLL loaded until the process exits
     name_text               The text of an engine name (FName), for log lines and readings: the lookup goes through
                             UE4SS and is guarded, since a name read from memory the engine has let go can be anything
+    object_class            An engine class by its path and an object's class test, through UE4SS: the lookup
+                            (StaticFindObject) runs until the class is found and is then kept per path; the test
+                            (UObject::IsA) is guarded, since an object read from game …
+    perf_counter.h          The performance counter (QueryPerformanceCounter): a fixed-rate clock from boot, the clock
+                            of the mod's own timings and of the engine's frame times (whose u32 counts are this
+                            counter's ticks)
     seqlock.h               N floats one thread writes and others read (Boehm's seqlock): the writer bumps the version
                             to odd, stores the values, bumps it to even; a reader retries while it sees an odd version
                             or a version that changed under it
@@ -303,6 +357,9 @@ src/
                             (research/RE-lock-camera-ledger.md)
     dpad_keys               The d-pad's four keys as the engine names them (EKeys::Gamepad_DPad_*, facts::kKeyDPad*), in
                             one place
+    event_move_hand         A scripted one-shot move the level writes on a further player's member (an act's event move,
+                            an event's placement: the game's FieldAI_RequestEventMove_L6) is preceded by the member's
+                            hand to its AI, as in single player, where the …
     field_exit              Every further player leaves before the game leaves the field
                             (research/RE-lifecycle-world.md)
     field_hold.h            When a party member's field AI state leaves it a further player's to hold, and when a script
@@ -350,7 +407,8 @@ src/
                             gives it back
     player_trigger          Each seat's own PlayerTrigger: a copy of the game's one placed trigger actor
                             (research/RE-player-trigger.md)
-    player_window           Each player's own window: joining, the character, where the view is, and leaving, by pad
+    player_window           Each player's own window: joining, the character, the player number, where the view is, and
+                            leaving, by pad
     player_window_rules.h   The pure rules of the player windows (players/player_window)
     player_window_text.h    What a player's window says (players/player_window; the rules:
                             players/player_window_rules.h)
@@ -390,6 +448,8 @@ src/
                             traces in player 2's half)
     bloom_reduce_shader.h   Origin-aware copy of Square Enix's level-0 BloomReduce pixel shader (fix F1 of
                             RE-split-bit2-leak.md)
+    capture_rules.h         When the frame capture (render/frame_capture.h) starts and ends, as a pure step, tested on
+                            the host (tests/capture_rules_test.cpp)
     distortion_apply        Square Enix's directional-blur distortion apply, made to draw each view's rectangle in its
                             own half (the streaks across the split line when a weapon trail crosses it)
     dxbc_fix.h              Edits to a shader's DXBC container for render/ssr_origin: one exact instruction swapped in
@@ -405,6 +465,10 @@ src/
                             one view at a time (research/RE-haze-occlusion.md)
     fog_volume_watch        A watch on each view's fog volumes (research/RE-haze-occlusion.md): logging only, for the
                             blue haze in players 2's and 3's views
+    frame_capture           Every frame around a heavy moment, kept in a file without anyone at the console (performance
+                            work; research/RE-frame-stats.md)
+    frame_watch             How long each frame takes, and which thread takes it, for performance work
+                            (research/RE-frame-stats.md)
     history_cut             A test for the blue haze in players 2's and 3's views: the game's own camera cut on every
                             camera but player 1's, held for a number of frames
     index_ranges.h          Ranges of scene object indices as a test command writes them: "a b" pairs (from a, up to but
@@ -424,6 +488,8 @@ src/
     pass_marks              GPU events around each render pass of a view (PrePass, Shadow depths, Base pass, Lights,
                             Translucency, Post-processing, the Square Enix passes, ...), nested in the view's event
                             (render/view_marks.h), so a GPU trace splits each …
+    ribbon_fill             Square Enix's ribbon trails, filled in ordinary memory and copied to the GPU in one pass
+                            (frame-rate work; research/RE-ribbon-fill-cost.md)
     shadow_code.h           The machine code of the per-view shadow levers, built here as pure byte arrays and executed
                             over stand-ins on the host
     shadows_per_view        Shadows decided per view (RE-shadows-per-view.md, RE-shadows-per-view-build.md)
@@ -456,6 +522,9 @@ src/
                             a character over call it
     charapop_rule.h         CharaPop's Light/Middle rule, as its evaluators apply it to one camera, for the entries a
                             further player's camera needs (world/npc_detail.h)
+    data_rows               The level's data rows, as the game reads them to drive its story and its spots: the
+                            state-trigger, state-change, action and action-group data tables (three tables each,
+                            searched in turn through the tables' own row lookup, the one …
     env_set_view.h          The pieces of world/env_sets that need no game: a further player's EnvironmentSet as the mod
                             keeps it (one per seat), paced the way the game paces player 1's, and the edit of a player's
                             hidden-actor list that removes only the …
@@ -467,6 +536,8 @@ src/
                             1 and the AI walk but a further player runs
     level_watch             Logging only: what loads, shows, hides and unloads the world's levels, so the further
                             players' areas can be held by the game's own loader
+    named_actor             A character or object found by its name as the game finds it: the character registry's
+                            per-level name map (CharaRegistry_FindActorByName)
     npc_crowd               The game's NPC crowd follows every player: each NPC is scored from the nearest player
                             (research/RE-npc-near-player-two.md)
     npc_detail              The NPCs a further player is near keep the detail the game would give them from that
@@ -499,11 +570,22 @@ src/
                             whenever another player's appears (research/RE-hookshot-arrows.md)
     shop_act                A shop a further player opens is that player's: its camera zooms on the opener's view, the
                             shopkeeper and the opener's character face each other, and the opener's pad drives it
+    state_signal            A level state trigger sent by name, through the game's own sender (the call a walk-up exit
+                            makes for a spot's end triggers): the repair of a spot's level state left on by an unmatched
+                            start, as player 1's pass through the spot …
+    state_slots             The level's states as the state manager keeps them, read for the modules that judge them
+                            (players/lead_gate's waiters and paths, world/stuck_spots' repair): the active list walked
+                            slot by slot, each active slot's object, current …
     story_box_rules.h       The rules of world/story_boxes, without the game: which of a held member's story-box entries
                             wait, when a waiting one fires, and whether player 1's character has come to the box
     story_boxes             A further player's member never fires its own story box ahead of the story, and never loses
                             one: no line of dialogue is ever cut or lost (research/RE-held-member-story-boxes.md,
                             RE-tifa-barret-talk-order.md: in the Ch
+    stuck_spot_rules.h      Which level states a field-action spot's pass has left on, judged from the level's data
+                            alone (research/RE-stuck-spot-repair.md)
+    stuck_spots             The repair of level states a field-action spot's pass left on: before the start signals of a
+                            further player's pass matched player 1's (world/traversal_action), such a pass sent player
+                            1's start signals and not his end, and the …
     talk_gather             Player 1's character is brought to a talk another player starts, when it is far, since Cloud
                             has lines to speak in it (research/RE-talk-far.md)
     talk_gather_rules.h     Where player 1's character is brought when another player starts a talk (world/talk_gather.h
@@ -639,6 +721,7 @@ src/
                             (research/RE-seq-camera-two.md)
     stall_rules.h           When an enemy that is ready to attack but declines counts as stalled, and whether the game
                             may pick again for it
+    summon_seats            Summons for players 2 and 3 (research/RE-summon-seats.md)
     target_cursor           Each seat's own battle target cursor: the game's cursor driver run again per seat
                             (research/RE-target-cursor-two.md)
     targeting               Each seat's targeting: the game's own targeting tick run again, once per seat
@@ -664,9 +747,11 @@ src/
     game_ui                 The game's UI pieces the Co-op menu's modules share: the main menu's first page, weak
                             pointers held in the game's widgets, and FStrings read and copied the game's way (the UI
                             system's managers are players/game_globals' UiSlot)
+    help_spacing            The help bar under the Co-op page, fitted to the page's long help lines
+                            (research/RE-options-help-bar.md)
     title_row               The Co-op row of the title menu, directly below Options, so a player sees it on starting the
                             game
     title_row_rules.h       Where the title menu's Co-op row goes among its rows' kinds (research/RE-title-menu.md):
                             directly below Options, so the rows through Options keep their places
-tests/                      69 host-side test programs (ctest), one per pure header or code stub; run without the game
+tests/                      73 host-side test programs (ctest), one per pure header or code stub; run without the game
 ```

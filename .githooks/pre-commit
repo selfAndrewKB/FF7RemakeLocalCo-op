@@ -1,0 +1,7 @@
+#!/bin/sh
+# The repository's checks on the staged change (README.md, Checks before a commit).
+# Turned on per clone with: git config core.hooksPath .githooks
+command -v python >/dev/null 2>&1 || { echo "checks skipped: python is not on PATH" >&2; exit 0; }
+top=$(git rev-parse --show-toplevel) || exit 0
+python "$top/tools/checks/comment_style.py" staged "$top" || exit 1
+python "$top/tools/checks/code_hygiene.py" staged "$top" || exit 1

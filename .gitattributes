@@ -1,0 +1,2 @@
+# Git's shell runs the hook scripts and refuses a carriage return in them.
+.githooks/* text eol=lf

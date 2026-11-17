@@ -209,6 +209,8 @@ per-session cap: a cap once silenced the failure lines it shared a counter with.
 
 - Build: `cmake --build build --config Game__Shipping__Win64` (the mod's DLL, the setup app and the host tests);
   tests: `ctest --test-dir build -C Game__Shipping__Win64`. Every change builds clean and passes the tests.
+- The repository's checks run at every commit once turned on (`git config core.hooksPath .githooks`; README.md, Checks
+  before a commit). A finding is fixed, or named in the commit message with its reason.
 - **Review before every commit** by a separate reviewing agent, given the diff, this file and the question "what is
   wrong with this". Fix the findings, send it back, and commit only after it approves. Small optional
   points are cheap: take them.

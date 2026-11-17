@@ -1,0 +1,93 @@
+address	name	confidence	note
+0x140637ce0	GuardedMainWrapper	CONFIRMED	WinMain->this->GuardedMain(0x14062D120); tiny wrapper
+0x140637d20	WinMain	CONFIRMED	WinMain
+0x143f7c15c	?__scrt_common_main_seh@@YAHXZ	CONFIRMED	CRT entry (__scrt_common_main_seh) -> WinMain
+0x14062d120	GuardedMain	CONFIRMED	strings EngineInit/EngineInit_Loading/unreal-v%i-%s.dmp; calls FEngineLoop::Tick 0x140634D30 and FEngineLoop__Exit
+0x140634d30	FEngineLoop__Tick	CONFIRMED	strings t.IdleWhenNotForeground, r.OneFrameThreadLag; calls UEngine__UpdateTimeAndHandleMaxTickRate; called from GuardedMain loop
+0x142f32420	UGameEngine__Tick	CONFIRMED	prior name; UGameEngine::Tick (prior name)
+0x143011df0	UWorld_Tick_WithEndPhaseHook	CONFIRMED	prior name; UWorld::Tick with SE End phase hook (prior name)
+0x1432ffdc0	FTickTaskManager__RunTickGroup	CONFIRMED	FTickTaskManager vtable 0x144EBB2C0 slot7; ReleaseTickGroup(+8 sequencer) then ++Context.TickGroup(+40), newly-spawned loop over LevelList(+16)
+0x1432fcb20	FTickTaskSequencer__ReleaseTickGroup	ASSUMPTION	called by RunTickGroup with sequencer; ShouldUseThreadingForPerformance gate, DispatchTickGroup 0x1432FCF10, waits on tick completion events
+0x14332ca40	TGraphTask_FTickFunctionTask__ExecuteTask	CONFIRMED	vtable 0x144EBA0F8 slot1; sets DeltaTime, Target->ExecuteTick (vt+32), DispatchSubsequents, frees to TLS small-task cache
+0x141c03f30	FTaskGraphImplementation__WaitUntilTasksComplete	CONFIRMED	vtable 0x144D1E398 slot9; named-thread path ProcessThreadUntilRequestReturn, else TriggerEventWhenTasksComplete(slot10)+event wait
+0x141c02880	FNamedTaskThread__ProcessTasksUntilQuit	CONFIRMED	FNamedTaskThread vtable 0x144D1E4F0 slot6; inlined ProcessTasksNamedThread + SupportsMultithreading('nothreading')
+0x141c03c60	FTaskGraphImplementation__QueueTask	CONFIRMED	FTaskGraphImplementation vtable 0x144D1E398 slot0; picks named thread, EnqueueFromThisThread(+64)/EnqueueFromOtherThread(+80)
+0x141509d00	SEndRootOverlay__RenderToInGameUILayer	CONFIRMED	prior name; SE UI: root overlay render into in-game UI layer (mod's second HUD image driver calls it)
+0x1432ff4a0	FTickTaskManager_StartFrame_SetsAllowConcurrentTicks_ASSUMED	ASSUMPTION	prior name; FTickTaskManager vtable 0x144EBB2C0 slot5 = StartFrame (slot order consistent with RunTickGroup at slot7)
+0x1432fd4b0	FTickTaskLevel__QueueAllTicks	ASSUMPTION	called from FTickTaskManager StartFrame; calls QueueTickFunction per enabled tick function + cooldown list
+0x1433004c0	FTickFunction_QueueTickFunction_ASSUMED	ASSUMPTION	prior name; FTickFunction::QueueTickFunction (prior name); calls TGraphTask_FTickFunctionTask__CreateTask
+0x1432fcf10	FTickTaskSequencer__DispatchTickGroup	CONFIRMED	loops 15 hi-pri tick arrays (240 B per group), Unlock -> GTaskGraph->QueueTask (vt slot0), resets arrays
+0x1406cb220	AEndAIController_LogicTickFn_ExecuteTick	CONFIRMED	prior name; [S-RMK-NPCLOOK] ExecuteTick of AEndAIController's own FTickFunction (controller+0x480, vtable 0x144B256D8; ctor sets bCanEverTick|bHighPriority|bRunOnAnyThread,
+0x142c88730	FEndTFunctionTick__ExecuteTick	CONFIRMED	prior name; [S-RMK-ATKCAM2] SE FTickFunction subclass (vt 0x144BB6370): calls the bound TFunction (+0x50) with dt * owner time dilation.
+0x1416bf9d0	EndGame_WorldTickPhaseHook	CONFIRMED	prior name (earlier pass)
+0x141c02ab0	FNamedTaskThread__ProcessTasksUntilIdle	CONFIRMED	FNamedTaskThread vtable 0x144D1E4F0 slot7
+0x142016c70	SWidget__SlatePrepass	CONFIRMED	bCanHaveChildren(+24&8) -> GetChildren(vt+352), skip Collapsed, GetRelativeLayoutScale(vt+336), recurse, CacheDesiredSize(vt+320); called from SEnd paints
+0x1407e0860	EndSkelMeshComp_PostTick_GameThread_Timed	CONFIRMED	prior name; [S-RMK-ATKCAM2] UEndSkeletalMeshComponent override of vt+0x8C8: QPC-timed call of USkeletalMeshComponent__PostTick_GameThread_SE.
+0x142e8b210	USkeletalMeshComponent__PostTick_GameThread_SE	CONFIRMED	prior name; [S-RMK-ATKCAM2] vt+0x8C8, called by the comp+0x930 FEndTFunctionTick (bRunOnAnyThread cleared, high priority, prerequisite = the primary tick): vt+0x940 (finali
+0x1416bf150	EndGame_TickFieldSystems_CallsFieldStepTick	CONFIRMED	prior name (earlier pass)
+0x14332cc30	TGraphTask_FTickFunctionTask__CreateTask	ASSUMPTION	from QueueTickFunction; TLS small-task alloc + FGraphEvent::CreateGraphEvent, sets vtable 0x144EBA0F8
+0x141c21ae0	FLockFreePointerListLIFORoot__PopAllAndClose	ASSUMPTION	only caller FGraphEvent::DispatchSubsequents 0x141C044C0; CAS with Sleep on counter wrap
+0x14063ce00	FLockFreePointerListLIFORoot__PushIf_AddSubsequent	ASSUMPTION	CAS push with AllocateIfOk lambda, Sleep(1) on ABA counter wrap; FGraphEvent::AddSubsequent / PushIfNotClosed
+0x1414e7b60	SConstraintCanvas__ComputeDesiredSize_cand	ASSUMPTION	SWidget vt slot; loops slots: skip Collapsed, Offset FMargin/Alignment/Anchors TAttribute bindings evaluated; shared by 4 vtables
+0x1426ef4c0	FRenderingThread__Run	CONFIRMED	vtable 0x144D6E4E8 Run slot; calls RenderingThreadMain 0x1426EF1C0
+0x141d00950	FRunnableThreadWin__Run	CONFIRMED	Runnable->Init/Run/Exit via vtable, TlsSetValue; called by GuardedRun
+0x1426ef1c0	RenderingThreadMain	CONFIRMED	GTaskGraph AttachToThread(+0x28), ProcessThreadUntilRequestReturn(+0x38)
+0x141d00850	FRunnableThreadWin__GuardedRun	CONFIRMED	string 'Crash in runnable thread', SetThreadAffinityMask, calls Run 0x141D00950
+0x1425d4fb0	TGraphTask_RC_DrawScene__ExecuteTask	CONFIRMED	prior name; render command task that draws the scene (prior name)
+0x1425c9f90	RenderViewFamily_RenderThread_cand	ASSUMPTION	prior name; RenderViewFamily_RenderThread: per-family scene update + renderer Render (prior name)
+0x1421e64a0	FDeferredShadingSceneRenderer__Render	CONFIRMED	prior name; FDeferredShadingSceneRenderer::Render
+0x1425d3880	FDeferredShadingSceneRenderer__InitViews_cand	ASSUMPTION	prior name; InitViews: Pre/PostVisibilityFrameSetup, ComputeViewVisibility, InitViewsPossiblyAfterPrepass
+0x1425d0fd0	FSceneRenderer_ComputeViewVisibility	CONFIRMED	prior name; ComputeViewVisibility: frustum cull, occlusion cull, relevance
+0x1425d3db0	FDeferredShadingSceneRenderer__InitViewsPossiblyAfterPrepass	ASSUMPTION	calls FSceneRenderer__InitDynamicShadows + precomputed lighting/translucency setup; from InitViews and the after-prepass lambda 0x1421E84B0
+0x1425f89c0	FSceneRenderer__InitDynamicShadows	CONFIRMED	prior name (earlier pass)
+0x142198010	FDeferredShadingSceneRenderer__RenderBasePass	ASSUMPTION	from Render; FParallelCommandListSet or per-view RenderBasePassStaticDataType 0x142198530 x3
+0x142198530	FDeferredShadingSceneRenderer__RenderBasePassStaticDataType	ASSUMPTION	Scene+480+152*DrawType = BasePassUniformLightMapPolicyDrawList[DrawType] -> DrawVisible / front-to-back variant
+0x1421d30d0	TStaticMeshDrawList_DrawVisibleInner_FadeAlpha_A	CONFIRMED	prior name (earlier pass)
+0x1425cf830	FSceneRenderer_GatherDynamicMeshElements	CONFIRMED	prior name (earlier pass)
+0x1406cccc0	ParallelFor	CONFIRMED	Num<=1 || bForceSingleThread || !ShouldUseThreadingForPerformance -> inline; else FParallelForData tasks; callers ComputeViewVisibility, GatherDynamicMeshElements
+0x1425cd080	FSceneRenderer__OcclusionCull_cand	ASSUMPTION	prior name (earlier pass)
+0x1425cc360	FetchVisibilityForPrimitives_cand	ASSUMPTION	prior name; FetchVisibilityForPrimitives (occlusion query results), from OcclusionCull
+0x1426f8610	TGraphTask_RenderCommand__ExecuteTask_cand	ASSUMPTION	vtable 0x144D6E2D0 ExecuteTask shape (lambda call, DispatchSubsequents, TLS free); exact command type unknown
+0x143144ae0	FParticleSystemSceneProxy_GetDynamicMeshElements_SE	CONFIRMED	prior name (earlier pass)
+0x1425d8b60	FetchVisibilityForPrimitives_Range_cand	ASSUMPTION	prior name; FetchVisibilityForPrimitives_Range<false> per view (mod's occlusion fetch calls it)
+0x1425e4660	FSceneRenderer__RenderShadowDepthMaps_cand	ASSUMPTION	prior name (earlier pass)
+0x1421ed010	FDeferredShadingSceneRenderer__RenderPrePass_cand	ASSUMPTION	prior name (earlier pass)
+0x1421ebd30	FDeferredShadingSceneRenderer__RenderPrePassView_cand	ASSUMPTION	only caller RenderPrePass_cand; per-view depth prepass draw lists
+0x1425e2dd0	FProjectedShadowInfo__RenderDepth_cand	ASSUMPTION	called 3x from RenderShadowDepthMaps_cand; FParallelCommandListSet path for shadow depth
+0x140d87120	FDynamicRibbonEmitterData__FillVertexData_cand	ASSUMPTION	particle emitter-data vtable 0x144B8E9F8 slot; per-trail loop, FAsyncBufferFillData view (+128), tile distance (+484); render-thread vertex fill
+0x1425da4c0	FrustumCull_ParallelForBody	CONFIRMED	Scene+5376 PrimitiveBounds (36 B, MaxDrawDistance at +32), distance+frustum per 32-prim words; via thunk 0x1425DCFD0 from ComputeViewVisibility
+0x1425efe00	FSceneRenderer__SetupInteractionShadows_cand	ASSUMPTION	prior name (earlier pass)
+0x1421fd190	TStaticMeshDrawList_DrawVisibleInner_FadeAlpha_B	CONFIRMED	prior name (earlier pass)
+0x1425edcf0	ShadowSubject_AddPrimitive_StampFade_cand	ASSUMPTION	prior name (earlier pass)
+0x1425a14c0	TOctree_LightOctree__BoxIterator__AdvanceToNextIntersectingElement_cand	ASSUMPTION	48-B elements, box test vs light proxy radius; from AddPrimitiveSceneInfo / UpdatePrimitiveTransform light-interaction path
+0x141f9b6e0	FD3D12DynamicRHI__RHICreateUniformBuffer	ASSUMPTION	FD3D12DynamicRHI vtable slot right after RHICreateGraphicsPipelineState; per-device create, resource table (+152) refs
+0x1425d21b0	FSceneRenderer__PostVisibilityFrameSetup_SE_LightLODFlags	CONFIRMED	prior name (earlier pass)
+0x1426ef0e0	FRHIThread__Run	CONFIRMED	vtable 0x144D6E498; AttachToThread(+0x28) + ProcessThreadUntilRequestReturn(+0x38) on RHI thread
+0x1426e86a0	TGraphTask_FExecuteRHIThreadTask__ExecuteTask	CONFIRMED	GRHIThreadOnTasksCritical enter, ExecuteInner_DoExecute 0x1426E0500, FRHICommandListBase__Reset, DispatchSubsequents
+0x141f62480	FD3D12CommandContext__FlushCommands_cand	ASSUMPTION	prior name; FD3D12CommandContext::FlushCommands (prior name)
+0x141f6ac90	FD3D12CommandListManager__ExecuteCommandList	CONFIRMED	wraps one handle in array and calls ExecuteCommandLists (vt+8); called from FlushCommands
+0x141f6ad70	FD3D12CommandListManager__ExecuteCommandLists	CONFIRMED	asserts 'GetParentDevice()->GetResidencyManager().ExecuteCommandLists', 'pCommandQueue->Signal/Wait(FenceCore...)'; vtable 0x144D3A640 slot1
+0x141f57b00	D3DX12Residency_ResidencyManager__ExecuteCommandLists_cand	ASSUMPTION	prior name; D3DX12 residency manager ExecuteCommandLists (prior name)
+0x141f095f0	FRHICommandDrawIndexedPrimitive__Execute	CONFIRMED	Context vt+664 (slot83 = RHIDrawIndexedPrimitive) with 8 args from command fields +16..
+0x141f67100	FD3D12CommandContext__RHISubmitCommandsHint_cand	ASSUMPTION	prior name; ctx vtable slot18 right after PushEvent/PopEvent = RHISubmitCommandsHint (mod's family-boundary reset calls it)
+0x141f66570	FD3D12CommandContext__RHIDrawIndexedPrimitive	CONFIRMED	ctx vtable slot83 (0x144D3AD00); index format R16/R32 (57/42), prim count by type, CommitGraphicsResourceTables
+0x141f9fcc0	FD3D12CommandContext__RHIEndDrawingViewport	CONFIRMED	ctx vtable slot between RHIEndOcclusionQueryBatch/BeginDrawingViewport and RHIBeginFrame; calls Present 0x141F9F790
+0x141f9f790	FD3D12Viewport__Present_cand	ASSUMPTION	only caller RHIEndDrawingViewport; back-buffer transition, FlushCommands, present (Result check), WaitForSingleObjectEx
+0x141f62b60	FD3D12CommandContext__RHIEndFrame	CONFIRMED	prior name; FD3D12CommandContext::RHIEndFrame (prior name)
+0x141f94510	FD3D12StateCache__ApplyState_Graphics_cand	ASSUMPTION	prior name; D3D12 state cache ApplyState graphics (prior name)
+0x141f64330	FD3D12CommandContext__RHISetGraphicsPipelineState	CONFIRMED	ctx vtable slot after RHISetScissorRect; resets stencil ref/blend factor, compares PSO (+352), sets BSS/topology
+0x141f64c30	FD3D12CommandContext__RHISetShaderUniformBuffer_OneStage	ASSUMPTION	ctx vtable 0x144D3AC90; per-slot UB (+5472+8*idx), dirty bits (+5456), bound UB refs (+10192)
+0x141f5e5e0	FD3D12_GapRecorder_EndFrame_cand	ASSUMPTION	from RHIEndFrame, gated by D3D12.EnableGapRecorder (dword_1453A4B1C, static 1) + timestamp support; gathers cmd-list exec times
+0x141f6bde0	FD3D12CommandListManager__GetCommandListTimingResults_cand	ASSUMPTION	calls LinearQueryHeap resolve 0x141F7CE90, sorts timestamp pairs
+0x141f7ce90	FD3D12LinearQueryHeap__EndQueryBatchAndResolveQueryData_cand	CONFIRMED	assert 'Adapter->CreateCommittedResource( ResultBufferDesc, ...' D3D12Query.cpp:1115 -> creates a readback buffer per call
+0x141f836d0	FD3D12Adapter__CreateCommittedResource	CONFIRMED	callers assert with 'Adapter->CreateCommittedResource(...)' (e.g. D3D12Query.cpp:1115)
+0x141f660f0	FD3D12CommandContext__CommitGraphicsResourceTables_cand	ASSUMPTION	called first by every Draw*; per-stage SetResourcesFromTables 0x141F73820/73A50/73C80
+0x141f73a50	FD3D12CommandContext__SetResourcesFromTables_OneStage_cand	ASSUMPTION	only code caller CommitGraphicsResourceTables; per-resource SRV set via 0x141F93EE0
+0x141f93ee0	FD3D12StateCache__SetShaderResourceView_cand	ASSUMPTION	12 callers incl ConditionalClearShaderResource, SetShaderTexture; refcount swap + pending delete push
+0x141f7d3a0	FD3D12LinearQueryHeap__ReadBackQueryBatches_cand	ASSUMPTION	assert 'QueryBatch->RBuffer->GetResource()->Map(0, nullptr...'; IsComplete checks
+0x142627520	InjectTranslucentVolumeLightingArray_Views0	CONFIRMED	prior name; translucent volume lighting inject (mod's sun-cascade inject calls it)
+0x1425c9770	FRendererModule__BeginRenderingViewFamily	CONFIRMED	prior name; FRendererModule::BeginRenderingViewFamily (mod's per-family submit calls it)
+0x14251c230	FPostProcessing__Process	CONFIRMED	prior name; FPostProcessing::Process (mod's UI post-process calls it)
+0x141418010	FieldCommandCtrl__Tick	CONFIRMED	prior name (earlier pass)
+0x140fddad0	AEndFieldCameraOperator__Tick	CONFIRMED	prior name (earlier pass)
+0x141479d90	EndUISlot29_NaviMapIconMgr__AddIcon	CONFIRMED	prior name; [S-RMK-LEADMARK] AddIcon(mgr, FName key BY VALUE, u8 kind, const FVector* pos, const FString* text, const Params24* p). Params24 = {f32 LineLength(->entry+0x48:
