@@ -8,9 +8,9 @@
     python tools/game.py status                     every readable value (exit 2 if the mod is not listening)
     python tools/game.py launch                     start the game through Steam and wait for the console
     python tools/game.py quit                       players 3 and 2 leave, then the engine's quit; waits for the exit
-    python tools/game.py relaunch [--deploy [--label v0.8.0]]
-                                                    quit, optionally install the build (hash-checked, backed up),
-                                                    keep the old UE4SS.log, launch, wait for the console
+    python tools/game.py relaunch [--deploy [--label v0.8.0]] [--no-launch]
+                                                    quit, optionally install the build (hash-checked, backed up) and
+                                                    the setup app, keep the old UE4SS.log, launch, wait for the console
     python tools/game.py load-save                  from the title screen: any button, Continue, Yes; waits on the
                                                     mod's game.state / field.step readings for the load
     python tools/game.py shot [--out file] [--width 1280]
@@ -21,6 +21,9 @@
 The mod listens on 127.0.0.1:4418 (src/control/remote.h): one command per line, UTF-8; every reply is one line
 starting with ok, failed, rejected, dropped, value, help or note (src/control/runner.h). `help` lists the
 commands the running build registered.
+
+The game is found through Steam's library list; FF7R_GAME_DIR (the game's End/Binaries/Win64 folder) overrides it.
+Screenshots go to LSS_SHOTS_DIR, else a folder in the temp directory.
 """
 import argparse
 import hashlib

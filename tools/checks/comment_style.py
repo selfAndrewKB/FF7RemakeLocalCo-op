@@ -1,4 +1,4 @@
-"""The comment rule of the LocalSplitScreen mods' READMEs ("Comments"), enforced.
+"""The comment rule of the LocalSplitScreen mods' AGENTS.md ("Code"), enforced.
 
 A comment says what the code does and why and stays true as the code ages. This check refuses comment text that
 breaks that, in a LocalSplitScreen mod's C++ (src/ and tests/):
@@ -338,7 +338,7 @@ def main():
             findings = edit_findings(event)
             if not findings:
                 return 0
-            sys.stderr.write("Comment style (the README's Comments rule) refuses this edit:\n" +
+            sys.stderr.write("Comment style (AGENTS.md's comment rule) refuses this edit:\n" +
                              "\n".join("- " + f for f in findings[:MAX_FINDINGS]) +
                              "\nReword the comment: what the code does and why, no date, person, version, section, tag, address, "
                              "other mod, history or plan pointer. A game term that matches by accident goes in "

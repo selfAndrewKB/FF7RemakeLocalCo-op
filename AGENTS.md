@@ -177,13 +177,14 @@ per-session cap: a cap once silenced the failure lines it shared a counter with.
 - **Delete what has served.** A one-shot probe comes out in the change that uses its answer. Dead code is deleted, not
   kept "just in case". A development watch is not a one-shot probe: it stays.
 - **Nothing kept by hand that restates the code.** Generate it or drop it. The settings file is written by the mod from
-  `src/platform/settings.h`; the README's Layout section is generated from each module's first comment by
-  `layout_doc.py`, whose `--check` says when it is out of date.
+  `src/platform/settings.h`; the README's project map is written by `tools/layout_doc.py`, and a test says when
+  it is out of date.
 - **New features ship on by default,** with their logging. Options go in the settings table, never in ad-hoc toggles.
 - **Comments say what the code does and why,** in plain sentences that stay true as the code ages. A comment has no
   dates, version numbers or history ("used to", "now", "until"), no quotes of or credit to people, no mention of the
-  sibling mod, no raw addresses (name the game's function; the address is a fact), no research section numbers. It may
-  name a research file and mark a claim `[CONFIRMED]` or `[ASSUMPTION]`.
+  sibling mod, no raw addresses (name the game's function; the address is a fact; in a machine-code stub, the file's
+  named constant, with an offset where needed), no research section numbers or pass tags, no pointers into the plan.
+  It may name a research file and mark a claim `[CONFIRMED]` or `[ASSUMPTION]`.
 - **Never edit comments or names with a regex or a script sweep.** Read each site and edit it by hand; a pattern cannot
   tell which uses are meant.
 - **Look up a real API's signature before calling it.** Never write against an API you guessed.
@@ -209,8 +210,16 @@ per-session cap: a cap once silenced the failure lines it shared a counter with.
 
 - Build: `cmake --build build --config Game__Shipping__Win64` (the mod's DLL, the setup app and the host tests);
   tests: `ctest --test-dir build -C Game__Shipping__Win64`. Every change builds clean and passes the tests.
-- The repository's checks run at every commit once turned on (`git config core.hooksPath .githooks`; README.md, Checks
-  before a commit). A finding is fixed, or named in the commit message with its reason.
+- `python package.py` builds, runs the tests and makes the release zip.
+- The repository's checks run at every commit once turned on (`git config core.hooksPath .githooks`):
+  `tools/checks/comment_style.py` (the comment rule above) and `tools/checks/code_hygiene.py` (a raw offset outside
+  the facts header; a line, value or predicate that already exists; a game global rebased or a pointer hop written in a
+  second place; a struct another file has; a function nothing calls). A finding is fixed, or named in the commit
+  message with its reason and committed with `LSS_COMMENT_STYLE_REVIEWED=1` or `LSS_HYGIENE_REVIEWED=1` set. A fault in
+  a check itself never blocks a commit. By hand: `python tools/checks/comment_style.py check src tests` and
+  `python tools/checks/code_hygiene.py census .`. A game term the comment rule matches by accident goes in
+  `tools/checks/comment_style_allow.txt`. For Claude Code, `.claude/settings.json` runs the same checks at each edit
+  and commit.
 - **Review before every commit** by a separate reviewing agent, given the diff, this file and the question "what is
   wrong with this". Fix the findings, send it back, and commit only after it approves. Small optional
   points are cheap: take them.
@@ -225,7 +234,13 @@ per-session cap: a cap once silenced the failure lines it shared a counter with.
 ## Driving the game
 
 - Close the game before installing a DLL (it holds the file open), and close it at the end of a task.
+  `python tools/game.py relaunch --deploy --label <name>` installs and starts it (`--no-launch` to install only).
 - Install only this mod's DLL and the setup app, never the `UE4SS.dll` this build produces.
+- The tools run from the repository with Python 3.11 or later; each one's first lines say how to use it. They find
+  the game through Steam's library list and their helpers where those install by default; to point them elsewhere:
+  `FF7R_GAME_DIR` (the game's `End\Binaries\Win64` folder), `VIGEM_CLIENT_DLL`, `RENDERDOC_DIR`, `NGFX`,
+  `LLVM_SYMBOLIZER`; `LSS_CAPTURES_DIR` and `LSS_SHOTS_DIR` (where captures and screenshots go); `LSS_MODDLL` and
+  `LSS_DUMP` (the performance analysis); `IDA_DATABASES` (the databases `tools/checks/ida_db_guard.py` watches).
 - Read a screenshot before every menu confirmation. Never script past a Save or Load dialog: a save was overwritten
   that way once.
 - Never touch a play session someone else is running: copy the log read-only and wait.

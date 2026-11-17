@@ -796,3 +796,6 @@ add_executable(StateSlotsWalkTests
 target_include_directories(StateSlotsWalkTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_compile_features(StateSlotsWalkTests PRIVATE cxx_std_20)
 add_test(NAME state_slots_walk COMMAND StateSlotsWalkTests)
+
+# The README's project map is written by tools/layout_doc.py: out of date fails.
+add_test(NAME layout_doc COMMAND python -I "${CMAKE_CURRENT_SOURCE_DIR}/tools/layout_doc.py" --check)
