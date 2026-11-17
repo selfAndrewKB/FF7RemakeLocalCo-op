@@ -116,8 +116,7 @@ the UE4SS the game runs: a C++ mod is built against that UE4SS's headers. RE-UE4
 Unreal headers, which need a GitHub account linked to Epic Games.
 
 ```
-git clone https://github.com/UE4SS-RE/RE-UE4SS deps/RE-UE4SS
-git -C deps/RE-UE4SS checkout e31aaaa6
+git clone --branch v4.0.0 https://github.com/UE4SS-RE/RE-UE4SS deps/RE-UE4SS
 git -C deps/RE-UE4SS -c url."https://github.com/".insteadOf="git@github.com:" submodule update --init --recursive
 cmake -S . -B build -G "Visual Studio 17 2022"
 cmake --build build --config Game__Shipping__Win64
@@ -126,8 +125,11 @@ ctest --test-dir build -C Game__Shipping__Win64
 
 ## Installing
 
-UE4SS built from RE-UE4SS `e31aaaa6` with the RE-UE4SS custom config `Final Fantasy 7 Remake`, and
-**`HookLoadMap = 0`** in `UE4SS-settings.ini` (with it on, every exit crashes). Copy
+UE4SS 4.0.0 (`UE4SS_v4.0.0.zip` from the RE-UE4SS releases on GitHub: `dwmapi.dll` beside the game's exe, the `ue4ss`
+folder beside it) with the RE-UE4SS custom config `Final Fantasy 7 Remake` (its `MemberVariableLayout.ini` and
+`VTableLayout.ini` in the `ue4ss` folder), and in `UE4SS-settings.ini` **`HookLoadMap = 0`** under `[Hooks]` (with it
+on, every exit crashes) and `MajorVersion = 4`, `MinorVersion = 18` under `[EngineVersionOverride]`. A build of the mod
+runs only on the UE4SS whose headers it was built against: an older UE4SS refuses this one (error 0x7f). Copy
 `build/Game__Shipping__Win64/LocalSplitScreen.dll` to `<game>/End/Binaries/Win64/ue4ss/Mods/LocalSplitScreen/dlls/main.dll`
 and add `LocalSplitScreen : 1` to `Mods/mods.txt`. Close the game first.
 

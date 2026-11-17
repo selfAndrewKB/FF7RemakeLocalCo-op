@@ -33,6 +33,8 @@ public:
     /// The pointer stored at an IDA address (for vtable entries), or empty if outside the image.
     std::optional<std::uintptr_t> ReadPointer(std::uintptr_t idaAddress) const noexcept;
 
+    /// True if a live address lies inside the image (the game's own code or data, not a loader's).
+    bool Contains(std::uintptr_t live) const noexcept { return live >= base_ && live - base_ < size_; }
 
 private:
     GameImage(std::uintptr_t base, std::size_t size) noexcept : base_(base), size_(size) {}

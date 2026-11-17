@@ -45,11 +45,19 @@ struct CodeSite
 /// The first of `sites` whose bytes differ in the image, or null when every one is as listed.
 const CodeSite* FirstDiffering(const GameImage& image, std::span<const CodeSite> sites) noexcept;
 
-/// The live address of `fact`'s function, or empty (logged) if its entry bytes differ.
+/// The live address of `fact`'s function, or empty (logged) if its entry bytes differ at three reads a millisecond
+/// apart (a loader can hook a function for a moment while it starts).
 std::optional<std::uintptr_t> FindFunction(const GameImage& image, const FunctionFact& fact) noexcept;
 
-/// Points `fact`'s slot at `replacement` if the slot holds the expected function and that function
-/// has the expected entry bytes. Returns false (logged), changing nothing, otherwise.
+/// As FindFunction, for a function the mod only calls and never patches: another hook's jump at its entry (to a place
+/// outside the game's image) is also accepted when the expected bytes resume after it and at least six of them run
+/// to the end of the entry (logged), since a call through the hook reaches the game's function. Never for a function
+/// the mod redirects: that would write over the other hook.
+std::optional<std::uintptr_t> FindCallable(const GameImage& image, const FunctionFact& fact) noexcept;
+
+/// Points `fact`'s slot at `replacement` if the slot holds the expected function and that function has the expected
+/// entry bytes, or another hook's jump before them as FindCallable allows (the slot replacement never touches the
+/// entry). Returns false (logged), changing nothing, otherwise.
 bool ReplaceSlot(const GameImage& image, const SlotFact& fact, std::uintptr_t replacement, VTableEntry& entry) noexcept;
 
 }  // namespace lss::platform

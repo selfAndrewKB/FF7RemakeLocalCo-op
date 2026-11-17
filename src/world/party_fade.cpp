@@ -200,7 +200,7 @@ bool Install(const platform::GameImage& image) noexcept
 {
     ForgetAll();
     const auto apply   = platform::FindFunction(image, facts::kApplyCameraFade);
-    const auto name    = platform::FindFunction(image, facts::kNameFromWide);
+    const auto name    = platform::FindCallable(image, facts::kNameFromWide);  // UE4SS's own hook may sit at its entry
     const auto find    = platform::FindFunction(image, facts::kGetPlayerActor);
     const auto manager = players::game_globals::Address(players::game_globals::Global::PartyManager);
     if (!apply || !name || !find || !manager)
