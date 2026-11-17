@@ -371,7 +371,7 @@ void CopySlots(Record& record, const Slots& one, void* source, void* target, boo
         if (platform::CallGuarded(g_primaryCut, unused))
         {
             ++record.cuts;
-            platform::LogDebug(L"{}: camera cut raised on {}", prefix, who);
+            platform::LogTrace(L"{}: camera cut raised on {}", prefix, who);
         }
     }
     // The note is player 1's update's, rewritten every frame; every later update this frame reads it too.
@@ -572,8 +572,8 @@ void Tick(void* managerOne, const SeatManagers& seatManagers) noexcept
         {
             continue;
         }
-        // The slot and the active set at Info (a few times per scene); the blend and cut edges at Debug; the FOV and
-        // the aspect, which a scene's camera cuts and the field camera's own easing move every frame, at Trace.
+        // The slot and the active set at Info (a few times per scene); the blend and pending-cut edges at Debug; the
+        // FOV and the aspect, which a scene's camera cuts and the field camera's own easing move every frame, at Trace.
         if (!g_logged || now.valid != was.valid || now.current != was.current || now.active != was.active ||
             now.constrain != was.constrain)
         {

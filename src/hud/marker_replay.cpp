@@ -1043,7 +1043,7 @@ void ReplayBars(int column, const std::int32_t (&context)[2], void* controller) 
             }
             else
             {
-                platform::LogDebug(L"HUD markers: {}'s view (column {}): {} enemy bar(s) classed otherwise than the tick (own target {}, its main target {})",
+                platform::LogTrace(L"HUD markers: {}'s view (column {}): {} enemy bar(s) classed otherwise than the tick (own target {}, its main target {})",
                                    who, column + 1, reclassed, two.own, two.main);
             }
         }

@@ -7,7 +7,7 @@
 namespace lss::platform {
 
 namespace detail {
-std::atomic<std::uint8_t> g_level{static_cast<std::uint8_t>(Level::Debug)};  // Debug by default: the development setting
+std::atomic<std::uint8_t> g_level{static_cast<std::uint8_t>(Level::Debug)};  // Debug by default; per-frame lines are Trace
 }
 
 void SetLevel(Level level) noexcept

@@ -2,7 +2,7 @@
 
 // The mod's log: one line per event, written to UE4SS.log with a "[LocalSplitScreen]" prefix.
 //
-// Every line has a level. The log writes the levels up to the current one (Info at start; the console command
+// Every line has a level. The log writes the levels up to the current one (Debug at start; the console command
 // `log-level` changes it at run time):
 //   Error, Warning  something failed, or the mod stood a feature aside;
 //   Info            what the mod verified at startup, players joining and leaving, mode switches, state changes
@@ -35,7 +35,7 @@ enum class Level : std::uint8_t
     Trace,
 };
 
-/// The most detailed level written (Info at start). Any thread.
+/// The most detailed level written (Debug at start). Any thread.
 void  SetLevel(Level level) noexcept;
 Level CurrentLevel() noexcept;
 

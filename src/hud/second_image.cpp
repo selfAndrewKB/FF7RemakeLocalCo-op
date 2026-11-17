@@ -298,7 +298,7 @@ void Driver(void* delegate)
         g_lastFurtherMs = g_timing.furtherMs / g_timing.frames;
         g_lastOneMs     = g_timing.oneMs / g_timing.frames;
         g_timing        = {};
-        platform::LogDebug(L"HUD image: overlay render ms per frame over 300 frames: the further columns' passes {:.3f}, "
+        platform::LogTrace(L"HUD image: overlay render ms per frame over 300 frames: the further columns' passes {:.3f}, "
                            L"player 1's {:.3f}",
                            g_lastFurtherMs, g_lastOneMs);
     }

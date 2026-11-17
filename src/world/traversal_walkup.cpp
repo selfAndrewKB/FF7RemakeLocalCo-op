@@ -444,7 +444,7 @@ char Route(std::uint64_t volume, void* collider, bool enter, const platform::Cal
         ++g_seats[g_current].heldBack;
         if (actor == nullptr)
         {
-            platform::LogDebug(L"walk-up: {}'s trigger {} volume {:#x} held back (not a field-action spot)", players::SeatName(g_current),
+            platform::LogTrace(L"walk-up: {}'s trigger {} volume {:#x} held back (not a field-action spot)", players::SeatName(g_current),
                                enter ? L"entered" : L"left", volume);
             return 0;
         }
