@@ -211,7 +211,8 @@ per-session cap: a cap once silenced the failure lines it shared a counter with.
 - Build: `cmake --build build --config Game__Shipping__Win64` (the mod's DLL, the setup app and the host tests);
   tests: `ctest --test-dir build -C Game__Shipping__Win64`. Every change builds clean and passes the tests.
 - `python package.py` builds, runs the tests and makes the release zip, with UE4SS's game config for this game
-  (`HookLoadMap = 0`); `--nexus` makes the Nexus Mods one, without the setup app.
+  (`HookLoadMap = 0`); `--nexus` makes the Nexus Mods one, without the setup app. `python tools/release.py vX.Y.Z`
+  makes both from a tag and creates the GitHub release (the zip and the setup app attached), when the maintainer asks.
 - The repository's checks run at every commit once turned on (`git config core.hooksPath .githooks`):
   `tools/checks/comment_style.py` (the comment rule above) and `tools/checks/code_hygiene.py` (a raw offset outside
   the facts header; a line, value or predicate that already exists; a game global rebased or a pointer hop written in a

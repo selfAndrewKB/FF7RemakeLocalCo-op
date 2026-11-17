@@ -38,7 +38,7 @@ ORDER = ['platform', 'control', 'players', 'battle', 'world', 'views', 'hud', 'r
 OTHER = [
     ('setup/', 'the Multi Monitor Setup app'),
     ('tests/', 'host tests, run without the game'),
-    ('tools/', 'console client and game control, virtual pad, commit checks, crash and performance tools'),
+    ('tools/', 'console client and game control, virtual pad, commit checks, releases, crash and performance tools'),
 ]
 MISSING = '(no description: add one to tools/layout_doc.py)'
 WIDTH = 120

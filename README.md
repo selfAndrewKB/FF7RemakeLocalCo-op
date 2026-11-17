@@ -74,7 +74,7 @@ src/
   menu/             the Co-op rows in the main menu and on the title screen, and the Co-op page they open
 setup/              the Multi Monitor Setup app
 tests/              host tests, run without the game
-tools/              console client and game control, virtual pad, commit checks, crash and performance tools
+tools/              console client and game control, virtual pad, commit checks, releases, crash and performance tools
 ```
 
 `tools/layout_doc.py` writes this map, and a test fails when it is out of date. Each module's header comment says what
