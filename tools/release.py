@@ -22,7 +22,7 @@ import tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-import package  # noqa: E402  (its version reader, build configuration, folder name, UE4SS release and runner)
+import package  # noqa: E402  (its version reader and number, zip names, build configuration, UE4SS release and runner)
 
 BUILT_FROM = ["src", "setup", "CMakeLists.txt", "LICENSE", "LICENSE-EXCEPTION", "package.py"]
 
@@ -71,7 +71,7 @@ def main() -> int:
         sys.exit("--notes is empty: a release needs the maintainer's description")
 
     version = package.line_value(ROOT / "src" / "mod.cpp", r'kVersion = L"([^"]+)"')
-    if args.tag != "v" + version.split("-")[0]:
+    if args.tag != "v" + package.number(version):
         sys.exit(f"{args.tag} is not the version src/mod.cpp carries ({version})")
     local = tag_commit(args.tag)
     checked_sources(args.tag)
@@ -82,8 +82,8 @@ def main() -> int:
 
     package.run(sys.executable, "package.py")
     package.run(sys.executable, "package.py", "--no-build", "--nexus")
-    zip_path = ROOT / "dist" / f"{package.FOLDER}-v{version}.zip"
-    nexus = ROOT / "dist" / f"{package.FOLDER}-v{version}-nexus.zip"
+    zip_path = package.zip_path(version, nexus=False)
+    nexus = package.zip_path(version, nexus=True)
     setup = package.line_value(ROOT / "src" / "views" / "display_move.h", r'kSetupExe = L"([^"]+)"')
     app = ROOT / "build" / package.CONFIG / setup
     for path in (zip_path, nexus, app):

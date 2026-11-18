@@ -12,7 +12,8 @@ ue4ss/, UE4SS's custom game config for this game, as RE-UE4SS ships it (its layo
 UE4SS-settings.ini), with one change: HookLoadMap = 0 (with 1, UE4SS's map-load hook lands on the engine's exit path in
 this game and every exit crashes). The config comes from the RE-UE4SS checkout the build uses (deps/RE-UE4SS, which must
 be the release the mod is built for). The version is src/mod.cpp's and the setup app's name src/views/display_move.h's,
-the lines the build reads too. No settings file of the mod is packed: the mod writes it.
+the lines the build reads too; the zip is named by the version's number alone (LocalSplitScreen-v1.1.0.zip for
+"1.1.0-name"). No settings file of the mod is packed: the mod writes it.
 """
 import argparse
 import hashlib
@@ -35,6 +36,15 @@ def line_value(path: pathlib.Path, pattern: str) -> str:
     if not found:
         sys.exit(f"{path.relative_to(ROOT)}: no line matches {pattern}")
     return found.group(1)
+
+
+def number(version: str) -> str:
+    """The version's number, its name dropped ("1.1.0" for "1.1.0-name"): what the zips and the release tag carry."""
+    return version.split("-")[0]
+
+
+def zip_path(version: str, nexus: bool) -> pathlib.Path:
+    return ROOT / "dist" / f"{FOLDER}-v{number(version)}{'-nexus' if nexus else ''}.zip"
 
 
 def run(*command: str) -> None:
@@ -102,7 +112,7 @@ def main() -> int:
     files.append((f"{mod}/LICENSE-UE4SS", (UE4SS / "LICENSE").read_bytes()))
     files += game_config()
 
-    out = ROOT / "dist" / f"{FOLDER}-v{version}{'-nexus' if args.nexus else ''}.zip"
+    out = zip_path(version, args.nexus)
     out.parent.mkdir(exist_ok=True)
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
         for name, data in files:
