@@ -13,9 +13,8 @@ Local split-screen co-op for up to three players in FINAL FANTASY VII REMAKE INT
 
 ## Installing
 
-1. Unpack UE4SS into `<game>\End\Binaries\Win64\`: `dwmapi.dll` beside the game's exe, and the `ue4ss` folder.
-2. Unpack the mod's zip into the same folder. It holds the mod, in `ue4ss\Mods\LocalSplitScreen\`, and UE4SS's custom
-   game config for this game, whose `UE4SS-settings.ini` has `HookLoadMap = 0`: with it on, every exit crashes.
+1. Unpack UE4SS into `FINAL FANTASY VII REBIRTH\End\Binaries\Win64\`: placing the `dwmapi.dll` file and the `ue4ss` folder beside `ff7remake_.exe`
+2. Unpack the mod's zip into the same folder. One file it contains is `UE4SS-settings.ini`, which has `HookLoadMap = 0`: with it on, every exit crashes.
 3. Optional, to play across multiple monitors: put `MultiMonitorSetup.exe` in `ue4ss\Mods\LocalSplitScreen\`.
 
 The mod writes its settings to `LocalSplitScreen.ini` in that folder.
