@@ -77,7 +77,11 @@ void TableConsistent()
             open = option->section;
         }
     }
-    EXPECT(kOptions.size() == 22);
+    EXPECT(kOptions.size() == 23);
+    // The HUD size: 0.75 to 1.50 in steps of 0.05, 1.00 (today's) by default, each word naming its factor.
+    EXPECT(kHudScale.words.size() == 16 && std::wcscmp(kHudScale.fallback, L"1.00") == 0);
+    EXPECT(std::wcscmp(kHudScaleWords.front(), L"0.75") == 0 && std::wcscmp(kHudScaleWords.back(), L"1.50") == 0);
+    EXPECT(std::wcscmp(kHudScaleLabels[5], L"x1.00") == 0 && HudScaleOf(5) == 1.0f && HudScaleOf(15) == 1.5f);
     // Players 2 and 3's Responsiveness: rows of the game's own screen, the game's levels 1 to 5.
     for (const Option* responsiveness : {&kResponsivenessTwo, &kResponsivenessThree})
     {

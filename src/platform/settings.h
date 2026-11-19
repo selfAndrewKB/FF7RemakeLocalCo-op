@@ -213,6 +213,56 @@ inline constexpr Option kVerticalFov{  // views/split_fov
     L"Controls the field of view when playing in vertical split-screen. Also affects the largest view during 3-player. "
     L"Lower values show more of the scene."};
 
+// The HUD size in a split window (hud/overlay_layout): 0.75 to 1.50 in steps of 0.05, written "1.25" in the file and
+// "x1.25" on the Co-op page.
+inline constexpr std::size_t kHudScaleSteps = 16;
+using HudScaleText = std::array<std::array<wchar_t, 6>, kHudScaleSteps>;
+/// The factor of the i-th word.
+constexpr float HudScaleOf(std::size_t i) noexcept
+{
+    return static_cast<float>(75 + 5 * i) / 100.0f;
+}
+consteval HudScaleText MakeHudScaleText(bool times)
+{
+    HudScaleText text{};
+    for (std::size_t i = 0; i < kHudScaleSteps; ++i)
+    {
+        const std::size_t hundredths = 75 + i * 5;
+        std::size_t       at         = 0;
+        if (times) text[i][at++] = L'x';
+        text[i][at++] = static_cast<wchar_t>(L'0' + hundredths / 100);
+        text[i][at++] = L'.';
+        text[i][at++] = static_cast<wchar_t>(L'0' + hundredths / 10 % 10);
+        text[i][at++] = static_cast<wchar_t>(L'0' + hundredths % 10);
+        text[i][at]   = L'\0';
+    }
+    return text;
+}
+inline constexpr HudScaleText kHudScaleText      = MakeHudScaleText(false);
+inline constexpr HudScaleText kHudScaleTimesText = MakeHudScaleText(true);
+consteval std::array<const wchar_t*, kHudScaleSteps> MakeHudScaleWords(const HudScaleText& text)
+{
+    std::array<const wchar_t*, kHudScaleSteps> words{};
+    for (std::size_t i = 0; i < kHudScaleSteps; ++i)
+    {
+        words[i] = text[i].data();
+    }
+    return words;
+}
+/// "0.75" ... "1.50": the words.
+inline constexpr std::array<const wchar_t*, kHudScaleSteps> kHudScaleWords = MakeHudScaleWords(kHudScaleText);
+/// "x0.75" ... "x1.50": the page's values.
+inline constexpr std::array<const wchar_t*, kHudScaleSteps> kHudScaleLabels = MakeHudScaleWords(kHudScaleTimesText);
+
+inline constexpr Option kHudScale{  // hud/overlay_layout
+    L"Views", L"hud-scale", kHudScaleWords, L"1.00",
+    L"the HUD's size in each view of a split window, times this: 0.75 to 1.50 in steps of 0.05 (1.00 is today's, half the "
+    L"single-player size in each half); the single view, the menus and scenes and a row of monitors keep the game's size; "
+    L"from the next frame",
+    false, L"Split-Screen HUD Size", kHudScaleLabels,
+    L"Controls the size of the HUD in each player's view during split-screen in one window. Does not affect multi-monitor "
+    L"mode."};
+
 inline constexpr Option kEnemyDamage{  // battle/battle_rates
     L"Battle", L"enemy-damage", kTenthsWords, L"1.0",
     L"the damage enemies deal to the players' party, times this (0.1 to 10.0, steps of 0.1; 1.0 is the game's); from the "
@@ -313,7 +363,7 @@ inline constexpr Option kConsole{  // mod.cpp, control/remote
 
 /// Every option, in the order the settings file lists them.
 inline constexpr std::array kOptions{&kMultiMonitor, &kMonitors,    &kColumnOrder,  &kTwoPlayerSplit, &kThreePlayerSplit, &kHorizontalFov,
-                                     &kVerticalFov,  &kMenuSlow,    &kBattleWarps,  &kEnemyDamage,    &kEnemyHp,          &kBossHp,
+                                     &kVerticalFov,  &kHudScale,    &kMenuSlow,     &kBattleWarps,    &kEnemyDamage,      &kEnemyHp,          &kBossHp,
                                      &kEnemyStagger, &kExpGain,     &kApGain,       &kLeadHolder,     &kAreaLevels,       &kTalkGather,
                                      &kTalkFollow,   &kResponsivenessTwo, &kResponsivenessThree, &kConsole};
 
@@ -327,7 +377,7 @@ consteval bool Listed(const Option& option)
     return false;
 }
 static_assert(Listed(kMultiMonitor) && Listed(kMonitors) && Listed(kColumnOrder) && Listed(kTwoPlayerSplit) && Listed(kThreePlayerSplit) &&
-                  Listed(kHorizontalFov) && Listed(kVerticalFov) && Listed(kMenuSlow) && Listed(kBattleWarps) && Listed(kEnemyDamage) && Listed(kEnemyHp) && Listed(kBossHp) &&
+                  Listed(kHorizontalFov) && Listed(kVerticalFov) && Listed(kHudScale) && Listed(kMenuSlow) && Listed(kBattleWarps) && Listed(kEnemyDamage) && Listed(kEnemyHp) && Listed(kBossHp) &&
                   Listed(kEnemyStagger) && Listed(kExpGain) && Listed(kApGain) && Listed(kLeadHolder) && Listed(kAreaLevels) &&
                   Listed(kTalkGather) && Listed(kTalkFollow) && Listed(kResponsivenessTwo) && Listed(kResponsivenessThree) &&
                   Listed(kConsole),

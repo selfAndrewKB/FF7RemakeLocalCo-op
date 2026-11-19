@@ -49,9 +49,11 @@
 //    outside the render, the only thread that runs it.
 
 #include <array>
+#include <climits>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <optional>
 
 namespace lss::hud::layout_code {
 
@@ -268,5 +270,54 @@ inline constexpr std::uint8_t kScaleCode[] = {
     0xD6, 0xB9, 0x72, 0x3A,                          // 33: 1/1080, as the game stores it
     0x89, 0x88, 0x08, 0x3A};                         // 37: 1/1920, as the game stores it
 static_assert(sizeof(kScaleCode) == 41);
+
+/// kScaleCode, then the scale times the HUD size factor at `factor` (hud/overlay_layout.h: 1 outside a split window's
+/// band). The short jump lands after the constants, where the multiply is, so their rip-relative loads stay as they are.
+/// rax is free there: nothing reads it from the site to the render's next call, which clobbers it.
+inline constexpr std::size_t kScaleCodeWithFactorSize = sizeof(kScaleCode) + 14;
+inline std::array<std::uint8_t, kScaleCodeWithFactorSize> ScaleCode(const float* factor)
+{
+    std::array<std::uint8_t, kScaleCodeWithFactorSize> code{};
+    std::memcpy(code.data(), kScaleCode, sizeof(kScaleCode));
+    const auto address = reinterpret_cast<std::uint64_t>(factor);
+    code[41] = 0x48;  // 41: mov   rax, factor
+    code[42] = 0xB8;
+    std::memcpy(code.data() + 43, &address, sizeof(address));
+    code[51] = 0xF3;  // 51: mulss xmm4, [rax]
+    code[52] = 0x0F;
+    code[53] = 0x59;
+    code[54] = 0x20;
+    return code;
+}
+
+// --- 5. The contain scale's own function, beside its redirect -------------------------------------------------------
+// EndUI__ContainScaleFor1920x1080 begins with `movss xmm3, [rip+...]` (8 bytes), then a second rip-relative load. Its
+// entry is redirected over the first instruction only, and its own function is these bytes: the first load from the
+// constant's absolute address, then a jump to the second instruction, which stays in place. rax is free there: the
+// function never reads it.
+inline constexpr std::size_t kContainOriginalSize = 19;
+
+/// The bytes for `at`, loading xmm3 from `constant` and jumping to `next`; none when `next` is beyond a rel32 jump.
+inline std::optional<std::array<std::uint8_t, kContainOriginalSize>> ContainOriginal(std::uint64_t constant, std::uintptr_t at,
+                                                                                    std::uintptr_t next)
+{
+    const std::int64_t rel = static_cast<std::int64_t>(next) - static_cast<std::int64_t>(at + kContainOriginalSize);
+    if (rel < INT32_MIN || rel > INT32_MAX)
+    {
+        return std::nullopt;
+    }
+    const auto                                     rel32 = static_cast<std::int32_t>(rel);
+    std::array<std::uint8_t, kContainOriginalSize> code{};
+    code[0] = 0x48;  //  0: mov   rax, constant
+    code[1] = 0xB8;
+    std::memcpy(code.data() + 2, &constant, sizeof(constant));
+    code[10] = 0xF3;  // 10: movss xmm3, [rax]
+    code[11] = 0x0F;
+    code[12] = 0x10;
+    code[13] = 0x18;
+    code[14] = 0xE9;  // 14: jmp   next
+    std::memcpy(code.data() + 15, &rel32, sizeof(rel32));
+    return code;
+}
 
 }  // namespace lss::hud::layout_code

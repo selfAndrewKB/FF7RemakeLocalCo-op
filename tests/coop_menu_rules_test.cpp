@@ -77,7 +77,7 @@ void PageFromTheTable()
     EXPECT(rows.size() == onPage);
     EXPECT(std::wcscmp(page[0].text.label, L"Screens") == 0);
     EXPECT(std::wcscmp(page[2].text.label, L"Experimental") == 0);
-    EXPECT(page[0].options == (std::vector<int>{0, 2, 3, 4, 5, 6}));  // 1 is the monitors, set by the setup app
+    EXPECT(page[0].options == (std::vector<int>{0, 2, 3, 4, 5, 6, 7}));  // 1 is the monitors, set by the setup app
 }
 
 /// A row's byte is above every game setting (0..0x34) and names its option back; game bytes name none.
@@ -138,7 +138,7 @@ void SlidersAreTheLongRows()
         EXPECT(IsSlider(*option) == (option->wordLabels.size() > kListLongest));
         sliders += IsSlider(*option) ? 1 : 0;
     }
-    EXPECT(sliders == 8);  // the two weights, enemy damage, enemy HP, boss HP, stagger, EXP, AP
+    EXPECT(sliders == 9);  // the two weights, the HUD size, enemy damage, enemy HP, boss HP, stagger, EXP, AP
 }
 
 /// The window follows the marker with a cell of context, stays inside the gauge, and is 0 when everything fits.

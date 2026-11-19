@@ -85,8 +85,9 @@ public:
 
 private:
     HostValues saved_{};
-    bool       hasSaved_ = false;
-    bool       lent_     = false;
+    float      savedFactor_ = 1.0f;  // the HUD size of the standing layout, lent and put back with the set
+    bool       hasSaved_    = false;
+    bool       lent_        = false;
 };
 
 /// Whether the last overlay render laid the HUD out in a band. Game thread.

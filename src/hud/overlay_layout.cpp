@@ -10,14 +10,19 @@
 #include "hud/second_image.h"
 #include "hud/ui_effect_pass.h"
 #include "platform/call_redirect.h"
+#include "platform/code_memory.h"
 #include "platform/code_redirect.h"
+#include "platform/entry_redirect.h"
 #include "platform/game_thread.h"
 #include "platform/game_vectors.h"
 #include "platform/guarded.h"
 #include "platform/image.h"
 #include "platform/log.h"
+#include "platform/settings.h"
 #include "platform/verified_code.h"
 #include "players/game_globals.h"
+#include "views/whole_screen.h"
+#include "views/window_span.h"
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -56,8 +61,32 @@ std::uintptr_t         g_submitTarget = 0;
 std::uintptr_t         g_rectSite     = 0;
 std::uintptr_t         g_rectTarget   = 0;
 std::uintptr_t         g_overlay      = 0;  // &g_SEndRootOverlay
-ContainScaleFn         g_containScale = nullptr;
+ContainScaleFn         g_containScale = nullptr;  // the game's contain scale as the game computes it (the factor's not in it)
 bool                   g_installed    = false;
+
+// The HUD size (the settings file's [Views] hud-scale; research/RE-hud-scale-option.md): one factor for every view's
+// HUD in a split window. The layout scale's code reads g_factor in each render (hud/layout_code.h ScaleCode), the contain
+// scale's replacement multiplies the game's result by it at every call, and the pass's marker host scale takes it, so
+// world markers stay on their objects. g_factor is the factor the overlay's current layout was made with: the setting
+// in a split window's band, 1 anywhere else (the single view, a whole-screen moment, a monitor row, an unusable band).
+// The contain scale may run on any thread, and the console sets the size from its own: all three are atomic (the
+// layout scale's code reads the factor's float in place).
+std::atomic<float>      g_hudScale{1.0f};
+std::atomic<float>      g_factor{1.0f};
+static_assert(std::atomic<float>::is_always_lock_free && sizeof(std::atomic<float>) == sizeof(float));
+platform::EntryRedirect g_containRedirect;
+bool                    g_containReady = false;  // the contain scale's redirect in place
+std::atomic<bool>       g_sizeReady{false};      // that and the layout scale's code with the factor both in place
+
+float Factor() noexcept
+{
+    return g_factor.load(std::memory_order_relaxed);
+}
+
+void SetFactor(float factor) noexcept
+{
+    g_factor.store(factor, std::memory_order_relaxed);
+}
 
 // The 16:9 assumptions (hud/layout_code.h: the frame, the field arrows, the battle arrows), acting while this byte is
 // set: by the rect call, for the render it lays out, so it describes the UI size every HUD placement reads until the
@@ -95,6 +124,7 @@ struct HostSet
 {
     bool       valid = false;
     HostValues values{};
+    float      factor = 1.0f;  // the HUD size the column's layout was made with (lent with the set)
 };
 HostSet g_hostSet[kMaxColumns];
 
@@ -207,6 +237,7 @@ struct Logged
     float   viewH   = -1.0f;
     int     applied = -1;
     int     seat    = -2;  // whose view the column is (a seat's change of column is logged too)
+    float   factor  = -1.0f;
 };
 Logged      g_logged[kMaxColumns];  // per column: player 1's (and the single render), then the further columns'
 bool        g_entryLogged[kMaxColumns] = {};
@@ -230,6 +261,75 @@ std::uintptr_t Overlay() noexcept
     std::uintptr_t overlay = 0;
     platform::CopyGuarded(&overlay, reinterpret_cast<const void*>(g_overlay), sizeof(overlay));
     return overlay;
+}
+
+/// The game's contain scale times the factor of the overlay's current layout: every conversion between the UI image's
+/// pixels and the layout's units then matches the layout the factor made.
+float ContainScaleTimesFactor(GameVector2D size)
+{
+    return g_containScale(size) * Factor();
+}
+
+/// The contain scale sent to ContainScaleTimesFactor, the game's own function kept callable in g_containScale through a
+/// few bytes placed near it: its first instruction loads a constant rip-relative, so they load it by its absolute
+/// address and jump on to the second instruction, left in place by the redirect. False if any step fails (the game's
+/// function then stays g_containScale and unredirected).
+bool InstallContainFactor(const platform::GameImage& image, std::uintptr_t entry) noexcept
+{
+    const auto mask = image.Rebase(facts::kContainScaleMask, sizeof(float));
+    if (!mask)
+    {
+        return false;
+    }
+    const std::uintptr_t next     = entry + facts::kContainScaleFirst;
+    const std::uintptr_t original = platform::PlaceCodeNear(
+        entry, layout_code::kContainOriginalSize, [&](std::uintptr_t at, std::span<std::uint8_t> code) noexcept {
+            const auto bytes = layout_code::ContainOriginal(*mask, at, next);
+            if (!bytes || code.size() < bytes->size())
+            {
+                return false;
+            }
+            std::memcpy(code.data(), bytes->data(), bytes->size());
+            return true;
+        });
+    if (original == 0)
+    {
+        return false;
+    }
+    const ContainScaleFn game = g_containScale;
+    g_containScale            = reinterpret_cast<ContainScaleFn>(original);  // before the redirect: the replacement calls it
+    if (!g_containRedirect.InstallWithoutOriginal(entry, std::span(facts::kContainScaleEntry.data(), facts::kContainScaleFirst),
+                                                  reinterpret_cast<std::uintptr_t>(&ContainScaleTimesFactor)))
+    {
+        g_containScale = game;
+        return false;
+    }
+    return true;
+}
+
+/// The HUD size's words, "0.75" to "1.50", as factors.
+std::optional<float> FactorOf(const std::wstring& word) noexcept
+{
+    for (std::size_t i = 0; i < platform::settings::kHudScaleWords.size(); ++i)
+    {
+        if (word == platform::settings::kHudScaleWords[i])
+        {
+            return platform::settings::HudScaleOf(i);
+        }
+    }
+    return std::nullopt;
+}
+
+std::wstring WordOfFactor(float factor)
+{
+    for (std::size_t i = 0; i < platform::settings::kHudScaleWords.size(); ++i)
+    {
+        if (platform::settings::HudScaleOf(i) == factor)
+        {
+            return platform::settings::kHudScaleWords[i];
+        }
+    }
+    return std::format(L"{:.2f}", factor);
 }
 
 /// Column 0's pass is the frame's last, so the overlay holds its layout at the widget tick that places the UI particles
@@ -300,6 +400,7 @@ IntRect* LayoutRect(IntRect* out)
     g_pending.active = false;
     g_submit.active  = false;
     g_bandApplies    = 0;
+    SetFactor(1.0f);  // every render lays out at the game's size unless its band takes the HUD size below
     if (!g_splitShown || !g_gameThread.Here())
     {
         if (g_gameThread.Here())
@@ -329,22 +430,27 @@ IntRect* LayoutRect(IntRect* out)
     const float   host    = MarkerHostScale(band, uiScale, image.Width(), image.Height(), viewW, viewH);
     const auto    place   = PlaceInBand(band, image.Width(), image.Height());
     const bool    applied = g_bandOn && host > 0.0f && place.scaleX != 0.0f;
+    // The HUD size: in a band of a split window, outside a whole-screen moment; a row of monitors keeps the game's size
+    // (each of its views is already as big as single player's).
+    const float factor = applied && g_sizeReady && !views::window_span::In() && !views::whole_screen::Shown()
+                             ? g_hudScale.load(std::memory_order_relaxed)
+                             : 1.0f;
     g_loggedColumn = column;
     Logged& logged = g_logged[column];
     // Column 0 (and the single render) is player 1's; a further column is the seat the engine lists there (with player 2
     // out, player 3 fills column 1).
     const int seat = column == 0 ? 0 : overlay_pass::SeatOf(column);
     if (!(image == logged.image) || !(band == logged.band) || viewW != logged.viewW || viewH != logged.viewH ||
-        static_cast<int>(applied) != logged.applied || seat != logged.seat)
+        static_cast<int>(applied) != logged.applied || seat != logged.seat || factor != logged.factor)
     {
-        logged                = {image, band, viewW, viewH, applied ? 1 : 0, seat};
+        logged                = {image, band, viewW, viewH, applied ? 1 : 0, seat, factor};
         g_entryLogged[column] = false;
         g_lastText    = std::format(L"image {}x{}, {}'s view {:.0f}x{:.0f} at ({:.0f},{:.0f}); band ({},{})-({},{}), "
-                                    L"layout scale {:.3f}, marker host scale {:.4f}: {}",
+                                    L"layout scale {:.3f}, marker host scale {:.4f}, HUD size x{:.2f}: {}",
                                     image.Width(), image.Height(),
                                     seat >= 0 ? std::format(L"player {}", seat + 1) : std::format(L"column {}", column + 1),
                                     viewW, viewH, share.originX * hostW,
-                                    share.originY * hostH, band.minX, band.minY, band.maxX, band.maxY, uiScale, host,
+                                    share.originY * hostH, band.minX, band.minY, band.maxX, band.maxY, uiScale, host, factor,
                                     applied ? L"applied" : g_bandOn ? L"NOT applied (unusable band)" : L"off (hud-band off)");
         platform::Log(L"HUD layout: {}", g_lastText);
     }
@@ -352,20 +458,24 @@ IntRect* LayoutRect(IntRect* out)
     {
         *out          = band;
         g_bandApplies = 1;
-        g_pending = {true, place, share.originX * hostW, share.originY * hostH, viewW, viewH, host,
+        SetFactor(factor);
+        g_pending = {true, place, share.originX * hostW, share.originY * hostH, viewW, viewH, host * factor,
                      BandClipMap(band, image.Width(), image.Height()), band};
         g_hostSet[column] = {true,
                              {{static_cast<float>(band.minX), static_cast<float>(band.minY)},
                               {share.originX * hostW, share.originY * hostH},
                               {static_cast<float>(band.Width()), static_cast<float>(band.Height())},
                               {viewW, viewH},
-                              host}};
+                              host * factor},
+                             factor};
     }
     else
     {
         g_hostSet[column].valid = false;  // no band in this pass: nothing is placed outside the render with its set
     }
-    RecordColumn(column, applied ? LayoutSizeOf(band) : kSoloLayout, applied ? band : IntRect{}, image.Width(), image.Height(), viewW, viewH);
+    const LayoutSize layout = applied ? LayoutSizeOf(band) : kSoloLayout;
+    RecordColumn(column, {layout.width / Factor(), layout.height / Factor()}, applied ? band : IntRect{}, image.Width(),
+                 image.Height(), viewW, viewH);
     return result;
 }
 
@@ -799,13 +909,43 @@ bool Install(const platform::GameImage& image) noexcept
         platform::Log(L"HUD layout: the overlay's code is not what the research read; the HUD keeps the game's layout");
         return false;
     }
-    g_overlay      = overlay;
-    g_containScale = reinterpret_cast<ContainScaleFn>(*contain);
+    g_overlay = overlay;
+    if (!g_containRedirect.IsInstalled())
+    {
+        g_containScale = reinterpret_cast<ContainScaleFn>(*contain);  // with the redirect in place, it is already its original
+    }
     if (!g_entryCall.Install(*entryCall, *entryFn, reinterpret_cast<std::uintptr_t>(&LayerEntry)))
     {
         platform::Log(L"HUD layout: the overlay's layer-entry call could not be redirected; the HUD keeps the game's layout");
         return false;
     }
+    // The HUD size: the contain scale times the layout's factor (the layout scale's code follows on the game thread). A
+    // redirect left in place by a failed removal is kept, with the function it calls.
+    const bool contained = g_containRedirect.IsInstalled() || InstallContainFactor(image, *contain);
+    if (!contained)
+    {
+        platform::LogWarning(L"HUD layout: the contain scale could not be redirected; the HUD size stays the game's");
+    }
+    {
+        namespace settings = platform::settings;
+        g_hudScale.store(FactorOf(settings::Of(settings::kHudScale).word).value_or(1.0f), std::memory_order_relaxed);
+        platform::Log(L"HUD layout: HUD size x{:.2f} in a split window ({})", g_hudScale.load(std::memory_order_relaxed), settings::Why(settings::kHudScale));
+        control::RegisterOption(
+            settings::kHudScale,
+            [](const std::wstring& word) {
+                const auto factor = FactorOf(word);
+                if (!factor)
+                {
+                    return control::Outcome{false, L"not a size from 0.75 to 1.50 in steps of 0.05"};
+                }
+                g_hudScale.store(*factor, std::memory_order_relaxed);
+                platform::Log(L"HUD layout: HUD size x{:.2f} in a split window (set){}", *factor,
+                              g_sizeReady ? L"" : L"; not applied: a piece of it could not be placed");
+                return control::Outcome{};
+            },
+            [] { return WordOfFactor(g_hudScale.load(std::memory_order_relaxed)); });
+    }
+    g_containReady = contained;
     g_submitSite   = *submit;
     g_submitTarget = *submitFn;
     g_rectSite    = *rectCall;
@@ -897,6 +1037,12 @@ void Remove() noexcept
     g_pending.active = false;
     g_rectPending    = false;
     g_bandApplies    = 0;  // whatever code stays in place does the game's own thing
+    g_sizeReady      = false;
+    SetFactor(1.0f);  // the layout scale's code and the contain scale's replacement then do the game's own thing
+    if (!g_containRedirect.Restore())
+    {
+        platform::Log(L"HUD layout: the contain scale's entry was changed after us; left in place (it multiplies by 1 now)");
+    }
     if (g_scaleCode.IsInstalled() && !g_scaleCode.Restore())
     {
         platform::Log(L"HUD layout: the layout scale's code was changed after us; left in place (it acts only in a band narrower than 16:9)");
@@ -959,14 +1105,17 @@ void Tick(bool splitShown, const ViewShares& shares, int count) noexcept
                           L"command menu) stay outside the band");
         }
         // Two instructions are replaced, so this too needs the only thread that runs them outside the render.
-        const bool scaled = ok && g_scaleSite != 0 &&
-                            g_scaleCode.Install(g_scaleSite, layout_code::kScaleReplaced, layout_code::kScaleCode, g_scaleResume);
-        platform::Log(L"HUD layout: the overlay's layout scale {}",
-                      scaled ? L"is the contain rule (a view narrower than 16:9 lays out at its width)" : L"stays the game's");
+        const auto scaleCode = layout_code::ScaleCode(reinterpret_cast<const float*>(&g_factor));
+        const bool scaled    = ok && g_scaleSite != 0 && g_scaleCode.Install(g_scaleSite, layout_code::kScaleReplaced, scaleCode, g_scaleResume);
+        g_sizeReady          = scaled && g_containReady;
+        platform::Log(L"HUD layout: the overlay's layout scale {}; the HUD size {}",
+                      scaled ? L"is the contain rule (a view narrower than 16:9 lays out at its width)" : L"stays the game's",
+                      g_sizeReady ? L"applies in a split window's bands" : L"stays the game's (a piece could not be placed)");
     }
     g_splitShown = splitShown && g_rectCall.IsInstalled();
     if (!g_splitShown)
     {
+        SetFactor(1.0f);  // the conversions before the next render see the game's size, as that render will lay out
         // Every view lays out again before anything is placed with its set (the window may have changed meanwhile).
         bool dropped = false;
         for (HostSet& set : g_hostSet)
@@ -987,6 +1136,7 @@ HostSetScope::HostSetScope() noexcept
     const std::uintptr_t overlay = Overlay();
     hasSaved_ = overlay != 0 && g_gameThread.Here() &&
                 platform::CopyGuarded(&saved_, reinterpret_cast<const void*>(overlay + facts::kOverlayLayoutMin), sizeof(saved_));
+    savedFactor_ = Factor();
 }
 
 HostSetScope::~HostSetScope()
@@ -1006,7 +1156,8 @@ bool HostSetScope::Lend(int column) noexcept
     {
         return false;
     }
-    lent_ = true;  // before the write: a write that faults part-way is put back too
+    lent_    = true;  // before the write: a write that faults part-way is put back too
+    SetFactor(g_hostSet[column].factor);
     return platform::WriteGuarded(reinterpret_cast<void*>(overlay + facts::kOverlayLayoutMin), &g_hostSet[column].values,
                                   sizeof(HostValues));
 }
@@ -1017,6 +1168,7 @@ bool HostSetScope::Restore() noexcept
     {
         return true;
     }
+    SetFactor(savedFactor_);
     const std::uintptr_t overlay = Overlay();
     if (overlay == 0 ||
         !platform::WriteGuarded(reinterpret_cast<void*>(overlay + facts::kOverlayLayoutMin), &saved_, sizeof(saved_)))
