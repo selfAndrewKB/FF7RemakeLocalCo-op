@@ -19,6 +19,7 @@
 #include "players/party_member.h"
 #include "players/scopes.h"
 #include "players/seat_objects.h"
+#include "players/seat_responsiveness.h"
 #include "players/seats.h"
 #include "players/weak_object.h"
 #include "render/history_cut.h"
@@ -447,6 +448,8 @@ void ProcessPlayerInput(void* self, float deltaSeconds, bool gamePaused)
     // then; the camera does not turn): the seat's lock and leader, not player 1's (RE-lock-camera-ledger.md).
     const scopes::Scope                      leader(seat, scopes::Leader);
     const battle::targeting::FieldsScope targets(seat);
+    // The game's Responsiveness level is read in this step: the seat's own.
+    const seat_responsiveness::Scope responsiveness(seat);
     g_processInput(self, deltaSeconds, gamePaused);
     battle::lock_camera::AfterInput(seat, self);
 }
@@ -817,20 +820,20 @@ void* Operator(int seat) noexcept
 void LogCounts() noexcept
 try
 {
-    // Diagnostic fields of each controller: its control rotation (stock AController) and the camera
-    // sensitivity the game's ProcessPlayerInput scales the right stick by (RE-camera.md).
-    constexpr std::uint32_t kCameraSensitivity = 0x9E8;
+    // Diagnostic fields of each controller: its control rotation (stock AController) and the camera rate the game's
+    // ProcessPlayerInput scales the right stick by, with the Responsiveness level (players/seat_responsiveness).
     for (int i = 0; i <= kSeatsBuilt; ++i)
     {
         void* const          controller = i == 0 ? PlayerOne() : (OnGameThread() ? seat_objects::Controller(i) : nullptr);
         std::array<float, 3> rotation{};
-        float                sensitivity = 0.0f;
-        const auto*          base        = static_cast<const std::uint8_t*>(controller);
-        const bool           read = base != nullptr && Read(base + facts::kControllerControlRotation, rotation) && Read(base + kCameraSensitivity, sensitivity);
-        platform::Log(L"player {}: input calls {}, move calls {}, own operator ticks {}, camera updates in scope {}; control rotation {}; camera sensitivity {}",
+        float                rate = 0.0f;
+        const auto*          base = static_cast<const std::uint8_t*>(controller);
+        const bool           read = base != nullptr && Read(base + facts::kControllerControlRotation, rotation) &&
+                          Read(base + facts::kControllerCameraRate, rate);
+        platform::Log(L"player {}: input calls {}, move calls {}, own operator ticks {}, camera updates in scope {}; control rotation {}; camera rate {}",
                       i + 1, g_counts[i].input, g_counts[i].move, g_counts[i].operatorTick, g_counts[i].cameraUpdate,
                       read ? std::format(L"P{:.1f} Y{:.1f} R{:.1f}", rotation[0], rotation[1], rotation[2]) : std::wstring(L"unread"),
-                      read ? std::format(L"{:.3f}", sensitivity) : std::wstring(L"unread"));
+                      read ? std::format(L"{:.3f}", rate) : std::wstring(L"unread"));
         g_counts[i] = {};
     }
 }

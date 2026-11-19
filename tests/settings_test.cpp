@@ -77,7 +77,12 @@ void TableConsistent()
             open = option->section;
         }
     }
-    EXPECT(kOptions.size() == 20);
+    EXPECT(kOptions.size() == 22);
+    // Players 2 and 3's Responsiveness: rows of the game's own screen, the game's levels 1 to 5.
+    for (const Option* responsiveness : {&kResponsivenessTwo, &kResponsivenessThree})
+    {
+        EXPECT(OnGameScreen(*responsiveness) && !OnCoopPage(*responsiveness) && responsiveness->words.size() == 5);
+    }
     // The console: off by default, in the file only (no Co-op page row).
     EXPECT(std::wcscmp(kConsole.fallback, L"off") == 0 && kConsole.fileOnly && !OnCoopPage(kConsole));
     EXPECT(kLeadHolder.experimental && std::wcscmp(kLeadHolder.fallback, L"keeps") == 0);

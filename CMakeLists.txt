@@ -112,6 +112,7 @@ add_library(LocalSplitScreen SHARED
     src/players/operator_battle_mode.cpp
     src/players/nav_area.cpp
     src/players/seat_camera.cpp
+    src/players/seat_responsiveness.cpp
     src/players/scopes.cpp
     src/players/seat_objects.cpp
     src/players/session.cpp

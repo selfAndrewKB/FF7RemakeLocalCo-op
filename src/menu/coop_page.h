@@ -11,13 +11,19 @@
 // the page failed: the row opens nothing until the game restarts. The game's value read and commit are redirected for the
 // mod's rows only (their category bytes from 0x80, which the game never makes): a read answers the option's current
 // word's place, a commit while the page is open is queued and the next tick runs the option's console command, so it
-// applies at once (for this session; the file is not written). Each made page and each change logged at Info, each commit
-// at Debug, each value read at Trace. Game thread.
+// applies at once and is saved to the settings file. The options marked for the game's own screen
+// (settings::OnGameScreen: players 2 and 3's Responsiveness) are rows of every other Options screen instead (the
+// title's, the main menu's): the screen's construct is followed by their insertion in Camera & Controls right after the
+// game's Responsiveness, Range rows from 1 as that one, read and committed through the same redirects from any screen;
+// a Reset All of Camera & Controls (its confirmation redirected) has them read the game's default, which the reset then
+// commits. Each made page, each insertion and each change logged at Info, each commit at Debug, each value read at
+// Trace. Game thread.
 
 #include "menu/coop_menu_rules.h"
 
 #include <cstdint>
 #include <optional>
+#include <string>
 #include <vector>
 
 namespace lss::platform {
@@ -28,8 +34,9 @@ namespace lss::menu::coop_page {
 
 /// Finds the page's functions and builds its categories. False if a check failed or the table has no options.
 bool Install(const platform::GameImage& image) noexcept;
-/// The value read and commit redirected (first tick, game thread). False if either could not be placed.
-bool Place() noexcept;
+/// The value read and commit redirected, then the construct's and Reset All's slots for the game-screen rows (first
+/// tick, game thread). False if the value read or commit could not be placed; the slots are optional (logged).
+bool Place(const platform::GameImage& image) noexcept;
 void Unplace() noexcept;
 
 /// The page's categories and rows, in order.
@@ -51,6 +58,9 @@ std::optional<int> TakeAnswered(std::int32_t value) noexcept;
 /// taken only then.
 bool IsOpen() noexcept;
 void SetOpen(bool open) noexcept;
+
+/// For the console: the last game Options screen built and its Camera & Controls rows as category bytes.
+std::wstring GameScreenReading();
 
 /// Writing the page failed once: the row opens nothing until the game restarts.
 bool Failed() noexcept;

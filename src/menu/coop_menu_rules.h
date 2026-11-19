@@ -5,7 +5,9 @@
 // table's options (platform/settings.h), one category per section in the table's order, one List row per option with
 // its words' names as the values. A row is told apart from the game's own by its category byte: the game's real
 // settings live at 0..0x34, the mod's rows take 0x80 + the option's place in the table, which the game never makes, so
-// its own value code reads 0 for them and writes nothing. Pure: tested on the host (tests/coop_menu_rules_test.cpp).
+// its own value code reads 0 for them and writes nothing. The options marked for the game's own Options screen
+// (settings::OnGameScreen) are not on the page: they are Range rows inserted after a game row in that screen, with the
+// same category bytes. Pure: tested on the host (tests/coop_menu_rules_test.cpp).
 
 #include "control/registry.h"
 #include "platform/settings.h"
@@ -15,6 +17,7 @@
 #include <cstdint>
 #include <cwchar>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -176,6 +179,60 @@ inline std::optional<std::wstring> WordOf(const settings::Option& option, int va
         return std::nullopt;
     }
     return std::wstring(option.words[static_cast<std::size_t>(value)]);
+}
+
+/// The value a row shows for its first word: 0 for a Co-op page row (a list's place, a slider over the places), 1 for a
+/// row in the game's own Options screen (a Range row from 1, as the game's Responsiveness).
+inline constexpr int RowMin(const settings::Option& option) noexcept
+{
+    return settings::OnGameScreen(option) ? 1 : 0;
+}
+
+/// The value a row shows for a word; none if the word is none of the option's.
+inline std::optional<int> ShownOf(const settings::Option& option, const std::wstring& word) noexcept
+{
+    const auto place = ValueOf(option, word);
+    return place ? std::optional<int>(*place + RowMin(option)) : std::nullopt;
+}
+
+/// The word a value a row commits stands for; none outside the option's words.
+inline std::optional<std::wstring> WordAt(const settings::Option& option, int shown)
+{
+    return WordOf(option, shown - RowMin(option));
+}
+
+/// The table's options with a row in the game's own Options screen, in the table's order.
+inline std::vector<int> GameScreenOptions()
+{
+    std::vector<int> options;
+    for (std::size_t i = 0; i < settings::kOptions.size(); ++i)
+    {
+        if (settings::OnGameScreen(*settings::kOptions[i]))
+        {
+            options.push_back(static_cast<int>(i));
+        }
+    }
+    return options;
+}
+
+/// Where a category's rows take the mod's rows, given each row's category byte: right after the row whose byte is
+/// `after`. None when a row of the mod's is already there (a construct over rows already given them) or no row is
+/// `after`.
+inline std::optional<std::size_t> GameRowsAt(std::span<const std::uint8_t> bytes, std::uint8_t after) noexcept
+{
+    std::optional<std::size_t> at;
+    for (std::size_t i = 0; i < bytes.size(); ++i)
+    {
+        if (OptionOf(bytes[i]))
+        {
+            return std::nullopt;
+        }
+        if (bytes[i] == after && !at)
+        {
+            at = i + 1;
+        }
+    }
+    return at;
 }
 
 /// A word as the option's console command takes it: a bool for an on/off option (control::RegisterOption makes those

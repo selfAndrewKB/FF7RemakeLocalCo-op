@@ -46,12 +46,21 @@ struct Option
     bool                            appOnly = false;
     // Set in the file only, no row on the Co-op page: read once at the mod's start.
     bool                            fileOnly = false;
+    // A row in the game's own Options screen instead (Camera & Controls, after the game's Responsiveness): a Range row
+    // over `words`, its values counted from 1 (menu/coop_menu_rules.h RowMin).
+    bool                            gameScreen = false;
 };
 
 /// The option has a row on the Co-op page.
 constexpr bool OnCoopPage(const Option& option) noexcept
 {
-    return !option.appOnly && !option.fileOnly;
+    return !option.appOnly && !option.fileOnly && !option.gameScreen;
+}
+
+/// The option has a row in the game's own Options screen.
+constexpr bool OnGameScreen(const Option& option) noexcept
+{
+    return option.gameScreen;
 }
 
 // The table. An option's owner (the module named beside it) applies the reading at its install.
@@ -275,6 +284,24 @@ inline constexpr Option kTalkFollow{  // world/talk_gather, players/session
     true, L"Gather Party for Conversations", kOnOffLabels,
     L"Whether Player 1 speaking to an NPC gathers other players from their current location."};
 
+// Players 2 and 3's camera responsiveness (players/seat_responsiveness): the game's own Responsiveness levels, 1 to 5,
+// player 1's being the game's option.
+inline constexpr std::array<const wchar_t*, 5> kResponsivenessWords{L"1", L"2", L"3", L"4", L"5"};
+inline constexpr Option kResponsivenessTwo{  // players/seat_responsiveness
+    L"Camera", L"responsiveness.player-2", kResponsivenessWords, L"3",
+    L"player 2's camera responsiveness, as the game's own Responsiveness option sets player 1's: 1 (the slowest turn) to 5 "
+    L"(the fastest); from player 2's next frame",
+    false, L"Responsiveness (Player 2)", kResponsivenessWords,
+    L"Set camera responsiveness for Player 2. The higher the number, the more responsive the camera will be.",
+    false, false, true};
+inline constexpr Option kResponsivenessThree{  // players/seat_responsiveness
+    L"Camera", L"responsiveness.player-3", kResponsivenessWords, L"3",
+    L"player 3's camera responsiveness, as the game's own Responsiveness option sets player 1's: 1 (the slowest turn) to 5 "
+    L"(the fastest); from player 3's next frame",
+    false, L"Responsiveness (Player 3)", kResponsivenessWords,
+    L"Set camera responsiveness for Player 3. The higher the number, the more responsive the camera will be.",
+    false, false, true};
+
 inline constexpr Option kConsole{  // mod.cpp, control/remote
     L"Development", L"console", kOnOffWords, L"off",
     L"the development console on 127.0.0.1:4418, for tools/game.py: on opens it at the next start; off (the default) opens no "
@@ -288,7 +315,7 @@ inline constexpr Option kConsole{  // mod.cpp, control/remote
 inline constexpr std::array kOptions{&kMultiMonitor, &kMonitors,    &kColumnOrder,  &kTwoPlayerSplit, &kThreePlayerSplit, &kHorizontalFov,
                                      &kVerticalFov,  &kMenuSlow,    &kBattleWarps,  &kEnemyDamage,    &kEnemyHp,          &kBossHp,
                                      &kEnemyStagger, &kExpGain,     &kApGain,       &kLeadHolder,     &kAreaLevels,       &kTalkGather,
-                                     &kTalkFollow,   &kConsole};
+                                     &kTalkFollow,   &kResponsivenessTwo, &kResponsivenessThree, &kConsole};
 
 /// The option is a row of the table (Of and Why answer by the row).
 consteval bool Listed(const Option& option)
@@ -302,7 +329,8 @@ consteval bool Listed(const Option& option)
 static_assert(Listed(kMultiMonitor) && Listed(kMonitors) && Listed(kColumnOrder) && Listed(kTwoPlayerSplit) && Listed(kThreePlayerSplit) &&
                   Listed(kHorizontalFov) && Listed(kVerticalFov) && Listed(kMenuSlow) && Listed(kBattleWarps) && Listed(kEnemyDamage) && Listed(kEnemyHp) && Listed(kBossHp) &&
                   Listed(kEnemyStagger) && Listed(kExpGain) && Listed(kApGain) && Listed(kLeadHolder) && Listed(kAreaLevels) &&
-                  Listed(kTalkGather) && Listed(kTalkFollow) && Listed(kConsole),
+                  Listed(kTalkGather) && Listed(kTalkFollow) && Listed(kResponsivenessTwo) && Listed(kResponsivenessThree) &&
+                  Listed(kConsole),
               "every option is a row of kOptions");
 
 /// Where an option's word came from.

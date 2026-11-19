@@ -22,6 +22,9 @@ inline constexpr std::uint32_t kObjectName                = 0x18;   // UObjectBa
 inline constexpr std::uint32_t kLocalPlayerController     = 0x30;   // UPlayer::PlayerController
 inline constexpr std::uint32_t kControllerPawn            = 0x380;  // AController::Pawn
 inline constexpr std::uint32_t kControllerControlRotation = 0x3A8;  // AController::ControlRotation (pitch, yaw, roll)
+// AEndPlayerController: the right stick's turn rate (float, the GameParams entry CameraLeapTimeScale; the turn is this
+// times the Responsiveness level).
+inline constexpr std::uint32_t kControllerCameraRate = 0x9E8;
 inline constexpr std::uint32_t kPawnController            = 0x3B0;  // APawn::Controller
 inline constexpr std::uint32_t kControllerRotationInput   = 0x598;  // APlayerController::RotationInput (pitch +0x598, yaw +0x59C)
 inline constexpr std::uint32_t kControllerCameraManager   = 0x410;  // APlayerController::PlayerCameraManager
@@ -3932,6 +3935,39 @@ inline constexpr std::uint32_t kOptionInfoMax       = 0x5C;
 /// cannot scroll), 1 Range (the inline gauge: Left/Right step 1 in [Min, Max], one cell per step, an integer label).
 inline constexpr std::uint8_t kOptionKindList  = 0;
 inline constexpr std::uint8_t kOptionKindRange = 1;
+// The game's camera rows (research/RE-camera-sensitivity-per-player.md). The Options screen's construct
+// (vt+0x2C0, void(page)) fills _OptionItems from the Blueprint's defaults, appends Mouse Sensitivity to Camera & Controls
+// and re-commits every row's value; the title's screen, the pause menu's and the mod's own page share this slot.
+// Camera & Controls (key 1) lists categories 14..28 in order; Responsiveness (EOptionCategory CameraSensitivity, 20) is
+// a Range row 1..5 kept in the data singleton's option block at kDataResponsiveness, read every frame by the
+// controller's input step through Options_GetCameraSpeedLevel (the turn is level times the controller's rate).
+inline constexpr std::array<std::uint8_t, 16> kOptionsConstructEntry{
+    0x4C, 0x8B, 0xDC, 0x55, 0x53, 0x56, 0x41, 0x57, 0x49, 0x8D, 0xAB, 0x68, 0xF3, 0xFF, 0xFF, 0x48};
+inline constexpr platform::SlotFact kOptionsConstruct{L"vtbl_UEndNewOptionsMenu +0x2C0 (construct)", 0x144BDC1D8 + 0x2C0,
+                                                      {L"UEndNewOptionsMenu_BuildOptionItems_cand", 0x1412CA0D0,
+                                                       kOptionsConstructEntry}};
+inline constexpr std::uint8_t  kOptionsCameraKey             = 1;
+inline constexpr std::uint8_t  kOptionCategoryResponsiveness = 20;
+inline constexpr std::uint32_t kDataResponsiveness           = 0xB69B5;  // u8 1..5 (0 before the first construct)
+inline constexpr std::uint8_t  kResponsivenessMin            = 1;
+inline constexpr std::uint8_t  kResponsivenessMax            = 5;
+// Reset All's confirmation: a delegate made by the page's key handler (its vtable is set only there), holding the page at
+// +0x08. Execute(self, i32 choice) and ExecuteIfSafe(self, i32 choice) -> bool both run
+// OptionsMenu_ResetCategoryToDefaults(page) for choice 0 (Yes). The reset writes the Default row into the option block
+// for the page's current category (key kOptionsOrder[kOptionsCategoryIndex]), then for each row reads its value and
+// commits it again.
+inline constexpr std::array<std::uint8_t, 16> kResetConfirmExecuteEntry{
+    0x85, 0xD2, 0x75, 0x09, 0x48, 0x8B, 0x49, 0x08, 0xE9, 0x03, 0x4E, 0xFF, 0xFF, 0xC3, 0xCC, 0xCC};
+inline constexpr std::array<std::uint8_t, 16> kResetConfirmExecuteIfSafeEntry{
+    0x48, 0x83, 0xEC, 0x28, 0x85, 0xD2, 0x75, 0x09, 0x48, 0x8B, 0x49, 0x08, 0xE8, 0x4F, 0x4D, 0xFF};
+inline constexpr std::uintptr_t kResetConfirmVtable = 0x144BDB8A0;
+inline constexpr platform::SlotFact kResetConfirmExecute{L"Reset All confirm delegate +0x60 (Execute)", kResetConfirmVtable + 0x60,
+                                                         {L"OptionsMenu_ResetConfirm_Execute", 0x1412EAFC0,
+                                                          kResetConfirmExecuteEntry}};
+inline constexpr platform::SlotFact kResetConfirmExecuteIfSafe{
+    L"Reset All confirm delegate +0x68 (ExecuteIfSafe)", kResetConfirmVtable + 0x68,
+    {L"OptionsMenu_ResetConfirm_ExecuteIfSafe", 0x1412EB070, kResetConfirmExecuteIfSafeEntry}};
+inline constexpr std::uint32_t kResetConfirmPage = 0x08;
 // The Range row's gauge (research/RE-options-gauge-scroll.md): the page's edited value, the gauge widget (Blueprint
 // MainMenu_Options_Gauge2_C) and its cell strip (a UEndVirtualScrollBox: virtualising, clipped to its bounds, scrolled
 // by a float offset in slate units, sized by its DesiredCount when above 0, else by all its cells).
@@ -3996,6 +4032,14 @@ inline constexpr std::array<std::uint8_t, 16> kOptionItemsFindOrAddEntry{
     0x40, 0x53, 0x48, 0x83, 0xEC, 0x20, 0x48, 0x89, 0x54, 0x24, 0x38, 0x4C, 0x8D, 0x44, 0x24, 0x38};
 inline constexpr platform::FunctionFact kOptionItemsFindOrAdd{L"OptionItemsMap_FindOrAdd_cand", 0x1412E81F0,
                                                               kOptionItemsFindOrAddEntry};
+/// The same map's find, which never adds: i32*(map, i32* outId, u8 key), outId -1 when the key is absent; the element
+/// (TSetElement of TPair<u8, FOptionInfos>, 0x30 bytes) at the map's data + id * 0x30, its FOptionInfos at +0x08.
+inline constexpr std::array<std::uint8_t, 16> kOptionItemsFindIdEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x08, 0x8B, 0x41, 0x08, 0x48, 0x8B, 0xDA, 0x3B, 0x41, 0x34, 0x74, 0x4A};
+inline constexpr platform::FunctionFact kOptionItemsFindId{L"OptionItemsMap_FindId_cand", 0x1412E7DD0, kOptionItemsFindIdEntry};
+inline constexpr std::size_t   kOptionItemsElementSize  = 0x30;
+inline constexpr std::uint32_t kOptionItemsElementValue = 0x08;
+inline constexpr std::uint32_t kOptionItemsElementCount = 0x08;  // i32 at the map: its elements' count (ids below it)
 inline constexpr std::array<std::uint8_t, 16> kOptionInfoCtorEntry{
     0x33, 0xC0, 0x48, 0x89, 0x41, 0x08, 0x48, 0x89, 0x41, 0x10, 0x48, 0x89, 0x41, 0x18, 0x48, 0x89};
 inline constexpr platform::FunctionFact kOptionInfoCtor{L"FOptionInfo_DefaultCtor_cand", 0x1412D0E90, kOptionInfoCtorEntry};

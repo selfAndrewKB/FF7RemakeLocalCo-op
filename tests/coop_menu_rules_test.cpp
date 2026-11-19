@@ -165,6 +165,55 @@ void SliderWindow()
     }
 }
 
+/// Players 2 and 3's Responsiveness are the game screen's rows, not the page's: Range rows shown from 1 (the game's own
+/// 1 to 5), every word's value naming it back, values outside committing nothing.
+void GameScreenRows()
+{
+    const auto game = GameScreenOptions();
+    EXPECT(game.size() == 2);
+    for (const int option : game)
+    {
+        const settings::Option& row = *settings::kOptions[static_cast<std::size_t>(option)];
+        EXPECT(!settings::OnCoopPage(row));
+        EXPECT(RowMin(row) == 1);
+        EXPECT(ShownOf(row, L"1") == 1);
+        EXPECT(ShownOf(row, L"5") == 5);
+        EXPECT(WordAt(row, 3) == std::wstring(L"3"));
+        EXPECT(!WordAt(row, 0).has_value());
+        EXPECT(!WordAt(row, 6).has_value());
+        for (int value = 1; value <= 5; ++value)
+        {
+            EXPECT(ShownOf(row, *WordAt(row, value)) == value);
+        }
+    }
+    EXPECT(settings::kOptions[static_cast<std::size_t>(game[0])] == &settings::kResponsivenessTwo);
+    EXPECT(settings::kOptions[static_cast<std::size_t>(game[1])] == &settings::kResponsivenessThree);
+    for (const auto& category : BuildPage())
+    {
+        for (const int option : category.options)
+        {
+            EXPECT(RowMin(*settings::kOptions[static_cast<std::size_t>(option)]) == 0);
+        }
+    }
+}
+
+/// The game-screen rows go right after the game's row, once: never into rows that already hold one of the mod's, never
+/// without that row.
+void GameRowsPlace()
+{
+    constexpr std::uint8_t responsiveness = 20;
+    const std::vector<std::uint8_t> camera{14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29};
+    EXPECT(GameRowsAt(camera, responsiveness) == std::size_t{7});
+    std::vector<std::uint8_t> given = camera;
+    given.insert(given.begin() + 7, RowByte(GameScreenOptions()[0]));
+    EXPECT(!GameRowsAt(given, responsiveness).has_value());
+    const std::vector<std::uint8_t> without{14, 15, 21, 22};
+    EXPECT(!GameRowsAt(without, responsiveness).has_value());
+    EXPECT(!GameRowsAt({}, responsiveness).has_value());
+    const std::vector<std::uint8_t> last{14, 20};
+    EXPECT(GameRowsAt(last, responsiveness) == std::size_t{2});
+}
+
 }  // namespace
 
 int main()
@@ -176,5 +225,7 @@ int main()
     RowBytesApartFromTheGame();
     ValuesAndWords();
     CommandValues();
+    GameScreenRows();
+    GameRowsPlace();
     return lss::test::Report();
 }

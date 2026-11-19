@@ -68,7 +68,7 @@ bool Place(const platform::GameImage& image) noexcept
     const bool redirected =
         g_openWindow.Install(g.openWindowAt, std::span(facts::kOpenWindowByKindEntry.data(), facts::kRedirectFirstBytes),
                              reinterpret_cast<std::uintptr_t>(&OpenWindow)) &&
-        coop_page::Place() && coop_page_open::Place(image);
+        coop_page::Place(image) && coop_page_open::Place(image);
     if (!redirected)
     {
         return false;
@@ -175,6 +175,20 @@ try
                            try
                            {
                                return control::Value{Reading()};
+                           }
+                           catch (...)
+                           {
+                               return control::Value{std::wstring(L"unreadable (an exception)")};
+                           }
+                       }});
+    control::Register({.name  = L"menu.options-rows",
+                       .shape = control::Shape::Text,
+                       .help  = L"(read only) the last game Options screen built: its Camera & Controls rows as category bytes "
+                                L"(the mod's from 128)",
+                       .get   = [] {
+                           try
+                           {
+                               return control::Value{coop_page::GameScreenReading()};
                            }
                            catch (...)
                            {

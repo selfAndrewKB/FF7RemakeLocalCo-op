@@ -52,6 +52,7 @@
 #include "hud/view_window.h"
 #include "menu/coop_menu.h"
 #include "players/seat_camera.h"
+#include "players/seat_responsiveness.h"
 #include "players/scopes.h"
 #include "players/session.h"
 #include "players/split_render.h"
@@ -286,6 +287,8 @@ constexpr std::array kModules{
     // The players' pads, the LEAD gate, the game's single slots answered per seat.
     // without it every pad presses player 1's buttons
     Module{.name = L"pad buttons", .install = Call<&players::pad_buttons::Install>, .remove = &players::pad_buttons::Remove},
+    // without it players 2 and 3's cameras turn at player 1's Responsiveness
+    Module{.name = L"seat responsiveness", .install = Call<&players::seat_responsiveness::Install>},
     // diagnostics: which XInput users have a pad
     Module{.name = L"pads reading", .install = Call<&players::pad_presence::Register>},
     // without it each pad is the player with its XInput number, whatever order Windows and Steam Input gave them
