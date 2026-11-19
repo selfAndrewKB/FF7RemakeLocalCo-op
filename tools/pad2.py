@@ -2,8 +2,10 @@
 physical pad), driven over a tiny TCP line protocol so the pad outlives each command.
 
     python tools/pad2.py serve                    creates the pad and listens on 127.0.0.1:4420 until `quit`
-    python tools/pad2.py serve --ds4              a virtual DualShock 4 instead (the games' own PlayStation reader
-                                                  reads it), on 127.0.0.1:4421; send to it with --ds4 too
+    python tools/pad2.py serve --ds4              a virtual DualShock 4 instead, on 127.0.0.1:4421; send to it with
+                                                  --ds4 too. Rebirth's own PlayStation reader does not take it (its
+                                                  attach asks for a feature report the virtual pad does not answer);
+                                                  Steam Input or other readers may
                                                   (A cross, B circle, X square, Y triangle, START options,
                                                   BACK the touchpad click)
     python tools/pad2.py press A [--ms 150]       one press of a button (A B X Y LB RB LS RS START BACK DU DD DL DR)
