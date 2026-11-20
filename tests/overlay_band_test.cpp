@@ -245,6 +245,26 @@ void TestEffectViewport()
     EXPECT(near(EffectViewport(LayoutSize{3840.0f, 1080.0f}, LayoutSize{3840.0f, 1080.0f}, IntRect{0, 1080, 3840, 2160}, 3840, 2160, 2560.0f,
                                720.0f, corner, 0.75f),
                 1.0f, 1755.0f / 2160.0f, 0.75f, 2880.0f * (720.0f / 2560.0f) / 2160.0f));
+    // Converted in the frame, at size 1 no column's box starts above or left of its image (the engine's viewport
+    // cannot): the 16:9 views below a wide one in three players, the wide one, stacked and side-by-side halves.
+    struct Column
+    {
+        LayoutSize layout;
+        IntRect    band;
+        float      viewW, viewH;
+    };
+    for (const Column& column : {Column{frame, IntRect{0, 0, 1920, 1080}, 960.0f, 540.0f},
+                                 Column{LayoutSize{3840.0f, 1080.0f}, IntRect{0, 270, 1920, 810}, 1920.0f, 540.0f},
+                                 Column{LayoutSize{3840.0f, 1080.0f}, IntRect{0, 1080, 3840, 2160}, 2560.0f, 720.0f},
+                                 Column{LayoutSize{1920.0f, 2160.0f}, IntRect{1920, 0, 3840, 2160}, 1280.0f, 1440.0f}})
+    {
+        const auto box = EffectViewport(frame, column.layout, column.band, 3840, 2160, column.viewW, column.viewH, corner);
+        EXPECT(box.has_value());
+        EXPECT(box && box->centreX - box->width / 2.0f >= -0.0001f && box->centreY - box->height / 2.0f >= -0.0001f);
+    }
+    // Player 1's wide layout as the conversion's, the 16:9 view below it: the box would start above the image.
+    const auto belowWide = EffectViewport(LayoutSize{3840.0f, 1080.0f}, frame, IntRect{0, 0, 1920, 1080}, 1920, 1080, 960.0f, 540.0f, corner);
+    EXPECT(belowWide && belowWide->centreY - belowWide->height / 2.0f < 0.0f);
     // Unknowns.
     EXPECT(!EffectViewport(frame, frame, whole, 3840, 2160, 1920.0f, 1080.0f, corner, 0.0f));
     EXPECT(!EffectViewport(frame, frame, whole, 3840, 2160, 1920.0f, 1080.0f, corner, std::nanf("")));
@@ -254,6 +274,41 @@ void TestEffectViewport()
     EXPECT(!EffectViewport(frame, frame, whole, 0, 2160, 1920.0f, 1080.0f, corner));
     EXPECT(!EffectViewport(frame, frame, whole, 3840, 2160, 0.0f, 1080.0f, corner));
     EXPECT(!EffectViewport(frame, frame, whole, 3840, 2160, 1920.0f, 1080.0f, LayoutPoint{std::nanf(""), 1.0f}));
+}
+void TestCornerPivot()
+{
+    std::puts("corner pivot: a widget scaled about its area's corner with its render translation scaled too");
+    using lss::hud::CornerPivot;
+    using lss::hud::LayoutPoint;
+    // Slate's draw of a widget point p: pivot + scale * (p - pivot) + translation (pivot in the widget's units).
+    const auto drawn = [](const LayoutPoint& pivot, float scale, const LayoutPoint& translation, const LayoutPoint& p) {
+        const LayoutPoint at{pivot.x * 1920.0f, pivot.y * 1080.0f};
+        return LayoutPoint{at.x + scale * (p.x - at.x) + translation.x, at.y + scale * (p.y - at.y) + translation.y};
+    };
+    const auto close = [](const LayoutPoint& a, const LayoutPoint& b) {
+        return std::fabs(a.x - b.x) < 0.01f && std::fabs(a.y - b.y) < 0.01f;
+    };
+    // No translation: the corner itself.
+    EXPECT((CornerPivot({1.0f, 1.0f}, {}, 1920.0f, 1080.0f) == LayoutPoint{1.0f, 1.0f}));
+    EXPECT((CornerPivot({0.5f, 0.0f}, {}, 1920.0f, 1080.0f) == LayoutPoint{0.5f, 0.0f}));
+    // A translated widget (the summon gauges): drawn where the game puts it, scaled about the corner, for two points and
+    // two sizes; the corner-only pivot misses by (scale - 1) times the translation.
+    const LayoutPoint translation{1240.0f, 890.0f};
+    const LayoutPoint corner{1920.0f, 1080.0f};
+    const auto        pivot = CornerPivot({1.0f, 1.0f}, translation, 1920.0f, 1080.0f);
+    EXPECT(pivot.has_value());
+    for (const float scale : {1.5f, 0.75f})
+    {
+        for (const LayoutPoint p : {LayoutPoint{300.0f, -180.0f}, LayoutPoint{560.0f, 0.0f}})
+        {
+            const LayoutPoint placed{p.x + translation.x, p.y + translation.y};  // where the game draws it at 1
+            const LayoutPoint wanted{corner.x + scale * (placed.x - corner.x), corner.y + scale * (placed.y - corner.y)};
+            EXPECT(pivot && close(drawn(*pivot, scale, translation, p), wanted));
+            EXPECT(!close(drawn({1.0f, 1.0f}, scale, translation, p), wanted));
+        }
+    }
+    // An empty area: none.
+    EXPECT(!CornerPivot({1.0f, 1.0f}, translation, 0.0f, 1080.0f));
 }
 }  // namespace
 
@@ -268,6 +323,7 @@ int main()
     TestUnusable();
     TestLayoutSize();
     TestEffectViewport();
+    TestCornerPivot();
 
     std::printf(g_failures == 0 ? "all tests passed\n" : "%d check(s) failed\n", g_failures);
     return g_failures == 0 ? 0 : 1;

@@ -693,9 +693,28 @@ inline constexpr std::uint32_t  kRhiCommandSize       = 0x28;
 inline constexpr std::uint32_t  kRhiChunkRequest      = 0x30;  // what AllocBind asks the memstack for a viewport command
 inline constexpr std::uintptr_t kRhiSetViewportExecute = 0x141F09590;  // FRHICommandSetViewport's execute (context vt+0x168)
 inline constexpr std::uintptr_t kMemStackAllocateChunk = 0x141CB8DA0;  // FMemStackBase__AllocateNewChunk(stack, minSize)
+/// A viewport whose corner is above or left of the image (RE-ui-particle-negative-viewport.md): no command type takes
+/// one, but the command context's RHISetMultipleViewports (vt+0xB8: (ctx, u32 count, six floats per viewport, the
+/// D3D12_VIEWPORT layout) hands floats unclamped to the state cache, and RHISetScissorRect (vt+0x178: (ctx, bool,
+/// MinX, MinY, MaxX, MaxY)) sets the scissor on its own. The context is the list's +0x20 when a command executes. The
+/// known contexts: D3D12's, D3D12's multi-GPU redirector, D3D11's (-d3d11 only), each slot's function as read.
+inline constexpr std::uint32_t kRhiListContext          = 0x20;
+inline constexpr std::uint32_t kRhiContextSetViewports  = 0xB8;
+inline constexpr std::uint32_t kRhiContextSetScissor    = 0x178;
+inline constexpr std::uint32_t kRhiFloatViewportSize    = 0x38;  // Next, execute, six floats, the scissor's four u32
+inline constexpr std::uint32_t kRhiFloatViewportRequest = 0x40;  // the memstack request, as the game asks size + 8
+struct RhiContextFact
+{
+    std::uintptr_t vtable, setViewports, setScissor;
+};
+inline constexpr std::array<RhiContextFact, 3> kRhiContexts{{
+    {0x144D3AA68, 0x141F87000, 0x141F64210},  // FD3D12CommandContext
+    {0x144D3A690, 0x141F5B4E0, 0x141F5B6D0},  // FD3D12CommandContextRedirector
+    {0x144D39408, 0x141F3EE20, 0x141F31390},  // FD3D11DynamicRHI
+}};
 /// The UI effects' layout-point conversion (UIEffect_LayoutPointToEffectSpace 0x1413FD2A0) reads the overlay's UI size
 /// twice through EndUI__GetOverlayUISize(FVector2D* out) (returns out; the overlay's +0x398 pair, else the in-game UI
-/// rect's size): both calls inside one block. Answered with player 1's column's size during a further column's pass, so
+/// rect's size): both calls inside one block. Answered with the 1920x1080 frame while the split's band applies, so
 /// every effect is converted in one layout (an effect set once, in whichever pass, included).
 inline constexpr std::uintptr_t kEffectUiSizeCallOne = 0x1413FD2C0;  // E8 FB B4 F4 FF
 inline constexpr std::uintptr_t kEffectUiSizeCallTwo = 0x1413FD2F6;  // E8 C5 B4 F4 FF
@@ -823,6 +842,7 @@ inline constexpr std::uint32_t kBarEntryShowFlag    = 0x12D;  // p: u8, the bar 
 inline constexpr std::uint32_t kBarEntryPoint       = 0xB4;   // p: the cached screen point (x, y)
 inline constexpr std::uint32_t kBarEntryEase        = 0x110;  // p: the displayed target's y-ease toward -60
 inline constexpr std::uint32_t kBarStatusSlotSize   = 0x20;   // a status icon slot: +0 weak widget
+inline constexpr std::uint32_t kWidgetRenderTranslation  = 0x90;  // UWidget::RenderTransform.Translation (x, y)
 inline constexpr std::uint32_t kWidgetRenderTranslationY = 0x94;  // UWidget::RenderTransform.Translation.Y
 inline constexpr std::uint32_t kWidgetRenderScale        = 0x98;  // UWidget::RenderTransform.Scale (x, y)
 inline constexpr std::uint32_t kSourceCharacterSlot = 0x20;   // source->vt: the character (AEndCharacter) of a bar's source

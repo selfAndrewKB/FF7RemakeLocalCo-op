@@ -69,12 +69,22 @@ struct ViewportLayout
 static_assert(facts::kUserWidgetOffset == facts::kUserWidgetAnchors + 16 && facts::kUserWidgetAlignment == facts::kUserWidgetOffset + 16);
 
 /// A root's render transform as far as the HUD size touches it: UWidget+0x98 RenderTransform.Scale, +0xAC
-/// RenderTransformPivot (a fraction of the widget's own size).
+/// RenderTransformPivot (a fraction of the widget's own size), and the translation the pivot accounts for (+0x90,
+/// RenderTransform.Translation: the summon gauges' own setup moves them into place with it), read only.
 struct RenderScale
 {
-    float scale[2] = {1.0f, 1.0f};
-    float pivot[2] = {0.5f, 0.5f};
-    bool  operator==(const RenderScale&) const = default;
+    float scale[2]       = {1.0f, 1.0f};
+    float pivot[2]       = {0.5f, 0.5f};
+    float translation[2] = {};
+
+    bool SameScaleAndPivot(const RenderScale& other) const noexcept
+    {
+        return scale[0] == other.scale[0] && scale[1] == other.scale[1] && pivot[0] == other.pivot[0] && pivot[1] == other.pivot[1];
+    }
+    bool SameTranslation(const RenderScale& other) const noexcept
+    {
+        return translation[0] == other.translation[0] && translation[1] == other.translation[1];
+    }
 };
 
 struct Placed
@@ -84,9 +94,11 @@ struct Placed
     ViewportLayout       original;  // the game's own, set back when the split ends
     ViewportLayout       applied;   // what was set; anything else means the game has set it since
     RenderScale          gameScale;           // the game's render scale and pivot, set back at size 1 and when the split ends
+    RenderScale          sized;               // what the size set, with the translation it was set for
     float                size      = 1.0f;    // the HUD size set on the root (1: the game's render transform untouched)
     bool                 sizeLeft  = false;   // a setter failed on this root: the HUD size leaves it alone
     bool                 toldOwnScale = false;  // the game's own scale on this root has been logged
+    bool                 toldTranslation = false;  // the root's own translation has been logged
 };
 
 std::vector<Placed> g_placed;
@@ -95,8 +107,8 @@ bool                g_active = false;
 
 // The HUD size (the settings file's [Views] hud-scale; research/RE-hud-scale-option.md): one factor for every view's
 // pinned roots in a split window, each scaled about the corner it is anchored to, so it stays in that corner of its
-// view. World markers are other roots, not listed here, and keep the game's size. The console sets it from its own
-// thread.
+// view. World markers are other roots, not listed here, and keep the game's size. Set by the console and the Co-op page;
+// read by the placement and the glow's box.
 std::atomic<float> g_hudScale{1.0f};
 float              g_sizeLogged = -1.0f;  // the size the last line reported in effect
 
@@ -113,16 +125,23 @@ std::optional<float> FactorOf(const std::wstring& word) noexcept
     return std::nullopt;
 }
 
-std::wstring WordOfFactor(float factor)
+/// The HUD size step whose factor is exactly this one (as the size sets it and reads it back), if any.
+std::optional<std::size_t> StepOfFactor(float factor) noexcept
 {
     for (std::size_t i = 0; i < platform::settings::kHudScaleWords.size(); ++i)
     {
         if (platform::settings::HudScaleOf(i) == factor)
         {
-            return platform::settings::kHudScaleWords[i];
+            return i;
         }
     }
-    return std::format(L"{:.2f}", factor);
+    return std::nullopt;
+}
+
+std::wstring WordOfFactor(float factor)
+{
+    const auto step = StepOfFactor(factor);
+    return step ? std::wstring(platform::settings::kHudScaleWords[*step]) : std::format(L"{:.2f}", factor);
 }
 
 struct Setter
@@ -206,28 +225,38 @@ std::optional<RenderScale> ReadScale(const UObject* widget) noexcept
     const auto* base = reinterpret_cast<const std::uint8_t*>(widget);
     RenderScale scale;
     if (!platform::CopyGuarded(scale.scale, base + facts::kWidgetRenderScale, sizeof(scale.scale)) ||
-        !platform::CopyGuarded(scale.pivot, base + facts::kWidgetRenderPivot, sizeof(scale.pivot)))
+        !platform::CopyGuarded(scale.pivot, base + facts::kWidgetRenderPivot, sizeof(scale.pivot)) ||
+        !platform::CopyGuarded(scale.translation, base + facts::kWidgetRenderTranslation, sizeof(scale.translation)))
     {
         return std::nullopt;
     }
     return scale;
 }
 
-/// Through the game's setters, which hand the transform to the root's Slate widget.
+/// The scale and pivot through the game's setters, which hand the transform to the root's Slate widget (the
+/// translation stays the game's).
 bool ApplyScale(UObject* widget, const RenderScale& scale) noexcept
 {
     return Call(widget, g_setters->renderPivot, scale.pivot, 2) && Call(widget, g_setters->renderScale, scale.scale, 2);
 }
 
-/// The root at `size` about its placement's corner.
-RenderScale ScaleAt(const Placement& placement, float size) noexcept
+/// The root at `size` about its placement's corner, its translation `now` scaled with it (hud/overlay_band.h
+/// CornerPivot); none for an area without a size.
+std::optional<RenderScale> ScaleAt(const Placed& placed, const RenderScale& now, float size) noexcept
 {
-    return {{size, size}, {placement.anchorX, placement.anchorY}};
+    const auto pivot = CornerPivot({placed.placement->anchorX, placed.placement->anchorY}, {now.translation[0], now.translation[1]},
+                                   placed.applied.offsets[2], placed.applied.offsets[3]);
+    if (!pivot)
+    {
+        return std::nullopt;
+    }
+    return RenderScale{{size, size}, {pivot->x, pivot->y}, {now.translation[0], now.translation[1]}};
 }
 
-/// Sets a placed root to the HUD size: scaled about its corner, or at 1 its game's transform back. While the game
-/// scales a root itself (its render scale not 1), the root is left at the game's transform and looked at again each
-/// tick; one whose transform the game set since it was sized counts as unsized from then on.
+/// Sets a placed root to the HUD size: scaled about its corner with its translation, or at 1 its game's transform
+/// back. While the game scales a root itself (its render scale not 1), the root is left at the game's transform and
+/// looked at again each tick; one whose scale or pivot the game set since it was sized counts as unsized from then on;
+/// one whose translation the game moved since gets its pivot again.
 void SizeRoot(Placed& placed, float size)
 {
     if (placed.placement == nullptr || placed.sizeLeft || !user_widgets::Alive(placed.widget))
@@ -239,7 +268,8 @@ void SizeRoot(Placed& placed, float size)
     {
         return;
     }
-    if (placed.size != 1.0f && !(*now == ScaleAt(*placed.placement, placed.size)))
+    bool moved = false;
+    if (placed.size != 1.0f && !now->SameScaleAndPivot(placed.sized))
     {
         placed.size = 1.0f;
         if (!placed.toldOwnScale)
@@ -250,13 +280,31 @@ void SizeRoot(Placed& placed, float size)
                           placed.placement->className);
         }
     }
-    if (size == placed.size)
+    else if (placed.size != 1.0f && !now->SameTranslation(placed.sized))
+    {
+        moved = true;
+        platform::LogDebug(L"HUD size: {} was moved by the game ({:.0f},{:.0f}); its pivot follows", placed.placement->className,
+                           now->translation[0], now->translation[1]);
+    }
+    // A root made as a copy of a sized one (each seat's summon gauges are made from player 1's) carries its render scale:
+    // an unsized root's uniform scale that is exactly one of the HUD sizes is the mod's, and the root's own scale is 1.
+    const bool copied = placed.size == 1.0f && now->scale[0] == now->scale[1] && now->scale[0] != 1.0f &&
+                        StepOfFactor(now->scale[0]).has_value();
+    if (size == placed.size && !moved && !copied)
     {
         return;
     }
     if (placed.size == 1.0f)
     {
-        if (now->scale[0] != 1.0f || now->scale[1] != 1.0f)
+        placed.gameScale = *now;
+        if (copied)
+        {
+            placed.gameScale.scale[0] = placed.gameScale.scale[1] = 1.0f;
+            platform::Log(L"HUD size: {} came with the HUD size's scale x{:.2f} (made from a sized root); taken as the mod's, "
+                          L"its own scale 1",
+                          placed.placement->className, now->scale[0]);
+        }
+        else if (now->scale[0] != 1.0f || now->scale[1] != 1.0f)
         {
             if (!placed.toldOwnScale)
             {
@@ -267,18 +315,49 @@ void SizeRoot(Placed& placed, float size)
             }
             return;
         }
-        placed.gameScale = *now;
     }
-    const RenderScale wanted = size == 1.0f ? placed.gameScale : ScaleAt(*placed.placement, size);
-    if (ApplyScale(placed.widget.object, wanted))
+    const auto wanted = size == 1.0f ? std::optional(placed.gameScale) : ScaleAt(placed, *now, size);
+    if (!wanted)
     {
-        placed.size = size;
+        return;
+    }
+    if (ApplyScale(placed.widget.object, *wanted))
+    {
+        if (size != 1.0f && (now->translation[0] != 0.0f || now->translation[1] != 0.0f) && !placed.toldTranslation)
+        {
+            placed.toldTranslation = true;
+            platform::Log(L"HUD size: {} carries a translation of its own ({:.0f},{:.0f}); its pivot ({:.3f},{:.3f}) scales it "
+                          L"about the corner with the root",
+                          placed.placement->className, now->translation[0], now->translation[1], wanted->pivot[0], wanted->pivot[1]);
+        }
+        placed.size  = size;
+        placed.sized = *wanted;
         return;
     }
     ApplyScale(placed.widget.object, placed.gameScale);
     placed.size     = 1.0f;
     placed.sizeLeft = true;
     platform::Log(L"HUD size: a setter raised an exception for {}; its own transform set back", placed.placement->className);
+}
+
+std::wstring SizeReading()
+{
+    std::wstring text = std::format(L"setting x{:.2f}, in effect x{:.2f}; {} root(s)", g_hudScale.load(std::memory_order_relaxed),
+                                    g_sizeLogged, g_placed.size());
+    for (const Placed& placed : g_placed)
+    {
+        if (placed.placement == nullptr)
+        {
+            continue;
+        }
+        text += std::format(L"; {} {:p}: size {:.2f}{}", placed.placement->className, static_cast<const void*>(placed.widget.object),
+                            placed.size, placed.sizeLeft ? L" (left)" : L"");
+        const auto now = user_widgets::Alive(placed.widget) ? ReadScale(placed.widget.object) : std::nullopt;
+        text += now ? std::format(L", scale {:.3f}x{:.3f} pivot ({:.3f},{:.3f}) translation ({:.1f},{:.1f})", now->scale[0],
+                                  now->scale[1], now->pivot[0], now->pivot[1], now->translation[0], now->translation[1])
+                    : std::wstring(L", not readable");
+    }
+    return text;
 }
 
 /// The 1920x1080 area at the placement's corner.
@@ -498,6 +577,20 @@ try
             return control::Outcome{};
         },
         [] { return WordOfFactor(g_hudScale.load(std::memory_order_relaxed)); });
+    control::Register({.name  = L"hud.size-roots",
+                       .shape = control::Shape::Text,
+                       .help  = L"(read only) each placed HUD root: the size set on it, and its live render scale, pivot and "
+                                L"translation",
+                       .get   = [] {
+                           try
+                           {
+                               return control::Value{SizeReading()};
+                           }
+                           catch (...)
+                           {
+                               return control::Value{std::wstring(L"unreadable (an exception)")};
+                           }
+                       }});
 }
 catch (...)
 {

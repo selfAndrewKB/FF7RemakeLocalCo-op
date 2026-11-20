@@ -14,11 +14,14 @@
 // game draws it. No engine call appends a viewport for this draw, so the replacement appends the game's own viewport
 // command with the box (the command AllocBind appends, allocated as AllocBind allocates it), calls the game's draw, and
 // appends the whole image again for the overlay broadcast that follows. Every conversion is made in player 1's column's
-// layout (hud/overlay_layout.cpp answers the conversion's two size reads so during a further column's pass), so an
-// effect set once at its spawn, in whichever pass, is in the same layout as one set every tick. A viewport cannot start
-// above or left of the image in this build: a box that would is cut at the image's edge (smaller, the particles' place
-// in that column approximate) and logged once per column. The column is the one the UI pass just bound (hud/ui_targets.h), on the render thread; the boxes come from
-// the overlay's rect call of the frame's last pass (game thread, through a seqlock).
+// layout (hud/overlay_layout.cpp answers the conversion's two size reads with the 1920x1080 frame), so an effect set
+// once at its spawn, in whichever pass, is in the same layout as one set every tick. The engine's viewport command
+// cannot start above or left of the image (its corner is unsigned), which a HUD size above 1 at a bottom or right corner
+// needs: such a box is appended as a command of the mod's whose execute calls the command context's own float
+// viewport and scissor setters (research/RE-ui-particle-negative-viewport.md), on a context the research read; on any
+// other build it is cut at the image's edge (smaller, the particles' place in that column approximate). Each box is
+// logged on change. The column is the one the UI pass just bound (hud/ui_targets.h), on the render thread; the boxes
+// come from the overlay's rect call of the frame's last pass (game thread, through a seqlock).
 
 namespace lss::platform {
 class GameImage;

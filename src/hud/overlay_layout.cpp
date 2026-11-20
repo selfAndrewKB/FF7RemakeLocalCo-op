@@ -25,6 +25,7 @@
 #include <Windows.h>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <bit>
 #include <cstddef>
@@ -119,6 +120,7 @@ struct ColumnOverlay
 };
 ColumnOverlay g_columnOverlay[kMaxColumns];
 bool          g_columnSeen[kMaxColumns] = {};
+std::array<float, 5> g_boxLogged[kMaxColumns] = {};  // each column's last logged particle box (a line per change)
 bool          g_boxesPublished          = false;
 
 // The UI effects' conversion reads the overlay's UI size twice; both reads answered (or neither).
@@ -257,11 +259,24 @@ void RecordColumn(int column, const LayoutSize& layout, const IntRect& band, std
         }
         const ColumnOverlay& seen = g_columnOverlay[i];
         const auto           box  = columnZero && seen.band.Height() > 0
-                                        ? EffectViewport(layout, seen.layout, seen.band, seen.imageWidth, seen.imageHeight, seen.viewWidth,
+                                        ? EffectViewport(kSoloLayout, seen.layout, seen.band, seen.imageWidth, seen.imageHeight, seen.viewWidth,
                                                          seen.viewHeight, anchor, size)
                                         : std::nullopt;
         ui_effect_pass::PublishColumnViewport(i, box.value_or(EffectBox{}), box.has_value());
         g_columnSeen[i] = false;
+        const std::array<float, 5> logged = box ? std::array<float, 5>{1.0f, box->centreX, box->centreY, box->width, box->height}
+                                                : std::array<float, 5>{};
+        if (logged != g_boxLogged[i])
+        {
+            g_boxLogged[i] = logged;
+            platform::LogDebug(L"HUD layout: column {}'s UI particle box from layout {:.0f}x{:.0f}, band ({},{})-({},{}) of {}x{}, view "
+                               L"{:.0f}x{:.0f}; anchor ({:.1f},{:.1f}), HUD size x{:.2f}: {}",
+                               i + 1, seen.layout.width, seen.layout.height, seen.band.minX, seen.band.minY, seen.band.maxX, seen.band.maxY,
+                               seen.imageWidth, seen.imageHeight, seen.viewWidth, seen.viewHeight, anchor.x, anchor.y, size,
+                               box ? std::format(L"centre ({:.3f},{:.3f}), size {:.3f}x{:.3f} of the image", box->centreX, box->centreY,
+                                                 box->width, box->height)
+                                   : std::wstring(L"none"));
+        }
     }
     g_boxesPublished = true;
 }
@@ -281,14 +296,16 @@ void DropBoxes() noexcept
     }
 }
 
-/// Replaces the UI effects' conversion's two reads of the overlay's UI size (same signature): player 1's column's
-/// size during a further column's pass (its last band's), so every effect is converted in one layout, player 1's,
-/// whichever pass placed it; the game's own read otherwise.
+/// Replaces the UI effects' conversion's two reads of the overlay's UI size (same signature): the 1920x1080 frame in
+/// every pass while player 1's column has a band, so every effect is converted in one layout whichever pass placed it.
+/// The frame, not any column's own layout: its design point 0 lands inside every column's band at size 1, so no
+/// column's box has to start above or left of its image (a wide column's layout would push the 16:9 columns' boxes
+/// up out of theirs). The game's own read otherwise.
 GameVector2D* UiSizeForEffects(GameVector2D* out)
 {
-    if (out != nullptr && g_gameThread.Here() && overlay_pass::Further() && g_hostSet[0].valid)
+    if (out != nullptr && g_gameThread.Here() && g_splitShown && g_hostSet[0].valid)
     {
-        *out = {g_hostSet[0].values.ui[0], g_hostSet[0].values.ui[1]};
+        *out = {kSoloLayout.width, kSoloLayout.height};
         return out;
     }
     return reinterpret_cast<UiSizeFn>(g_effectSizeCalls[0].Original())(out);

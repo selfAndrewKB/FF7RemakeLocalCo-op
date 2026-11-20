@@ -104,6 +104,21 @@ struct LayoutPoint
     bool operator==(const LayoutPoint&) const = default;
 };
 
+/// The render-transform pivot (a fraction of the widget's own size) that scales a widget about the `anchor` corner of its
+/// `width` x `height` area with its render translation scaled too. Slate draws a point p of the widget at
+/// pivot + scale * (p - pivot) + translation, the translation after the scale; with the pivot at corner - translation
+/// that is corner + scale * (p + translation - corner): the widget as the game places it, scaled about the corner. A
+/// widget without a translation gets the corner itself. Nullopt for an empty area.
+constexpr std::optional<LayoutPoint> CornerPivot(const LayoutPoint& anchor, const LayoutPoint& translation, float width,
+                                                 float height) noexcept
+{
+    if (!(width > 0.0f) || !(height > 0.0f))
+    {
+        return std::nullopt;
+    }
+    return LayoutPoint{anchor.x - translation.x / width, anchor.y - translation.y / height};
+}
+
 /// The UI particle draw's viewport in one column's image, as fractions of the image: a box's centre, width and height.
 struct EffectBox
 {
