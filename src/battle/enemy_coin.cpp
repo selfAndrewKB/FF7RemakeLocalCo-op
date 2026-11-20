@@ -860,15 +860,17 @@ char HitApply(void* context, void* hit)
     return original(context, hit);
 }
 
+/// The hit apply's second form works out a hit's amount for a voice line's lethal-hit test and applies nothing: `a2` is
+/// the attack's data row, `a3` the attacker, `a4` the victim. Scoped as a hit by or on that player's member.
 void HitApplyB(std::uint64_t a1, std::uint64_t a2, std::uint64_t a3, std::uint64_t a4, std::uint64_t a5, std::uint64_t a6, std::uint64_t a7)
 {
     const auto original = reinterpret_cast<HitApplyBFn>(g_hitApplyB.Original());
-    int        seat     = SeatOfMember(reinterpret_cast<const void*>(a2));
+    int        seat     = SeatOfMember(reinterpret_cast<const void*>(a3));
     if (seat == 0)
     {
         seat = SeatOfMember(reinterpret_cast<const void*>(a4));
     }
-    if (Tossing() && MayScope(seat, 1, L"a hit (second form)"))
+    if (Tossing() && MayScope(seat, 1, L"a voice line's lethal-hit test"))
     {
         players::scopes::Scope scope(seat, players::scopes::Leader | players::scopes::Primary);
         if (scope.Held())

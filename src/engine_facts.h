@@ -1650,7 +1650,8 @@ inline constexpr std::uint32_t  kAreaQueryEntries        = 0xF8;    // the compo
 inline constexpr std::uint32_t  kAreaQueryCount          = 0x100;   // their count (i32)
 inline constexpr std::uint32_t  kAreaEntryPointCount     = 0xB0;    // an entry's result points: the count (i32)
 /// Hits: the apply (entry; the hit's attacker weak at +0x50, victim weak at +0x78) and its second form's one call
-/// (E8 8F DF 2F FF, crossing its block; its 2nd and 4th arguments are the two characters).
+/// (E8 8F DF 2F FF, crossing its block; a voice line's lethal-hit test: its 2nd argument the attack's data row, its 3rd and
+/// 4th the attacker and the victim).
 inline constexpr std::uintptr_t kBattleHitApply = 0x1409E9C70;  // BattleDamage_ApplyHitToVictim
 inline constexpr std::array<std::uint8_t, 5> kBattleHitApplyFirst{0x48, 0x89, 0x5C, 0x24, 0x18};
 inline constexpr std::uint32_t  kBattleHitAttackerWeak = 0x50;
