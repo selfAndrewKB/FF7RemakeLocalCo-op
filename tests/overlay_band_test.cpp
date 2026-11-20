@@ -234,7 +234,20 @@ void TestEffectViewport()
                 (276.0f + 540.0f * k) / 2160.0f, 1920.0f * k / 3840.0f, 1920.0f * k * (1440.0f / 3440.0f) / 2160.0f));
     EXPECT(near(EffectViewport(frame, wide, wideBand, 3840, 2160, 3440.0f, 1440.0f, LayoutPoint{}), 960.0f * k / 3840.0f,
                 (276.0f + 540.0f * k) / 2160.0f, 1920.0f * k / 3840.0f, 1920.0f * k * (1440.0f / 3440.0f) / 2160.0f));
+    // With the widget drawn at a HUD size about its corner: the box that many times as wide, its centre moved with the
+    // widget's points (the corner stays put). The side-by-side right half at 1.5: the corner at (3840, 2160), the
+    // tick's centre 960 units left of it in the design, so 1440 px left at 1.5; the box 2880 px wide.
+    EXPECT(near(EffectViewport(LayoutSize{1920.0f, 2160.0f}, LayoutSize{1920.0f, 2160.0f}, IntRect{1920, 0, 3840, 2160}, 3840, 2160, 1280.0f,
+                               1440.0f, corner, 1.5f),
+                2400.0f / 3840.0f, 1.0f, 2880.0f / 3840.0f, 2880.0f * (1440.0f / 1280.0f) / 2160.0f));
+    // The lower stacked half at 0.75: the centre 540 units above the corner in the design, so 405 px above the image's
+    // bottom.
+    EXPECT(near(EffectViewport(LayoutSize{3840.0f, 1080.0f}, LayoutSize{3840.0f, 1080.0f}, IntRect{0, 1080, 3840, 2160}, 3840, 2160, 2560.0f,
+                               720.0f, corner, 0.75f),
+                1.0f, 1755.0f / 2160.0f, 0.75f, 2880.0f * (720.0f / 2560.0f) / 2160.0f));
     // Unknowns.
+    EXPECT(!EffectViewport(frame, frame, whole, 3840, 2160, 1920.0f, 1080.0f, corner, 0.0f));
+    EXPECT(!EffectViewport(frame, frame, whole, 3840, 2160, 1920.0f, 1080.0f, corner, std::nanf("")));
     EXPECT(!EffectViewport(LayoutSize{}, frame, whole, 3840, 2160, 1920.0f, 1080.0f, corner));
     EXPECT(!EffectViewport(frame, LayoutSize{}, whole, 3840, 2160, 1920.0f, 1080.0f, corner));
     EXPECT(!EffectViewport(frame, frame, IntRect{}, 3840, 2160, 1920.0f, 1080.0f, corner));

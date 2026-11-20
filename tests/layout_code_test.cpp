@@ -445,48 +445,6 @@ void TestScale()
     EXPECT(RunScale(standIn, 1720, 1440).widthOut == 1720.0f);
     EXPECT(redirect.Restore());
     EXPECT(close(RunScale(standIn, 1720, 1440).scale, 1440.0f / 1080.0f));
-
-    // With the HUD size factor: exactly the rule at 1, the rule times the factor otherwise, read at each run.
-    std::puts("layout scale: times the HUD size factor");
-    float                       factor = 1.0f;
-    const auto                  withFactor = code::ScaleCode(&factor);
-    lss::platform::CodeRedirect sized;
-    EXPECT(sized.Install(reinterpret_cast<std::uintptr_t>(standIn.page + standIn.site), code::kScaleReplaced, withFactor,
-                         reinterpret_cast<std::uintptr_t>(standIn.page + standIn.resume)));
-    for (const Size& size : sizes)
-    {
-        EXPECT(RunScale(standIn, size.width, size.height).scale == size.game);
-    }
-    EXPECT(close(RunScale(standIn, 960, 1080).scale, 0.5f));
-    factor = 1.5f;
-    EXPECT(close(RunScale(standIn, 3840, 1080).scale, 1.5f));
-    EXPECT(close(RunScale(standIn, 960, 1080).scale, 0.75f));
-    factor = 0.75f;
-    EXPECT(close(RunScale(standIn, 1920, 1080).scale, 0.75f));
-    EXPECT(RunScale(standIn, 1720, 1440).widthOut == 1720.0f);
-    EXPECT(sized.Restore());
-}
-
-// --- 5. The contain scale's own function -----------------------------------------------------------------------------
-// A stand-in second instruction at the page's start (movaps xmm0, xmm3; ret: returns what the first load put in xmm3),
-// the bytes placed later in the same page: calling them returns the constant.
-void TestContainOriginal()
-{
-    std::puts("contain scale's own function: the first load made absolute, then on to the second instruction");
-    Builder b;
-    b.Put({0x0F, 0x28, 0xC3});  // movaps xmm0, xmm3
-    b.Put({0xC3});              // ret
-    std::uint8_t* const page = Load(b.bytes);
-    const float         mask = 3.25f;
-    const auto          at   = reinterpret_cast<std::uintptr_t>(page) + 64;
-    const auto code = code::ContainOriginal(reinterpret_cast<std::uint64_t>(&mask), at, reinterpret_cast<std::uintptr_t>(page));
-    EXPECT(code.has_value());
-    if (code)
-    {
-        std::memcpy(page + 64, code->data(), code->size());
-        EXPECT(reinterpret_cast<float (*)()>(at)() == 3.25f);
-    }
-    EXPECT(!code::ContainOriginal(0, 0x10000, 0x10000 + 0x100000000ull).has_value());  // beyond a rel32 jump
 }
 
 int main()
@@ -495,7 +453,6 @@ int main()
     TestArrow();
     TestBattleArrow();
     TestScale();
-    TestContainOriginal();
     if (g_failures == 0)
     {
         std::puts("all tests passed");

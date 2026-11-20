@@ -10,12 +10,17 @@
 #include <Unreal/UObject.hpp>
 #include <Unreal/UObjectGlobals.hpp>
 
+#include "control/registry.h"
 #include "engine_facts.h"
 #include "hud/user_widgets.h"
 #include "platform/guarded.h"
 #include "platform/log.h"
+#include "platform/settings.h"
 #include "players/unreal_call.h"
+#include "views/whole_screen.h"
+#include "views/window_span.h"
 
+#include <atomic>
 #include <cstdint>
 #include <cstring>
 #include <format>
@@ -63,17 +68,62 @@ struct ViewportLayout
 };
 static_assert(facts::kUserWidgetOffset == facts::kUserWidgetAnchors + 16 && facts::kUserWidgetAlignment == facts::kUserWidgetOffset + 16);
 
+/// A root's render transform as far as the HUD size touches it: UWidget+0x98 RenderTransform.Scale, +0xAC
+/// RenderTransformPivot (a fraction of the widget's own size).
+struct RenderScale
+{
+    float scale[2] = {1.0f, 1.0f};
+    float pivot[2] = {0.5f, 0.5f};
+    bool  operator==(const RenderScale&) const = default;
+};
+
 struct Placed
 {
     user_widgets::Widget widget;
     const Placement*     placement = nullptr;
     ViewportLayout       original;  // the game's own, set back when the split ends
     ViewportLayout       applied;   // what was set; anything else means the game has set it since
+    RenderScale          gameScale;           // the game's render scale and pivot, set back at size 1 and when the split ends
+    float                size      = 1.0f;    // the HUD size set on the root (1: the game's render transform untouched)
+    bool                 sizeLeft  = false;   // a setter failed on this root: the HUD size leaves it alone
+    bool                 toldOwnScale = false;  // the game's own scale on this root has been logged
 };
 
 std::vector<Placed> g_placed;
 std::uint32_t       g_ticks  = 0;
 bool                g_active = false;
+
+// The HUD size (the settings file's [Views] hud-scale; research/RE-hud-scale-option.md): one factor for every view's
+// pinned roots in a split window, each scaled about the corner it is anchored to, so it stays in that corner of its
+// view. World markers are other roots, not listed here, and keep the game's size. The console sets it from its own
+// thread.
+std::atomic<float> g_hudScale{1.0f};
+float              g_sizeLogged = -1.0f;  // the size the last line reported in effect
+
+/// The HUD size's words, "0.75" to "1.50", as factors.
+std::optional<float> FactorOf(const std::wstring& word) noexcept
+{
+    for (std::size_t i = 0; i < platform::settings::kHudScaleWords.size(); ++i)
+    {
+        if (word == platform::settings::kHudScaleWords[i])
+        {
+            return platform::settings::HudScaleOf(i);
+        }
+    }
+    return std::nullopt;
+}
+
+std::wstring WordOfFactor(float factor)
+{
+    for (std::size_t i = 0; i < platform::settings::kHudScaleWords.size(); ++i)
+    {
+        if (platform::settings::HudScaleOf(i) == factor)
+        {
+            return platform::settings::kHudScaleWords[i];
+        }
+    }
+    return std::format(L"{:.2f}", factor);
+}
 
 struct Setter
 {
@@ -82,7 +132,7 @@ struct Setter
 };
 struct Setters
 {
-    Setter position, size, alignment, anchors;
+    Setter position, size, alignment, anchors, renderScale, renderPivot;
 };
 std::optional<Setters> g_setters;
 bool                   g_settersMissingLogged = false;
@@ -111,11 +161,13 @@ std::optional<Setters> FindSetters()
     const auto size      = FindSetter(STR("/Script/UMG.UserWidget:SetDesiredSizeInViewport"), STR("Size"), 8);
     const auto alignment = FindSetter(STR("/Script/UMG.UserWidget:SetAlignmentInViewport"), STR("Alignment"), 8);
     const auto anchors   = FindSetter(STR("/Script/UMG.UserWidget:SetAnchorsInViewport"), STR("Anchors"), 16);
-    if (!position || !size || !alignment || !anchors)
+    const auto scale     = FindSetter(STR("/Script/UMG.Widget:SetRenderScale"), STR("Scale"), 8);
+    const auto pivot     = FindSetter(STR("/Script/UMG.Widget:SetRenderTransformPivot"), STR("Pivot"), 8);
+    if (!position || !size || !alignment || !anchors || !scale || !pivot)
     {
         return std::nullopt;
     }
-    return Setters{*position, *size, *alignment, *anchors};
+    return Setters{*position, *size, *alignment, *anchors, *scale, *pivot};
 }
 
 bool Call(UObject* widget, const Setter& setter, const float* values, std::size_t count) noexcept
@@ -147,6 +199,86 @@ std::optional<ViewportLayout> ReadLayout(const UObject* widget) noexcept
     std::memcpy(layout.offsets, raw + 4, sizeof(layout.offsets));
     std::memcpy(layout.alignment, raw + 8, sizeof(layout.alignment));
     return layout;
+}
+
+std::optional<RenderScale> ReadScale(const UObject* widget) noexcept
+{
+    const auto* base = reinterpret_cast<const std::uint8_t*>(widget);
+    RenderScale scale;
+    if (!platform::CopyGuarded(scale.scale, base + facts::kWidgetRenderScale, sizeof(scale.scale)) ||
+        !platform::CopyGuarded(scale.pivot, base + facts::kWidgetRenderPivot, sizeof(scale.pivot)))
+    {
+        return std::nullopt;
+    }
+    return scale;
+}
+
+/// Through the game's setters, which hand the transform to the root's Slate widget.
+bool ApplyScale(UObject* widget, const RenderScale& scale) noexcept
+{
+    return Call(widget, g_setters->renderPivot, scale.pivot, 2) && Call(widget, g_setters->renderScale, scale.scale, 2);
+}
+
+/// The root at `size` about its placement's corner.
+RenderScale ScaleAt(const Placement& placement, float size) noexcept
+{
+    return {{size, size}, {placement.anchorX, placement.anchorY}};
+}
+
+/// Sets a placed root to the HUD size: scaled about its corner, or at 1 its game's transform back. While the game
+/// scales a root itself (its render scale not 1), the root is left at the game's transform and looked at again each
+/// tick; one whose transform the game set since it was sized counts as unsized from then on.
+void SizeRoot(Placed& placed, float size)
+{
+    if (placed.placement == nullptr || placed.sizeLeft || !user_widgets::Alive(placed.widget))
+    {
+        return;
+    }
+    const auto now = ReadScale(placed.widget.object);
+    if (!now)
+    {
+        return;
+    }
+    if (placed.size != 1.0f && !(*now == ScaleAt(*placed.placement, placed.size)))
+    {
+        placed.size = 1.0f;
+        if (!placed.toldOwnScale)
+        {
+            placed.toldOwnScale = true;
+            platform::Log(L"HUD size: {}'s render transform was set by the game since; left with the game's while it "
+                          L"scales the root (logged once per root)",
+                          placed.placement->className);
+        }
+    }
+    if (size == placed.size)
+    {
+        return;
+    }
+    if (placed.size == 1.0f)
+    {
+        if (now->scale[0] != 1.0f || now->scale[1] != 1.0f)
+        {
+            if (!placed.toldOwnScale)
+            {
+                placed.toldOwnScale = true;
+                platform::Log(L"HUD size: {} has a render scale of its own ({:.2f}x{:.2f}); left at the game's while it "
+                              L"does (logged once per root)",
+                              placed.placement->className, now->scale[0], now->scale[1]);
+            }
+            return;
+        }
+        placed.gameScale = *now;
+    }
+    const RenderScale wanted = size == 1.0f ? placed.gameScale : ScaleAt(*placed.placement, size);
+    if (ApplyScale(placed.widget.object, wanted))
+    {
+        placed.size = size;
+        return;
+    }
+    ApplyScale(placed.widget.object, placed.gameScale);
+    placed.size     = 1.0f;
+    placed.sizeLeft = true;
+    platform::Log(L"HUD size: a setter raised an exception for {}; its own transform set back", placed.placement->className);
 }
 
 /// The 1920x1080 area at the placement's corner.
@@ -246,6 +378,7 @@ void RestoreAll()
         {
             continue;
         }
+        SizeRoot(placed, 1.0f);
         const auto now = ReadLayout(placed.widget.object);
         if (now && *now == placed.applied && Apply(placed.widget.object, placed.original))
         {
@@ -257,7 +390,7 @@ void RestoreAll()
         }
     }
     g_placed.clear();
-    platform::Log(L"HUD placement: {} root(s) set back to the game's own viewport layout{}", restored,
+    platform::Log(L"HUD placement: {} root(s) set back to the game's own viewport layout and size{}", restored,
                   left > 0 ? std::format(L"; {} set by the game since, left with the game's", left) : std::wstring());
 }
 
@@ -267,6 +400,17 @@ void Tick(bool bandApplies) noexcept
 try
 {
     ++g_ticks;
+    // The HUD size: in a split window's band, outside a whole-screen moment; a row of monitors keeps the game's size
+    // (each of its views is already as big as single player's).
+    const float size = bandApplies && !views::window_span::In() && !views::whole_screen::Shown()
+                           ? g_hudScale.load(std::memory_order_relaxed)
+                           : 1.0f;
+    if (size != g_sizeLogged)
+    {
+        g_sizeLogged = size;
+        platform::Log(L"HUD size: x{:.2f} on the minimap, compass, command menu, party panel and summon gauges{}", size,
+                      !bandApplies ? L" (no split band)" : size == 1.0f ? L" (the game's size in this view)" : L"");
+    }
     if (!bandApplies)
     {
         if (g_active)
@@ -312,6 +456,7 @@ try
                 platform::LogDebug(L"HUD placement: {} was laid out again by the game; placed again", placed.placement->className);
             }
         }
+        SizeRoot(placed, size);
     }
     std::erase_if(g_placed, [](const Placed& placed) { return !user_widgets::Alive(placed.widget); });
 }
@@ -333,6 +478,32 @@ catch (...)
 {
 }
 
+void Install() noexcept
+try
+{
+    namespace settings = platform::settings;
+    g_hudScale.store(FactorOf(settings::Of(settings::kHudScale).word).value_or(1.0f), std::memory_order_relaxed);
+    platform::Log(L"HUD size: x{:.2f} in a split window ({})", g_hudScale.load(std::memory_order_relaxed),
+                  settings::Why(settings::kHudScale));
+    control::RegisterOption(
+        settings::kHudScale,
+        [](const std::wstring& word) {
+            const auto factor = FactorOf(word);
+            if (!factor)
+            {
+                return control::Outcome{false, L"not a size from 0.75 to 1.50 in steps of 0.05"};
+            }
+            g_hudScale.store(*factor, std::memory_order_relaxed);
+            platform::Log(L"HUD size: x{:.2f} in a split window (set)", *factor);
+            return control::Outcome{};
+        },
+        [] { return WordOfFactor(g_hudScale.load(std::memory_order_relaxed)); });
+}
+catch (...)
+{
+    platform::Log(L"HUD size: the setting could not be registered (an exception); the HUD keeps the game's size");
+}
+
 LayoutPoint GlowAnchor() noexcept
 {
     for (const Placement& placement : kPlacements)
@@ -343,6 +514,18 @@ LayoutPoint GlowAnchor() noexcept
         }
     }
     return {};
+}
+
+float GlowSize() noexcept
+{
+    for (const Placed& placed : g_placed)
+    {
+        if (placed.placement != nullptr && placed.placement->glow)
+        {
+            return placed.size;
+        }
+    }
+    return 1.0f;
 }
 
 }  // namespace lss::hud::root_placement

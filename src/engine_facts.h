@@ -661,9 +661,6 @@ inline constexpr platform::FunctionFact kSubmitLayerSlot{L"SubmitLayerSlot", 0x1
 inline constexpr std::array<std::uint8_t, 16> kContainScaleEntry{
     0xF3, 0x0F, 0x10, 0x1D, 0xF8, 0xBA, 0xBE, 0x03, 0xF3, 0x0F, 0x10, 0x25, 0x28, 0x83, 0xBE, 0x03};
 inline constexpr platform::FunctionFact kContainScale{L"EndUI__ContainScaleFor1920x1080", 0x1413A94A0, kContainScaleEntry};
-/// Its first instruction, movss xmm3, [rip+...] (8 bytes), loads the abs mask kept here; the second loads 1e-8 the same way.
-inline constexpr std::size_t    kContainScaleFirst = 8;
-inline constexpr std::uintptr_t kContainScaleMask  = 0x144F94FA0;
 
 // The UI image per view, render thread (RE-hud-two-images.md §2.2, §4, §5). The calls are checked by
 // platform::CallRedirect; each holds the view in r8 at the call.
@@ -1009,6 +1006,7 @@ inline constexpr std::uint32_t  kControllerPlayer      = 0x3E0;  // APlayerContr
 
 // UMG, stock 4.18 (UMG.hpp) and UEndUserWidget's own fields (EndGame.hpp, UEndUserWidget__AddToRootOverlay).
 inline constexpr std::uint32_t kWidgetVisibility       = 0xB7;   // UWidget::Visibility (ESlateVisibility)
+inline constexpr std::uint32_t kWidgetRenderPivot      = 0xAC;   // UWidget::RenderTransformPivot (x, y)
 inline constexpr std::uint32_t kWidgetGcWidget         = 0xD8;   // UWidget::MyGCWidget (TWeakPtr: object, then controller)
 inline constexpr std::uint32_t kSlateColorAndOpacity   = 0x410;  // SObjectWidget's ColorAndOpacity attribute (the tint
                                                                  // UUserWidget::SetColorAndOpacity writes; +0x420 is-set)

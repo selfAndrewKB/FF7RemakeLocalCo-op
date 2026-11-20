@@ -15,7 +15,13 @@
 // SetAlignmentInViewport, SetAnchorsInViewport), a 1920x1080 area at its corner of the band. In a 1920x1080 layout
 // that area is the whole layout, so nothing changes in single player. The game's own layout is read first and set
 // back through the same setters when the split ends; a root whose layout the game set since is left with the game's.
-// Game thread only.
+//
+// The HUD size (the settings file's [Views] hud-scale) scales these roots alone, each about the corner it is anchored to
+// (SetRenderTransformPivot at that corner, SetRenderScale), so each stays in its corner of the view: in a split window's
+// band, never on a row of monitors or in a whole-screen moment. Everything else on the overlay (enemy names, damage
+// numbers, lock-on marks, prompts over objects) keeps the game's size. The game's own scale and pivot are read first
+// and set back at size 1 and when the split ends; a root is left at the game's transform while the game scales it.
+// Game thread only, but for the setting's console command, which only stores the size.
 
 #include "hud/overlay_band.h"
 
@@ -28,8 +34,14 @@ void Tick(bool bandApplies) noexcept;
 /// Sets every placed root back (unload).
 void Remove() noexcept;
 
+/// Reads the HUD size from the settings and registers its console option.
+void Install() noexcept;
+
 /// The corner of the frame the summon gauge (the widget whose tick places the glow) is anchored to in a split half: the
 /// UI particles' boxes follow it (hud/overlay_band.h EffectViewport).
 LayoutPoint GlowAnchor() noexcept;
+
+/// The HUD size that widget is drawn at now (1 while it is not placed or not sized): the particles' boxes scale with it.
+float GlowSize() noexcept;
 
 }  // namespace lss::hud::root_placement

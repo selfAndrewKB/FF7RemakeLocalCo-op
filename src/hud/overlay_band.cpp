@@ -111,11 +111,11 @@ EntryPlacement PlaceInBand(const IntRect& band, std::int32_t imageWidth, std::in
 
 std::optional<EffectBox> EffectViewport(const LayoutSize& tickLayout, const LayoutSize& layout, const IntRect& band,
                                         std::int32_t imageWidth, std::int32_t imageHeight, float viewWidth, float viewHeight,
-                                        const LayoutPoint& anchor) noexcept
+                                        const LayoutPoint& anchor, float size) noexcept
 {
     if (!(tickLayout.width > 0.0f) || !(tickLayout.height > 0.0f) || !(layout.width > 0.0f) || !(layout.height > 0.0f) ||
         band.Width() <= 0 || band.Height() <= 0 || !Usable(imageWidth, imageHeight, viewWidth, viewHeight) || !std::isfinite(anchor.x) ||
-        !std::isfinite(anchor.y))
+        !std::isfinite(anchor.y) || !std::isfinite(size) || !(size > 0.0f))
     {
         return std::nullopt;
     }
@@ -123,12 +123,16 @@ std::optional<EffectBox> EffectViewport(const LayoutSize& tickLayout, const Layo
     // the draw puts one half-width at half the box's width, so the box is tickLayout's width in the band's pixels per
     // unit; the draw scales the vertical axis by the view's aspect, so a box of the view's shape puts the same
     // half-width on it. The game converts the design point against `tickLayout`'s centre, so a point at that centre
-    // lands at the box's centre; in this column the widget the points belong to stands anchor * (layout - frame) from
-    // its design place, so the centre goes there too.
+    // lands at the box's centre. In this column the widget the points belong to has its anchored corner at
+    // anchor * layout, and a design point d stands `size` times its distance from that corner (anchor * frame in the
+    // design): anchor * layout + size * (d - anchor * frame). The centre goes where d = tickLayout / 2 lands, and the
+    // box is `size` times as wide.
     const float scale   = static_cast<float>(band.Height()) / layout.height;
-    const float centreX = static_cast<float>(band.minX) + (tickLayout.width / 2.0f + anchor.x * (layout.width - 1920.0f)) * scale;
-    const float centreY = static_cast<float>(band.minY) + (tickLayout.height / 2.0f + anchor.y * (layout.height - 1080.0f)) * scale;
-    const float width   = tickLayout.width * scale;
+    const float centreX = static_cast<float>(band.minX) +
+                          (anchor.x * layout.width + size * (tickLayout.width / 2.0f - anchor.x * 1920.0f)) * scale;
+    const float centreY = static_cast<float>(band.minY) +
+                          (anchor.y * layout.height + size * (tickLayout.height / 2.0f - anchor.y * 1080.0f)) * scale;
+    const float width   = size * tickLayout.width * scale;
     const float height  = width * viewHeight / viewWidth;
     return EffectBox{centreX / static_cast<float>(imageWidth), centreY / static_cast<float>(imageHeight),
                      width / static_cast<float>(imageWidth), height / static_cast<float>(imageHeight)};

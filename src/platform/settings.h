@@ -213,7 +213,7 @@ inline constexpr Option kVerticalFov{  // views/split_fov
     L"Controls the field of view when playing in vertical split-screen. Also affects the largest view during 3-player. "
     L"Lower values show more of the scene."};
 
-// The HUD size in a split window (hud/overlay_layout): 0.75 to 1.50 in steps of 0.05, written "1.25" in the file and
+// The HUD size in a split window (hud/root_placement): 0.75 to 1.50 in steps of 0.05, written "1.25" in the file and
 // "x1.25" on the Co-op page.
 inline constexpr std::size_t kHudScaleSteps = 16;
 using HudScaleText = std::array<std::array<wchar_t, 6>, kHudScaleSteps>;
@@ -254,13 +254,15 @@ inline constexpr std::array<const wchar_t*, kHudScaleSteps> kHudScaleWords = Mak
 /// "x0.75" ... "x1.50": the page's values.
 inline constexpr std::array<const wchar_t*, kHudScaleSteps> kHudScaleLabels = MakeHudScaleWords(kHudScaleTimesText);
 
-inline constexpr Option kHudScale{  // hud/overlay_layout
+inline constexpr Option kHudScale{  // hud/root_placement
     L"Views", L"hud-scale", kHudScaleWords, L"1.00",
-    L"the HUD's size in each view of a split window, times this: 0.75 to 1.50 in steps of 0.05 (1.00 is today's, half the "
-    L"single-player size in each half); the single view, the menus and scenes and a row of monitors keep the game's size; "
-    L"from the next frame",
+    L"the size of the HUD pinned to each view's edges in a split window (the minimap and compass, the command menu, the "
+    L"party panel, the summon gauges), times this, each about its own corner: 0.75 to 1.50 in steps of 0.05 (1.00 is "
+    L"the game's); what hangs over characters and enemies keeps the game's size, as do the single view, the menus and "
+    L"scenes and a row of monitors; from the next frame",
     false, L"Split-Screen HUD Size", kHudScaleLabels,
-    L"Controls the size of the HUD in each player's view during split-screen in one window. Does not affect multi-monitor "
+    L"Controls the size of the HUD in each player's view during split-screen in one window: the minimap, command menu, "
+    L"party list and summon gauges. Markers over characters and enemies keep their size. Does not affect multi-monitor "
     L"mode."};
 
 inline constexpr Option kEnemyDamage{  // battle/battle_rates

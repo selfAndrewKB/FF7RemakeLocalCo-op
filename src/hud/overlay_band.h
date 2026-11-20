@@ -121,7 +121,9 @@ struct EffectBox
 /// column's draw puts that one result over its whole image. The box makes `tickLayout`'s half-width the band's drawing
 /// of this column's `layout` units (its width = the band's scale times tickLayout's width) and puts the centre where
 /// `tickLayout`'s centre falls in this column's band, moved by the distance the widget the points belong to (anchored
-/// at `anchor` of the 1920x1080 frame) stands from its design place in `layout`. Its height is the width over the
+/// at `anchor` of the 1920x1080 frame) stands from its design place in `layout`; with that widget drawn at `size` about
+/// its anchored corner (hud/root_placement.h, the HUD size), the box is `size` times as wide and its centre moves with
+/// the widget's points. Its height is the width over the
 /// column's view's shape (`viewWidth` x `viewHeight`, window pixels): the draw scales the vertical axis by the scene
 /// view's aspect, not the viewport's, so a box of the view's shape puts one half-width on both axes, as the game's
 /// conversion made them. The image's centre and size for a 16:9 column while `tickLayout` is 16:9 too; past an edge of
@@ -129,6 +131,6 @@ struct EffectBox
 /// band, image or view.
 std::optional<EffectBox> EffectViewport(const LayoutSize& tickLayout, const LayoutSize& layout, const IntRect& band,
                                         std::int32_t imageWidth, std::int32_t imageHeight, float viewWidth, float viewHeight,
-                                        const LayoutPoint& anchor) noexcept;
+                                        const LayoutPoint& anchor, float size = 1.0f) noexcept;
 
 }  // namespace lss::hud
