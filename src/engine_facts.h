@@ -135,6 +135,13 @@ inline constexpr std::uint32_t  kXInputBank        = 1;
 inline constexpr std::uint32_t  kStickRecordBytes  = 24;     // LX, LY, RX, RY, LT, RT
 inline constexpr std::uint32_t  kStickAnalog       = 0x700;  // LX, LY, RX, RY: what the getters read
 inline constexpr std::uint32_t  kStickDigital      = 0x6A0;  // key-driven stick, wins when non-zero
+/// The keyboard's and mouse's direction bits the input tick builds the key-driven stick from (the left stick's 8 bytes,
+/// then the right's: bit 1 left, 2 right, 4 up, 8 down) and its two trigger bytes (the key-driven triggers' source).
+inline constexpr std::uint32_t  kStickDigitalBits        = 0x6B0;
+inline constexpr std::uint32_t  kStickDigitalBitsBytes   = 16;
+inline constexpr std::uint32_t  kStickDigitalBitsRight   = 8;
+inline constexpr std::uint32_t  kTriggerDigitalBits      = 0x6C8;
+inline constexpr std::uint32_t  kTriggerDigitalBitsBytes = 2;
 
 // --- Per-pad buttons (RE-input.md §1, §3.2; RE-input-p2.md §2) ----------------------------------------------
 // The owner's two action tables (TSet<Elem40>: an FName, state bytes at +0x18) and the real d-pad bits; the
@@ -242,6 +249,63 @@ inline constexpr std::array<std::uint8_t, 16> kRouteActionUpEntry{
 inline constexpr platform::FunctionFact kRouteActionUp{L"SquareInput__RouteActionUpToUIHandlerStack", 0x141443430,
                                                        kRouteActionUpEntry};
 inline constexpr std::uintptr_t kRouteActionUpCall = 0x1414396A4;
+
+// --- The keyboard and mouse for any player (RE-kbm-routing.md §1.3, §2) --------------------------------------------
+// The scene viewport hands every key, mouse button, wheel turn and mouse move to the game viewport client's InputKey
+// and InputAxis with the Slate user as the controller id (0 for the keyboard and mouse; the mouse axes always 0); each
+// gives the input to the local player holding that controller id. A FKey is an FName first; by value it is passed as
+// a pointer to the caller's copy, which the callee destroys.
+inline constexpr std::uintptr_t kGameViewportClientVTable = 0x144E5BB68;  // its FViewportClient part
+inline constexpr std::array<std::uint8_t, 16> kViewportInputKeyEntry{
+    0x44, 0x89, 0x44, 0x24, 0x18, 0x55, 0x53, 0x56, 0x57, 0x41, 0x55, 0x41, 0x56, 0x48, 0x8D, 0x6C};
+inline constexpr std::array<std::uint8_t, 16> kViewportInputAxisEntry{
+    0x44, 0x89, 0x44, 0x24, 0x18, 0x53, 0x55, 0x57, 0x41, 0x56, 0x41, 0x57, 0x48, 0x81, 0xEC, 0xD0};
+/// bool InputKey(this, FViewport*, int32 ControllerId, FKey, EInputEvent, float AmountDepressed, bool bGamepad).
+inline constexpr platform::SlotFact kViewportInputKey{L"UGameViewportClient::InputKey (FViewportClient slot 8)",
+                                                      kGameViewportClientVTable + 8 * 8,
+                                                      {L"UGameViewportClient::InputKey", 0x142F634C0, kViewportInputKeyEntry}};
+/// bool InputAxis(this, FViewport*, int32 ControllerId, FKey, float Delta, float DeltaTime, int32 NumSamples, bool bGamepad).
+inline constexpr platform::SlotFact kViewportInputAxis{L"UGameViewportClient::InputAxis (FViewportClient slot 9)",
+                                                       kGameViewportClientVTable + 9 * 8,
+                                                       {L"UGameViewportClient::InputAxis", 0x142F63E70, kViewportInputAxisEntry}};
+inline constexpr std::int32_t kInputEventPressed  = 0;  // EInputEvent IE_Pressed
+inline constexpr std::int32_t kInputEventReleased = 1;  // IE_Released
+/// FKeyEvent (0x40 bytes): the system repeat flag (u8), the key's shared details reference controller (the FKey's
+/// TSharedPtr: object, then controller), the Windows key code (u32; a pad button's event carries none).
+inline constexpr std::uint32_t kKeyEventBytes        = 0x40;
+inline constexpr std::uint32_t kKeyEventRepeat       = 0x10;
+inline constexpr std::uint32_t kKeyEventKeyReference = 0x30;
+inline constexpr std::uint32_t kKeyEventKeyCode      = 0x3C;
+inline constexpr std::uint32_t kSharedReferenceCount = 0x08;  // a reference controller's shared count (i32, not atomic)
+inline constexpr std::uint32_t kKeyEventPath         = 0x18;  // the event's widget path pointer (a fresh event's is null)
+inline constexpr std::array<std::uint8_t, 16> kKeyEventDestroyEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x08, 0x57, 0x48, 0x83, 0xEC, 0x20, 0x48, 0x8B, 0x59, 0x30, 0x48, 0x8B};
+/// FKeyEvent's destructor (this; it never frees the event): lets go of the key's details reference only.
+inline constexpr platform::FunctionFact kKeyEventDestroy{L"FKeyEvent::~FKeyEvent", 0x14132A330, kKeyEventDestroyEntry};
+/// FPointerEvent: the effecting button's FKey (its FName first).
+inline constexpr std::uint32_t kPointerEventButton = 0x40;
+/// The input object's "keyboard or mouse used" byte (its key, mouse-button and wheel handlers set it; the input tick
+/// folds it into the device class and clears it) and the device class (0 Sony, 1 keyboard and mouse, 2 XInput, 3
+/// DirectInput), which picks the button art and the rumble's device.
+inline constexpr std::uint32_t kInputKeyboardUsed    = 0x54;
+inline constexpr std::uint32_t kInputDeviceClass     = 0x75C;
+inline constexpr std::uint8_t  kDeviceClassKeyboard  = 1;
+/// The input object's mouse-button and wheel handlers (this, FSlateApplication&, const FPointerEvent&), the pointer
+/// event's user 0 only.
+inline constexpr std::array<std::uint8_t, 16> kInputMouseDownEntry{
+    0x4C, 0x8B, 0xDC, 0x55, 0x56, 0x57, 0x49, 0x8D, 0xAB, 0x28, 0xFF, 0xFF, 0xFF, 0x48, 0x81, 0xEC};
+inline constexpr std::array<std::uint8_t, 16> kInputMouseUpEntry{
+    0x40, 0x56, 0x57, 0x48, 0x83, 0xEC, 0x78, 0xC6, 0x41, 0x52, 0x01, 0x49, 0x8B, 0xF8, 0x41, 0x83};
+inline constexpr std::array<std::uint8_t, 16> kInputWheelEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x10, 0x57, 0x48, 0x81, 0xEC, 0xF0, 0x00, 0x00, 0x00, 0x48, 0x8B, 0x05};
+inline constexpr platform::SlotFact kInputMouseDown{L"SquareInput::HandleMouseButtonDownEvent (slot 6)", kSquareInputVTable + 6 * 8,
+                                                    {L"SquareInput::HandleMouseButtonDownEvent", 0x14143AA50, kInputMouseDownEntry}};
+inline constexpr platform::SlotFact kInputMouseUp{L"SquareInput::HandleMouseButtonUpEvent (slot 7)", kSquareInputVTable + 7 * 8,
+                                                  {L"SquareInput::HandleMouseButtonUpEvent", 0x14143AFF0, kInputMouseUpEntry}};
+inline constexpr platform::SlotFact kInputWheel{L"SquareInput::HandleMouseWheelOrGestureEvent (slot 10)", kSquareInputVTable + 10 * 8,
+                                                {L"SquareInput::HandleMouseWheelOrGestureEvent", 0x14143B400, kInputWheelEntry}};
+/// The input tick's repeat of a held mouse button: a direct call of the action dispatcher.
+inline constexpr std::uintptr_t kMouseRepeatCall = 0x141434AF9;
 
 inline constexpr std::array<std::uint8_t, 16> kOperatorBeginPlayEntry{
     0x48, 0x89, 0x5C, 0x24, 0x10, 0x48, 0x89, 0x74, 0x24, 0x18, 0x48, 0x89, 0x7C, 0x24, 0x20, 0x55};

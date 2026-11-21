@@ -121,7 +121,7 @@ void TickSeat(int seat, float deltaTime)
     }
     players::scopes::Scope                 scope(seat, players::scopes::All);
     players::pad_buttons::ButtonScope      buttons(static_cast<unsigned>(seat));
-    players::seat_camera::StickScope stick(static_cast<std::uint32_t>(seat), true);
+    players::seat_camera::StickScope stick(static_cast<std::uint32_t>(seat));
     // A command executed here aims at the displayed target and re-locks the camera on it while the member is the
     // leader and locked on: the seat's target fields, not player 1's (RE-lock-camera-ledger.md).
     const targeting::FieldsScope targets(seat);

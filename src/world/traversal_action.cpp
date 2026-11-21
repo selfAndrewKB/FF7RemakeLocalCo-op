@@ -215,7 +215,7 @@ void RunAsSeat(int seat, Call&& call)
         const players::scopes::Scope scope(seat, players::scopes::Leader | players::scopes::Primary | players::scopes::Operator);
         if (scope.Held())
         {
-            const players::seat_camera::StickScope stick(static_cast<std::uint32_t>(seat), true);
+            const players::seat_camera::StickScope stick(static_cast<std::uint32_t>(seat));
             const players::pad_buttons::ButtonScope      buttons(static_cast<unsigned>(seat));
             auto*                                        root = players::field_root::Root();
             const KeptByte latch(root != nullptr ? root + facts::kRootStickLatch : nullptr, 0);  // player 1's camera-cut latch

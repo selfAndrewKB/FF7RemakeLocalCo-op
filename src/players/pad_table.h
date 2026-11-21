@@ -66,6 +66,10 @@ void SetIdlePads(std::uint32_t pads, const wchar_t* why) noexcept;
 /// The pads that answered their last read (bit p: pad p). Game thread.
 std::uint32_t PresentPads() noexcept;
 
+/// The controller id the keyboard and mouse play on: the slot they play alone while a player holds it (SetPlaying),
+/// else 0, player 1's (beside player 1's pad, alone on player 1's slot, or on a slot whose player is not in yet).
+int KeyboardUser() noexcept;
+
 /// Each physical pad's new presses as XInput bits (the buttons down on this poll and up on its last), the opener, and
 /// B's tap (at its let-go) and hold, as the game's poll reads them, idle or not, Start included: the player windows'
 /// input (players/player_window). Called inside the engine's poll, so the listener only notes them (a table change

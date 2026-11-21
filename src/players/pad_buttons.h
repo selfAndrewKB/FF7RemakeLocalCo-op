@@ -28,8 +28,18 @@
 // press that pressed only menu openers in the pad's copy (Start's PauseMenu, MapMenu, EnemyIntel) is given to the
 // game as well, so the game's own poll opens the menu. Each key's repeats and release go where its press went.
 // Logged at Info when the shared moment begins and ends, with the key events each pad gave the game during it.
+//
+// The keyboard and mouse are one more device (research/RE-kbm-routing.md): their events carry the Slate user 0, a key
+// event a Windows key code (a pad button's carries none). A keyboard key goes to players/keyboard_keys first (Tab, the
+// open window's keys); then, while the keyboard plays player 2 or 3 alone (KeyboardPlayer), its keys, the
+// mouse's buttons (the input object's mouse handlers, taken here too) and the input tick's repeat of a held mouse
+// button are that player's exactly as their pad's would be, each key's repeats and release where its press went
+// (keyboard_route_rules). The wheel steps UI focus only: in that player's UI context, else nowhere. While the keyboard
+// plays player 2 or 3 and views are split, the game's "keyboard used" flag is put back after each of its events, so the
+// device class (the button art, the rumble's device) stays player 1's device's.
 // Game thread only.
 
+#include <array>
 #include <cstdint>
 
 namespace lss::platform {
@@ -71,5 +81,16 @@ struct UiContext
     void (*leave)(unsigned user) noexcept = nullptr;
 };
 void SetUiContext(UiContext context) noexcept;
+
+/// The player the keyboard and mouse press for: 1 or 2 (a seat's controller id) while they play player 2 or 3 alone and
+/// that player has their own buttons, else 0 (player 1's: the game's own state). The one answer every keyboard route
+/// uses (players/keyboard_route too). Game thread.
+int KeyboardPlayer() noexcept;
+
+/// The keyboard's digital stick (its movement and camera keys) as the stick scope of `user` (a pad slot) sees it, for
+/// the player the keyboard plays: `live`, the field the input tick built, while that is player 1 or the game's input is
+/// shared; while it is player 2 or 3, the stick built from the keyboard's direction bits, which were kept out of the
+/// tick. Still for every other player.
+std::array<float, 4> KeyboardStickFor(std::uint32_t user, const std::array<float, 4>& live) noexcept;
 
 }  // namespace lss::players::pad_buttons

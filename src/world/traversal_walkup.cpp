@@ -659,7 +659,7 @@ void TryStartFor(int seat, void* actor, std::size_t cls, float dt, TryStartFn or
         ran = scope.Held();
         if (ran)
         {
-            const players::seat_camera::StickScope stick(static_cast<std::uint32_t>(seat), true);
+            const players::seat_camera::StickScope stick(static_cast<std::uint32_t>(seat));
             original(actor, dt);
         }
     }

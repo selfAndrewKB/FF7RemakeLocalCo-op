@@ -44,6 +44,8 @@
 #include "players/lead_gate.h"
 #include "players/nav_area.h"
 #include "players/operator_battle_mode.h"
+#include "players/keyboard_keys.h"
+#include "players/keyboard_route.h"
 #include "players/pad_buttons.h"
 #include "players/pad_presence.h"
 #include "players/pad_table.h"
@@ -285,7 +287,10 @@ constexpr std::array kModules{
     Module{.name = L"mirror player", .install = Call<&views::mirror_player::Install>},
 
     // The players' pads, the LEAD gate, the game's single slots answered per seat.
-    // without it every pad presses player 1's buttons
+    // without it the keyboard holds back no Tab and opens no player window (before the pad buttons, whose key handlers
+    // ask it, so a short Tab's release is handed on before it goes)
+    Module{.name = L"keyboard keys", .install = Call<&players::keyboard_keys::Install>, .remove = &players::keyboard_keys::Remove},
+    // without it every pad presses player 1's buttons, and so do the keyboard and mouse
     Module{.name = L"pad buttons", .install = Call<&players::pad_buttons::Install>, .remove = &players::pad_buttons::Remove},
     // without it players 2 and 3's cameras turn at player 1's Responsiveness
     Module{.name = L"seat responsiveness", .install = Call<&players::seat_responsiveness::Install>},
@@ -293,6 +298,8 @@ constexpr std::array kModules{
     Module{.name = L"pads reading", .install = Call<&players::pad_presence::Register>},
     // without it each pad is the player with its XInput number, whatever order Windows and Steam Input gave them
     Module{.name = L"pad table", .install = Call<&players::pad_table::Install>, .remove = &players::pad_table::Remove},
+    // without it the mouse look and the keys no binding takes stay player 1's while the keyboard plays player 2 or 3
+    Module{.name = L"keyboard route", .install = Call<&players::keyboard_route::Install>, .remove = &players::keyboard_route::Remove},
     // without it no prompt can be drawn in a player's own view (the player windows')
     Module{.name = L"view prompts", .install = Call<&hud::view_prompt::Install>, .remove = &hud::view_prompt::Remove},
     // without it the player windows are drawn in the engine's own font (the view prompts) instead of the game's window

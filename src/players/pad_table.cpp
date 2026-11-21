@@ -756,6 +756,12 @@ std::uint32_t PresentPads() noexcept
     return g_present.load(std::memory_order_relaxed);
 }
 
+int KeyboardUser() noexcept
+{
+    const int slot = rules::KeyboardSlot(Table());
+    return slot >= 1 && rules::PlayerSlot(slot, g_playing.load(std::memory_order_relaxed)) ? slot : 0;
+}
+
 int TwinOf(int pad, std::uint16_t button) noexcept
 {
     const int bit = std::countr_zero(button);

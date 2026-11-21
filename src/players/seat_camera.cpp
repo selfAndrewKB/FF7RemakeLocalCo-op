@@ -137,7 +137,7 @@ std::uint32_t StickBank(std::uint32_t user) noexcept
     return on >= 0 && pad_rules::ReaderOf(on) == pad_rules::kPlayStation ? facts::kPlayStationBank : facts::kXInputBank;
 }
 
-StickScope::StickScope(std::uint32_t user, bool clearKeys) noexcept
+StickScope::StickScope(std::uint32_t user) noexcept
 {
     std::uint8_t* owner = nullptr;
     if (!Read(g_squareInput, owner) || owner == nullptr || !Read(owner + facts::kStickAnalog, savedAnalog_) ||
@@ -158,9 +158,11 @@ StickScope::StickScope(std::uint32_t user, bool clearKeys) noexcept
     {
         Read(records + static_cast<std::size_t>(user) * facts::kStickRecordBytes, pad);
     }
-    const std::array<float, 4> still{};
+    std::array<float, 4> live{};
+    std::memcpy(live.data(), savedDigital_, sizeof(savedDigital_));
+    const std::array<float, 4> keys = pad_buttons::KeyboardStickFor(user, live);
     if (platform::WriteGuarded(owner + facts::kStickAnalog, pad.data(), sizeof(pad)) &&
-        (!clearKeys || platform::WriteGuarded(owner + facts::kStickDigital, still.data(), sizeof(still))))
+        platform::WriteGuarded(owner + facts::kStickDigital, keys.data(), sizeof(keys)))
     {
         owner_ = owner;
     }
@@ -361,7 +363,7 @@ void OperatorTick(void* self, float deltaSeconds)
     void* const                      controller = seat_objects::Controller(seat);
     const PrimaryScope               primary(controller);
     const OperatorScope              scope(seat_objects::OperatorWeak(seat));
-    const StickScope                 stick(static_cast<std::uint32_t>(seat), true);  // a sequence shot's input offset reads the stick (RE-seq-camera-two.md)
+    const StickScope                 stick(static_cast<std::uint32_t>(seat));  // a sequence shot's input offset reads the stick (RE-seq-camera-two.md)
     // Its leader is the seat's member: the battle camera requests, the move and camera-input checks and the battle
     // sequence overrides the tick reads are keyed on the party leader (RE-lock-camera-two.md), as the lock
     // camera follows the seat's target, not player 1's.
@@ -435,7 +437,7 @@ void ProcessPlayerInput(void* self, float deltaSeconds, bool gamePaused)
     if (self == PlayerOne())
     {
         ++g_counts[0].input;
-        const StickScope stick(0, false);
+        const StickScope stick(0);
         g_processInput(self, deltaSeconds, gamePaused);
         return;
     }
@@ -449,13 +451,13 @@ void ProcessPlayerInput(void* self, float deltaSeconds, bool gamePaused)
     if (seat_objects::Operator(seat) == nullptr)
     {
         // Without its own operator, the seat's stick would reach player 1's: a still stick instead.
-        const StickScope stick(UINT32_MAX, true);
+        const StickScope stick(UINT32_MAX);
         g_processInput(self, deltaSeconds, gamePaused);
         return;
     }
     const PrimaryScope             primary(self);
     const OperatorScope            scope(seat_objects::OperatorWeak(seat));
-    const StickScope               stick(static_cast<std::uint32_t>(seat), true);
+    const StickScope               stick(static_cast<std::uint32_t>(seat));
     const pad_buttons::ButtonScope buttons(seat);
     // The right stick is the lock's while the leader is locked on a target in range (the stick switches targets
     // then; the camera does not turn): the seat's lock and leader, not player 1's (RE-lock-camera-ledger.md).
@@ -481,7 +483,7 @@ void FieldMove(void* self, float deltaSeconds)
     if (self == PlayerOne())
     {
         ++g_counts[0].move;
-        const StickScope stick(0, false);
+        const StickScope stick(0);
         g_fieldMove(self, deltaSeconds);
         return;
     }
@@ -511,7 +513,7 @@ void FieldMove(void* self, float deltaSeconds)
     ++g_counts[seat].move;
     const PrimaryScope             primary(self);
     const OperatorScope            scope(seat_objects::OperatorWeak(seat));  // no-op while the seat has no operator
-    const StickScope               stick(static_cast<std::uint32_t>(seat), true);
+    const StickScope               stick(static_cast<std::uint32_t>(seat));
     const pad_buttons::ButtonScope buttons(seat);
     // Locked-on movement faces the target (strafes) on the seat's lock, not player 1's (RE-lock-camera-ledger.md).
     const battle::targeting::FieldsScope targets(seat);

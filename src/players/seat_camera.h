@@ -73,14 +73,14 @@ void* Operator(int seat) noexcept;
 std::uint32_t StickBank(std::uint32_t user) noexcept;
 
 /// The merged stick replaced by one pad slot's record for its lifetime (`user` = the slot: 0 player 1's, 1 player 2's;
-/// a pad not connected reads still), from the slot's bank (StickBank). `clearKeys` also clears the key-driven stick
-/// (the keyboard is player 1's). The game
-/// rebuilds the aggregate from the records every frame before the world ticks, so putting the saved values back
+/// a pad not connected reads still), from the slot's bank (StickBank), and the key-driven stick by the keyboard's
+/// (pad_buttons::KeyboardStickFor: its movement and camera keys for the player it plays, still for everyone else). The
+/// game rebuilds the aggregate from the records every frame before the world ticks, so putting the saved values back
 /// leaves the frame as the game built it. Game thread.
 class StickScope
 {
 public:
-    StickScope(std::uint32_t user, bool clearKeys) noexcept;
+    explicit StickScope(std::uint32_t user) noexcept;
     ~StickScope();
     StickScope(const StickScope&)            = delete;
     StickScope& operator=(const StickScope&) = delete;

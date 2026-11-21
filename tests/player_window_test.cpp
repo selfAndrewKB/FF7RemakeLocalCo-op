@@ -8,6 +8,7 @@
 
 #include <cstdio>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -236,6 +237,66 @@ void KeyboardPlayerOne()
     EXPECT(!KeyboardClaims(false, true, true, true));   // a pad's press on the title (its own TitlePress)
 }
 
+/// The keyboard for any player: Tab held joins it on a free slot (its pads there muted, their Start joins), its device
+/// slot is the one it plays, and any two of three players trade numbers whatever plays them (a pad of either reader or
+/// the keyboard), each person keeping their device and screen.
+void KeyboardAnyPlayer()
+{
+    const pad::PadTable id = pad::kIdentity;
+    EXPECT(DeviceSlot(id, pad::kKeyboardPad) == -1);  // beside player 1: no slot of its own
+    const pad::PadTable kb2 = WithDeviceOn(id, pad::kKeyboardPad, 1);
+    EXPECT(pad::IsValid(kb2) && DeviceSlot(kb2, pad::kKeyboardPad) == 1 && DeviceSlot(kb2, 1) == -1);
+    EXPECT(SeatOf(kb2, 0b11, 0b11, pad::kKeyboardPad) == 1);
+    EXPECT(SeatOf(kb2, 0b01, 0b11, pad::kKeyboardPad) == -1);  // not in yet
+    EXPECT(SeatOf(kb2, 0b11, 0b11, 1) == -1);                  // pad 2 muted under it: its Start joins
+    EXPECT(WithDeviceOn(id, 4, 1) == WithPadOn(id, 4, 1) && DeviceSlot(WithPadOn(id, 4, 1), 4) == 1);
+    EXPECT(DeviceSlot(WithPadOn(id, 4, 1), 1) == -1);  // pad 2 beside the live PlayStation pad
+
+    // Player 1 on pad 1, player 2 on the keyboard, player 3 on the first PlayStation pad: every trade keeps each person's
+    // device on their screen, and the keyboard always plays exactly one slot.
+    const pad::PadTable           three  = WithPadOn(kb2, 4, 2);
+    const std::array<int, kSeats> seatOn{0, 1, 2};
+    const auto device = [](const pad::PadTable& t, int seat) {
+        return pad::PadOn(t, seat) == pad::kNoPad ? pad::kKeyboardPad : pad::PadOn(t, seat);
+    };
+    for (const auto& [a, b] : {std::pair{0, 1}, std::pair{1, 2}, std::pair{0, 2}})
+    {
+        EXPECT(CanTradePads(three, a, b));
+        const pad::PadTable           after   = WithPadsTraded(three, a, b);
+        const std::array<int, kSeats> screens = Traded(seatOn, a, b);
+        EXPECT(pad::IsValid(after) && pad::KeyboardSlot(after) >= 0);
+        for (int screen = 0; screen < kSeats; ++screen)
+        {
+            EXPECT(device(after, screens[static_cast<std::size_t>(screen)]) ==
+                   device(three, seatOn[static_cast<std::size_t>(screen)]));
+        }
+        EXPECT(WithPadsTraded(after, a, b) == three);  // and back
+    }
+}
+
+/// The keyboard player's window names its keys; player 1's says Tab joins while the keyboard plays no one.
+void KeyboardWindow()
+{
+    Window w{.seat = 2, .name = L"TIFA", .open = true, .canStep = true, .canTrade = true, .canMove = true, .keyboard = true};
+    const std::vector<std::wstring> lines{
+        L"<  PLAYER 3  >    ^   <color=yellow>TIFA</color>   v",
+        L"Up/Down: character",
+        L"Left/Right: player number",
+        L"Q/E: Change View",
+        L"Enter: done",
+        L"Hold Backspace to leave the game",
+    };
+    EXPECT(LinesOf(TextFor(w).markup) == lines);
+    EXPECT(TextFor(w).plain[5] == L"Hold Backspace to leave the game");
+    EXPECT(!Has(TextFor(w).markup, L"<button="));
+
+    Window one{.seat = 0, .name = L"CLOUD", .open = true, .startJoins = true, .keyboardJoins = true};
+    EXPECT(LinesOf(TextFor(one).markup).back() == L"Press <button=options,pad> on another controller or hold Tab on the keyboard to join");
+    EXPECT(TextFor(one).plain[2] == L"Press Start on another controller or hold Tab to join");
+    one.keyboard = true;  // the keyboard is player 1: a controller's Start joins
+    EXPECT(LinesOf(TextFor(one).markup).back() == L"Press Start on a controller to join");
+}
+
 /// Player 2's open window: the number between left and right, the character between up and down, then move, done,
 /// leave; one key a line.
 void FurtherPlayersWindow()
@@ -244,7 +305,7 @@ void FurtherPlayersWindow()
     const ScreenText t = TextFor(w);
     const std::vector<std::wstring> lines{
         L"<button=left,pad> PLAYER 2 <button=right,pad>    <button=up,pad>  <color=yellow>BARRET</color>  <button=down,pad>",
-        L"<button=L1,pad> <button=R1,pad> Move my view",
+        L"<button=L1,pad> <button=R1,pad> Change View",
         L"<button=cross,pad> Done",
         L"Hold <button=circle,pad> to leave the game",
     };
@@ -252,7 +313,7 @@ void FurtherPlayersWindow()
     EXPECT(t.plain[0] == L"<  PLAYER 2  >    ^   BARRET   v");
     EXPECT(t.plain[1] == L"Up/Down: character");
     EXPECT(t.plain[2] == L"Left/Right: player number");
-    EXPECT(t.plain[3] == L"LB/RB: move my view");
+    EXPECT(t.plain[3] == L"LB/RB: Change View");
     EXPECT(t.plain[4] == L"A: done");
     EXPECT(t.plain[5] == L"Hold B to leave the game");
     EXPECT(t.plain.size() == 6);  // the longest window fills the fallback's lines exactly
@@ -313,6 +374,8 @@ int main()
     PadsGone();
     PadsAndSeats();
     KeyboardPlayerOne();
+    KeyboardAnyPlayer();
+    KeyboardWindow();
     FurtherPlayersWindow();
     PlayerOnesWindow();
     Notes();

@@ -153,7 +153,7 @@ void RunSeat(int seat, void* system, float deltaTime) noexcept
     {
         players::scopes::Scope                 scope(seat, kTargetingScopes);
         players::pad_buttons::ButtonScope      buttons(static_cast<unsigned>(seat));
-        players::seat_camera::StickScope stick(static_cast<std::uint32_t>(seat), true);
+        players::seat_camera::StickScope stick(static_cast<std::uint32_t>(seat));
         const FieldsScope                      fields(seat);
         if (!scope.Held() || !fields.Held())
         {

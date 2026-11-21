@@ -172,7 +172,7 @@ char Steer(void* component, float deltaTime)
     {
         return original(component, deltaTime);  // never the seat's stick against player 1's camera
     }
-    const players::seat_camera::StickScope stick(static_cast<std::uint32_t>(seat), true);
+    const players::seat_camera::StickScope stick(static_cast<std::uint32_t>(seat));
     return original(component, deltaTime);
 }
 

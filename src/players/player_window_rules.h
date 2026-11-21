@@ -146,6 +146,24 @@ constexpr pad::PadTable WithPlayerOne(const pad::PadTable& table, int which) noe
     return WithPadOn(table, which, 0);
 }
 
+/// The slot `device` (a pad, or pad_rules::kKeyboardPad) plays: the keyboard's slot, or the slot whose player plays on
+/// the pad; -1 for a device that plays no slot (the keyboard beside player 1, a pad its slot's other reader plays).
+constexpr int DeviceSlot(const pad::PadTable& table, int device) noexcept
+{
+    if (device == pad::kKeyboardPad)
+    {
+        return pad::KeyboardSlot(table);
+    }
+    const int slot = pad::SlotOf(table, device);
+    return slot >= 0 && pad::PadOn(table, slot) == device ? slot : -1;
+}
+
+/// The pad table with `device` (a pad, or pad_rules::kKeyboardPad) playing `slot`'s player: a join, a take-back.
+constexpr pad::PadTable WithDeviceOn(const pad::PadTable& table, int device, int slot) noexcept
+{
+    return device == pad::kKeyboardPad ? pad::WithKeyboardOn(table, slot) : WithPadOn(table, device, slot);
+}
+
 /// The keyboard takes player 1 on the title screen: the game's last device used turned to the keyboard there (a key, a
 /// mouse button or the wheel), or the title came up with the keyboard the last device used (its keys skipped the
 /// logos). `keyboard`/`title` now and at the last good read.
