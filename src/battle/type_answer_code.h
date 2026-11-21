@@ -4,8 +4,8 @@
 // member (battle/enemy_coin.h; research/RE-enemy-attention-coin.md). Pure: the bytes are built here and tested on
 // the host (tests/type_answer_code_test.cpp); enemy_coin places them near the game's code and points the call at them.
 //
-// The test the game compiled inline, at four places (the hate rows, the two tie-break reads, IsAIPC; the tie-break
-// reads take the controller jump below instead), is
+// The test the game compiled inline, at five places (the hate rows, the two tie-break reads, IsAIPC, a voice line's
+// lethal-hit test's HP floors; the tie-break reads take the controller jump below instead), is
 //     call PartyManager_Get ; movzx ecx, byte [rax+0x233] ; cmp [member+0x58], cl
 // the party manager's leader type against the member's own type, with the manager pointer used for nothing else.
 // The function called in place of PartyManager_Get reads the member's type from the register the game holds it in
@@ -47,6 +47,7 @@ struct Register
 inline constexpr Register kR14{0x41, 0x46};
 inline constexpr Register kRdi{0x00, 0x47};
 inline constexpr Register kRbx{0x00, 0x43};
+inline constexpr Register kRsi{0x00, 0x46};
 
 /// Writes the function into `out`; returns its length, or 0 if `blocks` is 0 or over kMaxBlocks or `out` is short.
 inline std::size_t Build(std::span<std::uint8_t> out, Register member, std::uintptr_t firstBlock, std::size_t blocks,

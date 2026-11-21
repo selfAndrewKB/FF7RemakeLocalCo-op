@@ -136,7 +136,7 @@ constexpr const wchar_t* kAiControllerClass = L"/Script/EndGame.EndBattleAIContr
 
 // Set at install, then only read.
 platform::EntryRedirect g_gate, g_mineGate, g_hitApply;
-platform::CallRedirect  g_opening, g_hate, g_isAipc, g_eqs, g_area, g_hitApplyB, g_sensing, g_scriptLeader;
+platform::CallRedirect  g_opening, g_hate, g_isAipc, g_voiceFloor, g_eqs, g_area, g_hitApplyB, g_sensing, g_scriptLeader;
 std::array<platform::CallRedirect, 2> g_tie, g_expect, g_scriptActor;
 platform::VTableEntry   g_battleStart;
 platform::VTableEntry   g_mineTick, g_coreTick, g_tornadoTick;
@@ -1151,6 +1151,13 @@ bool Install(const platform::GameImage& image) noexcept
     }
     const auto isAipc = image.Rebase(facts::kBattleIsAipcTypeCall, 5);
     placed += isAipc && PlaceTypeAnswer(g_isAipc, *isAipc, type_answer_code::kRbx, *pmGet, true, L"IsAIPC's leader test") ? 1 : 0;
+    // A voice line's lethal-hit test judges its attacker against the HP floors after the hit amounts: a human's member
+    // is the player there, as in its real hit, with the toss on or off.
+    const auto voiceFloor = image.Rebase(facts::kBattleVoiceFloorTypeCall, 5);
+    placed += voiceFloor && PlaceTypeAnswer(g_voiceFloor, *voiceFloor, type_answer_code::kRsi, *pmGet, false,
+                                            L"a voice line's lethal-hit test's HP floor leader test")
+                  ? 1
+                  : 0;
     // Membership, hits, sensing.
     placed += PlaceCall(g_eqs, image, facts::kBattleEqsIsACall, *isA, &EqsIsA, false, L"the enemy EQS membership test") ? 1 : 0;
     placed += PlaceCall(g_area, image, facts::kCharacterAreaIsACall, *isA, &AreaIsA, false, L"a character's battle area test") ? 1 : 0;
@@ -1224,7 +1231,7 @@ bool Install(const platform::GameImage& image) noexcept
                        },
                        .get = [] { return control::Value{g_areaOn.load(std::memory_order_relaxed)}; }});
     g_lastSummary = std::chrono::steady_clock::now();
-    platform::Log(L"enemy coin: installed, {} of 32 levers placed; enemies toss a coin per decision between the humans (the script natives "
+    platform::Log(L"enemy coin: installed, {} of 33 levers placed; enemies toss a coin per decision between the humans (the script natives "
                   L"answer once swapped)",
                   placed);
     return true;
@@ -1258,6 +1265,7 @@ void Remove() noexcept
     g_area.Restore();
     g_eqs.Restore();
     g_hate.Restore();
+    g_voiceFloor.Restore();
     g_tie[0].Restore();
     for (auto& call : g_expect)
     {

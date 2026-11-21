@@ -19,7 +19,9 @@
 //   - the player's weight, at the inlined "is this member the player" tests (the hate rows, IsAIPC):
 //     the party manager read there is answered by a block whose leader type is the member's own when the member is a
 //     human's other than player 1's (battle/type_answer_code.h), so every human gets the player's rows and the AI ally
-//     keeps its single-player ratio;
+//     keeps its single-player ratio; the same answer, toss or no toss, at a voice line's lethal-hit test's HP floors
+//     (the finishing-blow line), so a human's member skips the scripted floor only AI allies respect, as its real hit
+//     does (research/RE-voice-line-floor-test.md);
 //   - the hate pick's tie-break: "the player" there is the enemy's coin human alone (its controller handed to the
 //     answer), the game's rule with one leader. Answered "the player" for every human, the last tied human in party
 //     order won every tie: player 1 never did with three humans, the AI ally never did with two

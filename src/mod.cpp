@@ -71,7 +71,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"1.3.2-summon-gauge";  // the one version string (the log, UE4SS and the setup app)
+constexpr const wchar_t* kVersion = L"1.3.3-voice-floor";  // the one version string (the log, UE4SS and the setup app)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;

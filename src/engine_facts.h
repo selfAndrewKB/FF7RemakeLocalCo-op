@@ -1638,10 +1638,12 @@ inline constexpr std::uintptr_t kBattleOpeningLeaderCall = 0x140893204;
 /// The inlined "is this member the player" reads (call PartyManager_Get; movzx ecx, [rax+0x233]; cmp [reg+0x58], cl;
 /// the manager read for nothing else): the hate rows (member in r14), the hate pick's two tie-break reads (member in
 /// rdi, the picking enemy's battle AI controller in r13, only rax and rcx read after the call; the second crosses its
-/// block), IsAIPC (rbx; crosses).
+/// block), IsAIPC (rbx; crosses), and a voice line's lethal-hit test (the attacker's battle component in rsi, read after
+/// the hit amounts: its answer is the HP floors' "the attacker is the player", RE-voice-line-floor-test.md).
 inline constexpr std::uintptr_t kBattleHateTypeCall = 0x14093F27A;                           // E8 41 88 D1 FF
 inline constexpr std::array<std::uintptr_t, 2> kBattleTieTypeCalls{0x140940081, 0x14094009E};  // E8 3A 7A D1 FF, E8 1D 7A D1 FF
 inline constexpr std::uintptr_t kBattleIsAipcTypeCall = 0x14187D25D;                         // E8 5E A8 DD FE
+inline constexpr std::uintptr_t kBattleVoiceFloorTypeCall = 0x1416F2022;                     // E8 99 5A F6 FE
 /// The expectation counts' reads of the leader type (movzx from PartyManager_Get's result, used for nothing else):
 /// the coin's human's type answers.
 inline constexpr std::array<std::uintptr_t, 2> kBattleExpectationTypeCalls{0x1409598F1, 0x14095A3A7};  // E8 CA E1 CF FF, E8 14 D7 CF FF

@@ -92,6 +92,8 @@ void Lengths()
     std::array<std::uint8_t, kMaxBytes> code{};
     EXPECT(Build(code, kRdi, kBlocks, 1, kPmGet) == 4 + 10 + 8 + 14 + 4);
     EXPECT(Build(code, kR14, kBlocks, 3, kPmGet) == 5 + 10 + 3 * 8 + 2 * 7 + 14 + 4);
+    // movzx eax, byte [rsi+0x58]: no prefix, ModRM 0x46 (mod 01, reg eax, r/m rsi).
+    EXPECT(Build(code, kRsi, kBlocks, 1, kPmGet) == 4 + 10 + 8 + 14 + 4 && code[0] == 0x0F && code[2] == 0x46);
 }
 
 /// The tie-break's jump: the controller moved into the first argument, then an absolute jump to the function.
@@ -115,6 +117,7 @@ int main()
     Walk(kRdi, 3);
     Walk(kRbx, 1);
     Walk(kRdi, 2);
+    Walk(kRsi, 2);
     Refusals();
     Lengths();
     ControllerJump();
