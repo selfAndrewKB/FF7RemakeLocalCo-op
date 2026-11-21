@@ -11,7 +11,10 @@
 //   - while the keyboard's player's window is open (SetIdle), every key goes to the window and none to the game, as a
 //     pad reads idle then: the keys that stand for the pad's (pad_rules::FromKey) are told to the listener as that
 //     pad's presses, Backspace as B's tap or hold. A key held from before the window opened is let go to the game as
-//     it came.
+//     it came;
+//   - the period key, while the keyboard plays player 2 or 3 and its window is closed: held back from the game, its
+//     press asks for that player's character to be brought back (TakeReturn, read by battle/arena_warp), in place of
+//     the double click of Dash a pad's player gives.
 // The keyboard is pad_rules::kKeyboardPad in the listener's events. Every key or mouse button pressed is also noted
 // for the title screen, where it makes the keyboard player 1 (TakePressed).
 
@@ -73,5 +76,9 @@ void SetIdle(bool idle) noexcept;
 
 /// The keyboard's player's window is open (SetIdle): the mouse's presses reach no one either. Game thread.
 bool Idle() noexcept;
+
+/// The player (1 or 2: players 2 and 3) the keyboard played when its period key last went down, if it has since the
+/// last call, else 0. Game thread.
+int TakeReturn() noexcept;
 
 }  // namespace lss::players::keyboard_keys

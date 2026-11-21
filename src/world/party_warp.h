@@ -6,7 +6,8 @@
 // In single player the game's follow AI warps a companion that has been more than 10 m from the leader for a while back
 // beside it. A character a player holds never gets that warp: its AI does not run. So the player asks for it, with the
 // press that brings a character into a fight (battle/arena_warp.h reads it: a double click of the left stick on that
-// player's own pad; outside a battle it asks here). The move is the game's own, in the order its catch-up warp makes it:
+// player's own pad, one press of the period key on the keyboard; outside a battle it asks here).
+// The move is the game's own, in the order its catch-up warp makes it:
 //   - the game's gates for that warp: no scene, talk or event holding the field, player 1's character with its player
 //     and in no field action; and the mod's for a held character: it belongs to its player (no scripted hold), in the
 //     field mode, in no field action of its own, and not already beside player 1's character (within 3 m on the same

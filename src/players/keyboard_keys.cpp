@@ -7,6 +7,7 @@
 #include "platform/log.h"
 #include "platform/steady_ms.h"
 #include "platform/verified_code.h"
+#include "players/pad_buttons.h"
 #include "players/pad_rules.h"
 
 #include <array>
@@ -54,8 +55,9 @@ bool             g_leaveDown   = false;
 bool             g_leaveSeen   = false;  // Backspace went down since the last poll (a tap between two polls counts)
 bool             g_pressedAny  = false;  // a key or mouse button went down since the last TakePressed
 std::uint16_t    g_pressed     = 0;      // the window's keys pressed since the last poll, as the rules' bits
+int              g_returnAsked = 0;      // the player the keyboard played at its period key's last press, until taken
 rules::Held      g_leave{};
-std::uint32_t    g_opens = 0, g_taps = 0, g_windowKeys = 0;
+std::uint32_t    g_opens = 0, g_taps = 0, g_windowKeys = 0, g_returns = 0;
 
 void Tell(std::uint16_t pressed, bool open, bool bTap, bool bHeld) noexcept
 {
@@ -67,9 +69,15 @@ void Tell(std::uint16_t pressed, bool open, bool bTap, bool bHeld) noexcept
 
 std::wstring Reading()
 {
-    return std::format(L"{}; window {}, Tab {}; opener held {} time(s), taps given {}, window keys {}",
+    return std::format(L"{}; window {}, Tab {}; opener held {} time(s), taps given {}, window keys {}, period presses {}",
                        g_installed ? L"on" : L"not installed", g_idle ? L"open" : L"closed", g_tabDown ? L"down" : L"up",
-                       g_opens, g_taps, g_windowKeys);
+                       g_opens, g_taps, g_windowKeys, g_returns);
+}
+
+/// The period key is the keyboard's return key now: the keyboard plays player 2 or 3 and its window is closed.
+bool ReturnKeyTaken(std::uint32_t keyCode) noexcept
+{
+    return keyCode == rules::kReturnKey && !g_idle && pad_buttons::KeyboardPlayer() >= 1;
 }
 
 }  // namespace
@@ -87,8 +95,8 @@ bool Install(const platform::GameImage& image) noexcept
     g_installed    = true;
     control::Register({.name  = L"players.keyboard",
                        .shape = control::Shape::Text,
-                       .help  = L"(read only) the keyboard as a player's device: its window, Tab, and the opens, taps and "
-                                L"window keys so far",
+                       .help  = L"(read only) the keyboard as a player's device: its window, Tab, and the opens, taps, "
+                                L"window keys and period presses so far",
                        .get   = [] {
                            try
                            {
@@ -102,7 +110,8 @@ bool Install(const platform::GameImage& image) noexcept
     platform::Log(L"keyboard: Tab held a second opens the keyboard's player's window, or adds a player on the keyboard (a "
                   L"shorter Tab still reaches the game at its let-go); while that window is open every key is its own "
                   L"(the arrows: character and player number, Q/E: Change View, Enter or Escape: done, Backspace held: "
-                  L"leave)");
+                  L"leave); while it plays player 2 or 3, the period key brings that player's character back to player 1's "
+                  L"(in a fight, into the fight)");
     return true;
 }
 
@@ -112,18 +121,36 @@ void Remove() noexcept
     g_installed = false;
     g_idle      = false;
     g_heldBack.reset();
-    g_tabDown   = false;
-    g_tabFired  = false;
-    g_leaveDown = false;
-    g_leaveSeen = false;
+    g_tabDown     = false;
+    g_tabFired    = false;
+    g_leaveDown   = false;
+    g_leaveSeen   = false;
+    g_returnAsked = 0;
 }
 
 Down OnDown(std::uint32_t keyCode, bool repeat) noexcept
 {
-    // Tab (the opener, its system repeats too), and every key while the window is open but a repeat of one held from
-    // before it opened (its down reached the game, so its up must too).
-    if (!g_installed || keyCode >= g_heldBack.size() ||
-        !(keyCode == rules::kOpenKey || (g_idle && !(repeat && !g_heldBack.test(keyCode)))))
+    // Tab (the opener, its system repeats too), every key while the window is open, and the return key; but not a
+    // repeat of a key held from before (its down reached the game, so its up must too). A repeat of a key the mod took
+    // stays the mod's, whatever changed since its press.
+    if (!g_installed || keyCode >= g_heldBack.size())
+    {
+        return Down::Game;
+    }
+    if (repeat && g_heldBack.test(keyCode))
+    {
+        return Down::Taken;
+    }
+    const bool heldFromBefore = repeat;  // a repeat here is of a key the mod did not take
+    if (ReturnKeyTaken(keyCode) && !heldFromBefore)
+    {
+        g_heldBack.set(keyCode);
+        g_returnAsked = pad_buttons::KeyboardPlayer();
+        ++g_returns;
+        platform::LogDebug(L"keyboard: the period key: player {} asks to be brought back", g_returnAsked + 1);
+        return Down::Taken;
+    }
+    if (!(keyCode == rules::kOpenKey || (g_idle && !heldFromBefore)))
     {
         return Down::Game;
     }
@@ -241,6 +268,11 @@ bool Idle() noexcept
 bool TakePressed() noexcept
 {
     return std::exchange(g_pressedAny, false);
+}
+
+int TakeReturn() noexcept
+{
+    return std::exchange(g_returnAsked, 0);
 }
 
 void Listen(pad_table::Listener listener) noexcept

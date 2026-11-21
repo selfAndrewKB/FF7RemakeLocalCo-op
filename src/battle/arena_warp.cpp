@@ -12,6 +12,8 @@
 #include "players/actor_fields.h"
 #include "players/field_root.h"
 #include "players/game_state.h"
+#include "players/keyboard_keys.h"
+#include "players/pad_buttons.h"
 #include "players/party_member.h"
 #include "players/scopes.h"
 #include "players/seats.h"
@@ -136,7 +138,7 @@ void Run(int seat) noexcept
     if (const wchar_t* why = Refusal(battleSystem, member))
     {
         ++g_refused;  // the player's own ask: answered at Info
-        platform::Log(L"arena warp: {} clicked the left stick twice; its character is not brought into the fight: {} "
+        platform::Log(L"arena warp: {} asked to be brought into the fight; its character is not brought in: {} "
                       L"(field lock {:#x})",
                       SeatName(seat), why, players::party_member::ControlLockMask());
         return;
@@ -205,20 +207,22 @@ bool Install(const platform::GameImage& image) noexcept
     g_warp         = reinterpret_cast<WarpFn>(*warp);  // last: Tick and ReadPress test it
     control::Register({.name  = L"arena-warp",
                        .shape = control::Shape::Text,
-                       .help  = L"further players' characters brought into the fight on a double click of the left stick: "
-                                L"Dash presses seen in a battle (one per click), brought in (from inside the fight's area, by the game's test), refused (paused "
+                       .help  = L"players 2 and 3's characters brought into the fight on a double click of the left stick "
+                                L"(one press of the period key on the keyboard): Dash presses seen in a battle (one per "
+                                L"click), brought in (from inside the fight's area, by the game's test), refused (paused "
                                 L"or a menu up, a scripted event, a battle with no recovery, down, mid-action, a field "
                                 L"action), nothing moved (no navmesh point, or the party leader); and the Dash presses seen "
-                                L"in the field, where a double click brings the character back to player 1's",
+                                L"in the field, where the same ask brings the character back to player 1's",
                        .get   = [] { return control::Value{Reading()}; }});
-    platform::Log(L"arena warp: installed; player 2 or 3 double-clicking the left stick in a battle, inside the fight's area or not, "
-                  L"is brought in front of player 1's character");
+    platform::Log(L"arena warp: installed; player 2 or 3 double-clicking the left stick in a battle (the period key, on the keyboard), "
+                  L"inside the fight's area or not, is brought in front of player 1's character");
     return true;
 }
 
 void ReadPress(int seat) noexcept
 {
-    if (g_warp == nullptr || !players::SeatBuilt(seat))
+    // A seat the keyboard plays asks with its period key instead (Tick): its Alt, the game's Dash, only dashes.
+    if (g_warp == nullptr || !players::SeatBuilt(seat) || players::pad_buttons::KeyboardPlayer() == seat)
     {
         return;
     }
@@ -246,6 +250,10 @@ void Tick() noexcept
     if (g_warp == nullptr)
     {
         return;
+    }
+    if (const int seat = players::keyboard_keys::TakeReturn(); players::SeatBuilt(seat))
+    {
+        g_seats[seat].asked = true;  // the keyboard's period key: one press asks, as a pad's double click does
     }
     for (int seat = 1; seat <= players::kSeatsBuilt; ++seat)
     {

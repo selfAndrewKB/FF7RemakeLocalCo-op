@@ -114,9 +114,11 @@ inline constexpr std::array<ButtonPair, 14> kPlayStationButtons{{
 // The keyboard's keys in the rules, by Windows virtual-key code (FKeyEvent's key code): Tab, the opener, held a second
 // (pad_rules::kOpenHoldMs), and while its player's window is open the keys that stand for the pad's: the arrows the
 // d-pad (up and down the character, left and right the number), Q and E the shoulders, Enter A, Escape Start,
-// Backspace B (its tap and its hold).
-inline constexpr std::uint32_t kOpenKey  = 0x09;  // VK_TAB
-inline constexpr std::uint32_t kLeaveKey = 0x08;  // VK_BACK
+// Backspace B (its tap and its hold). The period key, pressed once while the keyboard plays player 2 or 3, brings that
+// player's character back to player 1's (in a fight, into the fight), as a pad's double click of the left stick does.
+inline constexpr std::uint32_t kOpenKey   = 0x09;  // VK_TAB
+inline constexpr std::uint32_t kLeaveKey  = 0x08;  // VK_BACK
+inline constexpr std::uint32_t kReturnKey = 0xBE;  // VK_OEM_PERIOD
 
 /// A key event is the keyboard's: Slate gives a pad button's key event (which reaches the same handlers, with the pad's
 /// user) no key code.

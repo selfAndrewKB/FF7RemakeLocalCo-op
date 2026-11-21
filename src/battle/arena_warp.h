@@ -1,16 +1,18 @@
 #pragma once
 
-// A further player's character brought into the fight on a double click of the left stick: a character can be locked
+// Player 2's or 3's character brought into the fight on a double click of the left stick: a character can be locked
 // outside a fight whose only way in is a crawlspace, which the game closes while the fight lasts
 // (research/RE-arena-warp.md).
 //
 // The game has an in-battle recovery warp for one member: its revive and its leader switch call it for a character
 // outside the battle area (a navmesh point along the party leader's facing, then the battle warp with its fade-in).
-// The mod calls it for a further player's member, with the leader switch's gates, when that player clicks L3 twice
+// The mod calls it for player 2's or 3's member, with the leader switch's gates, when that player clicks L3 twice
 // within 0.4 s in a battle. L3 is the game's Dash, which does nothing in battle; the press is the game's, read with its
 // own getter inside the player's button scope (players/pad_buttons.h), at the player's command menu tick: so only with
-// the player's own pad (never player 1's), with `command-menu` on and the player's command menu set up. The warp runs on
-// the next engine tick, outside every player's scope (the warp reads "the party leader": player 1's character):
+// the player's own pad (never player 1's), with `command-menu` on and the player's command menu set up. A player on the
+// keyboard asks with one press of the period key instead (players/keyboard_keys TakeReturn); their Alt, the game's
+// Dash on the keyboard, is not read for it. The warp runs on the next engine tick, outside every player's scope (the
+// warp reads "the party leader": player 1's character):
 //   - in a battle, the battle system's no-recovery byte clear, its ready word set (the game's own gates);
 //   - the member alive (not KO: the game's gate); not locked in an action (the leader switch's "may be left" rule) and
 //     in no field action (the game would cut it short; refused instead): the mod's own stricter guards;
@@ -36,8 +38,8 @@ bool Install(const platform::GameImage& image) noexcept;
 /// Game thread, inside the seat's command menu tick with its scopes and button scope held: reads its Dash press.
 void ReadPress(int seat) noexcept;
 
-/// Game thread, each engine tick, outside every scope: runs an asked warp (in a battle), or passes the ask to
-/// world/party_warp (outside one).
+/// Game thread, each engine tick, outside every scope: takes the keyboard's period press as its player's ask, then runs
+/// an asked warp (in a battle), or passes the ask to world/party_warp (outside one).
 void Tick() noexcept;
 
 /// The seat left: its clicks are forgotten.
