@@ -38,6 +38,7 @@ bool                    g_loadTried  = false;
 bool                    g_polled     = false;  // the first poll logs the set
 ULONGLONG               g_nextPollAt = 0;
 std::array<Pad, kUsers> g_pads{};
+std::uint32_t           g_playStationSeen = 0;  // the PlayStation pads (bits 4..7) that answered at some read
 
 GetStateFn Load() noexcept
 {
@@ -142,14 +143,17 @@ std::wstring Reading(ULONGLONG now)
 
 }  // namespace
 
-std::uint32_t GoneUsers() noexcept
+std::uint32_t GonePads() noexcept
 {
     std::uint32_t gone = 0;
     for (unsigned user = 0; user < kUsers; ++user)
     {
         gone |= g_pads[user].seen && !g_pads[user].connected ? 1u << user : 0u;
     }
-    return gone;
+    // The PlayStation pads as the pad table's reads saw them (the reader polls every frame; no query of our own).
+    const std::uint32_t playStation = pad_table::PresentPads() & ~((1u << kUsers) - 1u);
+    g_playStationSeen |= playStation;
+    return gone | (g_playStationSeen & ~playStation);
 }
 
 void Register()

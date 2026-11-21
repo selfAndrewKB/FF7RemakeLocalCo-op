@@ -130,6 +130,7 @@ inline constexpr std::uint32_t  kSpawnParamsObjectFlags = 0x2C;       // FActorS
 inline constexpr std::uintptr_t kFieldCameraOperatorVTable = 0x144BB5D78;
 inline constexpr std::uintptr_t kSquareInputOwnerGlobal    = 0x1459CA980;  // SquareInput owner*
 inline constexpr std::uint32_t  kStickBanks        = 0x6D0;  // TArray<record> per device bank, 16 bytes each
+inline constexpr std::uint32_t  kPlayStationBank   = 0;      // the PlayStation reader's (its events carry no device scope)
 inline constexpr std::uint32_t  kXInputBank        = 1;
 inline constexpr std::uint32_t  kStickRecordBytes  = 24;     // LX, LY, RX, RY, LT, RT
 inline constexpr std::uint32_t  kStickAnalog       = 0x700;  // LX, LY, RX, RY: what the getters read
@@ -161,6 +162,36 @@ inline constexpr std::uint32_t  kXInputControllerStates = 0x28;           // FCo
 inline constexpr std::uint32_t  kXInputControllerStateBytes = 0x100;      // the records' stride
 inline constexpr std::uint32_t  kXInputStateConnected   = 0xE8;           // a record's bIsConnected (bool)
 inline constexpr std::uintptr_t kSonyControllerDeviceVTable = 0x144F47608;  // the PlayStation pad device (scePad): not XInput
+/// The engine's device list holds 16-byte shared references, the object pointer first.
+inline constexpr std::uint32_t  kAppInputDeviceBytes    = 0x10;
+
+// --- The PlayStation reader (RE-playstation-pads.md §5, §9) ----------------------------------------------------------
+// Sony's scePad library, linked into the exe: SonyControllerDevice__SendEventsForSlot reads each record's pad through
+// scePadReadState(handle, data), its only caller, on the game thread's device poll; the rumble goes through
+// scePadSetVibration(handle, u8 motors[2]) (large, small) from two callers. Both functions open with a home-area store.
+inline constexpr std::uintptr_t kSonyReadState    = 0x143F7EC50;
+inline constexpr std::uintptr_t kSonySetVibration = 0x143F7EF70;
+inline constexpr std::array<std::uint8_t, 5> kSonyLibraryFirst{0x48, 0x89, 0x5C, 0x24, 0x08};  // mov [rsp+8], rbx
+/// The library's system-button switch (u8, zero at start, no writer in the game): while it is zero, the read clears
+/// Create, PS and Mute from every pad's buttons.
+inline constexpr std::uintptr_t kSonySystemButtons = 0x1457C5F71;
+/// A PlayStation reader record (record N reads slot N): the pad data scePadReadState fills, the record's controller id
+/// (i32), its scePad handle (i32; handle & 0xFF = the scePad user 1..4, the pad's identity), the connected byte of its
+/// last poll (a rise runs the game's connect path: controller information, the connection broadcast), and the last motor
+/// values sent (floats; rumble is sent when they change).
+inline constexpr std::uint32_t kSonyRecordPadData   = 0x78;
+inline constexpr std::uint32_t kSonyRecordId        = 0x210;
+inline constexpr std::uint32_t kSonyRecordHandle    = 0x218;
+inline constexpr std::uint32_t kSonyRecordConnected = 0x228;
+inline constexpr std::uint32_t kSonyRecordLastLarge = 0x268;
+inline constexpr std::uint32_t kSonyRecordLastSmall = 0x26C;
+/// ScePadData: buttons (u32; bit 31 set makes the record skip the frame), the sticks LX LY RX RY (u8, centre 0x80),
+/// the triggers L2 R2 (u8), the touch count (u8), connected (u8).
+inline constexpr std::uint32_t kPadDataButtons    = 0x00;
+inline constexpr std::uint32_t kPadDataSticks     = 0x04;
+inline constexpr std::uint32_t kPadDataTriggers   = 0x08;
+inline constexpr std::uint32_t kPadDataTouchCount = 0x34;
+inline constexpr std::uint32_t kPadDataConnected  = 0x4C;
 
 // --- Text in a player's own view (RE-view-text.md) --------------------------------------------------------------
 // UGameViewportClient::Draw gives each local player's HUD a canvas offset to that player's view and calls its

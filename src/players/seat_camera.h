@@ -68,8 +68,13 @@ bool IsGameThread() noexcept;
 void* OperatorOne() noexcept;
 void* Operator(int seat) noexcept;
 
-/// The merged stick replaced by one pad's record for its lifetime (`user` = XInput user: 0 pad 1, 1 pad 2; a pad not
-/// connected reads still). `clearKeys` also clears the key-driven stick (the keyboard is player 1's). The game
+/// The stick bank whose record `user` (a pad slot) reads: the PlayStation reader's while that slot's player plays on a
+/// PlayStation pad (pad_rules::PlayingPad), else XInput's (players/pad_table). The record in either is the slot's.
+std::uint32_t StickBank(std::uint32_t user) noexcept;
+
+/// The merged stick replaced by one pad slot's record for its lifetime (`user` = the slot: 0 player 1's, 1 player 2's;
+/// a pad not connected reads still), from the slot's bank (StickBank). `clearKeys` also clears the key-driven stick
+/// (the keyboard is player 1's). The game
 /// rebuilds the aggregate from the records every frame before the world ticks, so putting the saved values back
 /// leaves the frame as the game built it. Game thread.
 class StickScope

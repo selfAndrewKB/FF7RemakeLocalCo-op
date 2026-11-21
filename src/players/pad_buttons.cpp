@@ -471,22 +471,31 @@ void Tick(void* self, float deltaTime, void* slateApp, void* cursor)
         }
         platform::Log(L"pad buttons: {}", SharedMomentText(shared));
     }
-    std::uint8_t* bank  = owner + facts::kStickBanks + 16 * facts::kXInputBank + facts::kStickBankCount;
-    std::int32_t  count = 0;
-    std::memcpy(&count, bank, sizeof(count));
-    const std::int32_t one = 1;
-    if (shared)
+    // Both readers' banks (XInput's, the PlayStation reader's) to their first record, player 1's slot: the aggregate is
+    // player 1's pad alone, whichever reader it is on.
+    constexpr std::array<std::uint32_t, 2> kBanks{facts::kXInputBank, facts::kPlayStationBank};
+    std::array<std::int32_t, 2>            counts{};
+    const std::int32_t                     one = 1;
+    for (std::size_t i = 0; i < kBanks.size(); ++i)
     {
-        count = 0;  // the game's own aggregate: nothing clamped, nothing to put back
-    }
-    if (count > 1)
-    {
-        std::memcpy(bank, &one, sizeof(one));
+        std::uint8_t* const bank = owner + facts::kStickBanks + 16 * kBanks[i] + facts::kStickBankCount;
+        std::memcpy(&counts[i], bank, sizeof(counts[i]));
+        if (shared)
+        {
+            counts[i] = 0;  // the game's own aggregate: nothing clamped, nothing to put back
+        }
+        if (counts[i] > 1)
+        {
+            std::memcpy(bank, &one, sizeof(one));
+        }
     }
     g_tick(self, deltaTime, slateApp, cursor);
-    if (count > 1)
+    for (std::size_t i = 0; i < kBanks.size(); ++i)
     {
-        std::memcpy(bank, &count, sizeof(count));
+        if (counts[i] > 1)
+        {
+            std::memcpy(owner + facts::kStickBanks + 16 * kBanks[i] + facts::kStickBankCount, &counts[i], sizeof(counts[i]));
+        }
     }
     for (unsigned user = 1; user < kMaxPads; ++user)
     {

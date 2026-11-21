@@ -75,10 +75,17 @@ struct Window
     std::wstring aboutName;           // the note's player's character in capitals, when the note names it
 };
 
-/// The notice after a press on the title screen: which controller is set as Player 1 (`user` the physical pad, 0-based).
-inline std::wstring TitleClaimed(int user)
+/// The notice after a press on the title screen: which controller plays player 1 (`pad` the physical pad, as
+/// players/pad_rules numbers them: 0..3 XInput, 4..7 PlayStation; negative: the keyboard).
+inline std::wstring TitleClaimed(int pad)
 {
-    return L"Controller " + std::to_wstring(user + 1) + L" is set as Player 1";
+    if (pad < 0)
+    {
+        return L"Keyboard is set as Player 1";
+    }
+    const bool playStation = pad >= 4;
+    return (playStation ? L"PlayStation Controller " : L"Controller ") + std::to_wstring(pad % 4 + 1) +
+           L" is set as Player 1";
 }
 
 /// "PLAYER 2" for seat 1.

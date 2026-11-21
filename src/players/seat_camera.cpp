@@ -16,6 +16,8 @@
 #include "players/nav_area.h"
 #include "players/operator_battle_mode.h"
 #include "players/pad_buttons.h"
+#include "players/pad_rules.h"
+#include "players/pad_table.h"
 #include "players/party_member.h"
 #include "players/scopes.h"
 #include "players/seat_objects.h"
@@ -124,6 +126,17 @@ bool IsGameThread() noexcept
     return OnGameThread();
 }
 
+std::uint32_t StickBank(std::uint32_t user) noexcept
+{
+    if (user >= static_cast<std::uint32_t>(pad_rules::kSlots))
+    {
+        return facts::kXInputBank;
+    }
+    // The keyboard's slot (no pad) reads XInput's record, which its muted pad keeps still.
+    const int on = pad_rules::PlayingPad(pad_table::Table(), static_cast<int>(user), pad_table::PresentPads());
+    return on >= 0 && pad_rules::ReaderOf(on) == pad_rules::kPlayStation ? facts::kPlayStationBank : facts::kXInputBank;
+}
+
 StickScope::StickScope(std::uint32_t user, bool clearKeys) noexcept
 {
     std::uint8_t* owner = nullptr;
@@ -133,7 +146,7 @@ StickScope::StickScope(std::uint32_t user, bool clearKeys) noexcept
         return;
     }
     std::array<float, 4> pad{};  // still unless the pad's record exists
-    const std::uint8_t*  bank    = owner + facts::kStickBanks + 16 * facts::kXInputBank;
+    const std::uint8_t*  bank    = owner + facts::kStickBanks + 16 * StickBank(user);
     std::uint8_t*        records = nullptr;
     std::int32_t         count   = 0;
     if (user < g_holds.size() && g_holds[user].active)
