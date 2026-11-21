@@ -66,6 +66,10 @@ void SetIdlePads(std::uint32_t pads, const wchar_t* why) noexcept;
 /// The pads that answered their last read (bit p: pad p). Game thread.
 std::uint32_t PresentPads() noexcept;
 
+/// The PlayStation pad the reader's record for `slot` holds is a DualShock 4 (else a DualSense, or no PlayStation pad):
+/// the library's own answer for that pad, asked once per pad the record holds. Game thread.
+bool DualShock4(int slot) noexcept;
+
 /// The controller id the keyboard and mouse play on: the slot they play alone while a player holds it (SetPlaying),
 /// else 0, player 1's (beside player 1's pad, alone on player 1's slot, or on a slot whose player is not in yet).
 int KeyboardUser() noexcept;

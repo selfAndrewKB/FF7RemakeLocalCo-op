@@ -307,6 +307,85 @@ inline constexpr platform::SlotFact kInputWheel{L"SquareInput::HandleMouseWheelO
 /// The input tick's repeat of a held mouse button: a direct call of the action dispatcher.
 inline constexpr std::uintptr_t kMouseRepeatCall = 0x141434AF9;
 
+// --- Button icons per player (RE-per-player-icons.md §2, §9-§12, §16) ---------------------------------------------
+/// SquareInput__NoteLastActiveDevice(owner, int ControllerId): marks the pad that pressed as the last device (its flags
+/// and id; the input tick folds them into the device class). Its first instruction, the entry's first bytes, is a
+/// home-area store.
+inline constexpr std::size_t kNoteLastDeviceFirstBytes = 5;
+inline constexpr std::array<std::uint8_t, 16> kNoteLastDeviceEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x74, 0x24, 0x10, 0x48, 0x89, 0x7C, 0x24, 0x18, 0x55};
+inline constexpr platform::FunctionFact kNoteLastDevice{L"SquareInput__NoteLastActiveDevice", 0x1414302C0, kNoteLastDeviceEntry};
+inline constexpr std::uint32_t kInputDeviceSubClass = 0x75D;  // the button-art sub-class beside the device class
+inline constexpr std::uint32_t kInputDualShock4     = 0x5F;   // 1: the last PlayStation pad is a DualShock 4
+/// EndUI_RefreshButtonIconsInFonts(EndUISystem*): the device-change listener: from the device class, sub-class and
+/// DualShock 4 byte it writes each button font's pad family, keyboard flag and five 64-byte key maps, then tail-jumps to
+/// the relayout of every text with a button tag.
+inline constexpr std::array<std::uint8_t, 16> kRefreshButtonIconsEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x6C, 0x24, 0x10, 0x48, 0x89, 0x74, 0x24, 0x18, 0x57};
+inline constexpr platform::FunctionFact kRefreshButtonIcons{L"EndUI_RefreshButtonIconsInFonts", 0x1413AF530,
+                                                            kRefreshButtonIconsEntry};
+inline constexpr std::uintptr_t kRefreshRelayoutTail = 0x1413AF744;  // jmp SEndTextBlock_RebuildAllWithButtons
+inline constexpr std::uintptr_t kRebuildAllWithButtons = 0x14150EC30;
+inline constexpr std::uintptr_t kButtonFontIds = 0x144BF0C38;  // the three fonts the listener writes (u8 each)
+inline constexpr std::size_t    kButtonFonts   = 3;
+inline constexpr std::uint32_t  kUiSlotFonts   = 5;     // EndUISystem's font holder: {weak pairs, num +8}
+inline constexpr std::uint32_t  kFontHolderData = 0x00;  // the fonts' weak pairs {index, serial}
+inline constexpr std::uint32_t  kFontHolderNum  = 0x08;  // 0 while the fonts are not loaded
+/// A UEndFont's button bytes: the pad family, the keyboard flag, and the five key maps the listener writes (each a
+/// TArray whose data holds 64 bytes, written in place).
+inline constexpr std::uint32_t kFontPadFamily = 0x468;
+inline constexpr std::uint32_t kFontKeyboard  = 0x469;
+inline constexpr std::array<std::uint32_t, 5> kFontKeyMaps{0x238, 0x248, 0x258, 0x268, 0x278};
+inline constexpr std::uint32_t kFontKeyMapBytes = 64;
+/// SEndTextBlock (Slate, in one MakeShared allocation: its reference controller just before it). Its vtables, the text
+/// (FString value), both fonts, and the laid-out state the mod keeps per player: the glyph pages, desired and allotted
+/// size and the width laid out for; the pending, glyph-character and button-tag flags; the paint quads and their shadow
+/// offset. The layout lock makes a relayout only mark itself pending.
+inline constexpr std::uintptr_t kSlateTextVTable        = 0x144BF5308;
+inline constexpr std::uintptr_t kSlateTextPaintVTable   = 0x144BF5300;  // at +0x330 (the End paint interface)
+inline constexpr std::uintptr_t kSlateTextGcVTable      = 0x144BF5088;  // at +0x338
+inline constexpr std::uintptr_t kSlateTextControllerVTable = 0x144BED5E8;
+inline constexpr std::uint32_t  kSlateTextPaintInterface = 0x330;
+inline constexpr std::uint32_t  kSlateTextGcObject      = 0x338;
+inline constexpr std::uint32_t  kSlateTextControllerBefore = 0x10;
+inline constexpr std::uint32_t  kSlateTextWeakThis      = 0x08;  // TSharedFromThis: the widget, then its controller
+inline constexpr std::uint32_t  kSlateTextRuns          = 0x980;
+inline constexpr std::uint32_t  kSlateTextRunsBytes     = 0x34;
+inline constexpr std::uint32_t  kSlateTextWrapWidth     = 0x9B0;
+inline constexpr std::uint32_t  kSlateTextFlags         = 0x9B5;  // relayout pending (for the block's Tick), glyph characters, button tag
+inline constexpr std::uint32_t  kSlateTextFlagsBytes    = 3;
+inline constexpr std::uint32_t  kSlateTextButtonTag     = kSlateTextFlags + 2;  // the text held `<button=` at its layout
+inline constexpr std::uint32_t  kSlateTextTextNum       = 0x348;                // the text's length (with its terminator)
+inline constexpr std::uint32_t  kSlateTextQuads         = 0xA10;
+inline constexpr std::uint32_t  kSlateTextQuadsBytes    = 0x38;
+inline constexpr std::uint32_t  kWeakReferenceCount     = 0x0C;  // a reference controller's weak count (i32, atomic)
+/// FRefController_ReleaseWeakRef(controller): the game's weak release (atomic; at zero the controller's own destroy).
+inline constexpr std::array<std::uint8_t, 16> kReleaseWeakEntry{
+    0xB8, 0xFF, 0xFF, 0xFF, 0xFF, 0xF0, 0x0F, 0xC1, 0x41, 0x0C, 0x83, 0xF8, 0x01, 0x75, 0x11, 0x48};
+inline constexpr platform::FunctionFact kReleaseWeak{L"FRefController_ReleaseWeakRef", 0x140640100, kReleaseWeakEntry};
+/// A text block's laid-out arrays, each a TArray header {data, num, max}: two glyph page arrays from kSlateTextRuns,
+/// three quad arrays from kSlateTextQuads (the destructor frees them last first).
+inline constexpr std::uint32_t  kArrayHeaderBytes       = 0x10;
+inline constexpr std::uint32_t  kSlateTextRunArrays     = 2;
+inline constexpr std::uint32_t  kSlateTextQuadArrays    = 3;
+/// The game's set of every live text block (a TSet<SEndTextBlock*>, 16-byte elements, the block first): the block's
+/// constructor adds it, its destructor removes it first.
+inline constexpr std::uintptr_t kSlateTextLiveSet        = 0x1453AB520;
+inline constexpr std::uint32_t  kSlateTextLiveSetElement = 16;
+/// SEndTextBlock_RebuildLayout(block): lays the text out from the block's fields and its font's button bytes.
+inline constexpr std::array<std::uint8_t, 16> kSlateTextRelayoutEntry{
+    0x40, 0x55, 0x57, 0x48, 0x8D, 0xAC, 0x24, 0xE8, 0xFE, 0xFF, 0xFF, 0x48, 0x81, 0xEC, 0x18, 0x02};
+inline constexpr platform::FunctionFact kSlateTextRelayout{L"SEndTextBlock_RebuildLayout", 0x141511D10, kSlateTextRelayoutEntry};
+/// The text block's destructor frees each of its nested arrays (glyph pages, quads) with this (inner data, then outer).
+inline constexpr std::array<std::uint8_t, 16> kFreeNestedArrayEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x74, 0x24, 0x10, 0x57, 0x48, 0x83, 0xEC, 0x20, 0x8B};
+inline constexpr platform::FunctionFact kFreeNestedArray{L"TArrayFString_Free", 0x14063F110, kFreeNestedArrayEntry};
+/// scePadGetControllerType(int handle, int* type): 1 a DualShock 4, 2 a DualSense.
+inline constexpr std::array<std::uint8_t, 16> kScePadControllerTypeEntry{
+    0x48, 0x89, 0x5C, 0x24, 0x08, 0x57, 0x48, 0x83, 0xEC, 0x20, 0x80, 0x3D, 0xD3, 0xDC, 0x83, 0x01};
+inline constexpr platform::FunctionFact kScePadControllerType{L"scePadGetControllerType", 0x143F7EA10, kScePadControllerTypeEntry};
+inline constexpr std::int32_t kScePadDualShock4 = 1;
+
 inline constexpr std::array<std::uint8_t, 16> kOperatorBeginPlayEntry{
     0x48, 0x89, 0x5C, 0x24, 0x10, 0x48, 0x89, 0x74, 0x24, 0x18, 0x48, 0x89, 0x7C, 0x24, 0x20, 0x55};
 inline constexpr std::array<std::uint8_t, 16> kOperatorTickEntry{
@@ -3892,7 +3971,7 @@ inline constexpr std::uint32_t kSlateTextText      = 0x340;  // SEndTextBlock: F
 inline constexpr std::uint32_t kSlateTextFont      = 0x3A0;  //   UEndFont* (main), +0x3A8 the second
 inline constexpr std::uint32_t kSlateTextFontTwo   = 0x3A8;
 inline constexpr std::uint32_t kSlateTextBatches   = 0x988;  //   i32: glyph batches laid out (0: nothing to draw)
-inline constexpr std::uint32_t kSlateTextSize      = 0x9A8;  //   float: the width it was given
+inline constexpr std::uint32_t kSlateTextSize      = 0x9A8;  //   floats x, y: the size it was given (its width first)
 inline constexpr std::uint32_t kSlateTextPending   = 0x9B4;  //   u8, u8: layout pending
 inline constexpr std::uint32_t kObjectFlags        = 0x08;   // UObject: EObjectFlags (0x20000000: being destroyed)
 inline constexpr std::uint32_t kFontPages          = 0x480;  // UEndFont: its pages object (pages +0x18, count +0x20)

@@ -32,6 +32,7 @@ using GetStateFn     = DWORD(WINAPI*)(DWORD user, XINPUT_STATE* state);
 using SetStateFn     = DWORD(WINAPI*)(DWORD user, XINPUT_VIBRATION* vibration);
 using ReadStateFn    = int (*)(std::int32_t handle, std::uint8_t* data);
 using SetVibrationFn = int (*)(std::int32_t handle, const std::uint8_t* motors);
+using ControllerTypeFn = int (*)(std::int32_t handle, std::int32_t* type);
 
 constexpr int kSlots = rules::kSlots;
 constexpr int kPads  = rules::kPads;
@@ -62,6 +63,7 @@ platform::VTableEntry   g_setEntry;
 platform::EntryRedirect g_read;       // the PlayStation reader's read
 platform::EntryRedirect g_vibration;  // its rumble send
 GetStateFn              g_get          = nullptr;  // what the import slots held: XInput's own, or whatever was there first
+ControllerTypeFn        g_controllerType = nullptr;  // the library's kind of a PlayStation pad (DualShock 4 or DualSense)
 SetStateFn              g_set          = nullptr;
 std::uintptr_t          g_appGlobal    = 0;
 std::uintptr_t          g_sonyVTable   = 0;
@@ -81,6 +83,8 @@ std::atomic<std::uint32_t>                    g_playing{1};     // the slots a p
 std::array<Pad, kPads>            g_pads{};
 std::array<std::int32_t, kSlots>  g_handles{};       // by scePad user 1..4: its handle, as the records showed it (0: not yet)
 std::array<std::uint8_t*, kSlots> g_records{};       // by slot: the PlayStation reader's record, as its reads showed it
+std::array<std::int32_t, kSlots>  g_kindHandle{};    // by slot: the handle whose kind g_kindDualShock4 holds (0: none asked)
+std::array<bool, kSlots>          g_kindDualShock4{};
 std::uint32_t                     g_forgetSony   = 0;  // bit N: record N's last rumble to forget at its next read
 std::uint32_t                     g_unplacedSaid = 0;  // bit N: record N's lane waits for an unseen handle (said)
 std::uint32_t g_opens = 0, g_waited = 0, g_rechecks = 0, g_changes = 0, g_startsHeld = 0, g_sonyMoves = 0;
@@ -756,6 +760,33 @@ std::uint32_t PresentPads() noexcept
     return g_present.load(std::memory_order_relaxed);
 }
 
+bool DualShock4(int slot) noexcept
+{
+    if (slot < 0 || slot >= kSlots || g_controllerType == nullptr)
+    {
+        return false;
+    }
+    const auto          at     = static_cast<std::size_t>(slot);
+    std::uint8_t* const record = g_records[at];
+    std::int32_t        handle = 0;
+    if (record == nullptr || !platform::Read(record + facts::kSonyRecordHandle, handle) || handle == 0)
+    {
+        return false;
+    }
+    if (handle != g_kindHandle[at])
+    {
+        // Asked once per pad the record holds (a handle names one pad): the library's answer for its handle.
+        std::int32_t type = 0, result = -1;
+        if (!platform::CallGuarded(g_controllerType, result, handle, &type) || result != 0)
+        {
+            return false;  // no answer yet (a pad still connecting): asked again next time
+        }
+        g_kindHandle[at]     = handle;
+        g_kindDualShock4[at] = type == facts::kScePadDualShock4;
+    }
+    return g_kindDualShock4[at];
+}
+
 int KeyboardUser() noexcept
 {
     const int slot = rules::KeyboardSlot(Table());
@@ -902,6 +933,8 @@ bool Install(const platform::GameImage& image) noexcept
         g_vibration.Restore();
     }
     g_playStation = read;
+    const auto controllerType = g_playStation ? platform::FindFunction(image, facts::kScePadControllerType) : std::nullopt;
+    g_controllerType = controllerType ? reinterpret_cast<ControllerTypeFn>(*controllerType) : nullptr;
     // Create, the PlayStation pads' window opener, comes through the library's read only with its system-button switch
     // on; ReadStateFor takes the system buttons out again before the game sees the data.
     const auto         systemButtons = g_playStation ? image.Rebase(facts::kSonySystemButtons, 1) : std::nullopt;

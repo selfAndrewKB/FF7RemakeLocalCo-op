@@ -33,6 +33,7 @@
 #include "hud/overlay_pass.h"
 #include "hud/root_placement.h"
 #include "hud/save_notice.h"
+#include "hud/button_art.h"
 #include "hud/second_image.h"
 #include "hud/ui_effect_pass.h"
 #include "hud/ui_targets.h"
@@ -497,6 +498,9 @@ constexpr std::array kModules{
            .needs = {Need<&hud::second_image::Install>()}},
     Module{.name = L"outside icons", .install = Call<&hud::outside_icons::Install>, .remove = &hud::outside_icons::Remove,
            .needs = {Need<&hud::second_image::Install>()}},
+    // without it every view's button prompts show player 1's device's art
+    Module{.name = L"button art", .install = Call<&hud::button_art::Install>, .remove = &hud::button_art::Remove,
+           .needs = {Need<&hud::second_image::Install>()}},
     // without it a further player's lead the level needs finished goes to its AI (no marker to show the way)
     Module{.name = L"lead mark", .install = Call<&hud::lead_mark::Install>, .remove = &hud::lead_mark::Remove,
            .needs = {Need<&hud::field_icons::Install>(), Need<&hud::minimap::Install>()}},
@@ -831,6 +835,7 @@ void TickHud(const Frame& frame) noexcept
     hud::marker_replay::Tick();
     hud::field_icons::Tick();
     hud::outside_icons::Tick();
+    hud::button_art::Tick();
     hud::root_placement::Tick(views && hud::overlay_layout::BandApplies());
 }
 

@@ -55,6 +55,7 @@ platform::VTableEntry  g_mouseDownSlot, g_mouseUpSlot, g_wheelSlot;
 platform::EntryRedirect g_dispatch;
 platform::CallRedirect  g_routeUp;
 platform::CallRedirect  g_mouseRepeat;  // the input tick's repeat of a held mouse button
+platform::EntryRedirect g_note;         // the game's "last device used" note
 TickFn                 g_tick      = nullptr;
 KeyEventFn             g_keyDown   = nullptr;
 KeyEventFn             g_keyUp     = nullptr;
@@ -93,6 +94,7 @@ void*                                         g_tapApp       = nullptr;  // the 
 std::uint32_t                                 g_keyboardEvents = 0;      // keyboard and mouse events handled in a further player's state
 std::uint32_t                                 g_flagsKept    = 0;        // "keyboard used" put back after the keyboard player's event
 std::uint32_t                                 g_wheelsDropped = 0;       // wheel turns of the keyboard's player with no UI of theirs open
+std::uint32_t                                 g_notesKept    = 0;        // players 2 and 3's pads kept out of the device note
 int                                           g_routedSaid   = 0;        // the player the keyboard's events last went to (its change is said)
 // The keyboard's digital stick as the last input tick built it. Game thread only.
 std::array<float, 4>                          g_keyboardStick{};         // taken out of the live field (g_stickTaken)
@@ -468,6 +470,20 @@ std::int64_t KeepingKeyboardFlag(Call&& call) noexcept
         ++g_flagsKept;
     }
     return result;
+}
+
+/// The game's note of the pad that pressed as its last device used (its button art and the rumble's device): while
+/// views are split, only player 1's slot notes itself, so every view's game art and player 1's trigger effects stay
+/// player 1's device's (each other view draws its own player's art, hud/button_art). With one view on screen every pad
+/// notes itself, as in single play.
+void NoteLastDevice(void* owner, std::int32_t controllerId)
+{
+    if (controllerId != 0 && platform::OnGameThread() && SplitShown())
+    {
+        ++g_notesKept;
+        return;
+    }
+    reinterpret_cast<void (*)(void*, std::int32_t)>(g_note.Original())(owner, controllerId);
 }
 
 /// Said when the player the keyboard's events go to changes.
@@ -916,6 +932,13 @@ bool Install(const platform::GameImage& image) noexcept
         platform::ReplaceSlot(image, facts::kInputMouseDown, reinterpret_cast<std::uintptr_t>(&MouseDown), g_mouseDownSlot) &&
         platform::ReplaceSlot(image, facts::kInputMouseUp, reinterpret_cast<std::uintptr_t>(&MouseUp), g_mouseUpSlot) &&
         platform::ReplaceSlot(image, facts::kInputWheel, reinterpret_cast<std::uintptr_t>(&Wheel), g_wheelSlot);
+    const auto note = platform::FindFunction(image, facts::kNoteLastDevice);
+    const std::span<const std::uint8_t> noteFirst(facts::kNoteLastDeviceEntry.data(), facts::kNoteLastDeviceFirstBytes);
+    if (!note || !g_note.Install(*note, noteFirst, reinterpret_cast<std::uintptr_t>(&NoteLastDevice)))
+    {
+        platform::LogWarning(L"pad buttons: the game's last-device note could not be taken (a check failed): while views are "
+                             L"split, players 2 and 3's pads still turn every view's button art to theirs");
+    }
     if (!g_mouseTaken)
     {
         g_wheelSlot.Restore();
@@ -969,9 +992,9 @@ bool Install(const platform::GameImage& image) noexcept
                            {
                                return control::Value{std::format(
                                    L"player {}{}; events in player 2's or 3's own state {}; flag put back {}; wheel turns "
-                                   L"dropped {}",
+                                   L"dropped {}; players 2 and 3's pads kept out of the device note {}",
                                    KeyboardRoute() >= 1 ? KeyboardRoute() + 1 : 1, g_mouseTaken ? L"" : L" (keys only)",
-                                   g_keyboardEvents, g_flagsKept, g_wheelsDropped)};
+                                   g_keyboardEvents, g_flagsKept, g_wheelsDropped, g_notesKept)};
                            }
                            catch (...)
                            {
@@ -997,6 +1020,7 @@ void Remove() noexcept
         // Off the game thread the copy is left as it is: its destructor touches a count only the game thread may.
         platform::Log(L"pad buttons: a short Tab's release was due at the mod's end off the game thread; left unsent");
     }
+    g_note.Restore();
     g_wheelSlot.Restore();
     g_mouseUpSlot.Restore();
     g_mouseDownSlot.Restore();

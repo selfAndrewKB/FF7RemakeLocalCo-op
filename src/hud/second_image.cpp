@@ -2,6 +2,7 @@
 
 #include "control/registry.h"
 #include "engine_facts.h"
+#include "hud/button_art.h"
 #include "hud/image_code.h"
 #include "hud/image_entries.h"
 #include "hud/field_icons.h"
@@ -176,7 +177,9 @@ bool RenderFurther(void* overlay, int column) noexcept
     }
     overlay_pass::Set(column);
     minimap::BeginPass(column);
+    button_art::EnterPass(overlay_pass::ShownSeat(column));
     const bool ok = platform::CallGuarded(g_render, overlay);
+    button_art::LeavePass();
     minimap::EndPass();
     if (rewind)
     {

@@ -91,6 +91,9 @@ add_library(LocalSplitScreen SHARED
     src/players/action_key.cpp
     src/players/ai_move_guard.cpp
     src/players/event_move_hand.cpp
+    src/hud/button_art.cpp
+    src/hud/label_states.cpp
+    src/hud/text_blocks.cpp
     src/players/keyboard_keys.cpp
     src/players/keyboard_route.cpp
     src/players/pad_buttons.cpp
@@ -362,6 +365,20 @@ add_executable(KeyboardRouteTests
 target_include_directories(KeyboardRouteTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_compile_features(KeyboardRouteTests PRIVATE cxx_std_20)
 add_test(NAME keyboard_route COMMAND KeyboardRouteTests)
+add_executable(LabelStatesTests
+    tests/label_states_test.cpp
+    src/hud/label_states.cpp
+)
+target_include_directories(LabelStatesTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(LabelStatesTests PRIVATE cxx_std_20)
+add_test(NAME label_states COMMAND LabelStatesTests)
+
+add_executable(ButtonArtTests
+    tests/button_art_test.cpp
+)
+target_include_directories(ButtonArtTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(ButtonArtTests PRIVATE cxx_std_20)
+add_test(NAME button_art COMMAND ButtonArtTests)
 
 add_executable(PartyRankRulesTests
     tests/party_rank_rules_test.cpp
