@@ -39,6 +39,12 @@ int ListedColumnOf(int seat) noexcept
     return g_listed.ColumnOf(seat);
 }
 
+int ViewSeat(int column) noexcept
+{
+    const int seat = g_listed.SeatOf(column);
+    return column == 0 ? 0 : seat >= 1 ? seat : kNoSeat;
+}
+
 int SeatOf(int column) noexcept
 {
     static_assert(kNoSeat == views::columns::kUnknown, "no seat reads the same in both");

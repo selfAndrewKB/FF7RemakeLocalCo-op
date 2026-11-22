@@ -11,6 +11,7 @@
 #include "hud/overlay_layout.h"
 #include "hud/overlay_pass.h"
 #include "hud/outside_icons.h"
+#include "hud/root_placement.h"
 #include "battle/command_menu.h"
 #include "battle/target_cursor.h"
 #include "hud/pass_hide.h"
@@ -178,6 +179,7 @@ bool RenderFurther(void* overlay, int column) noexcept
     overlay_pass::Set(column);
     minimap::BeginPass(column);
     button_art::EnterPass(overlay_pass::ShownSeat(column));
+    root_placement::SizeForPass(column, overlay_pass::ViewSeat(column));  // the view's own player's HUD size
     const bool ok = platform::CallGuarded(g_render, overlay);
     button_art::LeavePass();
     minimap::EndPass();
@@ -272,6 +274,7 @@ void Driver(void* delegate)
     if (onGame)
     {
         pass_hide::BeginOwnPass();  // the seats' target icons are not player 1's (nor the single render's)
+        root_placement::SizeForPass(0, 0);  // the roots back at player 1's HUD size for the game's own pass
     }
     overlay_pass::Set(own);
     minimap::BeginPass(own);

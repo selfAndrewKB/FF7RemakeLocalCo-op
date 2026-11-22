@@ -77,7 +77,7 @@ void PageFromTheTable()
     EXPECT(rows.size() == onPage);
     EXPECT(std::wcscmp(page[0].text.label, L"Screens") == 0);
     EXPECT(std::wcscmp(page[2].text.label, L"Experimental") == 0);
-    EXPECT(page[0].options == (std::vector<int>{0, 2, 3, 4, 5, 6, 7}));  // 1 is the monitors, set by the setup app
+    EXPECT(page[0].options == (std::vector<int>{0, 2, 3, 4, 5, 6, 7, 8, 9}));  // 1 is the monitors, set by the setup app
 }
 
 /// A row's byte is above every game setting (0..0x34) and names its option back; game bytes name none.
@@ -129,7 +129,7 @@ void CommandValues()
     EXPECT(!WordOfReading(control::Value{}).has_value());
 }
 
-/// The rates (100 values) and the split FOV's weight (21) are sliders; the short lists stay lists.
+/// The rates (100 values), the split FOV's weights (21) and the players' HUD sizes (16) are sliders; the short lists stay lists.
 void SlidersAreTheLongRows()
 {
     int sliders = 0;
@@ -138,7 +138,7 @@ void SlidersAreTheLongRows()
         EXPECT(IsSlider(*option) == (option->wordLabels.size() > kListLongest));
         sliders += IsSlider(*option) ? 1 : 0;
     }
-    EXPECT(sliders == 9);  // the two weights, the HUD size, enemy damage, enemy HP, boss HP, stagger, EXP, AP
+    EXPECT(sliders == 11);  // the two weights, the three HUD sizes, enemy damage, enemy HP, boss HP, stagger, EXP, AP
 }
 
 /// The window follows the marker with a cell of context, stays inside the gauge, and is 0 when everything fits.

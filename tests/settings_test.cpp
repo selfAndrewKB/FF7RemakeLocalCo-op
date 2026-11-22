@@ -77,7 +77,7 @@ void TableConsistent()
             open = option->section;
         }
     }
-    EXPECT(kOptions.size() == 23);
+    EXPECT(kOptions.size() == 25);
     // The HUD size: 0.75 to 1.50 in steps of 0.05, 1.00 (today's) by default, each word naming its factor.
     EXPECT(kHudScale.words.size() == 16 && std::wcscmp(kHudScale.fallback, L"1.00") == 0);
     EXPECT(std::wcscmp(kHudScaleWords.front(), L"0.75") == 0 && std::wcscmp(kHudScaleWords.back(), L"1.50") == 0);

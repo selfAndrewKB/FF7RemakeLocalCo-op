@@ -213,8 +213,8 @@ inline constexpr Option kVerticalFov{  // views/split_fov
     L"Controls the field of view when playing in vertical split-screen. Also affects the largest view during 3-player. "
     L"Lower values show more of the scene."};
 
-// The HUD size in a split window (hud/root_placement): 0.75 to 1.50 in steps of 0.05, written "1.25" in the file and
-// "x1.25" on the Co-op page.
+// Each player's HUD size in their own view in a split window (hud/root_placement): 0.75 to 1.50 in steps of 0.05,
+// written "1.25" in the file and "x1.25" on the Co-op page.
 inline constexpr std::size_t kHudScaleSteps = 16;
 using HudScaleText = std::array<std::array<wchar_t, 6>, kHudScaleSteps>;
 /// The factor of the i-th word.
@@ -256,13 +256,27 @@ inline constexpr std::array<const wchar_t*, kHudScaleSteps> kHudScaleLabels = Ma
 
 inline constexpr Option kHudScale{  // hud/root_placement
     L"Views", L"hud-scale", kHudScaleWords, L"1.00",
-    L"the size of the HUD pinned to each view's edges in a split window (the minimap and compass, the command menu, the "
-    L"party panel, the summon gauges), times this, each about its own corner: 0.75 to 1.50 in steps of 0.05 (1.00 is "
-    L"the game's); what hangs over characters and enemies keeps the game's size, as do the single view, the menus and "
-    L"scenes and a row of monitors; from the next frame",
-    false, L"Split-Screen HUD Size", kHudScaleLabels,
-    L"Controls the size of the HUD in each player's view during split-screen in one window: the minimap, command menu, "
+    L"player 1's size of the HUD pinned to their view's edges in a split window (the minimap and compass, the command "
+    L"menu, the party panel, the summon gauges), times this, each about its own corner: 0.75 to 1.50 in steps of 0.05 "
+    L"(1.00 is the game's); what hangs over characters and enemies keeps the game's size, as do the single view, the "
+    L"menus and scenes and a row of monitors; from the next frame",
+    false, L"Split-Screen HUD Size (Player 1)", kHudScaleLabels,
+    L"Controls the size of the HUD in Player 1's view during split-screen in one window: the minimap, command menu, "
     L"party list and summon gauges. Markers over characters and enemies keep their size. Does not affect multi-monitor "
+    L"mode."};
+inline constexpr Option kHudScaleTwo{  // hud/root_placement
+    L"Views", L"hud-scale.player-2", kHudScaleWords, L"1.00",
+    L"player 2's HUD size in their own view in a split window, as hud-scale sets player 1's: 0.75 to 1.50 in steps of 0.05 "
+    L"(1.00 is the game's); a file that has only hud-scale gives player 2 that size once; from the next frame",
+    false, L"Split-Screen HUD Size (Player 2)", kHudScaleLabels,
+    L"Controls the size of the HUD in Player 2's view during split-screen in one window. Does not affect multi-monitor "
+    L"mode."};
+inline constexpr Option kHudScaleThree{  // hud/root_placement
+    L"Views", L"hud-scale.player-3", kHudScaleWords, L"1.00",
+    L"player 3's HUD size in their own view in a split window, as hud-scale sets player 1's: 0.75 to 1.50 in steps of 0.05 "
+    L"(1.00 is the game's); a file that has only hud-scale gives player 3 that size once; from the next frame",
+    false, L"Split-Screen HUD Size (Player 3)", kHudScaleLabels,
+    L"Controls the size of the HUD in Player 3's view during split-screen in one window. Does not affect multi-monitor "
     L"mode."};
 
 inline constexpr Option kEnemyDamage{  // battle/battle_rates
@@ -365,7 +379,8 @@ inline constexpr Option kConsole{  // mod.cpp, control/remote
 
 /// Every option, in the order the settings file lists them.
 inline constexpr std::array kOptions{&kMultiMonitor, &kMonitors,    &kColumnOrder,  &kTwoPlayerSplit, &kThreePlayerSplit, &kHorizontalFov,
-                                     &kVerticalFov,  &kHudScale,    &kMenuSlow,     &kBattleWarps,    &kEnemyDamage,      &kEnemyHp,          &kBossHp,
+                                     &kVerticalFov,  &kHudScale,    &kHudScaleTwo,  &kHudScaleThree,  &kMenuSlow,         &kBattleWarps,
+                                     &kEnemyDamage,  &kEnemyHp,     &kBossHp,
                                      &kEnemyStagger, &kExpGain,     &kApGain,       &kLeadHolder,     &kAreaLevels,       &kTalkGather,
                                      &kTalkFollow,   &kResponsivenessTwo, &kResponsivenessThree, &kConsole};
 
@@ -379,7 +394,7 @@ consteval bool Listed(const Option& option)
     return false;
 }
 static_assert(Listed(kMultiMonitor) && Listed(kMonitors) && Listed(kColumnOrder) && Listed(kTwoPlayerSplit) && Listed(kThreePlayerSplit) &&
-                  Listed(kHorizontalFov) && Listed(kVerticalFov) && Listed(kHudScale) && Listed(kMenuSlow) && Listed(kBattleWarps) && Listed(kEnemyDamage) && Listed(kEnemyHp) && Listed(kBossHp) &&
+                  Listed(kHorizontalFov) && Listed(kVerticalFov) && Listed(kHudScale) && Listed(kHudScaleTwo) && Listed(kHudScaleThree) && Listed(kMenuSlow) && Listed(kBattleWarps) && Listed(kEnemyDamage) && Listed(kEnemyHp) && Listed(kBossHp) &&
                   Listed(kEnemyStagger) && Listed(kExpGain) && Listed(kApGain) && Listed(kLeadHolder) && Listed(kAreaLevels) &&
                   Listed(kTalkGather) && Listed(kTalkFollow) && Listed(kResponsivenessTwo) && Listed(kResponsivenessThree) &&
                   Listed(kConsole),

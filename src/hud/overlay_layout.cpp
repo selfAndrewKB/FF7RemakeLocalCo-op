@@ -249,7 +249,6 @@ void RecordColumn(int column, const LayoutSize& layout, const IntRect& band, std
     // Without column 0's band the conversion's size reads keep each pass's own size (below), so no column's box would
     // match: none then.
     const LayoutPoint anchor      = root_placement::GlowAnchor();
-    const float       size        = root_placement::GlowSize();
     const bool        columnZero = band.Height() > 0;
     for (int i = 0; i < kMaxColumns; ++i)
     {
@@ -258,6 +257,7 @@ void RecordColumn(int column, const LayoutSize& layout, const IntRect& band, std
             continue;
         }
         const ColumnOverlay& seen = g_columnOverlay[i];
+        const float          size = root_placement::GlowSizeOf(i);  // the gauge as this column's pass drew it
         const auto           box  = columnZero && seen.band.Height() > 0
                                         ? EffectViewport(kSoloLayout, seen.layout, seen.band, seen.imageWidth, seen.imageHeight, seen.viewWidth,
                                                          seen.viewHeight, anchor, size)

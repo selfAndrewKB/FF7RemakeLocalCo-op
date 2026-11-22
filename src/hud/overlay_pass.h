@@ -44,6 +44,9 @@ int ColumnOf(int seat) noexcept;
 /// The column the seat's view is in, whatever it shows (-1 not listed), by the engine's list: for what follows the
 /// seat's own local player, its sound listener.
 int ListedColumnOf(int seat) noexcept;
+/// The seat whose view `column` is in the engine's list, whatever it shows (0 for column 0, kNoSeat a mirror's or
+/// none): for what belongs to the view's own player, as its HUD size.
+int ViewSeat(int column) noexcept;
 /// The player whose HUD the pass of `column` shows: a seat's column its seat's; column 0, the single render and a
 /// mirror's column with a pass of its own (hud/second_image.h, OtherShape) player 1's (0).
 int ShownSeat(int column) noexcept;
