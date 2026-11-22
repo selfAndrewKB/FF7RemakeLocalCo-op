@@ -261,23 +261,19 @@ inline constexpr Option kHudScale{  // hud/root_placement
     L"(1.00 is the game's); what hangs over characters and enemies keeps the game's size, as do the single view, the "
     L"menus and scenes and a row of monitors; from the next frame",
     false, L"Split-Screen HUD Size (Player 1)", kHudScaleLabels,
-    L"Controls the size of the HUD in Player 1's view during split-screen in one window: the minimap, command menu, "
-    L"party list and summon gauges. Markers over characters and enemies keep their size. Does not affect multi-monitor "
-    L"mode."};
+    L"Controls the size of the HUD in Player 1's view during single monitor split-screen mode."};
 inline constexpr Option kHudScaleTwo{  // hud/root_placement
     L"Views", L"hud-scale.player-2", kHudScaleWords, L"1.00",
     L"player 2's HUD size in their own view in a split window, as hud-scale sets player 1's: 0.75 to 1.50 in steps of 0.05 "
     L"(1.00 is the game's); a file that has only hud-scale gives player 2 that size once; from the next frame",
     false, L"Split-Screen HUD Size (Player 2)", kHudScaleLabels,
-    L"Controls the size of the HUD in Player 2's view during split-screen in one window. Does not affect multi-monitor "
-    L"mode."};
+    L"Controls the size of the HUD in Player 2's view during single monitor split-screen mode."};
 inline constexpr Option kHudScaleThree{  // hud/root_placement
     L"Views", L"hud-scale.player-3", kHudScaleWords, L"1.00",
     L"player 3's HUD size in their own view in a split window, as hud-scale sets player 1's: 0.75 to 1.50 in steps of 0.05 "
     L"(1.00 is the game's); a file that has only hud-scale gives player 3 that size once; from the next frame",
     false, L"Split-Screen HUD Size (Player 3)", kHudScaleLabels,
-    L"Controls the size of the HUD in Player 3's view during split-screen in one window. Does not affect multi-monitor "
-    L"mode."};
+    L"Controls the size of the HUD in Player 3's view during single monitor split-screen mode."};
 
 inline constexpr Option kEnemyDamage{  // battle/battle_rates
     L"Battle", L"enemy-damage", kTenthsWords, L"1.0",
