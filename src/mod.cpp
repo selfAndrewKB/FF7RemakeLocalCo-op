@@ -71,7 +71,7 @@
 
 namespace {
 
-constexpr const wchar_t* kVersion = L"1.8.1-hud-size-help";  // the one version string (the log, UE4SS and the setup app)
+constexpr const wchar_t* kVersion = L"1.2.0-hud-size-help";  // the one version string (the log, UE4SS and the setup app)
 
 using lss::platform::Log;
 namespace Hook = RC::Unreal::Hook;
